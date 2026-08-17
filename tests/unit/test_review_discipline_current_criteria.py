@@ -26,11 +26,10 @@ is what ties the verdict to the clause it belongs to. The ``craft.md`` class is
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_SKILL = _REPO_ROOT / "skills" / "review-discipline" / "SKILL.md"
+from tests.unit._prose import REPO_ROOT
+
+_SKILL = REPO_ROOT / "skills" / "review-discipline" / "SKILL.md"
 
 #: The term the rule is *about*, used to select its item out of the numbered list.
 #: Selecting by subject rather than by ordinal is deliberate: an ordinal into an

@@ -28,7 +28,8 @@ from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.unit._prose import REPO_ROOT
+
 SCRIPT = REPO_ROOT / "scripts" / "build_design_tokens.py"
 VERIFY = REPO_ROOT / "scripts" / "verify.sh"
 PAGE = REPO_ROOT / "docs" / "index.html"

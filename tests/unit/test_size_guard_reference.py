@@ -55,10 +55,10 @@ from typing import Any
 
 import pytest
 
-# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_TEMPLATE = _REPO_ROOT / "templates" / "size-guard.md"
-_REGISTRY = _REPO_ROOT / "registry.yaml"
+from tests.unit._prose import REPO_ROOT
+
+_TEMPLATE = REPO_ROOT / "templates" / "size-guard.md"
+_REGISTRY = REPO_ROOT / "registry.yaml"
 
 _HARD_LIMIT = 500
 
@@ -616,7 +616,7 @@ def test_code_quality_declarative_ceiling_claim_matches_the_shipped_constant() -
     reference actually defines that constant — asserting both halves is the
     point, since either alone can drift back into the gap this ticket closes."""
     path = (
-        _REPO_ROOT
+        REPO_ROOT
         / "skills"
         / "code-quality"
         / "references"

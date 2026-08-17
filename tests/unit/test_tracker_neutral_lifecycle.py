@@ -27,7 +27,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.unit._prose import REPO_ROOT, registered_surface
+
 REGISTRY = REPO_ROOT / "registry.yaml"
 TRACKER_SKILL = REPO_ROOT / "skills" / "tracker" / "SKILL.md"
 GITHUB_SKILL = REPO_ROOT / "skills" / "github-issues" / "SKILL.md"
@@ -53,16 +54,6 @@ BAN_ALLOWLIST: dict[str, str] = {
 }
 
 
-def _registered_surface() -> list[Path]:
-    """Every prose file ``registry.yaml`` distributes, as repo-relative paths.
-
-    The same scope rule ``test_distributed_prose_no_repo_ids`` applies: what the
-    registry lists under ``files:`` is what a consumer actually receives.
-    """
-    entries = re.findall(r"^\s{2}([\w./-]+\.(?:md|json)):\s*\{", REGISTRY.read_text(), re.M)
-    return [Path(e) for e in entries if e.endswith(".md")]
-
-
 def test_every_allowlisted_file_is_still_registered() -> None:
     """The exemption list names files that exist and are actually distributed.
 
@@ -76,7 +67,7 @@ def test_every_allowlisted_file_is_still_registered() -> None:
     exemption from a *distributed*-surface ban is only meaningful for a file the
     registry distributes.
     """
-    registered = {p.as_posix() for p in _registered_surface()}
+    registered = {p.as_posix() for p in registered_surface()}
     stale = sorted(rel for rel in BAN_ALLOWLIST if rel not in registered)
     assert not stale, (
         f"BAN_ALLOWLIST exempts {stale}, which registry.yaml no longer "
@@ -87,7 +78,7 @@ def test_every_allowlisted_file_is_still_registered() -> None:
 
 def _neutral_surface() -> list[Path]:
     """The registered surface minus the documented provider/repo-owned files."""
-    return [p for p in _registered_surface() if p.as_posix() not in BAN_ALLOWLIST]
+    return [p for p in registered_surface() if p.as_posix() not in BAN_ALLOWLIST]
 
 
 def _read(rel: Path) -> str:
@@ -99,7 +90,7 @@ def _read(rel: Path) -> str:
 
 def test_the_registered_surface_is_non_empty() -> None:
     """FLOOR. If the registry parse breaks, every ban below goes vacuously green."""
-    surface = _registered_surface()
+    surface = registered_surface()
     assert len(surface) >= 25, (
         f"only {len(surface)} registered prose files parsed out of registry.yaml — "
         "the bans below derive their subjects from this set, so a broken parse "

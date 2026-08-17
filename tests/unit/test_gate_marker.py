@@ -57,7 +57,8 @@ from types import ModuleType
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.unit._prose import REPO_ROOT
+
 SCRIPT = REPO_ROOT / "scripts" / "gate_marker.py"
 
 

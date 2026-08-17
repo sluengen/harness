@@ -41,8 +41,9 @@ from pathlib import Path
 
 import pytest
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(_REPO_ROOT / "scripts"))
+from tests.unit._prose import REPO_ROOT
+
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import mutate  # noqa: E402
 
@@ -614,7 +615,7 @@ def test_the_module_spawns_only_python_never_git() -> None:
     """
     import ast
 
-    source = (_REPO_ROOT / "scripts" / "mutate.py").read_text(encoding="utf-8")
+    source = (REPO_ROOT / "scripts" / "mutate.py").read_text(encoding="utf-8")
     calls = [
         node
         for node in ast.walk(ast.parse(source))

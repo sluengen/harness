@@ -29,9 +29,9 @@ restatement of a tree-wide sweep adds no coverage and one more place to edit.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.unit._prose import REPO_ROOT
+
 BUILD = REPO_ROOT / "commands" / "build.md"
 PROCESS_DOC = REPO_ROOT / "process" / "harness.md"
 

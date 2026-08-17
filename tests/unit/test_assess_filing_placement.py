@@ -9,8 +9,9 @@ the assessment's filing-time bar and the merge-time review gate.
 
 **What this module asserts, after #459.** One tripwire over the step-2 body: the
 three parts of the filing instruction, plus the negation that makes the placement
-a decision rather than a default. It also owns :func:`_step_two`, the step slicer
-that ``test_assess_architecture_scope`` imports rather than re-spelling.
+a decision rather than a default. The step slicer this module and
+``test_assess_architecture_scope`` both read, :func:`tests.unit._prose.assess_step_two`,
+lives in the shared home since #467 rather than in either of them.
 
 Three co-occurrence tests collapsed into it (ADR 0016). Occurrence the polarity
 cites (``code-quality`` Part C): the step body already says *"Filing to Todo — not
@@ -27,13 +28,8 @@ negative space, never meaning* — polarity half.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-ASSESS = REPO_ROOT / "commands" / "assess.md"
-
-#: The step whose placement rule this ticket pins.
-STEP_HEADER = "### 2. File the findings"
+from tests.unit._prose import assess_step_two
 
 #: The two surviving parts of the filing instruction. Words, not sentences: how
 #: the instruction is phrased is the review gate's business.
@@ -59,21 +55,6 @@ _NOT_BACKLOG = re.compile(
 )
 
 
-def _step_two() -> str:
-    """The body of the ``### 2. File the findings`` step, header to next ``### ``.
-
-    Imported by ``test_assess_architecture_scope``, which reads a different
-    paragraph of the same step. One slicer, so the two guards cannot disagree
-    about where the step ends.
-    """
-    text = ASSESS.read_text()
-    m = re.search(rf"^{re.escape(STEP_HEADER)}\b.*$", text, re.MULTILINE)
-    assert m, f"missing step header {STEP_HEADER!r}"
-    rest = text[m.end() :]
-    end = re.search(r"^#{2,3} ", rest, re.MULTILINE)
-    return rest[: end.start()] if end else rest
-
-
 def _filing_paragraphs() -> list[str]:
     """Step-2 paragraphs stating where a finding is filed.
 
@@ -87,7 +68,7 @@ def _filing_paragraphs() -> list[str]:
     """
     return [
         " ".join(block.split())
-        for block in _step_two().split("\n\n")
+        for block in assess_step_two().split("\n\n")
         if "todo" in block.lower() and block.strip()
     ]
 
@@ -98,7 +79,7 @@ def test_step_two_files_to_todo_and_not_to_backlog() -> None:
     Three parts:
 
     * **anchor** — exactly one paragraph of ``### 2. File the findings`` names
-      the state. ``_step_two`` asserts the header exists, so a rename names
+      the state. ``assess_step_two`` asserts the header exists, so a rename names
       itself rather than emptying the window; the paragraph narrowing is what
       keeps a sibling rule's negation out of the polarity check.
     * **terms** — the state and the mandatory project, read from that one

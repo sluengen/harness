@@ -46,8 +46,9 @@ from pathlib import Path
 
 import pytest
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_HOOK = _REPO_ROOT / "hooks" / "guidance-freshness.js"
+from tests.unit._prose import REPO_ROOT
+
+_HOOK = REPO_ROOT / "hooks" / "guidance-freshness.js"
 
 #: The unique signal the self-parity warning carries (the enforcing guard's name).
 _GUARD = "test_registry_header_matches_meta_self_version"

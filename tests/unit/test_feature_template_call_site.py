@@ -22,9 +22,9 @@ prose owns structure and negative space, never meaning*).
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.unit._prose import REPO_ROOT
+
 FEATURE_TEMPLATE = REPO_ROOT / "templates" / "feature.md"
 
 _NEGATION = re.compile(

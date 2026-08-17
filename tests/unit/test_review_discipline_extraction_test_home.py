@@ -21,7 +21,7 @@ negative space, never meaning*), plus the second-placement sweep, which is
 negative space and stays:
 
 1. **Anchor** — the ``- **Architecture watchlist**`` bullet, sliced by
-   :func:`~tests.unit.test_architecture_watchlist._review_watchlist_bullet`, and
+   :func:`~tests.unit._prose.review_watchlist_bullet`, and
    narrowed again to the *sentences* naming tests. The narrowing is load-bearing:
    the bullet already contains ``module``, ``reason``, ``extraction``,
    ``non-blocking`` and ``diff`` for other reasons, so any bullet-wide key is
@@ -47,19 +47,10 @@ the same file. One copy of a control, called by the assertions it protects.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-# Import both helpers from the modules that own them rather than declaring a
-# third and fourth private copy. A copy drifts from the prose it slices and
-# produces a confident false green — the argument #272 and #273 each recorded.
-# The slicer carries its own CAL-815 assertion, so a renamed or deleted bullet
-# fires there instead of silently measuring nothing here.
-from tests.unit.test_architecture_watchlist import _review_watchlist_bullet
-from tests.unit.test_review_discipline_watchlist_entry_currency import _sentences
+from tests.unit._prose import REPO_ROOT, review_watchlist_bullet, sentences_on_break
 
-# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_SKILL = _REPO_ROOT / "skills" / "review-discipline" / "references" / "diff-shape-checks.md"
+_SKILL = REPO_ROOT / "skills" / "review-discipline" / "references" / "diff-shape-checks.md"
 
 # The placements a finding can carry. `non-blocking` is the one this bullet
 # already uses; the other must stay absent, because the clause folds into that
@@ -79,7 +70,7 @@ _NO_REASON_STATED = re.compile(r"\bno\b(?:\W+\w+){0,2}?\W+reason\b", re.IGNORECA
 
 
 def _bullet() -> str:
-    return _review_watchlist_bullet(_SKILL.read_text(encoding="utf-8"))
+    return review_watchlist_bullet(_SKILL.read_text(encoding="utf-8"))
 
 
 def test_the_extracted_modules_test_home_is_owed_on_an_extraction() -> None:
@@ -92,7 +83,7 @@ def test_the_extracted_modules_test_home_is_owed_on_an_extraction() -> None:
     is to *answer*: tests may stay when the change says why, and they are a
     finding only when no reason was stated.
     """
-    bearing = [s for s in _sentences(_bullet()) if "test" in s.lower()]
+    bearing = [s for s in sentences_on_break(_bullet()) if "test" in s.lower()]
     assert bearing, (
         "no sentence in the Architecture watchlist bullet mentions tests — the "
         "obligation this clause adds is missing. Production structure and test "

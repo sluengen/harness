@@ -52,14 +52,13 @@ covers issues *and* pull requests is meaning, which the review gate owns.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 from tests._gitutil import tracked_files_under
+from tests.unit._prose import REPO_ROOT
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_SECURITY = _REPO_ROOT / "SECURITY.md"
-_CONTRIBUTING = _REPO_ROOT / "CONTRIBUTING.md"
-_README = _REPO_ROOT / "README.md"
+_SECURITY = REPO_ROOT / "SECURITY.md"
+_CONTRIBUTING = REPO_ROOT / "CONTRIBUTING.md"
+_README = REPO_ROOT / "README.md"
 
 #: The bounty disclaimer, **anchored to the noun it refuses**. A policy carrying
 #: a negation somewhere and the words *bug bounty* somewhere states nothing.

@@ -33,8 +33,9 @@ from pathlib import Path
 
 import pytest
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_WORKFLOW_DIR = _REPO_ROOT / ".github" / "workflows"
+from tests.unit._prose import REPO_ROOT
+
+_WORKFLOW_DIR = REPO_ROOT / ".github" / "workflows"
 
 #: The gate invocation that makes a workflow a subject of this guard.
 _GATE_INVOCATION = "scripts/verify.sh"
@@ -61,7 +62,7 @@ def _reachable_text(workflow: Path) -> str:
     text = workflow.read_text(encoding="utf-8")
     parts = [text]
     for relpath in dict.fromkeys(_SCRIPT_RE.findall(text)):
-        script = _REPO_ROOT / relpath
+        script = REPO_ROOT / relpath
         if script.is_file():
             parts.append(script.read_text(encoding="utf-8"))
     return "\n".join(parts)

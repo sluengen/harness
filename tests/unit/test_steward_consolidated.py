@@ -42,9 +42,9 @@ structure and negative space, never meaning*.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-REPO_ROOT = Path(__file__).parent.parent.parent
+from tests.unit._prose import REPO_ROOT
+
 AGENTS_DIR = REPO_ROOT / "agents"
 STEWARD = AGENTS_DIR / "steward.md"
 CODE_STEWARD = AGENTS_DIR / "code-steward.md"

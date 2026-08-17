@@ -20,10 +20,10 @@ from __future__ import annotations
 
 import fnmatch
 import json
-from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_SETTINGS = _REPO_ROOT / ".claude" / "settings.json"
+from tests.unit._prose import REPO_ROOT
+
+_SETTINGS = REPO_ROOT / ".claude" / "settings.json"
 
 _BASH_PREFIX = "Bash("
 

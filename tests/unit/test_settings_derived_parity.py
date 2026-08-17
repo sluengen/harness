@@ -42,14 +42,14 @@ the same name.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any
 
 import pytest
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_DISTRIBUTABLE = _REPO_ROOT / "settings" / "harness.json"
-_DERIVED = _REPO_ROOT / ".claude" / "settings.json"
+from tests.unit._prose import REPO_ROOT
+
+_DISTRIBUTABLE = REPO_ROOT / "settings" / "harness.json"
+_DERIVED = REPO_ROOT / ".claude" / "settings.json"
 
 #: Force-push spellings the base globs miss — the `+refspec` bypass and the
 #: `-C` reordering — plus the `main`-merge denies. Promoted from the repo's own
@@ -114,8 +114,8 @@ def test_derived_copy_is_byte_identical() -> None:
     derived = _DERIVED.read_text()
     if distributable != derived:
         raise AssertionError(
-            f"{_DERIVED.relative_to(_REPO_ROOT)} has drifted from its source "
-            f"{_DISTRIBUTABLE.relative_to(_REPO_ROOT)}. It is a derived copy: promote "
+            f"{_DERIVED.relative_to(REPO_ROOT)} has drifted from its source "
+            f"{_DISTRIBUTABLE.relative_to(REPO_ROOT)}. It is a derived copy: promote "
             f"the difference into the source, or move repo-local content to "
             f".claude/settings.local.json."
         )

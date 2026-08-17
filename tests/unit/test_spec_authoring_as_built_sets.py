@@ -48,9 +48,9 @@ reviews — three of them present-tense counts in one feature spec, plus ADR
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.unit._prose import REPO_ROOT
+
 SKILL = REPO_ROOT / "skills" / "spec-authoring" / "SKILL.md"
 REGISTRY = REPO_ROOT / "registry.yaml"
 

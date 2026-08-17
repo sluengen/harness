@@ -44,14 +44,11 @@ Acceptance criteria (this ticket):
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 import pytest
 
 from tests._gitutil import tracked_files_under
-
-# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.unit._prose import REPO_ROOT
 
 #: The installed surface — the directories ``registry.yaml`` ships into a
 #: consuming repo (the ``SURFACE_PREFIXES`` of ``test_guidance_footprint``).
@@ -124,8 +121,8 @@ def test_resolver_flags_a_nonexistent_skill_cite() -> None:
     while the two mandatory pre-build reads must.
     """
     tracked = tracked_files_under(".")
-    missing = (_REPO_ROOT / "skills/does-not-exist/SKILL.md").resolve()
-    present = (_REPO_ROOT / "skills/code-quality/SKILL.md").resolve()
+    missing = (REPO_ROOT / "skills/does-not-exist/SKILL.md").resolve()
+    present = (REPO_ROOT / "skills/code-quality/SKILL.md").resolve()
     assert missing not in tracked, "a non-existent skill cite must not resolve"
     assert present in tracked, "an existing skill cite must resolve"
 
@@ -138,7 +135,7 @@ def test_scanner_finds_the_mandatory_pre_build_reads() -> None:
     """
     found: set[str] = set()
     for name in ("agents/dev.md", "commands/start.md"):
-        for _, cite in _skill_cites_in((_REPO_ROOT / name).read_text()):
+        for _, cite in _skill_cites_in((REPO_ROOT / name).read_text()):
             found.add(cite)
     assert "skills/test-driven-development/SKILL.md" in found
     assert "skills/code-quality/SKILL.md" in found
@@ -155,8 +152,8 @@ def test_every_distributed_skill_cite_resolves() -> None:
     for surface_dir in SURFACE_DIRS:
         for path in sorted(tracked_files_under(surface_dir)):
             for line_no, cite in _skill_cites_in(path.read_text()):
-                if (_REPO_ROOT / cite).resolve() not in tracked:
-                    rel = path.relative_to(_REPO_ROOT).as_posix()
+                if (REPO_ROOT / cite).resolve() not in tracked:
+                    rel = path.relative_to(REPO_ROOT).as_posix()
                     violations.append(f"{rel}:{line_no}: {cite}")
 
     assert not violations, (

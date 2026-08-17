@@ -38,18 +38,10 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-# The slicer lives in the module that exports it to this family rather than in a
-# private copy per bullet (``craft.md`` → *A positive control must exercise the
-# predicate, not re-implement it*); it carries its own missing-bullet assertion.
-from tests.unit.test_review_discipline_context_currency import (
-    _skill_text,
-    _stage_two_bullet,
-)
+from tests.unit._prose import REPO_ROOT, diff_shape_checks_text, stage_two_bullet
 
-# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_SKILL = _REPO_ROOT / "skills" / "review-discipline" / "references" / "diff-shape-checks.md"
-_REGISTRY = _REPO_ROOT / "registry.yaml"
+_SKILL = REPO_ROOT / "skills" / "review-discipline" / "references" / "diff-shape-checks.md"
+_REGISTRY = REPO_ROOT / "registry.yaml"
 
 _HEADER_RE = re.compile(r"<!--\s*guidance:[\w-]+@([\d.]+)\s*-->")
 
@@ -83,7 +75,7 @@ def _registry_version(rel_path: str) -> str:
 
 
 def _bullet() -> str:
-    return _stage_two_bullet(_skill_text(), _BULLET_TITLE)
+    return stage_two_bullet(diff_shape_checks_text(), _BULLET_TITLE)
 
 
 def test_the_backend_clone_rule_sends_a_matching_sibling_name_to_a_shared_home() -> None:

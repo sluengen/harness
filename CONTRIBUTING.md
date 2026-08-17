@@ -87,6 +87,20 @@ If you do open a PR:
   and the triage that applied it to the guards already in this tree, are in
   [ADR 0016](specs/decisions/0016-tests-own-structure-and-negative-space.md).
 
+- **Shared test helpers live in underscore modules** — [`tests/_gitutil.py`](tests/_gitutil.py)
+  for git, [`tests/unit/_prose.py`](tests/unit/_prose.py) for reading prose out of the
+  tree, [`tests/unit/_hooks.py`](tests/unit/_hooks.py) for captured host payloads. The
+  moment a second test module needs a helper, the helper moves there; a `test_*.py`
+  module is never an import target.
+
+  This is not tidiness. A test module that is also a library cannot be deleted,
+  renamed or converted without an importer audit, and #467 found 30 modules
+  importing out of their siblings — enough that the ADR 0016 triage had to annotate
+  one module "Must keep exporting `_sentences`" in the middle of a pass whose whole
+  purpose was deciding what to delete. Helpers whose semantics genuinely differ keep
+  their own names in the shared home rather than being unified into one signature;
+  helpers local to a single guard stay in that guard.
+
 - **Describe the problem and the approach**, not just the diff.
 
 ## Inbound licensing

@@ -29,12 +29,11 @@ guard a lie the day the next pass runs.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 from tests._gitutil import tracked_files_under
+from tests.unit._prose import REPO_ROOT
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_ASSESSMENTS = _REPO_ROOT / "assessments"
+_ASSESSMENTS = REPO_ROOT / "assessments"
 _LOG = _ASSESSMENTS / "LOG.md"
 
 # A folded entry: ``- <YYYY-MM-DD> · <scope> · <one-clause verdict> · findings: <…>``

@@ -68,13 +68,11 @@ constraints. None of that is re-asserted here.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.unit._prose import REPO_ROOT
 
 _CRAFT_REL = "skills/review-discipline/references/craft.md"
-_CRAFT = _REPO_ROOT / _CRAFT_REL
+_CRAFT = REPO_ROOT / _CRAFT_REL
 
 #: The roots that must brief a reader on the reference, each by path.
 _CITING_ROOTS = ("skills/review-discipline/SKILL.md", "commands/build.md")
@@ -610,7 +608,7 @@ def test_the_ordinal_entry_sits_under_unmeasured_claims() -> None:
 def test_both_citing_roots_name_the_reference() -> None:
     """`review-discipline` and the build command each link the file by path."""
     for root in _CITING_ROOTS:
-        text = (_REPO_ROOT / root).read_text(encoding="utf-8")
+        text = (REPO_ROOT / root).read_text(encoding="utf-8")
         assert _CRAFT_REL in text, f"{root} does not name {_CRAFT_REL}"
 
 

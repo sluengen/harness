@@ -36,24 +36,22 @@ slice ran ``### Stage 2`` → ``## Severity`` at the time; #455 retired the
 severity scale and the heading went with it, so the terminator below is the next
 level-2 heading and the pair named here is history rather than a pointer.
 
-**This module is the Stage-2 slicer's home.** ``_stage_two_bullet`` is imported
-by the five sibling Stage-2 bullet guards, which each carried a private copy of
-it before #459: one slicer, called by every assertion it protects (``craft.md``
-→ *A positive control must exercise the predicate, not re-implement it*).
-``_skill_text`` and ``_context_currency_bullet`` are this module's own, with no
-importer outside it — ``test_review_discipline_asbuilt_record_currency`` was
-their one external caller and #459 deleted it as a redundant re-check of this
-same bullet.
+**The Stage-2 slicer lives in :mod:`tests.unit._prose`.** ``stage_two_bullet`` is
+read from there by this module and by the five sibling Stage-2 bullet guards,
+which each carried a private copy of it before #459: one slicer, called by every
+assertion it protects (``craft.md`` → *A positive control must exercise the
+predicate, not re-implement it*). It sat in this module until #467 moved it to
+the neutral home, which is where a helper with six callers belongs.
+``_context_currency_bullet`` is this module's own, with no importer outside it —
+``test_review_discipline_asbuilt_record_currency`` was its one external caller
+and #459 deleted it as a redundant re-check of this same bullet.
 """
 
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_SKILL = _REPO_ROOT / "skills" / "review-discipline" / "references" / "diff-shape-checks.md"
+from tests.unit._prose import diff_shape_checks_text, stage_two_bullet
 
 _BULLET_TITLE = "CONTEXT.md currency"
 
@@ -72,64 +70,8 @@ _BIDIRECTIONAL = "adds or removes"
 _NOT_EVERY_TIME = re.compile(r"\bnot\b(?:\W+\w+){0,4}?\W+every\s+time\b", re.IGNORECASE)
 
 
-def _skill_text() -> str:
-    return _SKILL.read_text(encoding="utf-8")
-
-
-def _stage_two(text: str) -> str:
-    """The ``### Stage 2`` body, to the next level-2 heading after it.
-
-    The terminator was the literal ``## Severity`` until #455 retired the
-    severity scale and renamed that section. Naming the *next* heading of the
-    enclosing level rather than one particular title is what keeps six guards
-    from breaking again the next time the section after Stage 2 is renamed —
-    and it is not a widening: ``### Stage 2`` is a level-3 heading inside it, so
-    the slice ends in exactly the same place. Both anchors still fail loudly
-    when they resolve to nothing, which is the property that matters.
-    """
-    start = text.index("### Stage 2")
-    # Past the heading's own line. ``^## `` cannot match ``### Stage 2`` at any
-    # offset: the third character is a hash rather than a space, and ``^`` under
-    # MULTILINE anchors only at a line start, so no interior offset is even a
-    # candidate — measured, not assumed. Skipping the line is therefore a bound
-    # on the *next* heading style rather than a repair of this one: it keeps the
-    # search from ever being asked about the anchor line, so a level-2 anchor
-    # would not resolve to offset zero and hand every assertion below an empty
-    # slice, which reads as an absent bullet rather than as a broken slicer.
-    after = text.index("\n", start) + 1
-    end = re.search(r"^## ", text[after:], re.MULTILINE)
-    assert end, (
-        "`skills/review-discipline/references/diff-shape-checks.md` has no "
-        "level-2 heading after `### Stage 2` — the slice every guard below "
-        "reads would run to the end of the file"
-    )
-    return text[start : after + end.start()]
-
-
-def _stage_two_bullet(text: str, title: str) -> str:
-    """The Stage-2 ``- **<title>**`` bullet, sliced to the next bullet or heading.
-
-    The window is the predicate: a bullet-wide term set read over the whole
-    ``### Stage 2`` body would be satisfied by any of the fourteen neighbouring
-    rules, which is the over-wide unit ``craft.md`` → *The text unit is part of
-    the predicate* names. Anchoring on the **title** rather than on a
-    neighbour's position also keeps the slice correct when a bullet is inserted
-    (``craft.md`` → *An ordinal reference into an enumeration is invalidated by
-    a correct insertion*).
-    """
-    stage_two = _stage_two(text)
-    m = re.search(rf"^- \*\*{re.escape(title)}\*\*", stage_two, re.MULTILINE)
-    assert m, (
-        f"`skills/review-discipline/references/diff-shape-checks.md` Stage 2 has no "
-        f"`- **{title}**` bullet — the anchor every assertion below reads is gone"
-    )
-    rest = stage_two[m.start() :]
-    nxt = re.search(r"^(?:- \*\*|#{2,3} )", rest[1:], re.MULTILINE)
-    return rest[: nxt.start() + 1] if nxt else rest
-
-
 def _context_currency_bullet(text: str) -> str:
-    return _stage_two_bullet(text, _BULLET_TITLE)
+    return stage_two_bullet(text, _BULLET_TITLE)
 
 
 def test_the_context_currency_trigger_stays_narrow_and_bidirectional() -> None:
@@ -141,7 +83,7 @@ def test_the_context_currency_trigger_stays_narrow_and_bidirectional() -> None:
     produces — fails on the negation window, which no co-occurrence check can
     see.
     """
-    bullet = _context_currency_bullet(_skill_text()).lower()
+    bullet = _context_currency_bullet(diff_shape_checks_text()).lower()
 
     missing = [c for c in _TRIGGER_CONDITIONS if c not in bullet]
     assert not missing, (

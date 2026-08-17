@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
-REGISTRY = ROOT / "registry.yaml"
+from tests.unit._prose import REPO_ROOT
+
+REGISTRY = REPO_ROOT / "registry.yaml"
 
 #: A root document and the conditional references it links one level down. The
 #: ``commands/harness.md`` tree was the fourth entry until #435 retired the
@@ -58,7 +58,7 @@ HOT_SKILL_CORE_TOKEN_CAP = 5_000
 
 
 def _text(relative: str) -> str:
-    return (ROOT / relative).read_text(encoding="utf-8")
+    return (REPO_ROOT / relative).read_text(encoding="utf-8")
 
 
 def _assert_within_budget(subject: str, measured: float, cap: int) -> None:
@@ -79,7 +79,7 @@ def _assert_within_budget(subject: str, measured: float, cap: int) -> None:
 
 
 def _estimated_tokens(*relative_paths: str) -> float:
-    return sum(len((ROOT / path).read_bytes()) for path in relative_paths) / 4
+    return sum(len((REPO_ROOT / path).read_bytes()) for path in relative_paths) / 4
 
 
 def _registry_entry(relative: str) -> re.Match[str] | None:
@@ -111,19 +111,19 @@ def test_required_reference_roots_link_directly_to_every_conditional_file() -> N
     for root, references in REFERENCE_TREES.items():
         root_text = _text(root)
         for reference in references:
-            assert (ROOT / reference).is_file(), f"missing required reference {reference}"
+            assert (REPO_ROOT / reference).is_file(), f"missing required reference {reference}"
             assert reference in root_text, f"{root} does not directly link {reference}"
 
 
 def test_every_conditional_reference_is_versioned_registered_and_non_orphaned() -> None:
     expected = {reference for references in REFERENCE_TREES.values() for reference in references}
     discovered = {
-        path.relative_to(ROOT).as_posix()
+        path.relative_to(REPO_ROOT).as_posix()
         for pattern in (
             "skills/code-quality/references/*.md",
             "skills/review-discipline/references/*.md",
         )
-        for path in ROOT.glob(pattern)
+        for path in REPO_ROOT.glob(pattern)
     }
     assert expected, "the conditional-reference set is empty — this sweep measures nothing"
     assert discovered == expected, (

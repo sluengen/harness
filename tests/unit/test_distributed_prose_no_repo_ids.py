@@ -52,17 +52,10 @@ from pathlib import Path
 
 import pytest
 
-from tests._gitutil import tracked_files_under
+from tests.unit._prose import REPO_ROOT, is_registered, registered_prose_files
 
-# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_HOOK = _REPO_ROOT / "hooks" / "guidance-freshness.js"
-_REGISTRY = _REPO_ROOT / "registry.yaml"
-
-#: The universal-prose directories — the hook's ``PROSE`` set. Leaks are
-#: leak-checked only inside these (``hooks`` / ``settings`` are distributed but
-#: not prose).
-_PROSE_DIRS = ("skills", "agents", "commands", "process", "templates")
+_HOOK = REPO_ROOT / "hooks" / "guidance-freshness.js"
+_REGISTRY = REPO_ROOT / "registry.yaml"
 
 
 def _parse_literal(hook_src: str, name: str) -> tuple[str, str]:
@@ -115,29 +108,6 @@ def _leaked_ids(text: str) -> list[str]:
     prefixed = {m.group(0) for m in _TICKET.finditer(text) if m.group(1) not in _STD}
     hashed = {m.group(0) for m in _HASH_TICKET.finditer(_CODE_FENCE.sub("", text))}
     return sorted(prefixed | hashed)
-
-
-def _is_registered(rel_path: str, registry_src: str) -> bool:
-    """Whether ``rel_path`` is a member of ``registry.yaml``'s files block.
-
-    Mirrors the hook's ``registryMember`` rule (a ``<path>: {`` mapping key)
-    rather than re-deriving it, so source and guard agree on what "distributed"
-    means.
-    """
-    pattern = r"(^|\n)\s*" + re.escape(rel_path) + r":\s*\{"
-    return re.search(pattern, registry_src) is not None
-
-
-def _registered_prose_files() -> list[Path]:
-    """Git-tracked, registry-member files under the universal-prose dirs."""
-    registry_src = _REGISTRY.read_text()
-    found: list[Path] = []
-    for prose_dir in _PROSE_DIRS:
-        for path in sorted(tracked_files_under(prose_dir)):
-            rel = path.relative_to(_REPO_ROOT).as_posix()
-            if _is_registered(rel, registry_src):
-                found.append(path)
-    return found
 
 
 def test_detector_parsed_from_hook() -> None:
@@ -248,7 +218,7 @@ def test_hash_exclusions_hold_over_real_registered_prose() -> None:
     the right-hand class leaves it green. The line-scoped assertion is the one
     that exercises the boundary against real shipped text.
     """
-    rels = {p.relative_to(_REPO_ROOT).as_posix(): p for p in _registered_prose_files()}
+    rels = {p.relative_to(REPO_ROOT).as_posix(): p for p in registered_prose_files()}
 
     tokens = rels["templates/design-system.md"].read_text()
     assert "#2563eb" in tokens, "the hex-colour subject no longer carries a colour"
@@ -346,8 +316,8 @@ def test_registry_member_rule() -> None:
     sweep would silently widen.
     """
     registry_src = _REGISTRY.read_text()
-    assert _is_registered("commands/routine.md", registry_src)
-    assert not _is_registered("commands/does-not-exist.md", registry_src)
+    assert is_registered("commands/routine.md", registry_src)
+    assert not is_registered("commands/does-not-exist.md", registry_src)
 
 
 def test_sweep_covers_registered_prose() -> None:
@@ -356,7 +326,7 @@ def test_sweep_covers_registered_prose() -> None:
     Guards against a collector that finds nothing (registry-path mismatch, wrong
     root), which would make the leak sweep pass without checking anything.
     """
-    rels = {p.relative_to(_REPO_ROOT).as_posix() for p in _registered_prose_files()}
+    rels = {p.relative_to(REPO_ROOT).as_posix() for p in registered_prose_files()}
     assert "commands/routine.md" in rels
     assert any(r.startswith("skills/") for r in rels), "no registered skill prose found"
 
@@ -364,10 +334,10 @@ def test_sweep_covers_registered_prose() -> None:
 def test_no_repo_ids_in_distributed_prose() -> None:
     """No registered universal prose file carries a repo-specific ticket id (AC-3)."""
     violations: list[str] = []
-    for path in _registered_prose_files():
+    for path in registered_prose_files():
         ids = _leaked_ids(path.read_text())
         if ids:
-            rel = path.relative_to(_REPO_ROOT).as_posix()
+            rel = path.relative_to(REPO_ROOT).as_posix()
             violations.append(f"{rel}: {', '.join(ids)}")
 
     assert not violations, (

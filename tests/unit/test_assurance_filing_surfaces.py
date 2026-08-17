@@ -10,8 +10,9 @@ that every registered file's version stamp and registry entry moved in step.
 The two split at 750 lines rather than by taste, and the seam is the natural one:
 predicates and the rules they measure on one side, the derived corpus and the
 per-file sweeps on the other. Every predicate this module uses is **imported**
-from the rubric module — a control or a sweep that re-implemented a predicate
-would stop protecting the one the other file's assertions call (#179/#327).
+from :mod:`tests.unit._prose`, the neutral home #467 gave them — a control or a
+sweep that re-implemented a predicate would stop protecting the one the other
+file's assertions call (#179/#327).
 
 **AC-4's subject set is derived, never listed.** ``registry.yaml``'s ``files:``
 block is the source, because a hand-maintained list of filing surfaces is the
@@ -28,66 +29,29 @@ from collections.abc import Callable
 
 import pytest
 
-from tests.unit.test_assurance_filing_rubric import (
-    _ASSURANCE,
-    _EXACTLY_ONE,
-    _GITHUB_SKILL,
-    _LINEAR_SKILL,
-    _REGISTRY,
-    _RUBRIC_HOME,
-    _RUBRIC_SECTION_TITLE,
-    _TRACKER_SKILL,
+from tests.unit._prose import (
+    ASSURANCE,
     ASSURANCE_LABEL_PREFIX,
     ASSURANCE_LEVELS,
-    _delegates_the_level_choice,
-    _read,
-    _registered_markdown,
-    _section,
-    _sentences,
-    _states_an_incomplete_filing,
+    EXACTLY_ONE,
+    GITHUB_SKILL,
+    LINEAR_SKILL,
+    REGISTRY,
+    RUBRIC_HOME,
+    RUBRIC_SECTION_TITLE,
+    TRACKER_SKILL,
+    delegates_the_level_choice,
+    filing_units,
+    read,
+    registered_markdown,
+    section,
+    sentences,
+    states_an_incomplete_filing,
 )
 
 # ---------------------------------------------------------------------------
 # AC-4 — the filing-surface set is derived, not hand-listed
 # ---------------------------------------------------------------------------
-
-#: Prose that instructs an agent to *file an issue* — the three spellings the
-#: tree actually uses, lifted from it rather than invented.
-_FILES_AN_ISSUE = re.compile(
-    r"`tracker\.create`"
-    r"|(?:creat\w+|file[sd]?)\b[^.]{0,120}?through (?:the )?`tracker`"
-    r"|`tracker` skill'?s `create`",
-    re.IGNORECASE,
-)
-
-
-def _instruction_units(text: str) -> list[str]:
-    """``text`` split into instruction units: paragraphs, list items, steps.
-
-    The unit has to be **narrower than the file**. ``commands/propose.md`` names
-    ``spec-authoring`` three times in prose that has nothing to do with filing,
-    so a file-wide pointer check passes there without a pointer ever being
-    written. It also has to be **wider than the line**: every filing instruction
-    in the tree wraps, and ``commands/build.md``'s DEFER bullet carries its verb
-    on one line and its object on the next.
-    """
-    units: list[list[str]] = []
-    current: list[str] = []
-    starts_a_unit = re.compile(r"\s*(?:[-*+]\s|\d+\.\s|#{1,6}\s)")
-    for line in text.splitlines():
-        if current and (not line.strip() or starts_a_unit.match(line)):
-            units.append(current)
-            current = []
-        if line.strip():
-            current.append(line)
-    if current:
-        units.append(current)
-    return [" ".join(" ".join(unit).split()) for unit in units]
-
-
-def _filing_units(text: str) -> list[str]:
-    """The instruction units of ``text`` that tell an agent to file an issue."""
-    return [unit for unit in _instruction_units(text) if _FILES_AN_ISSUE.search(unit)]
 
 
 def _filing_surfaces() -> list[str]:
@@ -98,7 +62,7 @@ def _filing_surfaces() -> list[str]:
     this ticket exists to remove. The ticket named five surfaces; the derivation
     finds seven.
     """
-    return [rel for rel in _registered_markdown() if _filing_units(_read(rel))]
+    return [rel for rel in registered_markdown() if filing_units(read(rel))]
 
 
 #: The surfaces AC-4 names by hand, plus the ones the derivation adds. Named as a
@@ -151,7 +115,7 @@ def test_the_contract_that_defines_create_is_not_a_filing_surface() -> None:
     for a pointer they must not carry.
     """
     surfaces = _filing_surfaces()
-    for rel in (_TRACKER_SKILL, _GITHUB_SKILL, _LINEAR_SKILL):
+    for rel in (TRACKER_SKILL, GITHUB_SKILL, LINEAR_SKILL):
         assert rel not in surfaces, (
             f"{rel} was derived as a filing surface; it *defines* or *implements* "
             f"`create` rather than calling it (#354 AC-4)."
@@ -174,7 +138,7 @@ def test_the_filing_predicate_discriminates() -> None:
         "  queue placement, then ship the independently reviewed tree.",
     )
     for sample in real_spellings:
-        assert _filing_units(sample), (
+        assert filing_units(sample), (
             f"the filing predicate no longer matches a real spelling from the "
             f"tree: {sample[:70]!r} (#354 AC-4)."
         )
@@ -183,7 +147,7 @@ def test_the_filing_predicate_discriminates() -> None:
         "If the as-built record does not exist yet, create it. An explicit deferral must "
         "name the reason."
     )
-    assert not _filing_units(not_a_filing), (
+    assert not filing_units(not_a_filing), (
         "the filing predicate matches a `create` that files nothing — it would "
         "demand a rubric pointer from prose about writing a feature spec (#354)."
     )
@@ -198,10 +162,10 @@ def test_every_filing_surface_delegates_the_level_choice(rel: str) -> None:
     selection rules instead of pointing is caught by the exclusivity assertion
     below, not here.
     """
-    units = _filing_units(_read(rel))
-    assert any(_delegates_the_level_choice(unit) for unit in units), (
+    units = filing_units(read(rel))
+    assert any(delegates_the_level_choice(unit) for unit in units), (
         f"{rel} files an issue without naming `spec-authoring` → "
-        f"*{_RUBRIC_SECTION_TITLE}* in the instruction that files it. Every "
+        f"*{RUBRIC_SECTION_TITLE}* in the instruction that files it. Every "
         f"filing surface delegates the level choice to the one rubric (#354 AC-2). "
         f"Filing instruction(s) found: {[u[:120] for u in units]}"
     )
@@ -227,8 +191,8 @@ _NAMED_WIDENINGS: dict[str, str] = {
 def test_a_named_widening_points_at_the_rubric(rel: str) -> None:
     """AC-2, widened by hand to the two surfaces that *choose* without filing."""
     assert _NAMED_WIDENINGS[rel].strip(), f"the widening for {rel} must state a reason"
-    assert _delegates_the_level_choice(" ".join(_read(rel).split())), (
-        f"{rel} does not name `spec-authoring` → *{_RUBRIC_SECTION_TITLE}*. "
+    assert delegates_the_level_choice(" ".join(read(rel).split())), (
+        f"{rel} does not name `spec-authoring` → *{RUBRIC_SECTION_TITLE}*. "
         f"It is in scope because {_NAMED_WIDENINGS[rel]} (#354 AC-2)."
     )
 
@@ -275,15 +239,15 @@ def test_the_github_create_recipe_carries_the_level_as_a_placeholder() -> None:
     create_fences = [
         block for block in _fenced_blocks(_github_create_recipe()) if "gh issue create" in block
     ]
-    assert create_fences, f"{_GITHUB_SKILL} no longer documents `gh issue create` (#354 AC-3)."
+    assert create_fences, f"{GITHUB_SKILL} no longer documents `gh issue create` (#354 AC-3)."
     assert any(_GH_ASSURANCE_FLAG.search(block) for block in create_fences), (
-        f"{_GITHUB_SKILL}'s create step does not apply "
+        f"{GITHUB_SKILL}'s create step does not apply "
         f"`--label {ASSURANCE_LABEL_PREFIX}<level>`. The protocol makes the label "
         f"a postcondition; the provider is what actually applies it (#354 AC-3)."
     )
     fixed = [block for block in create_fences if _GH_FIXED_LEVEL.search(block)]
     assert not fixed, (
-        f"{_GITHUB_SKILL}'s create step hard-codes an assurance level rather than "
+        f"{GITHUB_SKILL}'s create step hard-codes an assurance level rather than "
         f"passing the chosen one: {fixed}. The recipe maps a value; it never "
         f"selects one (#354 AC-3)."
     )
@@ -297,7 +261,7 @@ def test_the_github_create_recipe_keeps_todo_placement_alongside_the_label() -> 
     while collapsing the three-step sequence fails here rather than passing two
     tests that each saw half the recipe.
     """
-    text = _read(_GITHUB_SKILL)
+    text = read(GITHUB_SKILL)
     for fragment in (
         "gh issue create",
         "gh project item-add",
@@ -305,11 +269,11 @@ def test_the_github_create_recipe_keeps_todo_placement_alongside_the_label() -> 
         "single-select-option-id",
     ):
         assert fragment in text, (
-            f"{_GITHUB_SKILL} must keep `{fragment}` — an item added without an "
+            f"{GITHUB_SKILL} must keep `{fragment}` — an item added without an "
             f"explicit Status is invisible to the Todo-scoped queue read (#354 AC-3)."
         )
     assert _GH_ASSURANCE_FLAG.search(text), (
-        f"{_GITHUB_SKILL} must apply the assurance label alongside the placement "
+        f"{GITHUB_SKILL} must apply the assurance label alongside the placement "
         f"steps — AC-3 requires both, not either (#354 AC-3)."
     )
 
@@ -322,9 +286,9 @@ def _github_create_recipe() -> str:
     file-wide check for a label read-back is satisfied by prose that predates
     this ticket.
     """
-    text = _read(_GITHUB_SKILL)
+    text = read(GITHUB_SKILL)
     match = re.search(r"^### `create`[^\n]*$", text, re.MULTILINE)
-    assert match, f"{_GITHUB_SKILL} has no `create` recipe heading"
+    assert match, f"{GITHUB_SKILL} has no `create` recipe heading"
     rest = text[match.end() :]
     end = re.search(r"^#{2,3} ", rest, re.MULTILINE)
     return rest[: end.start()] if end else rest
@@ -354,7 +318,7 @@ def _reads_the_label_back(text: str) -> list[str]:
     naming labels in separate breaths is satisfied by the ``open`` recipe, which
     read labels back long before this ticket.
     """
-    return [unit for unit in _sentences(text) if _READS_BACK.search(unit) and _LABEL.search(unit)]
+    return [unit for unit in sentences(text) if _READS_BACK.search(unit) and _LABEL.search(unit)]
 
 
 def test_the_read_back_predicate_discriminates() -> None:
@@ -394,7 +358,7 @@ def _linear_create_recipe() -> str:
     Linear "mentions assurance" is satisfied by the taxonomy row while the recipe
     itself says nothing about carrying the id.
     """
-    text = _read(_LINEAR_SKILL)
+    text = read(LINEAR_SKILL)
     start = text.index("**Create an issue**")
     end = text.index("**Comment**", start)
     return text[start:end]
@@ -404,21 +368,21 @@ def test_the_linear_create_recipe_carries_the_resolved_label_id() -> None:
     """AC-3, Linear side: ``issueCreate`` passes the resolved assurance label id."""
     recipe = _linear_create_recipe()
     create_fences = [block for block in _fenced_blocks(recipe) if "issueCreate" in block]
-    assert create_fences, f"{_LINEAR_SKILL} no longer documents `issueCreate` (#354 AC-3)."
+    assert create_fences, f"{LINEAR_SKILL} no longer documents `issueCreate` (#354 AC-3)."
     assert any("labelIds" in block for block in create_fences), (
-        f"{_LINEAR_SKILL}'s `issueCreate` recipe carries no `labelIds` — the "
+        f"{LINEAR_SKILL}'s `issueCreate` recipe carries no `labelIds` — the "
         f"assurance label has no way onto the issue (#354 AC-3)."
     )
-    assert _ASSURANCE.search(recipe), (
-        f"{_LINEAR_SKILL}'s create recipe must state that `labelIds` includes the "
+    assert ASSURANCE.search(recipe), (
+        f"{LINEAR_SKILL}'s create recipe must state that `labelIds` includes the "
         f"resolved `{ASSURANCE_LABEL_PREFIX}<level>` id (#354 AC-3)."
     )
 
 
 @pytest.mark.parametrize(
     ("skill", "recipe"),
-    [(_GITHUB_SKILL, _github_create_recipe), (_LINEAR_SKILL, _linear_create_recipe)],
-    ids=[_GITHUB_SKILL, _LINEAR_SKILL],
+    [(GITHUB_SKILL, _github_create_recipe), (LINEAR_SKILL, _linear_create_recipe)],
+    ids=[GITHUB_SKILL, LINEAR_SKILL],
 )
 def test_each_provider_recipe_states_the_incomplete_filing_outcome(
     skill: str, recipe: Callable[[], str]
@@ -430,7 +394,7 @@ def test_each_provider_recipe_states_the_incomplete_filing_outcome(
     that a label they cannot apply makes the filing incomplete — with the
     identifier, the URL, and a stop.
     """
-    stated = _states_an_incomplete_filing(recipe())
+    stated = states_an_incomplete_filing(recipe())
     assert stated, (
         f"{skill}'s create recipe never names the incomplete-filing outcome. A "
         f"provider that cannot apply exactly one assurance label must report the "
@@ -441,8 +405,8 @@ def test_each_provider_recipe_states_the_incomplete_filing_outcome(
 
 @pytest.mark.parametrize(
     ("skill", "recipe"),
-    [(_GITHUB_SKILL, _github_create_recipe), (_LINEAR_SKILL, _linear_create_recipe)],
-    ids=[_GITHUB_SKILL, _LINEAR_SKILL],
+    [(GITHUB_SKILL, _github_create_recipe), (LINEAR_SKILL, _linear_create_recipe)],
+    ids=[GITHUB_SKILL, LINEAR_SKILL],
 )
 def test_each_provider_recipe_reads_the_label_back_before_reporting(
     skill: str, recipe: Callable[[], str]
@@ -465,15 +429,15 @@ def test_the_linear_labels_table_carries_the_assurance_group() -> None:
     """AC-3, Linear side: the taxonomy names the group and its quantifier."""
     rows = [
         row
-        for row in _section(_read(_LINEAR_SKILL), "## Labels").splitlines()
-        if row.startswith("|") and _ASSURANCE.search(row)
+        for row in section(read(LINEAR_SKILL), "## Labels").splitlines()
+        if row.startswith("|") and ASSURANCE.search(row)
     ]
     assert rows, (
-        f"{_LINEAR_SKILL}'s Labels table has no assurance row — the taxonomy that "
+        f"{LINEAR_SKILL}'s Labels table has no assurance row — the taxonomy that "
         f"tells a filer which labels exist omits the one that is mandatory "
         f"(#354 AC-3)."
     )
-    assert any(_EXACTLY_ONE.search(row) for row in rows), (
+    assert any(EXACTLY_ONE.search(row) for row in rows), (
         f"the assurance row states no quantifier: {rows}. The rule is exactly "
         f"one, always (#354 AC-3/AC-6)."
     )
@@ -493,23 +457,23 @@ def test_the_linear_labels_table_carries_the_assurance_group() -> None:
 
 
 def _registry_entry(rel: str) -> str:
-    match = re.search(rf"^\s{{2}}{re.escape(rel)}:\s*\{{([^}}]*)\}}", _REGISTRY.read_text(), re.M)
+    match = re.search(rf"^\s{{2}}{re.escape(rel)}:\s*\{{([^}}]*)\}}", REGISTRY.read_text(), re.M)
     assert match, f"{rel} has no registry.yaml entry"
     return match.group(1)
 
 
 def test_the_registered_surface_floor_for_version_parity() -> None:
     """FLOOR. A collapsed derivation would parametrize the parity check over nothing."""
-    registered = _registered_markdown()
+    registered = registered_markdown()
     assert len(registered) >= 40, (
         f"only {len(registered)} registered `.md` files parsed — the parity check "
         f"below derives its subjects from this set (#354 AC-9)."
     )
-    for expected in (_RUBRIC_HOME, _TRACKER_SKILL, "templates/change.md"):
+    for expected in (RUBRIC_HOME, TRACKER_SKILL, "templates/change.md"):
         assert expected in registered, f"the parity sweep no longer reaches {expected}"
 
 
-@pytest.mark.parametrize("rel", _registered_markdown(), ids=lambda r: r)
+@pytest.mark.parametrize("rel", registered_markdown(), ids=lambda r: r)
 def test_registered_file_version_matches_its_registry_entry(rel: str) -> None:
     """AC-9: the file's own stamp and the registry agree, for every registered file.
 
@@ -517,7 +481,7 @@ def test_registered_file_version_matches_its_registry_entry(rel: str) -> None:
     the consumer's; a file edited without its stamp bumped ships silently, and a
     stamp bumped in only one of the two places ships a version nobody has.
     """
-    header = re.search(r"guidance:([\w-]+)@([\d.]+)", _read(rel))
+    header = re.search(r"guidance:([\w-]+)@([\d.]+)", read(rel))
     assert header, f"{rel} carries no `guidance:<id>@<version>` header (#354 AC-9)."
     entry = _registry_entry(rel)
     assert f"id: {header.group(1)}" in entry, (

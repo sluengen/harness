@@ -37,10 +37,7 @@ import re
 from pathlib import Path
 
 from tests._gitutil import tracked_files_under
-from tests.unit.test_distributed_prose_no_repo_ids import _registered_prose_files
-
-# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.unit._prose import REPO_ROOT, registered_prose_files
 
 # --- AC-3 -----------------------------------------------------------------
 
@@ -66,7 +63,7 @@ _ATTEMPT_BOUND = re.compile(
 
 
 def _rel(path: Path) -> str:
-    return path.relative_to(_REPO_ROOT).as_posix()
+    return path.relative_to(REPO_ROOT).as_posix()
 
 
 def _paragraphs(text: str) -> list[str]:
@@ -76,7 +73,7 @@ def _paragraphs(text: str) -> list[str]:
 def _base_drift_paragraphs() -> dict[str, list[str]]:
     """``{relpath: [paragraph, …]}`` for every registered file naming the rule."""
     found: dict[str, list[str]] = {}
-    for path in _registered_prose_files():
+    for path in registered_prose_files():
         hits = [p for p in _paragraphs(path.read_text(encoding="utf-8")) if _BASE_DRIFT.search(p)]
         if hits:
             found[_rel(path)] = hits
@@ -233,7 +230,7 @@ def test_the_query_sweep_corpus_is_live_and_excludes_the_recipe_owners() -> None
             "sweep would need an exemption to stay green — and an exemption "
             "token inside a zero-membership sweep is opt-out prose (#456)"
         )
-        text = (_REPO_ROOT / owner).read_text(encoding="utf-8")
+        text = (REPO_ROOT / owner).read_text(encoding="utf-8")
         assert _offending_shapes(text), (
             f"{owner} carries none of the shapes this sweep forbids elsewhere. "
             "The exclusion above is only meaningful while the recipes really do "
@@ -277,7 +274,7 @@ def test_the_query_predicate_catches_a_shape_spliced_into_a_real_command() -> No
     shape legitimately re-entered this file, both halves would report at once
     and neither would be exercised alone.
     """
-    text = (_REPO_ROOT / "commands" / "decision.md").read_text(encoding="utf-8")
+    text = (REPO_ROOT / "commands" / "decision.md").read_text(encoding="utf-8")
     anchor = "**Step 1 — pull the held-for-input pile.**"
     assert anchor in text, (
         "commands/decision.md lost the step this control splices into — re-point "
@@ -303,7 +300,7 @@ def test_routine_does_not_hard_assert_one_merge_mechanism() -> None:
     a repo whose model requires a PR. The phrase is retired vocabulary; whether
     the replacement defers *well* is the review gate's call.
     """
-    text = (_REPO_ROOT / "commands" / "routine.md").read_text(encoding="utf-8")
+    text = (REPO_ROOT / "commands" / "routine.md").read_text(encoding="utf-8")
     assert "merge back by direct push" not in text, (
         "commands/routine.md still hard-asserts a merge mechanism while deferring "
         "to the branch model in the same breath — the model is the instruction "

@@ -31,11 +31,8 @@ concatenations back together — that would make this guard its own false positi
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from tests._gitutil import tracked_files_under
-
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.unit._prose import REPO_ROOT
 
 # Built from fragments on purpose — see the module docstring. Joined at runtime
 # these equal the forbidden literals; split in source, this file stays clean
@@ -56,7 +53,7 @@ def _offenders() -> list[str]:
             text = path.read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
             continue  # a binary / unreadable file cannot carry a text surface
-        rel = path.relative_to(_REPO_ROOT)
+        rel = path.relative_to(REPO_ROOT)
         for lineno, line in enumerate(text.splitlines(), start=1):
             for needle in _FORBIDDEN:
                 if needle in line:

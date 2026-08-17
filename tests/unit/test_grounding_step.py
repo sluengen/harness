@@ -49,9 +49,9 @@ proposal's own risks section states.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-REPO_ROOT = Path(__file__).parent.parent.parent
+from tests.unit._prose import REPO_ROOT
+
 RESEARCHER = REPO_ROOT / "agents" / "researcher.md"
 SPEC_AUTHORING = REPO_ROOT / "skills" / "spec-authoring" / "SKILL.md"
 CHANGE_TEMPLATE = REPO_ROOT / "templates" / "change.md"

@@ -70,13 +70,14 @@ from pathlib import Path
 
 import pytest
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_HOOK = _REPO_ROOT / "hooks" / "git-push-guard.js"
+from tests.unit._prose import REPO_ROOT
+
+_HOOK = REPO_ROOT / "hooks" / "git-push-guard.js"
 #: Both settings surfaces that must wire the hook: the repo's own live config and
 #: the installed-surface template copied into target repos.
 _SETTINGS_FILES = [
-    _REPO_ROOT / ".claude" / "settings.json",
-    _REPO_ROOT / "settings" / "harness.json",
+    REPO_ROOT / ".claude" / "settings.json",
+    REPO_ROOT / "settings" / "harness.json",
 ]
 
 
@@ -303,7 +304,7 @@ def test_hook_is_registered_for_pretooluse_bash(settings_path: Path) -> None:
             return
     raise AssertionError(
         f"git-push-guard.js is not registered under a PreToolUse Bash matcher in "
-        f"{settings_path.relative_to(_REPO_ROOT)}"
+        f"{settings_path.relative_to(REPO_ROOT)}"
     )
 
 

@@ -21,8 +21,7 @@ import re
 from pathlib import Path
 
 from tests._gitutil import tracked_files_under
-
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.unit._prose import REPO_ROOT
 
 # Files whose basename carries a live secret and must never be committed:
 # dotenv files (any suffix), private keys, and key-bundle formats.
@@ -50,7 +49,7 @@ def _is_secret_file(path: Path) -> bool:
 def test_no_env_or_secret_file_is_tracked() -> None:
     """No committed file is a dotenv / private-key / keystore file."""
     offenders = sorted(
-        str(path.relative_to(_REPO_ROOT))
+        str(path.relative_to(REPO_ROOT))
         for path in tracked_files_under(".")
         if _is_secret_file(path)
     )
@@ -69,7 +68,7 @@ def test_gitignore_ignores_env_files() -> None:
     """
     patterns = {
         line.strip()
-        for line in (_REPO_ROOT / ".gitignore").read_text().splitlines()
+        for line in (REPO_ROOT / ".gitignore").read_text().splitlines()
         if line.strip() and not line.lstrip().startswith("#")
     }
     assert ".env" in patterns, ".gitignore must ignore .env"

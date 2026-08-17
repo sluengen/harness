@@ -20,9 +20,9 @@ escape-hatch step, and delegates filing and Todo placement to ``tracker.create``
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-REPO_ROOT = Path(__file__).parent.parent.parent
+from tests.unit._prose import REPO_ROOT
+
 COMMAND = REPO_ROOT / "commands" / "tweak.md"
 REGISTRY = REPO_ROOT / "registry.yaml"
 

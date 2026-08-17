@@ -78,9 +78,9 @@ from pathlib import Path
 import pytest
 
 from tests._gitutil import init_repo, last_commit_date, tracked_files_under
+from tests.unit._prose import REPO_ROOT
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_FEATURES_DIR = _REPO_ROOT / "specs" / "features"
+_FEATURES_DIR = REPO_ROOT / "specs" / "features"
 
 #: The subsystems this repo still has, each of which must carry a feature spec
 #: (AC-1). The slug is the ``specs/features/<slug>.md`` basename.
@@ -109,7 +109,7 @@ def test_feature_spec_exists_and_is_tracked(slug: str) -> None:
     """Each current verb-model subsystem has a tracked feature spec (AC-1)."""
     path = _feature_path(slug)
     assert path.resolve() in _tracked_feature_specs(), (
-        f"expected feature spec {path.relative_to(_REPO_ROOT)} to exist and be "
+        f"expected feature spec {path.relative_to(REPO_ROOT)} to exist and be "
         "git-tracked — AC-1 requires each current verb-model subsystem to carry "
         "a specs/features/<feature>.md as-built record"
     )
@@ -406,5 +406,5 @@ def test_no_dangling_links_in_the_as_built_record() -> None:
     for path in sorted(records):
         for target in _MD_LINK.findall(path.read_text(encoding="utf-8")):
             if not (path.parent / target).resolve().exists():
-                dangling.append(f"{path.relative_to(_REPO_ROOT)} -> {target}")
+                dangling.append(f"{path.relative_to(REPO_ROOT)} -> {target}")
     assert not dangling, f"dangling relative .md links in the migrated specs: {dangling}"

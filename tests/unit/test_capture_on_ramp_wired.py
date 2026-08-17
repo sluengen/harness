@@ -44,9 +44,9 @@ to keep in step.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-REPO_ROOT = Path(__file__).parent.parent.parent
+from tests.unit._prose import REPO_ROOT
+
 PROCESS_DOC = REPO_ROOT / "process" / "harness.md"
 SPEC_DRIVEN = REPO_ROOT / "skills" / "spec-driven-development" / "SKILL.md"
 SPEC_AUTHORING = REPO_ROOT / "skills" / "spec-authoring" / "SKILL.md"

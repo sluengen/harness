@@ -37,13 +37,10 @@ says the right thing around these terms. That is the reviewer's.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-from tests.unit.test_assurance_filing_rubric import _section
+from tests.unit._prose import REPO_ROOT, section
 
-# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_CODE_QUALITY = _REPO_ROOT / "skills" / "code-quality" / "SKILL.md"
+_CODE_QUALITY = REPO_ROOT / "skills" / "code-quality" / "SKILL.md"
 
 _PART_A = "## Part A — Scope"
 _HEADING = "### An extraction sweeps for its copies"
@@ -67,11 +64,11 @@ _IS_NOT_COMPLETE = re.compile(
 def _rule() -> str:
     """``### An extraction sweeps for its copies``, sliced from inside Part A.
 
-    ``_section`` is imported rather than re-spelled, and the two calls are
+    ``section`` is imported rather than re-spelled, and the two calls are
     nested so the placement claim lives in the anchor instead of a second test.
     """
     text = _CODE_QUALITY.read_text(encoding="utf-8")
-    return _section(_section(text, _PART_A), _HEADING)
+    return section(section(text, _PART_A), _HEADING)
 
 
 def test_the_extraction_sweep_rule_has_a_home() -> None:

@@ -83,11 +83,9 @@ import re
 from pathlib import Path
 
 from tests._gitutil import tracked_files_under
-from tests.unit.test_review_discipline_asbuilt_record_gate import _obligation_bullets
+from tests.unit._prose import REPO_ROOT, obligation_bullets
 
-# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_REGISTRY = _REPO_ROOT / "registry.yaml"
+_REGISTRY = REPO_ROOT / "registry.yaml"
 
 #: The universal-prose directories, as ``test_distributed_prose_no_repo_ids``
 #: scopes them, plus ``templates/`` — unlike #329's literal ban, nothing here is
@@ -160,7 +158,7 @@ def _registered_prose_files() -> list[Path]:
     found: list[Path] = []
     for prose_dir in _PROSE_DIRS:
         for path in sorted(tracked_files_under(prose_dir)):
-            rel = path.relative_to(_REPO_ROOT).as_posix()
+            rel = path.relative_to(REPO_ROOT).as_posix()
             if _is_registered(rel, registry_src):
                 found.append(path)
     return found
@@ -170,17 +168,17 @@ def _swept_files() -> list[Path]:
     """The AC-2 subject set: registered prose plus the entry-doc mirrors."""
     files = _registered_prose_files()
     files.extend(
-        _REPO_ROOT / name for name in _ENTRY_DOCS if (_REPO_ROOT / name).is_file()
+        REPO_ROOT / name for name in _ENTRY_DOCS if (REPO_ROOT / name).is_file()
     )
     return files
 
 
 def _rel(path: Path) -> str:
-    return path.relative_to(_REPO_ROOT).as_posix()
+    return path.relative_to(REPO_ROOT).as_posix()
 
 
 def _text(rel: str) -> str:
-    return (_REPO_ROOT / rel).read_text(encoding="utf-8")
+    return (REPO_ROOT / rel).read_text(encoding="utf-8")
 
 
 #: The ordering rule's own clause: nothing lands after the certifying gate. The
@@ -274,7 +272,7 @@ def test_the_retired_ordering_predicate_admits_unrelated_last_commits() -> None:
 
 def _ordering_bullets() -> list[str]:
     """Reviewer-obligation bullets naming the final-evidence ordering rule."""
-    return [b for b in _obligation_bullets() if _RULE_NAME in b.lower()]
+    return [b for b in obligation_bullets() if _RULE_NAME in b.lower()]
 
 
 def test_the_home_states_the_ordering_rule() -> None:

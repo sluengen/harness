@@ -21,10 +21,10 @@ without pretending to evaluate GitHub's event resolution.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_CI_WORKFLOW = _REPO_ROOT / ".github" / "workflows" / "ci.yml"
+from tests.unit._prose import REPO_ROOT
+
+_CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 
 #: The branches CI must fire on: ``main`` (releases) and ``dev`` (every merge).
 _REQUIRED_BRANCHES = ("main", "dev")

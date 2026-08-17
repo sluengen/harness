@@ -44,19 +44,17 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from tests.unit.test_assurance_filing_rubric import _section
+from tests.unit._prose import REPO_ROOT, section
 
-# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_CODE_QUALITY = _REPO_ROOT / "skills" / "code-quality" / "SKILL.md"
+_CODE_QUALITY = REPO_ROOT / "skills" / "code-quality" / "SKILL.md"
 _REVIEW_DISCIPLINE = (
-    _REPO_ROOT
+    REPO_ROOT
     / "skills"
     / "review-discipline"
     / "references"
     / "diff-shape-checks.md"
 )
-_REGISTRY = _REPO_ROOT / "registry.yaml"
+_REGISTRY = REPO_ROOT / "registry.yaml"
 
 _HEADER_RE = re.compile(r"<!--\s*guidance:[\w-]+@([\d.]+)\s*-->")
 
@@ -99,11 +97,11 @@ def _registry_version(rel_path: str) -> str:
 def _builder_rule() -> str:
     """``### Placeholder and stub gating``, sliced from inside ``## Part A``.
 
-    ``_section`` is imported rather than re-spelled, and the two calls are
+    ``section`` is imported rather than re-spelled, and the two calls are
     nested so the placement claim lives in the anchor instead of a second test.
     """
     text = _CODE_QUALITY.read_text(encoding="utf-8")
-    return _section(_section(text, _PART_A), _HEADING)
+    return section(section(text, _PART_A), _HEADING)
 
 
 def _reviewer_bullet() -> str:
@@ -113,7 +111,7 @@ def _reviewer_bullet() -> str:
     is satisfied by a neighbouring bullet's vocabulary and would stay green with
     this rule deleted.
     """
-    stage_two = _section(_REVIEW_DISCIPLINE.read_text(encoding="utf-8"), _STAGE_TWO)
+    stage_two = section(_REVIEW_DISCIPLINE.read_text(encoding="utf-8"), _STAGE_TWO)
     m = re.search(r"^- \*\*[^\n]*(?:laceholder|stub)[^\n]*$", stage_two, re.MULTILINE)
     assert m, (
         "review-discipline's Stage 2 diff-shape checks have no bullet naming the "

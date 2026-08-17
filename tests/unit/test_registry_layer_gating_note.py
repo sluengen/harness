@@ -32,9 +32,9 @@ guard over prose owns structure and negative space, never meaning*; ADR 0016).
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.unit._prose import REPO_ROOT
+
 REGISTRY = REPO_ROOT / "registry.yaml"
 
 #: The stale claim the dry-run agent acted on — must not reappear.

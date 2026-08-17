@@ -24,7 +24,8 @@ import posixpath
 import re
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).parent.parent.parent
+from tests.unit._prose import REPO_ROOT
+
 REGISTRY = REPO_ROOT / "registry.yaml"
 
 #: Top-level directories that are the harness *app* — never the installed

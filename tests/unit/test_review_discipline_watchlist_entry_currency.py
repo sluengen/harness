@@ -20,7 +20,7 @@ negative space, never meaning*), plus the slicer-boundary controls that were
 already the target shape:
 
 1. **Anchor** — the ``- **Architecture watchlist**`` bullet, sliced by
-   :func:`~tests.unit.test_architecture_watchlist._review_watchlist_bullet`, and
+   :func:`~tests.unit._prose.review_watchlist_bullet`, and
    narrowed again to the *sentences* naming the decomposition. The narrowing is
    load-bearing: the bullet is nearly two thousand characters and holds four
    separate obligations, so a bullet-wide term set is the over-wide unit
@@ -43,44 +43,25 @@ What went: the four-term bullet-wide pin (``entry`` / ``decomposition`` /
 ``test_review_discipline_extraction_test_home``'s severity sweep, which asserts
 the other three grades absent; the rest were positive-meaning pins.
 
-**This module exports ``_sentences``**, imported by
-``test_review_discipline_extraction_test_home`` and
-``test_v4_records_only_what_remains``.
+**``sentences_on_break`` lives in :mod:`tests.unit._prose`** since #467, read
+from there by this module, by ``test_review_discipline_extraction_test_home`` and
+by ``test_v4_records_only_what_remains``.
 """
 
 from __future__ import annotations
 
-import re
-from pathlib import Path
+from tests.unit._prose import REPO_ROOT, review_watchlist_bullet, sentences_on_break
 
-# Reuse the slicer rather than declaring a fourth private copy: a copy can drift
-# from the anchor it slices on and produce a confident false green — the exact
-# argument #272's guard recorded. This one carries its own CAL-815 assertion, so
-# a renamed or deleted bullet fires there instead of silently measuring nothing.
-from tests.unit.test_architecture_watchlist import _review_watchlist_bullet
-
-# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_SKILL = _REPO_ROOT / "skills" / "review-discipline" / "references" / "diff-shape-checks.md"
+_SKILL = REPO_ROOT / "skills" / "review-discipline" / "references" / "diff-shape-checks.md"
 
 # The neighbouring bullet. Its title must never appear inside our slice — if it
 # does, the slicer over-ran and every token below could be satisfied by *that*
 # bullet's prose instead of ours.
 _NEIGHBOUR_TITLE = "**CONTEXT.md currency**"
 
-# Split on sentence boundaries, requiring the next sentence to open with a
-# capital, a backtick, or an emphasis marker. That keeps `CONTEXT.md`,
-# `architecture_watchlist.files` and `code-quality`-style references intact,
-# since each continues in lower case.
-_SENTENCE_BREAK = re.compile(r"(?<=[.!?])\s+(?=[A-Z`*(])")
-
 
 def _bullet() -> str:
-    return _review_watchlist_bullet(_SKILL.read_text(encoding="utf-8"))
-
-
-def _sentences(text: str) -> list[str]:
-    return [s.strip() for s in _SENTENCE_BREAK.split(text.strip()) if s.strip()]
+    return review_watchlist_bullet(_SKILL.read_text(encoding="utf-8"))
 
 
 def test_the_entry_refresh_is_owed_on_a_seam_extraction() -> None:
@@ -95,7 +76,7 @@ def test_the_entry_refresh_is_owed_on_a_seam_extraction() -> None:
     drift toward "read `CONTEXT.md` every time" the neighbouring bullet rules
     out in its own text.
     """
-    bearing = [s for s in _sentences(_bullet()) if "decomposition" in s.lower()]
+    bearing = [s for s in sentences_on_break(_bullet()) if "decomposition" in s.lower()]
     assert bearing, (
         "no sentence in the Architecture watchlist bullet names the entry's "
         "decomposition — the obligation this clause adds is missing (#273)"
@@ -150,7 +131,7 @@ def test_the_bullet_still_ends_with_its_no_op_scope_statement() -> None:
     structural way this edit could go wrong is stranding the clause *after* it,
     which would read as obliging a repo that has no watchlist at all.
     """
-    sentences = _sentences(_bullet())
+    sentences = sentences_on_break(_bullet())
     assert sentences, "the Architecture watchlist bullet is empty (#273)"
     last = sentences[-1].lower()
     assert "skips this check" in last and "no-op" in last, (

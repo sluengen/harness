@@ -37,11 +37,10 @@ placement pin over this one section collapse into a single tripwire:
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_SKILL = _REPO_ROOT / "skills" / "code-quality" / "references" / "specialized-verification.md"
+from tests.unit._prose import REPO_ROOT
+
+_SKILL = REPO_ROOT / "skills" / "code-quality" / "references" / "specialized-verification.md"
 
 _HEADING = "### Re-deriving what another layer owns is an auditable choice"
 

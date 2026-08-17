@@ -36,9 +36,9 @@ the rule the reviewer checks against is on record.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-REPO_ROOT = Path(__file__).parent.parent.parent
+from tests.unit._prose import REPO_ROOT
+
 SPEC_AUTHORING = REPO_ROOT / "skills" / "spec-authoring" / "SKILL.md"
 
 #: The rule's direction, anchored to the noun it governs. What the rule says is

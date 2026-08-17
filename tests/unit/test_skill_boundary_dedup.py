@@ -26,42 +26,15 @@ redundant (the over-engineering lens ``review-discipline`` Stage 2 names).
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 from tests._gitutil import tracked_files_under
+from tests.unit._prose import REPO_ROOT, section_by_title
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 SKILLS = REPO_ROOT / "skills"
 
 
 def _read(rel: str) -> str:
     return (SKILLS / rel).read_text()
-
-
-def _section(text: str, heading: str) -> str:
-    """The body of a Markdown section.
-
-    From the line whose stripped heading text equals ``heading`` (at any ``#``
-    level) up to the next heading of the same-or-higher level, a horizontal
-    rule, or EOF. Used to scope an assertion to one subsection so a cross-ref in
-    a *different* part of the file cannot satisfy it.
-    """
-    lines = text.splitlines()
-    start: int | None = None
-    level = 0
-    for i, line in enumerate(lines):
-        m = re.match(r"(#+)\s+(.*)$", line)
-        if m and m.group(2).strip() == heading:
-            start, level = i + 1, len(m.group(1))
-            break
-    assert start is not None, f"section heading not found: {heading!r}"
-    body: list[str] = []
-    for line in lines[start:]:
-        m = re.match(r"(#+)\s+", line)
-        if (m and len(m.group(1)) <= level) or line.strip() == "---":
-            break
-        body.append(line)
-    return "\n".join(body)
 
 
 def test_decision_mechanics_single_home() -> None:
@@ -104,13 +77,13 @@ def test_smallest_change_and_rule_of_three_reference_owner() -> None:
 
     # code-quality references the owner from BOTH operational subsections, so
     # the principle has one home and a pointer from the application.
-    smallest = _section(cq, "Smallest working solution")
+    smallest = section_by_title(cq, "Smallest working solution")
     assert "engineering-principles" in smallest, (
         "code-quality's 'Smallest working solution' must point to "
         "engineering-principles (the owner of the smallest-change principle), "
         "not restate it uncross-referenced (CAL-718 / SYSTEM-4)."
     )
-    third = _section(cq, "Extract on the third strike")
+    third = section_by_title(cq, "Extract on the third strike")
     assert "engineering-principles" in third, (
         "code-quality's 'Extract on the third strike' must point to "
         "engineering-principles (the owner of the rule of three) (CAL-718 / SYSTEM-4)."

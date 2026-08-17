@@ -33,8 +33,7 @@ from pathlib import Path
 import pytest
 
 from tests._gitutil import tracked_files_under
-
-REPO_ROOT = Path(__file__).parent.parent.parent
+from tests.unit._prose import REPO_ROOT
 
 BOOTSTRAP_DOCS = [
     REPO_ROOT / "README.md",

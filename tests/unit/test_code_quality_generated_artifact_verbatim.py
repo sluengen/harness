@@ -55,13 +55,10 @@ separates from the rule.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-from tests.unit.test_assurance_filing_rubric import _section
+from tests.unit._prose import REPO_ROOT, section
 
-# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_SKILL = _REPO_ROOT / "skills" / "code-quality" / "SKILL.md"
+_SKILL = REPO_ROOT / "skills" / "code-quality" / "SKILL.md"
 
 _PART_A = "## Part A — Scope"
 _HEADING = "### Read the generated artifact, don't re-derive it"
@@ -76,11 +73,11 @@ _NEVER_RE_DERIVE = re.compile(r"\bnever\s+re-derive\b", re.IGNORECASE)
 def _rule() -> str:
     """The subsection, sliced from inside ``## Part A — Scope``.
 
-    ``_section`` is imported rather than re-spelled, and the two calls are
+    ``section`` is imported rather than re-spelled, and the two calls are
     nested so the placement claim lives in the anchor instead of a second test.
     """
     text = _SKILL.read_text(encoding="utf-8")
-    return _section(_section(text, _PART_A), _HEADING)
+    return section(section(text, _PART_A), _HEADING)
 
 
 def test_the_read_the_artifact_rule_has_a_home() -> None:

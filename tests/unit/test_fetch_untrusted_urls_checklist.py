@@ -38,11 +38,10 @@ duplicate parity guard is added here.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_CODE_QUALITY = _REPO_ROOT / "skills" / "code-quality" / "references" / "untrusted-fetch.md"
+from tests.unit._prose import REPO_ROOT
+
+_CODE_QUALITY = REPO_ROOT / "skills" / "code-quality" / "references" / "untrusted-fetch.md"
 
 
 def _fetch_section() -> str:
@@ -107,7 +106,7 @@ def test_the_untrusted_fetch_checklist_keeps_its_four_checks() -> None:
 
 def test_fetch_subsection_is_directly_linked_from_part_b() -> None:
     """The conditional checklist remains reachable from Part B (AC-1)."""
-    core = _REPO_ROOT / "skills" / "code-quality" / "SKILL.md"
+    core = REPO_ROOT / "skills" / "code-quality" / "SKILL.md"
     text = core.read_text()
     part_b = text.index("## Part B")
     part_c = text.index("## Part C", part_b)

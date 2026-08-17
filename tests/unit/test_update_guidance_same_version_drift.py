@@ -38,7 +38,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.unit._prose import REPO_ROOT, update_guidance_between
+
 UPDATE_GUIDANCE = REPO_ROOT / "commands" / "update-guidance.md"
 DECISION = REPO_ROOT / "commands" / "decision.md"
 REGISTRY = REPO_ROOT / "registry.yaml"
@@ -81,11 +82,6 @@ def _table_row(state: str) -> str:
     )
     assert match, f"classification table has no {state} row"
     return match.group("row")
-
-
-def _section(start: str, end: str) -> str:
-    text = _text(UPDATE_GUIDANCE)
-    return text[text.index(start) : text.index(end)]
 
 
 def _units_naming(section: str, term: str) -> list[str]:
@@ -190,7 +186,7 @@ def test_source_drift_fails_closed() -> None:
         "exists so the update halts before installing anything (#407)."
     )
 
-    classification = _section("### 2.", "### 3.")
+    classification = update_guidance_between("### 2.", "### 3.")
     refusals = [u for u in _units_naming(classification, _DRIFT) if _REFUSES_ACCEPTANCE.search(u)]
     assert refusals, (
         f"step 2 names {_DRIFT} but never refuses it: no paragraph says it is not "
@@ -200,7 +196,7 @@ def test_source_drift_fails_closed() -> None:
         "installed (#407)."
     )
 
-    apply_step = _section("### 3.", "### 4.")
+    apply_step = update_guidance_between("### 3.", "### 4.")
     consequences = [u for u in _units_naming(apply_step, _DRIFT) if "unchanged" in u.lower()]
     assert consequences, (
         f"step 3 does not state that {_DRIFT} leaves the installed files and the "

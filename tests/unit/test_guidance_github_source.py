@@ -22,9 +22,9 @@ documented, and stays documented:
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.unit._prose import REPO_ROOT
+
 REGISTRY = REPO_ROOT / "registry.yaml"
 UPDATE_GUIDANCE = REPO_ROOT / "commands" / "update-guidance.md"
 BOOTSTRAP = REPO_ROOT / "BOOTSTRAP.md"

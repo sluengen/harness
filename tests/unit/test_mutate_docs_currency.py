@@ -44,15 +44,15 @@ from pathlib import Path
 import pytest
 
 from tests._gitutil import tracked_files_under
+from tests.unit._prose import REPO_ROOT
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(_REPO_ROOT / "scripts"))
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import mutate  # noqa: E402
 
-_CONTRIBUTING = _REPO_ROOT / "CONTRIBUTING.md"
-_CONTEXT = _REPO_ROOT / "CONTEXT.md"
-_MODULE = _REPO_ROOT / "scripts" / "mutate.py"
+_CONTRIBUTING = REPO_ROOT / "CONTRIBUTING.md"
+_CONTEXT = REPO_ROOT / "CONTEXT.md"
+_MODULE = REPO_ROOT / "scripts" / "mutate.py"
 
 #: The mutation bullet's lead line. A named literal, which is the *floor*, not
 #: the subject set — the members checked inside the span are all derived.
@@ -301,7 +301,7 @@ def test_every_path_the_route_names_exists_in_the_tracked_tree(relpath: str) -> 
     Tracked rather than on-disk: a path that resolves only in the author's
     working copy is not published to anyone (the git-aware-guard principle).
     """
-    tracked = tracked_files_under(relpath, repo_root=_REPO_ROOT)
+    tracked = tracked_files_under(relpath, repo_root=REPO_ROOT)
 
     assert tracked, f"{relpath} is named as a route but is not tracked by git"
 

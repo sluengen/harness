@@ -43,9 +43,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from tests.unit.test_assess_filing_placement import _step_two
+from tests.unit._prose import REPO_ROOT, assess_step_two
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 ASSESS = REPO_ROOT / "commands" / "assess.md"
 STEWARD = REPO_ROOT / "agents" / "steward.md"
 ARCHITECTURE = REPO_ROOT / "skills" / "architecture" / "SKILL.md"
@@ -153,7 +152,7 @@ def _architecture_filing_rules() -> list[str]:
     """Step-2 paragraphs stating the ``architecture`` scope's filing rule."""
     return [
         " ".join(block.split())
-        for block in _step_two().split("\n\n")
+        for block in assess_step_two().split("\n\n")
         if "architecture" in block.lower() and block.strip()
     ]
 

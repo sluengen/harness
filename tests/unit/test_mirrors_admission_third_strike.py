@@ -55,23 +55,17 @@ distinguishable from the rule by any regex, and is the reviewer's.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-from tests.unit.test_assurance_filing_rubric import _section
+from tests.unit._prose import REPO_ROOT, admission_paragraph, section
 
-# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_CODE_QUALITY = _REPO_ROOT / "skills" / "code-quality" / "SKILL.md"
 _REVIEW_DISCIPLINE = (
-    _REPO_ROOT
+    REPO_ROOT
     / "skills"
     / "review-discipline"
     / "references"
     / "diff-shape-checks.md"
 )
 
-_PART_B = "## Part B — Structure"
-_HEADING = "### Extract on the third strike"
 _STAGE_TWO = "### Stage 2 — Diff-shape checks"
 
 #: The terms the admission trigger cannot be stated without: the three spellings
@@ -103,49 +97,13 @@ _DISMISSES_THE_COUNT_OR_SIZE = re.compile(
 _BULLET_TERMS = (r"\bnon-blocking\b", r"3\+")
 
 
-def _third_strike_section() -> str:
-    """``### Extract on the third strike``, sliced from inside ``## Part B``.
-
-    ``_section`` is imported rather than re-spelled, and the two calls are
-    nested so Part B membership lives in the anchor instead of a second test.
-    """
-    text = _CODE_QUALITY.read_text(encoding="utf-8")
-    return _section(_section(text, _PART_B), _HEADING)
-
-
-def _admission_paragraph() -> str:
-    """The one paragraph in that section stating the admission trigger.
-
-    Selected by content, never by index: an ordinal into the section is
-    invalidated by a correct insertion (``craft.md`` → *An ordinal reference
-    into an enumeration is invalidated by a correct insertion*), and the section
-    has already grown a paragraph once (#231's second-copy rule).
-    """
-    paragraphs = [
-        block.strip()
-        for block in _third_strike_section().split("\n\n")
-        if block.strip()
-    ]
-    hits = [p for p in paragraphs if re.search(r"\badmission\b", p, re.IGNORECASE)]
-    assert hits, (
-        f"no paragraph in {_HEADING!r} states the mirrors/duplicates/kept-in-sync "
-        "comment as an explicit *admission* of duplication (CAL-800 AC-1)."
-    )
-    assert len(hits) == 1, (
-        f"{_HEADING!r} states the admission trigger across {len(hits)} paragraphs; "
-        "this guard's window can no longer tell which one it is pinning, and a term "
-        "in one would satisfy an assertion about the other."
-    )
-    return hits[0]
-
-
 def _admission_bullet() -> str:
     """The Stage 2 bullet carrying the admission-comment finding.
 
     Sliced to the bullet, never the file: the diff-shape reference is a list of
     a dozen checks and any of them can supply a stray term.
     """
-    stage_two = _section(_REVIEW_DISCIPLINE.read_text(encoding="utf-8"), _STAGE_TWO)
+    stage_two = section(_REVIEW_DISCIPLINE.read_text(encoding="utf-8"), _STAGE_TWO)
     m = re.search(r"^- \*\*[^\n]*irror[^\n]*$", stage_two, re.MULTILINE)
     assert m, (
         "review-discipline's Stage 2 diff-shape checks have no bullet naming the "
@@ -158,7 +116,7 @@ def _admission_bullet() -> str:
 
 def test_the_builder_home_states_the_admission_trigger() -> None:
     """AC-1: the admission paragraph names its subjects and keeps its polarity."""
-    para = _admission_paragraph()
+    para = admission_paragraph()
 
     missing = [t for t in _TERMS if not re.search(t, para, re.IGNORECASE)]
     assert not missing, (

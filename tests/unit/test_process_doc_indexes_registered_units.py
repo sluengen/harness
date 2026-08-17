@@ -14,11 +14,11 @@ guard closes the *next* omission and not merely those two.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
-PROCESS_DOC = ROOT / "process" / "harness.md"
-REGISTRY = ROOT / "registry.yaml"
+from tests.unit._prose import REPO_ROOT
+
+PROCESS_DOC = REPO_ROOT / "process" / "harness.md"
+REGISTRY = REPO_ROOT / "registry.yaml"
 
 #: A registry entry is one line: two spaces, the path, then an inline mapping
 #: whose first key is the unit's id. ``skills/*/references/*.md`` entries are not

@@ -334,3 +334,45 @@ def tracked_py_sources(
     for base in bases:
         found |= tracked_files_under(base, repo_root=repo_root)
     return sorted(path for path in found if path.suffix == ".py")
+
+
+def git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    """Synchronous git invocation for test setup and assertions.
+
+    ``check=True`` and captured output: a setup step that fails silently makes
+    the assertion after it measure a tree that was never built.
+    """
+    return subprocess.run(
+        ["git", *args],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def init_hermetic_repo(path: Path, *, repo_root: Path = _DEFAULT_REPO_ROOT) -> Path:
+    """``git init`` a repo whose ``info/exclude`` is comments-only, with a
+    tracked `.claude/settings.json` — the real repo's shape, where `.claude/`
+    is itself a tracked directory. That tracked file has to exist *before* any
+    untracked-worktree assertion: otherwise `git status --porcelain` collapses
+    a wholly-untracked `.claude/` into a single `?? .claude/` line and every
+    assertion about a path *under* it passes vacuously, ignored or not.
+
+    A plain :func:`init_repo` still runs on *this* machine, so its default
+    ``info/exclude`` is whatever the local git config templates in — never this
+    repo's `.claude/worktrees/` line (that lives in *this* repo's own
+    `.git/info/exclude`, not the git template), but hermetic on principle: a
+    guard must derive its ignore behaviour from the copied `.gitignore` alone,
+    not from any ambient exclude file.
+    """
+    path.mkdir(parents=True, exist_ok=True)
+    # Branch stated, not inherited from the host's `init.defaultBranch` (#369) —
+    # which is the same hermeticity this fixture already argues for above.
+    git(path, "init", "-q", "-b", "dev")
+    (path / ".gitignore").write_text((repo_root / ".gitignore").read_text())
+    (path / ".claude").mkdir()
+    (path / ".claude" / "settings.json").write_text("{}\n")
+    git(path, "add", ".gitignore", ".claude/settings.json")
+    git(path, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", "init")
+    return path

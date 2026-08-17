@@ -32,8 +32,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-#: ``tests/unit/test_*.py`` -> ``parents[2]`` is the repo (or worktree) root.
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.unit._prose import REPO_ROOT
+
 SCRIPT = REPO_ROOT / "scripts" / "check_landing_page_guidance.py"
 PAGE = REPO_ROOT / "docs" / "index.html"
 REGISTRY = REPO_ROOT / "registry.yaml"

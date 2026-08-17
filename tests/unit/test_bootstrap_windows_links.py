@@ -45,11 +45,11 @@ from __future__ import annotations
 
 import fnmatch
 import re
-from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_BOOTSTRAP = _REPO_ROOT / "BOOTSTRAP.md"
-_REGISTRY = _REPO_ROOT / "registry.yaml"
+from tests.unit._prose import REPO_ROOT
+
+_BOOTSTRAP = REPO_ROOT / "BOOTSTRAP.md"
+_REGISTRY = REPO_ROOT / "registry.yaml"
 
 _TEXT = _BOOTSTRAP.read_text()
 

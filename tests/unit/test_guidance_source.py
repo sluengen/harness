@@ -32,8 +32,8 @@ from pathlib import Path
 import pytest
 
 from tests._gitutil import tracked_files_under
+from tests.unit._prose import REPO_ROOT
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 REGISTRY = REPO_ROOT / "registry.yaml"
 PROCESS_DOC = REPO_ROOT / "process" / "harness.md"
 CONTEXT_TEMPLATE = REPO_ROOT / "templates" / "CONTEXT.template.md"

@@ -51,7 +51,7 @@ import subprocess
 from pathlib import Path
 
 from tests._gitutil import tracked_files_under
-from tests.unit.test_review_discipline_watchlist_entry_currency import _sentences
+from tests.unit._prose import REPO_ROOT, sentences_on_break
 
 # size: over the ceiling on recorded reasoning, not on logic — this module is the
 # AC3 half of a 108,000-line deletion, and the majority of its lines are the
@@ -64,7 +64,6 @@ from tests.unit.test_review_discipline_watchlist_entry_currency import _sentence
 # prose guard is least able to survive. The executable surface — four regexes,
 # five helpers — is well inside the limit.
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 #: This module names every banned token in order to look for it, so it is its own
 #: worst offender and must never be its own subject. The live sweep projects to
@@ -163,7 +162,7 @@ def _tracked_paths() -> tuple[frozenset[str], frozenset[str]]:
     destinations a reader follows and must resolve just as a file does.
     """
     files = frozenset(
-        str(path.relative_to(_REPO_ROOT)) for path in tracked_files_under(".")
+        str(path.relative_to(REPO_ROOT)) for path in tracked_files_under(".")
     )
     directories = frozenset(
         f"{parent}/"
@@ -248,7 +247,7 @@ def test_every_path_the_entry_documents_name_resolves() -> None:
     dangling: list[str] = []
     resolved = 0
     for relpath in _ENTRY_DOCUMENTS:
-        text = (_REPO_ROOT / relpath).read_text(encoding="utf-8")
+        text = (REPO_ROOT / relpath).read_text(encoding="utf-8")
         found, count = _unresolved(text, files=files, directories=directories)
         dangling += [f"{relpath}: {path}" for path in found]
         resolved += count
@@ -261,7 +260,7 @@ def test_every_path_the_entry_documents_name_resolves() -> None:
     # The registry names its paths as YAML keys, which the prose extractor
     # cannot see. Judged against the index rather than the filesystem, so a
     # deleted-but-still-on-disk file cannot satisfy it.
-    declared = _declared_paths((_REPO_ROOT / "registry.yaml").read_text(encoding="utf-8"))
+    declared = _declared_paths((REPO_ROOT / "registry.yaml").read_text(encoding="utf-8"))
     assert len(declared) >= _REGISTRY_FLOOR, (
         f"only {len(declared)} registry entry keys parsed — the key pattern has "
         f"stopped matching, so the registry contributes nothing to this sweep"
@@ -462,7 +461,7 @@ def _live_markdown() -> list[str]:
     return sorted(
         rel
         for rel in (
-            str(path.relative_to(_REPO_ROOT)) for path in tracked_files_under(".")
+            str(path.relative_to(REPO_ROOT)) for path in tracked_files_under(".")
         )
         if rel.endswith(_LIVE_SUFFIXES)
         and not rel.startswith(_HISTORICAL_PREFIXES)
@@ -474,7 +473,7 @@ def _live_markdown() -> list[str]:
 #: heading, or a table row.
 #:
 #: The sweep's unit is a sentence *within a block*, and the block half is
-#: load-bearing rather than tidy. :func:`_sentences` splits on ``[.!?]`` followed
+#: load-bearing rather than tidy. :func:`sentences_on_break` splits on ``[.!?]`` followed
 #: by whitespace and a capital, which no Markdown bullet, heading or table row
 #: satisfies — so a run of list items merges into one "sentence" thousands of
 #: characters long. ``CONTEXT.md``'s Decisions index was the case that found
@@ -498,7 +497,7 @@ _BLOCK_BREAK = re.compile(r"\n\s*\n|\n(?=\s*(?:[-*+]\s|\d+\.\s|#{1,6}\s|\|))")
 
 def _units(text: str) -> list[str]:
     """The sweep's text units: sentences, scoped to one Markdown block each."""
-    return [unit for block in _BLOCK_BREAK.split(text) for unit in _sentences(block)]
+    return [unit for block in _BLOCK_BREAK.split(text) for unit in sentences_on_break(block)]
 
 
 def _classify_runtime_sentences(text: str) -> tuple[list[str], int]:
@@ -551,7 +550,7 @@ def test_no_live_document_still_instructs_in_the_retired_vocabulary() -> None:
     offenders: list[str] = []
     recorded = 0
     for relpath in _live_markdown():
-        text = (_REPO_ROOT / relpath).read_text(encoding="utf-8", errors="replace")
+        text = (REPO_ROOT / relpath).read_text(encoding="utf-8", errors="replace")
         found, count = _classify_runtime_sentences(text)
         recorded += count
         offenders += [f"{relpath}: {' '.join(s.split())[:160]}" for s in found]
@@ -605,7 +604,7 @@ def test_the_predicate_catches_the_instruction_it_forbids() -> None:
         "The extra agent counts against the spend breaker. "
         "`/assess system` pulls `guidance-coherence` for its standards."
     )
-    sentences = _sentences(live)
+    sentences = sentences_on_break(live)
     assert len(sentences) == 19, sentences
     caught = _live_runtime_instructions(live)
     assert caught == sentences, (
@@ -619,7 +618,7 @@ def test_a_neighbouring_records_marker_does_not_excuse_an_instruction() -> None:
     """The text unit is part of the predicate, and this pins which unit it is.
 
     A marker grants amnesty to *its own* statement, never to the document region
-    around it. Before this, it granted amnesty to the region: ``_sentences``
+    around it. Before this, it granted amnesty to the region: ``sentences_on_break``
     finds no break between Markdown list items, so ``CONTEXT.md``'s Decisions
     index and the *Gotchas* section below it were one 2,677-character "sentence",
     and the index's own ``superseded`` excused a live ``harness close``
@@ -829,7 +828,7 @@ def test_the_entry_documents_are_tracked_and_mirrored() -> None:
     cannot satisfy it.
     """
     tracked = subprocess.run(
-        ["git", "-C", str(_REPO_ROOT), "ls-files", "--error-unmatch", *_ENTRY_DOCUMENTS],
+        ["git", "-C", str(REPO_ROOT), "ls-files", "--error-unmatch", *_ENTRY_DOCUMENTS],
         capture_output=True,
         text=True,
         check=False,

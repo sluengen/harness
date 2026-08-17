@@ -30,7 +30,8 @@ from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.unit._prose import REPO_ROOT
+
 PROCESS_DOC = REPO_ROOT / "process" / "harness.md"
 
 #: The three entry files, by the name each tool auto-loads.

@@ -31,9 +31,9 @@ negative space, never meaning* (ADR 0016).
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-REPO_ROOT = Path(__file__).parent.parent.parent
+from tests.unit._prose import REPO_ROOT
+
 TEMPLATE = REPO_ROOT / "templates" / "adjustment.md"
 REGISTRY = REPO_ROOT / "registry.yaml"
 

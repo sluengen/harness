@@ -27,11 +27,10 @@ teardown, because the copy-in installer is exactly what ADR 0015 keeps.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 from tests._gitutil import tracked_files_under
+from tests.unit._prose import REPO_ROOT
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 INSTALLER_OLD = REPO_ROOT / "INSTALLER.md"
 BOOTSTRAP = REPO_ROOT / "BOOTSTRAP.md"  # the installer (guidance:bootstrap)
 REGISTRY = REPO_ROOT / "registry.yaml"

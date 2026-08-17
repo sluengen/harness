@@ -41,11 +41,11 @@ structure and negative space, never meaning*.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_COMMAND = _REPO_ROOT / "commands" / "promote.md"
-_CLAUDE_MD = _REPO_ROOT / "CLAUDE.md"
+from tests.unit._prose import REPO_ROOT
+
+_COMMAND = REPO_ROOT / "commands" / "promote.md"
+_CLAUDE_MD = REPO_ROOT / "CLAUDE.md"
 
 #: The two rule-homes inside the command, each read as its own window.
 _LOOP_HEADING = "## The loop"

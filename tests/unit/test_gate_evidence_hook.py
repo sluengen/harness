@@ -98,7 +98,9 @@ from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.unit._hooks import REAL_STOP_PAYLOAD
+from tests.unit._prose import REPO_ROOT
+
 HOOK = REPO_ROOT / "hooks" / "gate-evidence-guard.js"
 WRITER = REPO_ROOT / "scripts" / "gate_marker.py"
 
@@ -112,38 +114,6 @@ CLAIM = "All acceptance criteria are met and the tests pass. This is done."
 #: A turn that reports progress without claiming completion — the TDD RED phase,
 #: which the state-only trigger would have punished on every cycle.
 NO_CLAIM = "I wrote the failing test and watched it fail; implementing next."
-
-#: The **verbatim** Stop payload a real host sent, captured live from Claude Code
-#: 2.1.220 by a snapshot hook that copied its stdin at the instant the Stop hook
-#: ran. Every key here was observed; none was modelled — which is the whole point
-#: of it, because §12.5 of the design says the rest of this file's fixtures are
-#: models of the host's contract and self-consistent whether or not they are
-#: right. This one is the contract.
-#:
-#: The load-bearing observation is what is *not* in it: the same snapshot counted
-#: **zero assistant entries in the transcript** at Stop time. The host appends the
-#: turn's assistant message to the JSONL only *after* the Stop hook returns, so a
-#: hook that reads its trigger out of the transcript reads a file that does not
-#: yet contain the turn being stopped, and can never fire. The message is handed
-#: over directly instead, as the top-level ``last_assistant_message``.
-#: The two path fields are **redacted**, and they are the only two: they named
-#: the capturing operator's home directory, which ``test_no_private_surfaces``
-#: rightly refuses in a tracked file. Nothing is lost by it — every test rebinds
-#: both to its own tmp_path anyway, because the captured directories do not exist
-#: here. Every other key is byte-for-byte what the host sent.
-REAL_STOP_PAYLOAD: dict[str, object] = {
-    "session_id": "3321d2eb-025e-4025-9770-989edb1dffe9",
-    "transcript_path": "~/.claude/projects/<redacted>/3321d2eb-025e-4025-9770-989edb1dffe9.jsonl",
-    "cwd": "<redacted>/scratchpad/stopprobe",
-    "prompt_id": "b9b30132-647a-42a6-9271-1f4231bafcd3",
-    "permission_mode": "default",
-    "effort": {"level": "high"},
-    "hook_event_name": "Stop",
-    "stop_hook_active": False,
-    "last_assistant_message": "Done — the implementation is complete and all tests pass.",
-    "background_tasks": [],
-    "session_crons": [],
-}
 
 
 def _node() -> str:

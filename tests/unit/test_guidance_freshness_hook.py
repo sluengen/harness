@@ -37,8 +37,9 @@ from pathlib import Path
 
 import pytest
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_HOOK = _REPO_ROOT / "hooks" / "guidance-freshness.js"
+from tests.unit._prose import REPO_ROOT
+
+_HOOK = REPO_ROOT / "hooks" / "guidance-freshness.js"
 
 #: The registry entry version every fixture declares. The *file* header is what
 #: varies between the drift case and its control, so the two differ in exactly

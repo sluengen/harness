@@ -94,9 +94,9 @@ from pathlib import Path
 
 import pytest
 
-from tests.unit.test_gate_evidence_hook import REAL_STOP_PAYLOAD
+from tests.unit._hooks import REAL_STOP_PAYLOAD
+from tests.unit._prose import REPO_ROOT
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 HOOK = REPO_ROOT / "hooks" / "gate-evidence-guard.js"
 WRITER = REPO_ROOT / "scripts" / "gate_marker.py"
 SETTINGS = REPO_ROOT / "settings" / "harness.json"

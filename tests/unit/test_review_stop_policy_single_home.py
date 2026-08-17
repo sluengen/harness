@@ -57,10 +57,9 @@ from pathlib import Path
 import pytest
 
 from tests._gitutil import tracked_files_under
+from tests.unit._prose import REPO_ROOT
 
-# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_REGISTRY = _REPO_ROOT / "registry.yaml"
+_REGISTRY = REPO_ROOT / "registry.yaml"
 
 #: The universal-prose directories, as ``test_distributed_prose_no_repo_ids``
 #: scopes them. ``templates/`` is deliberately excluded here where that guard
@@ -127,14 +126,14 @@ def _registered_prose_files() -> list[Path]:
     found: list[Path] = []
     for prose_dir in _PROSE_DIRS:
         for path in sorted(tracked_files_under(prose_dir)):
-            rel = path.relative_to(_REPO_ROOT).as_posix()
+            rel = path.relative_to(REPO_ROOT).as_posix()
             if _is_registered(rel, registry_src):
                 found.append(path)
     return found
 
 
 def _rel(path: Path) -> str:
-    return path.relative_to(_REPO_ROOT).as_posix()
+    return path.relative_to(REPO_ROOT).as_posix()
 
 
 # ---------------------------------------------------------------------------
@@ -204,7 +203,7 @@ def test_the_literal_predicate_admits_the_verb_mechanics() -> None:
 
 def test_the_stop_rule_reference_states_the_policy() -> None:
     """The home carries the whole rule, and points at the numbers' home."""
-    body = (_REPO_ROOT / _HOME).read_text(encoding="utf-8")
+    body = (REPO_ROOT / _HOME).read_text(encoding="utf-8")
 
     for key in _CONFIG_KEYS:
         assert key in body, (
@@ -236,7 +235,7 @@ def test_the_core_keeps_the_section_and_routes_to_the_home() -> None:
     this assertion an exclusive killer, and what makes it measure the sentence
     the docstring above claims: the route runs *from the section*.
     """
-    body = (_REPO_ROOT / _CORE).read_text(encoding="utf-8")
+    body = (REPO_ROOT / _CORE).read_text(encoding="utf-8")
 
     assert "## On a FAIL" in body, (
         f"{_CORE} must keep its FAIL-handling section — it is the heading every "
@@ -267,7 +266,7 @@ def test_the_template_declares_the_keys_the_home_sends_readers_to() -> None:
     with it; these two keys are read by the policy, not by any runtime, so their
     guard belongs beside the policy.
     """
-    template = (_REPO_ROOT / "templates" / "CONTEXT.template.md").read_text(
+    template = (REPO_ROOT / "templates" / "CONTEXT.template.md").read_text(
         encoding="utf-8"
     )
     for key in _CONFIG_KEYS:
@@ -376,7 +375,7 @@ def test_each_former_copy_points_at_the_home(rel: str) -> None:
     rule above while making the policy *less* reachable than the contradiction
     was — the reader would find nothing at all where the rule used to be.
     """
-    body = (_REPO_ROOT / rel).read_text(encoding="utf-8")
+    body = (REPO_ROOT / rel).read_text(encoding="utf-8")
     assert _pointer_lines(body), (
         f"{rel} dropped its copy of the stop rule but names no route to "
         f"{_HOME} where it stops, so a reader following it finds no policy (#329)"

@@ -38,10 +38,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from tests.unit.test_distributed_prose_no_repo_ids import _registered_prose_files
-
-# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.unit._prose import REPO_ROOT, registered_prose_files
 
 #: The one file that owns the vocabulary.
 _HOME = "skills/review-discipline/SKILL.md"
@@ -66,7 +63,7 @@ _SHOUT = re.compile(r"\b[A-Z]{3,}\b")
 
 
 def _rel(path: Path) -> str:
-    return path.relative_to(_REPO_ROOT).as_posix()
+    return path.relative_to(REPO_ROOT).as_posix()
 
 
 def _home_section() -> str:
@@ -76,7 +73,7 @@ def _home_section() -> str:
     set by name, so a renamed heading fails as *the owner moved* rather than
     leaving every assertion here comparing against nothing.
     """
-    text = (_REPO_ROOT / _HOME).read_text(encoding="utf-8")
+    text = (REPO_ROOT / _HOME).read_text(encoding="utf-8")
     start = text.find(_HOME_HEADING)
     if start == -1:
         return ""
@@ -163,7 +160,7 @@ def test_the_verdict_consumers_are_in_scope() -> None:
     would pass over a corpus with no verdict in it at all — the empty-subject
     shape, which reports nothing and reads exactly like compliance.
     """
-    swept = {_rel(p): p.read_text(encoding="utf-8") for p in _registered_prose_files()}
+    swept = {_rel(p): p.read_text(encoding="utf-8") for p in registered_prose_files()}
     assert _HOME in swept, f"{_HOME} must be in the swept corpus"
 
     known = _verdicts()
@@ -232,7 +229,7 @@ def test_no_consumer_names_a_verdict_outside_the_owners_set() -> None:
     """
     known = _verdicts()
     violations: list[str] = []
-    for path in _registered_prose_files():
+    for path in registered_prose_files():
         text = path.read_text(encoding="utf-8")
         for group in _verdict_groups(text, known):
             for token in group:
