@@ -66,6 +66,20 @@ Acceptance criteria:
   :func:`test_an_expansion_in_the_git_dash_c_operand_is_denied` covers the one the
   refusal itself points at; its over-denial floor is
   :func:`test_a_relative_dash_c_is_resolved_against_the_command_not_the_hook_process`.
+* **AC-7** — #462, where the blacklist of expansions ran out of blacklist. Four
+  more syntaxes — a glob ``*``, a glob ``?``, a character class ``[…]`` and a
+  brace ``{…}`` — were allowed with no marker check in **both** directory slots,
+  because each resolves statically to a path that does not exist while the shell
+  expands it onto one that does. The directory slots are now decided by a
+  whitelist, :func:`test_a_glob_in_a_push_directory_is_denied`, floored against
+  becoming deny-everything by
+  :func:`test_every_directory_this_repo_actually_has_is_readable`,
+  :func:`test_the_named_legitimate_directory_idioms_are_readable` and
+  :func:`test_a_gated_worktree_whose_path_contains_a_space_still_passes`. The
+  refspec slot keeps the blacklist, because ``HEAD~1`` and ``HEAD@{0}`` are built
+  from characters the directory whitelist refuses:
+  :func:`test_the_directory_whitelist_is_not_applied_to_refspecs` and
+  :func:`test_the_refspec_slot_keeps_its_own_expansion_predicate`.
 """
 
 from __future__ import annotations
@@ -79,6 +93,13 @@ import time
 from pathlib import Path
 
 import pytest
+
+# size: one hook's acceptance matrix, and the hook is the repo's flagship
+# mechanical guarantee — seven acceptance criteria, each needing its refusal, its
+# never-deny control and (for the directory whitelist #462 added) its over-denial
+# floor, because a fail-closed predicate with no floor is a deny-everything rule
+# nobody would keep installed. Splitting it would separate a refusal from the
+# floor that proves it is not universal, which is the pairing a reviewer reads.
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 HOOK = REPO_ROOT / "hooks" / "push-target-guard.js"
@@ -702,6 +723,310 @@ def test_an_expansion_in_the_git_dash_c_operand_is_denied(repo: Path) -> None:
     assert _denied('git -C "$worktree_path" push origin HEAD:main', repo)
     assert _denied("git -C $(mktemp -d) push origin HEAD:main", repo)
     assert _denied("git -C `mktemp -d` push origin HEAD:main", repo)
+
+
+# --- #462: the directory slots are a whitelist, not a blacklist ---------------
+
+
+def _is_literal_dir(tokens: list[str]) -> list[bool]:
+    """Judge every token with the **production** ``isLiteralDir``, in one node run.
+
+    The predicate is imported from the hook rather than re-implemented here: a
+    control that re-applies the shipped character class in its own loop measures
+    the class and agrees with itself about everything else
+    (``craft.md``, *Exercise the production path, not merely a production
+    constant*). One process for the whole corpus, because the corpus is the
+    repo's entire directory set and a process per token would dominate the suite.
+    """
+    script = (
+        "const {isLiteralDir} = require(process.argv[1]);"
+        "const tokens = JSON.parse(require('fs').readFileSync(0, 'utf8'));"
+        "process.stdout.write(JSON.stringify(tokens.map((t) => isLiteralDir(t))));"
+    )
+    proc = subprocess.run(
+        [_node(), "-e", script, str(HOOK)],
+        input=json.dumps(tokens),
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert proc.returncode == 0, f"the production predicate could not be driven: {proc.stderr}"
+    verdicts: list[bool] = json.loads(proc.stdout)
+    assert len(verdicts) == len(tokens)
+    return verdicts
+
+
+def test_a_glob_in_a_push_directory_is_denied(repo: Path) -> None:
+    """#462 — the four expansion syntaxes a *blacklist* of expansions never had.
+
+    ``isUnreadable`` refuses ``$``, ``$(…)``, a backtick and a leading ``~``, and
+    a blacklist has no completion condition. Measured live against 0.3.0 with the
+    fixture below, **all five** of the commands asserted here were allowed *with
+    no marker check at all* — a glob ``*``, a glob ``?``, a character class
+    ``[…]`` and a brace ``{…}`` in a ``cd`` target, and a glob in a ``git -C``
+    operand. Each resolves statically to a path that does not exist, so
+    ``git rev-parse --is-inside-work-tree`` failed there and ``verdict`` returned
+    null.
+
+    The fixture is the #452 shape one syntax further along, and it is what makes
+    this a live evasion rather than a curiosity: the root checkout **is** gated,
+    a worktree at ``.worktrees/work-462`` sits inside it at a *divergent,
+    ungated* HEAD, and every glob here expands at run time onto that real
+    unverified tree. So the shell would push bytes no gate has seen.
+
+    Three controls hold the reading in place:
+
+    * the **never-deny** control — the gated root still pushes, so a guard that
+      simply refused everything would fail here;
+    * the **literal** control — the same directory spelled out reaches the
+      *evidence* rule (``No gate marker covers tree``), which proves the literal
+      path is still judged readable and that the deny below is not "any command
+      containing a cd";
+    * the **reason** is asserted rather than the bare decision, because a deny
+      reached for an unrelated cause satisfies a decision-only check and here the
+      cause is the whole claim.
+    """
+    _write_marker(repo)  # the root checkout IS verified, before the worktree exists
+    worktree = repo / ".worktrees" / "work-462"
+    _git(repo, "worktree", "add", "-q", "-b", "task", str(worktree))
+    _commit(worktree, "unverified.txt", "never gated\n")
+
+    assert not _denied("git push origin HEAD:main", repo), (
+        "the gated root checkout must still push, or every assertion below holds "
+        "for a guard that never allows anything"
+    )
+    literal = _hook_output("cd .worktrees/work-462 && git push origin HEAD:main", repo)
+    assert literal.get("permissionDecision") == "deny"
+    assert "No gate marker covers tree" in literal.get("permissionDecisionReason", ""), (
+        "the literal spelling must be judged readable and refused on the "
+        "*evidence*, or the whitelist has become a deny-everything rule and the "
+        "glob denials below prove nothing about globs"
+    )
+
+    for command in (
+        "cd .worktrees/work-* && git push origin HEAD:main",
+        "cd .worktrees/work-4?2 && git push origin HEAD:main",
+        "cd .worktrees/[w]ork-462 && git push origin HEAD:main",
+        "cd .worktrees/{work-462} && git push origin HEAD:main",
+        "git -C .worktrees/work-* push origin HEAD:main",
+    ):
+        output = _hook_output(command, repo)
+        assert output.get("permissionDecision") == "deny", command
+        assert "working directory cannot be resolved" in output.get(
+            "permissionDecisionReason", ""
+        ), f"denied for the wrong reason: {command}"
+
+
+def test_every_directory_this_repo_actually_has_is_readable() -> None:
+    """The over-denial floor, derived rather than guessed.
+
+    Fail-closed becomes deny-everything unless something pins the legitimate
+    side, and the honest corpus is the repo's own: every directory of the tracked
+    tree, plus every path ``git worktree list`` reports — the two sets a real
+    ``cd`` or ``git -C`` in this repo actually names.
+
+    The membership anchors are named rather than counted: a count rots on the
+    next directory added, while ``tests/unit`` and ``specs/features`` disappearing
+    from the corpus is a rename that names itself (``craft.md``, *Floors decay
+    into decoration*). The main checkout anchors the worktree half, which is
+    otherwise a set that can silently empty.
+    """
+    tracked = subprocess.run(
+        ["git", "ls-files"], cwd=REPO_ROOT, check=True, capture_output=True, text=True
+    ).stdout.splitlines()
+    directories = set()
+    for entry in tracked:
+        parent = os.path.dirname(entry.strip())
+        while parent:
+            directories.add(parent)
+            parent = os.path.dirname(parent)
+
+    porcelain = subprocess.run(
+        ["git", "worktree", "list", "--porcelain"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
+    worktrees = {line.split(" ", 1)[1] for line in porcelain if line.startswith("worktree ")}
+
+    assert "tests/unit" in directories
+    assert "specs/features" in directories
+    assert os.path.realpath(REPO_ROOT) in {os.path.realpath(p) for p in worktrees}, (
+        "the worktree half of the corpus must contain the checkout this suite "
+        "runs in, or it could derive to the empty set and judge nothing"
+    )
+
+    corpus = sorted(directories | worktrees)
+    refused = [d for d, ok in zip(corpus, _is_literal_dir(corpus), strict=True) if not ok]
+    assert refused == [], f"the whitelist refuses directories this repo really has: {refused}"
+
+
+def test_the_named_legitimate_directory_idioms_are_readable() -> None:
+    """The named half of the over-denial floor: idioms the derived corpus cannot
+    contain.
+
+    ``.``, ``..`` and a relative sibling never appear in ``git ls-files``, and an
+    absolute path outside this checkout never appears in ``git worktree list`` —
+    yet all four are ordinary spellings of a push directory. The space-bearing
+    and non-ASCII entries are the two admissions the character class makes
+    deliberately: after lexing, a space inside a token was *quoted* (``cd "my
+    dir"``), and every shell expansion trigger is ASCII by the POSIX grammar, so
+    refusing non-ASCII would be a pure false-deny class for anyone whose paths
+    are not English.
+
+    **Every character the class admits is sampled here, and that is the point.**
+    An allowlist has two failure directions and a green corpus can only ever see
+    one: the derived floor above catches a class that has become too *narrow*,
+    and nothing catches one that has quietly grown too *wide* — the repo's own
+    directories would keep passing whatever else were admitted alongside them.
+    So each of ``+ @ % , = :`` has a sample of its own, and dropping any single
+    character from the class is what this test exists to make red. The
+    corresponding widening direction is proven by mutation rather than by a test,
+    because a test asserting a character is *refused* would have to name a
+    character nobody has thought of yet.
+    """
+    idioms = [
+        ".",
+        "..",
+        "../sibling",
+        "/Users/someone/Code/harness",
+        ".worktrees/work-462",
+        "under_score/task",
+        "my dir/task",
+        "工作區/分支",
+        "/opt/build+cache",
+        "/srv/user@host",
+        "/tmp/50%off",
+        "/tmp/a,b",
+        "/tmp/k=v",
+        "C:/repos/harness",
+    ]
+
+    assert _is_literal_dir(idioms) == [True] * len(idioms), idioms
+
+
+def test_a_cd_with_no_target_at_all_is_not_a_readable_directory(repo: Path) -> None:
+    """A bare ``cd`` goes to ``$HOME``, which is not the directory that was named.
+
+    The one shape that reaches :func:`isLiteralDir` with something that is not a
+    string, and the reason that arm returns false rather than letting the regex
+    coerce ``undefined`` into the six-letter word: a readable answer here would
+    hand ``path.resolve`` an undefined operand, which throws — and a throw lands
+    in this hook's *crash* arm, which fails **open**. So the degenerate command
+    would be waved through by the one path that must never wave anything through.
+
+    A marker is present, so the deny is the directory rule rather than missing
+    evidence.
+    """
+    _write_marker(repo)
+
+    output = _hook_output("cd && git push origin HEAD:main", repo)
+
+    assert output.get("permissionDecision") == "deny"
+    assert "working directory cannot be resolved" in output.get("permissionDecisionReason", "")
+
+
+def test_a_gated_worktree_whose_path_contains_a_space_still_passes(
+    repo: Path, tmp_path: Path
+) -> None:
+    """The live end of the over-denial floor — the whole path, not the predicate.
+
+    A unit test can say the character class admits a space; only the hook can say
+    the *lexer* hands that space through as one token and the directory is then
+    resolved and gated. The worktree is at a different tree from the payload's
+    checkout and is the only one with a marker, so this passes only if the guard
+    followed the ``cd`` into it. The second assertion is the never-deny control
+    on the same fixture.
+
+    Like the other floors this is a **characterisation** test — it passed before
+    the whitelist existed and its job is that it still passes after — so its
+    evidence is the mutation that kills it (dropping the space from the safe
+    class) rather than a RED.
+    """
+    worktree = tmp_path / "task dir"
+    _git(repo, "worktree", "add", "-q", "-b", "task", str(worktree))
+    _commit(worktree, "gated.txt", "the gate covers this\n")
+    _write_marker(worktree)
+
+    assert not _denied(f'cd "{worktree}" && git push origin HEAD:main', repo), (
+        "a quoted, space-bearing directory survives lexing as one literal token; "
+        "refusing it would deny the ordinary macOS home-directory shape"
+    )
+    assert _denied("git push origin HEAD:main", repo), (
+        "the ungated checkout the payload names must itself be refused, or the "
+        "assertion above would hold for a guard that simply never denies"
+    )
+
+
+def test_the_directory_whitelist_is_not_applied_to_refspecs(repo: Path) -> None:
+    """AC-3 — a refspec is not a directory, and the two predicates must not merge.
+
+    ``HEAD~1``, ``HEAD^`` and ``HEAD@{0}`` are ordinary, correct pushes whose
+    characters — ``~``, ``^``, ``{``, ``}`` — are all *outside* the directory
+    whitelist. Applying that whitelist to the refspec slot would refuse every one
+    of them, which is why ``isUnreadable`` survives this change scoped to
+    refspecs instead of being replaced everywhere. Each of the three dies the
+    moment someone reaches for one predicate where the design has two.
+
+    This is a **characterisation** test: it passed before the change and must go
+    on passing, so its evidence is the mutation table rather than a RED. The
+    fixture is two commits with a marker over each tree, so ``HEAD~1`` and
+    ``HEAD^`` name a gated tree of their own rather than borrowing HEAD's, and
+    ``no-such-ref`` is the never-allow control on the same fixture.
+    """
+    _write_marker(repo)  # covers commit 1's tree
+    _commit(repo, "b.txt", "two\n")
+    _write_marker(repo)  # covers commit 2's tree
+
+    for refspec in ("HEAD~1:main", "HEAD^:main", "HEAD@{0}:main"):
+        assert not _denied(f"git push origin {refspec}", repo), (
+            f"{refspec} names a gated tree; refusing it means the directory "
+            "whitelist has been applied to the refspec slot"
+        )
+    assert _denied("git push origin no-such-ref:main", repo), (
+        "an unresolvable refspec must still be refused on the same fixture, or "
+        "the three allows above hold for a guard that never denies"
+    )
+
+
+def test_the_refspec_slot_keeps_its_own_expansion_predicate(repo: Path) -> None:
+    """The other half of #462: the blacklist did not go away, it moved.
+
+    ``isUnreadable`` has three arms, and two of them were only ever killed
+    through a *directory*: the backtick by ``cd `mktemp -d` `` and the leading
+    tilde by ``cd ~/nowhere``. Both of those are now refused by ``isLiteralDir``
+    before ``isUnreadable`` is consulted at all, so without this test deleting
+    either arm leaves the suite green — the change would have removed the killers
+    of the predicate it left behind.
+
+    The **reason** is asserted rather than the decision, because the two arms
+    fail differently once deleted and only one of the two failures hides from a
+    decision check. Measured at review with the tilde arm removed, ``~1:main``
+    still denies — the ``~1`` source resolves to no tree, so the refusal arrives
+    from a different rule and a decision-only check would certify that arm's
+    absence. Measured with the substitution arm removed, a backtick refspec is
+    **allowed**: the target it reads statically is a branch name no protected
+    set holds, so that deletion is a live evasion rather than a reworded
+    refusal. Asserting the reason on both is what makes the pair uniform instead
+    of depending on which arm someone deletes. A marker is present, so the deny
+    is attributable to the refspec rather than to missing evidence.
+    """
+    _write_marker(repo)
+
+    backtick = _hook_output("git push origin HEAD:`echo main`", repo)
+    assert backtick.get("permissionDecision") == "deny"
+    assert "refspec carries a shell expansion" in backtick.get("permissionDecisionReason", ""), (
+        "a backtick refspec is the only input left that proves the command-"
+        "substitution arm is live: the bare-$ arm beside it cannot see one"
+    )
+
+    tilde = _hook_output("git push origin ~1:main", repo)
+    assert tilde.get("permissionDecision") == "deny"
+    assert "refspec carries a shell expansion" in tilde.get("permissionDecisionReason", ""), (
+        "a leading tilde is expanded by the shell, so the refspec git receives is "
+        "not the one written; the arm that says so has no other killer left"
+    )
 
 
 # --- AC-5: the hook is wired --------------------------------------------------
