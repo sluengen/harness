@@ -38,7 +38,10 @@ frontmatter — asserts something only git can check, and until #280 nothing did
 the guard required the key to exist and never read its value, so every date
 froze while the file changed underneath it. Answering "when did this file last
 actually change?" needs the *author* date of the last commit touching that path,
-which is the one date a writer can know at the moment they type the value.
+which is the one date a writer can know at the moment they type the value —
+read as a **UTC** day, because git renders a day in the commit's own recorded
+offset otherwise, and a comparison whose two sides live in different frames goes
+red on a record that is accurate (#463).
 
 That answer is only as good as the fetched history. In a shallow clone git
 reports the **graft boundary** for a path whose real last commit was never
@@ -64,7 +67,7 @@ than refusing it. The two questions diverge because a truncated history makes a
 from __future__ import annotations
 
 import subprocess
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 # ``tests/_gitutil.py`` → ``parents[1]`` is the repo (or worktree) root.
@@ -199,6 +202,29 @@ def last_commit_date(
     type a ``last_updated`` value, which would make such a field impossible to
     write correctly. The choice is about which date a human can *know*.
 
+    **The day is UTC**, read from the raw author timestamp (``%at``, epoch
+    seconds) rather than from a rendered day. Asking git for ``--date=short``
+    renders the day in the *commit's own recorded offset* — a third frame,
+    declared by neither side of the comparison this feeds — so a ``+10:00``
+    commit made just past local midnight reported the following day while the
+    record it was measured against declared the current one, and the currency
+    guard went red on an accurate record (#463). The comparison it feeds is
+    ``declared >= committed``: a declared day at or after the commit's UTC day
+    passes, and no upper bound is asserted.
+
+    The host is not what changed, and saying so would be wrong: ``--date=short``
+    renders in the *commit's* offset and ignores the ambient ``TZ`` — measured at
+    review across three ``TZ`` values, which all rendered the same day. What the
+    fix changes is *which* frame is declared, from the commit's own offset (which
+    no caller declares) to UTC (which both sides of the comparison now do).
+    ``--date=short-local`` is the repair not taken, for that reason: it would
+    trade an undeclared frame for a host-dependent one.
+
+    One frame cannot make a zoneless calendar day and an instant agree in every
+    case — a writer who types the value on one side of UTC midnight and commits
+    on the other is still a day behind. UTC narrows that window to the one every
+    caller shares; it does not close it.
+
     Judges the **committed** tree, matching this module's purpose: an
     uncommitted working-tree edit is invisible here by construction. A git-level
     failure raises rather than degrading to ``None``, so a broken invocation can
@@ -209,7 +235,7 @@ def last_commit_date(
     has no commit", never "this repo has none".
     """
     completed = subprocess.run(
-        ["git", "log", "-1", "--format=%H%x09%ad", "--date=short", "--", str(path)],
+        ["git", "log", "-1", "--format=%H%x09%at", "--", str(path)],
         cwd=repo_root,
         check=True,
         capture_output=True,
@@ -230,7 +256,7 @@ def last_commit_date(
             "fetch-depth: 0, or git fetch --unshallow); do not read this date as "
             "real (#326)."
         )
-    return date.fromisoformat(stamp)
+    return datetime.fromtimestamp(int(stamp), tz=UTC).date()
 
 
 def path_ever_existed(

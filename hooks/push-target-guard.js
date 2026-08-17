@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// guidance:hook-push-target-guard@0.3.0
+// guidance:hook-push-target-guard@0.4.0
 // size: one deny decision over a `git push`, which needs the whole path from
 // tokens to verdict in one place — refspec parsing, `-C`/`--git-dir` directory
 // resolution, `CONTEXT.md` branch declaration, and the tree/marker evidence.
@@ -48,11 +48,25 @@
  *   1. The hook could not run (crash, unparseable stdin, failed require) — it has
  *      no opinion: pass through, loudly, on stderr.
  *   2. The hook ran but could not establish the facts (git unavailable, an
- *      unresolvable source, an ambiguous push directory, a shell expansion in a
- *      decision slot) — **deny**. Cheap-to-clear guards fail closed: one gate run
- *      clears a false deny, while a false allow is the irreversible act.
+ *      unresolvable source, a shell expansion in a refspec, a push directory
+ *      that is not spelled as a literal path) — **deny**. Cheap-to-clear guards
+ *      fail closed: one gate run clears a false deny, while a false allow is the
+ *      irreversible act.
  *   3. The hook ran, established the facts, and found no evidence — **deny**. Not
  *      a fall-open at all; it is the decision the hook exists to make.
+ *
+ * **Two predicates, and they are not interchangeable.** A directory slot is
+ * decided by a whitelist (:func:`isLiteralDir`) and a refspec by a blacklist of
+ * expansions (:func:`isUnreadable`). The asymmetry is forced by the vocabularies:
+ * a refspec legitimately carries ``~``, ``^``, ``{`` and ``}`` (``HEAD~1``,
+ * ``HEAD^``, ``HEAD@{0}``), so a whitelist there would refuse ordinary pushes,
+ * while a directory has no such need and a blacklist there has no completion
+ * condition — #436 closed four expansion shapes, #452 a fifth, its review two
+ * more, and a glob was still walking through in 0.3.0 (#462). State 2's
+ * "cheap to clear" is narrower for the whitelist than for the rest of it: a
+ * directory whose name carries a *quoted* metacharacter (``cd "release (2)"``)
+ * was allowed in 0.3.0 and is refused here, and neither a gate run nor a
+ * respelling clears that one — only moving the checkout does.
  *
  * **Deny, not ask.** Whether a hook ``ask`` overrides an existing
  * ``permissions.allow`` entry is not documented clearly enough to bet enforcement
@@ -330,6 +344,53 @@ function parsePush(rawTokens, parser) {
   return { dir, refspecs: operands.slice(1), isDelete, mirrors, movesAllRefs, tagsOnly };
 }
 
+//: The characters a directory token may be built from and still be read as the
+//: path it looks like. A **whitelist**, so a syntax nobody has thought of yet
+//: denies by default rather than being discovered in production.
+//:
+//: Space is admitted because the lexer honours quotes and backslash escapes, so
+//: a space surviving into a post-lex token was quoted and is therefore literal
+//: (``cd "my dir"``). Every code point at or above U+0080 is admitted because
+//: every shell expansion trigger is ASCII by the POSIX grammar, so excluding
+//: them would be a pure false-deny class for anyone whose paths are not English.
+//: Deliberately absent: ``$`` and the backtick (expansion), ``~`` (home), ``*``,
+//: ``?``, ``[``, ``]``, ``{``, ``}`` (globs and braces), and every other
+//: metacharacter — a directory has no legitimate need of any of them.
+const LITERAL_DIR_SAFE = /^[A-Za-z0-9._+@%,=:\-\/ \u{80}-\u{10FFFF}]+$/u;
+
+/** True iff ``token`` is a directory this guard can read as a literal path.
+ *
+ * The whitelist half of the split described in the module docstring, and the
+ * predicate for **both directory decision slots** — the ``cd`` target in
+ * :func:`pushesIn` and the ``git -C`` operand in :func:`resolveDir`. It
+ * *replaces* :func:`isUnreadable` at those two slots rather than layering over
+ * it: it is strictly stronger there (``$``, the backtick and ``~`` are all
+ * outside the safe class), and two conditions that catch the same input hide
+ * each other from mutation.
+ *
+ * The defect it closes (#462, measured live against 0.3.0 with no marker
+ * anywhere): ``cd .worktrees/work-* && git push origin HEAD:dev`` resolves
+ * statically to a path that does not exist, so git answered nothing about it and
+ * the push was allowed **with no marker check at all** — while the shell expands
+ * the glob onto a real, unverified worktree. The same held for ``?``, ``[…]``,
+ * ``{…}`` and for a glob in the ``git -C`` operand. A blacklist of expansions
+ * has no completion condition, which is why this is inverted rather than widened.
+ *
+ * A non-string reads as unreadable rather than throwing: a throw here lands in
+ * the crash arm, which fails **open**, so the degenerate command would be waved
+ * through by the one path that must not wave anything through. The one input
+ * that reaches this with a non-string is the ``undefined`` a bare ``cd`` yields
+ * when :func:`pushesIn` looks for a target and finds none — not a bare
+ * ``git -C``, which :func:`parsePush` abandons before it can name a directory,
+ * because the token after ``-C`` is the last one and no ``push`` follows it. A
+ * literal path that does not exist is still a
+ * pass-through, as before — a literal token cannot become a different directory
+ * at run time, and that is the property this predicate is about. */
+function isLiteralDir(token) {
+  if (typeof token !== "string") return false;
+  return LITERAL_DIR_SAFE.test(token);
+}
+
 /** The directory a push actually runs in, given its ``git -C`` operand (or
  * null) and the directory the command has cd'd to (or null when that is itself
  * unknowable).
@@ -342,14 +403,14 @@ function parsePush(rawTokens, parser) {
  * unverified worktree would be authorised by a tree nobody is pushing. A
  * relative operand with no known base stays null, which the caller denies.
  *
- * An operand carrying a shell expansion stays null for the same reason a ``cd``
+ * An operand that is not a literal path stays null for the same reason a ``cd``
  * target does — this is the *other* directory decision slot, and closing only
  * the ``cd`` one left the refusal one rewrite from being bypassed along the path
  * its own message recommends: ``git -C "$w" push`` is ``cd "$w" && git push``
  * one operand further along. */
-function resolveDir(operand, cwd, parser) {
+function resolveDir(operand, cwd) {
   if (operand === null) return cwd;
-  if (isUnreadable(operand, parser)) return null;
+  if (!isLiteralDir(operand)) return null;
   if (path.isAbsolute(operand)) return operand;
   return cwd === null ? null : path.resolve(cwd, operand);
 }
@@ -366,15 +427,24 @@ function resolveDir(operand, cwd, parser) {
  * third expansion a shell performs on a bare word and the one that reads least
  * like one, so it is named rather than left to be rediscovered.
  *
- * This governs **both directory decision slots** — the ``cd`` target in
- * :func:`pushesIn` and the ``git -C`` operand in :func:`resolveDir` — as well as
- * a refspec: a directory is a decision slot for the same reason a branch name
- * is, and keying those on the narrower predicate is what let
- * ``cd "$worktree_path" && git push origin HEAD:dev`` through with no marker
- * check at all (#452). Every arm is separately killable: ``$(…)`` is caught by
- * the ``$`` arm alone, so the backtick is the only input that proves the
- * substitution arm is live, and ``test_an_ambiguous_push_directory_is_denied``
- * carries one for that reason. */
+ * This governs the **refspec** slot in :func:`movements`, and only that one. The
+ * directory slots were keyed on it until #462 and are now decided by
+ * :func:`isLiteralDir` instead; a refspec cannot move to that whitelist, because
+ * ``HEAD~1``, ``HEAD^`` and ``HEAD@{0}`` are ordinary spellings built from
+ * characters a directory has no business carrying. Every arm here is separately
+ * killable, and both killers moved into the refspec slot with the predicate:
+ * ``$(…)`` is caught by the ``$`` arm alone, so a backtick **refspec** is the
+ * only input left that proves the substitution arm is live, and a refspec with a
+ * leading ``~`` the only one that proves the tilde arm is.
+ * ``test_the_refspec_slot_keeps_its_own_expansion_predicate`` carries one of
+ * each, and asserts the *reason* rather than the decision, because the two arms
+ * fail differently once deleted. Measured: with the tilde arm gone, ``~1:main``
+ * still denies — on the *source does not resolve to a tree* rule instead — so a
+ * decision-only check certifies that arm's absence. With the substitution arm
+ * gone, a backtick refspec is **allowed**, because the target it reads
+ * statically is a branch name no protected set holds. The reason assertion is
+ * what guards the tilde arm; the substitution arm's deletion is a live evasion
+ * rather than a reworded refusal, and the decision alone would catch that one. */
 function isUnreadable(token, parser) {
   return parser.hasCommandSubstitution(token) || token.includes("$") || token.startsWith("~");
 }
@@ -386,11 +456,14 @@ function isUnreadable(token, parser) {
  * ``cd "$worktree_path" && git push origin HEAD:dev``, and resolving ``HEAD`` at
  * the session cwd reads the wrong branch — and could find a marker for a tree
  * nobody is pushing. So a ``cd`` preceding a push in the same lexed sequence
- * moves the directory, and a ``cd`` target carrying any shell expansion —
- * ``isUnreadable``, so a bare ``$VAR`` as much as a ``$(…)`` — makes it
- * unknowable (``dir: null``, which the caller denies). That the shipped idiom is
- * the *expansion* spelling is the whole point: keying this on the narrower
- * command-substitution predicate exempted the one command it was written for. */
+ * moves the directory, and a ``cd`` target that is not a literal path —
+ * ``isLiteralDir``, so a glob or a brace as much as a ``$VAR`` — makes it
+ * unknowable (``dir: null``, which the caller denies). A ``cd`` with no operand
+ * at all is the same answer by the same predicate, which is why there is no
+ * separate check for it: two conditions catching one input would hide each other
+ * from mutation. That the shipped idiom is the *expansion* spelling is the whole
+ * point: keying this on the narrower command-substitution predicate exempted the
+ * one command it was written for. */
 function pushesIn(command, startDir, parser, depth) {
   if (depth > MAX_DEPTH) return [];
   const found = [];
@@ -400,12 +473,12 @@ function pushesIn(command, startDir, parser, depth) {
     const resolved = parser.resolveCommand(tokens);
     if (resolved.length && parser.basename(resolved[0]) === "cd") {
       const target = resolved.slice(1).find((t) => !t.startsWith("-"));
-      if (target === undefined || isUnreadable(target, parser)) dir = null;
+      if (!isLiteralDir(target)) dir = null;
       else if (dir !== null) dir = path.resolve(dir, target);
       continue;
     }
     const push = parsePush(tokens, parser);
-    if (push) found.push({ ...push, dir: resolveDir(push.dir, dir, parser) });
+    if (push) found.push({ ...push, dir: resolveDir(push.dir, dir) });
     for (const script of parser.nestedScripts(tokens)) {
       found.push(...pushesIn(script, dir, parser, depth + 1));
     }
@@ -476,12 +549,13 @@ function verdict(push, parser) {
   const dir = push.dir;
   if (dir === null) {
     return (
-      "Blocked a push whose working directory cannot be resolved statically (a cd " +
-      "target or a git -C operand carrying a shell expansion — a variable or a " +
-      "leading tilde as much as a command substitution). The tree this push would " +
-      "carry is unknowable, so there is nothing to verify. Spell the directory " +
-      "literally: an expanded git -C <path> is the same unknowable directory one " +
-      "operand further along, and is refused here too."
+      "Blocked a push whose working directory cannot be resolved statically. A cd " +
+      "target and a git -C operand are read only when every character in them is " +
+      "one this guard can prove the shell will not act on; this one carries a " +
+      "character outside that set, so the directory it lands in — and the tree " +
+      "this push would carry — is unknowable. Spell the directory literally: a " +
+      "git -C <path> is the same unknowable directory one operand further along, " +
+      "and is refused here too."
     );
   }
   if (git(dir, ["rev-parse", "--is-inside-work-tree"]) !== "true") return null;
@@ -609,7 +683,12 @@ if (require.main === module) {
 // corpus and compares the sets that fall out. The differing return shapes are
 // deliberate and are not being unified; the equivalence test is the drift
 // control the no-shared-lib decision asks for.
+// ``isLiteralDir`` is exported so the over-denial floors drive the **production**
+// predicate rather than a re-implementation of its character class: a test that
+// re-applied the shipped class in its own loop would measure the class and agree
+// with itself about everything else (#462).
 module.exports = {
+  isLiteralDir,
   markerPath,
   maxAgeSeconds,
   declaredBranches,

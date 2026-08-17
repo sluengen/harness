@@ -42,6 +42,16 @@ currency that was false — the same unmeasured-claim family as #275, one file
 over. The date guard below reads the value against git and is derived from the
 tracked tree, so a fifth feature spec is covered on arrival.
 
+**#463 re-frames that date check rather than loosening it.** The comparison read
+its two operands in different frames: ``last_updated`` is a zoneless calendar day
+typed by a writer, while git rendered the commit day in the *commit's own*
+recorded offset. A ``+10:00`` commit made just past local midnight therefore
+reported the following day, and the guard went red on a record that was accurate
+— on ``dev`` and on the promotion candidate alike, the latter only more visibly
+because the nightly runs at 14:10Z, inside the window where the frames disagree.
+The fix is in :func:`tests._gitutil.last_commit_date`, which now reads a UTC day;
+the rule here is unchanged, and the test below pins that it is.
+
 **#446 removes a required key rather than adding a check for it.** ``tickets:``
 compelled every record to list the tracker issues that shaped it — a
 hand-maintained list duplicating what the record's own ``git log`` already holds,
@@ -59,13 +69,15 @@ return is the machinery this removes, and ADR 0014's own deletion added none.
 
 from __future__ import annotations
 
+import os
 import re
+import subprocess
 from datetime import date
 from pathlib import Path
 
 import pytest
 
-from tests._gitutil import last_commit_date, tracked_files_under
+from tests._gitutil import init_repo, last_commit_date, tracked_files_under
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _FEATURES_DIR = _REPO_ROOT / "specs" / "features"
@@ -171,6 +183,19 @@ def _declared_last_updated(path: Path) -> date:
         ) from None
 
 
+def _currency_is_current(declared: date, committed: date) -> bool:
+    """Whether ``declared`` still holds against a content commit on ``committed``.
+
+    The rule itself, in one place so the guard below and the frozen-record case
+    (#463 AC-3) exercise the *same* comparison rather than two copies of it. The
+    bound is ``>=`` and both operands are UTC days: :func:`last_commit_date` reads
+    the commit side in UTC (#463), and ``last_updated`` is a zoneless calendar
+    day. No upper bound — a date ahead of the last commit claims no false
+    currency, and checking it would need a wall clock in a test.
+    """
+    return declared >= committed
+
+
 @pytest.mark.parametrize(
     "path", _tracked_feature_spec_md(), ids=lambda p: p.name
 )
@@ -200,7 +225,7 @@ def test_feature_spec_last_updated_is_not_behind_its_last_commit(
             "(#326)."
         )
     declared = _declared_last_updated(path)
-    assert declared >= committed, (
+    assert _currency_is_current(declared, committed), (
         f"specs/features/{path.name} declares last_updated: {declared} but its "
         f"last content commit is {committed}. The as-built record is the "
         "contract (feature_specs: true) — a frozen date asserts a currency that "
@@ -223,6 +248,94 @@ def test_the_last_updated_guard_covers_every_expected_feature_spec() -> None:
         f"that set ({sorted(covered)}) is missing expected feature specs "
         f"{sorted(set(_EXPECTED_FEATURES) - covered)} — the guard would pass "
         "without measuring them"
+    )
+
+
+def test_a_record_dated_the_day_of_its_commit_is_current() -> None:
+    """The bound is ``>=``, so the same day passes — the boundary itself (#463).
+
+    This is the ordinary case the rule exists to permit: a record dated the day
+    its own edit commits. Nothing else in the suite feeds the rule an *equal*
+    pair — the parametrized guard's one subject sits a day ahead of its last
+    commit, and the frozen-record case below sits a week behind — so tightening
+    the bound to ``>`` survived the whole suite when review mutated it, while it
+    would red every record dated on the day it shipped.
+
+    Only the permissive direction is asserted here, deliberately: an assertion
+    that some pair is *not* current would become a second killer of a widening
+    to ``True``, which is the property the frozen-record case below is the sole
+    witness for.
+    """
+    same_day = date(2026, 3, 4)
+    assert _currency_is_current(same_day, same_day), (
+        "a record declaring the day of its own last commit reads as stale — the "
+        "bound is >=, and the same-day case is what a writer types"
+    )
+
+
+def _commit_spec(repo: Path, body: str, declared: str, stamp: str) -> Path:
+    """Write ``spec.md`` in ``repo`` with ``declared`` currency and commit it.
+
+    A local helper rather than a sibling-test import: the two lines of git it
+    needs are cheaper here than another cross-module test dependency (#467
+    tracks the missing neutral home for shared test helpers).
+    """
+    spec = repo / "spec.md"
+    spec.write_text(
+        f"---\nfeature: x\nstatus: implemented\nlast_updated: {declared}\n---\n\n"
+        f"## Behaviour\n\n{body}\n",
+        encoding="utf-8",
+    )
+    identity = ["-c", "user.email=t@example.com", "-c", "user.name=Test"]
+    subprocess.run(
+        ["git", *identity, "add", "spec.md"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", *identity, "commit", "-q", "-m", "edit spec"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        env={**os.environ, "GIT_AUTHOR_DATE": stamp, "GIT_COMMITTER_DATE": stamp},
+    )
+    return spec
+
+
+def test_a_frozen_date_is_still_caught_after_the_utc_fix(tmp_path: Path) -> None:
+    """The #280 defect this guard exists for still fires (#463 AC-3).
+
+    Reading the commit day in UTC narrows *when* the two operands can disagree;
+    it must not narrow *what the guard measures*. The original defect's shape,
+    re-tested verbatim: a record whose ``last_updated`` sits still while later
+    commits change the file underneath it — ``run-ledger.md`` absorbed seven such
+    changes before #280 read the value at all.
+
+    Both commits are stamped ``+00:00``, so the fix under test cannot be what
+    makes this pass or fail: the frames agree at a zero offset, leaving the
+    staleness itself as the only thing measured.
+
+    It calls :func:`_currency_is_current` — the *same* comparison the guard above
+    calls, not a copy of it — because a re-derived ``declared >= committed``
+    written here would keep passing while the rule it claims to protect was
+    widened to ``True``. This is the only case that fails on that widening: the
+    parametrized guard runs over a tree whose records are current, where a rule
+    that always passes and the real rule are indistinguishable.
+    """
+    init_repo(tmp_path)
+    _commit_spec(tmp_path, "first", "2026-03-04", "2026-03-04T12:00:00+00:00")
+    spec = _commit_spec(
+        tmp_path, "changed, date left frozen", "2026-03-04", "2026-03-11T12:00:00+00:00"
+    )
+
+    declared = _declared_last_updated(spec)
+    committed = last_commit_date("spec.md", repo_root=tmp_path)
+
+    assert committed == date(2026, 3, 11), "the fixture's later commit did not land"
+    assert not _currency_is_current(declared, committed), (
+        f"a record declaring {declared} against a {committed} commit no longer "
+        "reads as stale — the UTC fix widened the guard instead of re-framing it"
     )
 
 
