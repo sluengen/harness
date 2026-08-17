@@ -361,10 +361,15 @@ def test_the_adr_index_names_exactly_the_records_on_disk() -> None:
     went with it and left the only sweep that dangling-checked them: *a
     deletion pass that moves a definition must move its killer*
     (``skills/review-discipline/references/craft.md``). Measured at that
-    ticket's review, with a paired splice: breaking one ADR link in the new home
-    passed all 1,817 tests, while the same break spliced into ``CONTEXT.md``
-    failed ``test_every_path_the_entry_documents_name_resolves``. The survival
-    was a gap, not an unproven claim, because the control died first.
+    ticket's review with a paired splice, on the tree before this test existed:
+    breaking one ADR link in the new home passed the whole suite, while the same
+    break spliced into ``CONTEXT.md`` failed
+    ``test_every_path_the_entry_documents_name_resolves``. The survival was a
+    gap, not an unproven claim, because the control died first. Re-measured on
+    the tree that shipped, with this test in place: the same break now fails
+    here, and the ``CONTEXT.md`` control still fails there. No suite total is
+    quoted — it is not what either half of the splice measures, and it goes
+    stale on the next change that adds a test.
 
     This is that killer, re-homed beside the index. It is a correspondence
     rather than a count, so it fails in both directions and no number in it
