@@ -38,9 +38,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from tests._gitutil import tracked_files_under  # noqa: E402
+from tests.unit._prose import REPO_ROOT
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_RECORD = _REPO_ROOT / "specs" / "decisions" / "0016-tests-own-structure-and-negative-space.md"
+_RECORD = REPO_ROOT / "specs" / "decisions" / "0016-tests-own-structure-and-negative-space.md"
 
 #: One row of the triage table: `| \`test_x.py\` | **BUCKET** | reason |`.
 _ROW = re.compile(r"^\|\s*`(test_[a-z0-9_]+\.py)`\s*\|\s*\*\*(KEEP|CONVERT|DELETE)\*\*\s*\|")

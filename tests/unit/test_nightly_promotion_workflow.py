@@ -30,7 +30,8 @@ from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.unit._prose import REPO_ROOT
+
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "nightly-staging-promotion.yml"
 SCRIPT = REPO_ROOT / "scripts" / "promotion-step.sh"
 

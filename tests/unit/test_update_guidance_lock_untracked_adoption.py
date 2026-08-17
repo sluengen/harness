@@ -31,7 +31,8 @@ owns structure and negative space, never meaning*.
 
 **Coordinated with ``test_update_guidance_same_version_drift``**, which owns the
 SOURCE DRIFT rule in the same step. Two tripwires, two rule-homes, one file; the
-section slicer is imported from there rather than re-spelled, so the two guards
+section slicer both read, :func:`tests.unit._prose.update_guidance_between`,
+lives in the neutral home since #467 rather than in either guard, so the two
 cannot disagree about where a step begins.
 """
 
@@ -39,7 +40,7 @@ from __future__ import annotations
 
 import re
 
-from tests.unit.test_update_guidance_same_version_drift import _section
+from tests.unit._prose import update_guidance_between
 
 #: The three-part name the case is classified under. All three are conjuncts:
 #: dropping any one turns the rule into a claim about a different, already-handled
@@ -71,13 +72,13 @@ def _adoption_window() -> str:
     """Step 2's run of blocks classifying a lock-untracked file.
 
     From the first block naming ``lock-untracked`` to the last, inclusive — so
-    the two outcome bullets between them are in scope even though neither repeats
+    the two outcome bullets update_guidance_between them are in scope even though neither repeats
     the case's name. Derived from the term the rule is *about* rather than from a
     heading or an ordinal, because the case is one classification among several
     inside one step and an ordinal into that step is invalidated by a correct
     insertion.
     """
-    blocks = _section("### 2.", "### 3.").split("\n\n")
+    blocks = update_guidance_between("### 2.", "### 3.").split("\n\n")
     hits = [i for i, block in enumerate(blocks) if "lock-untracked" in block]
     if not hits:
         return ""
@@ -133,12 +134,12 @@ def test_a_lock_untracked_file_is_adopted_or_reconciled() -> None:
         "silent skip #173 is about."
     )
 
-    assert re.search(r"adopt", _section("### 4.", "### 5."), re.IGNORECASE), (
+    assert re.search(r"adopt", update_guidance_between("### 4.", "### 5."), re.IGNORECASE), (
         "step 4 does not state that a newly-adopted lock-untracked file gets a "
         "fresh lock entry, the same as a first-time PULL. An adoption the lock "
         "never records is re-adopted on every subsequent run (#173)."
     )
-    assert "adopted" in _section("### 6.", "## Note"), (
+    assert "adopted" in update_guidance_between("### 6.", "## Note"), (
         "step 6 does not report a count of adopted (previously lock-untracked) "
         "files alongside pulled/local/conflict/current. A resolution the operator "
         "never sees is indistinguishable from the skip it replaced (#173)."
@@ -156,7 +157,7 @@ def test_the_adoption_window_is_narrower_than_the_step() -> None:
     is the one comparison a widened slicer cannot satisfy.
     """
     window = _adoption_window()
-    step = _section("### 2.", "### 3.")
+    step = update_guidance_between("### 2.", "### 3.")
     assert window, "no adoption window derived — see the tripwire above"
     assert len(window) < len(step), (
         "the adoption window is the whole of step 2, so the assertions above are "

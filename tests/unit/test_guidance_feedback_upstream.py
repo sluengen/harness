@@ -49,9 +49,9 @@ in its history and no regression to catch.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-REPO_ROOT = Path(__file__).parent.parent.parent
+from tests.unit._prose import REPO_ROOT
+
 PROCESS_DOC = REPO_ROOT / "process" / "harness.md"
 MIRRORS = [REPO_ROOT / name for name in ("AGENTS.md", "CLAUDE.md", "GEMINI.md")]
 UPDATE_GUIDANCE = REPO_ROOT / "commands" / "update-guidance.md"

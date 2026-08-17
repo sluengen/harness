@@ -45,12 +45,11 @@ guard over prose owns structure and negative space, never meaning*).
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_SKILL = _REPO_ROOT / "skills" / "test-driven-development" / "SKILL.md"
-_REGISTRY = _REPO_ROOT / "registry.yaml"
+from tests.unit._prose import REPO_ROOT
+
+_SKILL = REPO_ROOT / "skills" / "test-driven-development" / "SKILL.md"
+_REGISTRY = REPO_ROOT / "registry.yaml"
 
 _NEW_BULLET_TITLE_PREFIX = "Cover the new stage under every configuration"
 _GUARD_BULLET_TITLE_PREFIX = "Cover each of a guard's"

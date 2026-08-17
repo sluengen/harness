@@ -24,7 +24,8 @@ import re
 import subprocess
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.unit._prose import REPO_ROOT
+
 VERIFY = REPO_ROOT / "scripts" / "verify.sh"
 
 #: The reserved "gate could not run" exit code. Distinct from 1 (a red tree) and

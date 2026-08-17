@@ -53,10 +53,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from tests._gitutil import tracked_files_under  # noqa: E402
+from tests.unit._prose import REPO_ROOT
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_PROCESS_DOC = _REPO_ROOT / "process" / "harness.md"
-_HOOKS_DIR = _REPO_ROOT / "hooks"
+_PROCESS_DOC = REPO_ROOT / "process" / "harness.md"
+_HOOKS_DIR = REPO_ROOT / "hooks"
 
 #: The section that owns the inventory, and the sub-heading that splits it into
 #: the hooks that refuse and the hooks that advise.

@@ -29,7 +29,8 @@ claim, which nothing else in the tree measures: a duplicated rendering or
 structural shell is covered exactly as a duplicated function is.
 
 * **Anchor** — the admission paragraph of ``### Extract on the third strike``.
-  The slicer is **imported** from the sibling module rather than re-spelled, so
+  The slicer is **imported** from :mod:`tests.unit._prose` rather than
+  re-spelled, so
   both tripwires read the same window and a fork cannot open between them
   (``craft.md`` → *A positive control must exercise the predicate, not
   re-implement it*). The window is the paragraph, not the section: the
@@ -51,7 +52,7 @@ from __future__ import annotations
 
 import re
 
-from tests.unit.test_mirrors_admission_third_strike import _admission_paragraph
+from tests.unit._prose import admission_paragraph
 
 #: The words the coverage-parity claim cannot be stated without.
 _TERMS = (r"\brendering\b", r"\bstructural\b", r"\bfunction\b")
@@ -59,7 +60,7 @@ _TERMS = (r"\brendering\b", r"\bstructural\b", r"\bfunction\b")
 
 def test_the_trigger_covers_a_duplicated_shell_like_a_duplicated_function() -> None:
     """AC-2: the admission trigger reaches a rendering/structural shell."""
-    para = _admission_paragraph()
+    para = admission_paragraph()
     missing = [t for t in _TERMS if not re.search(t, para, re.IGNORECASE)]
     assert not missing, (
         "the admission paragraph no longer states that the trigger covers a "

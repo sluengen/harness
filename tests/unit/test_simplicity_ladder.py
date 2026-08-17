@@ -35,11 +35,10 @@ prose owns structure and negative space, never meaning*.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_SKILL = _REPO_ROOT / "skills" / "engineering-principles" / "SKILL.md"
+from tests.unit._prose import REPO_ROOT
+
+_SKILL = REPO_ROOT / "skills" / "engineering-principles" / "SKILL.md"
 _LADDER_HEADING = "## Before you write it"
 
 #: The guard's direction, anchored to the verb it governs. The clause is the

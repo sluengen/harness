@@ -32,9 +32,9 @@ an empty slice fails on the terms.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.unit._prose import REPO_ROOT
+
 SKILL = REPO_ROOT / "skills" / "design-system" / "SKILL.md"
 
 _NEGATION = re.compile(

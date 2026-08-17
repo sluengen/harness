@@ -47,9 +47,9 @@ decision exempts. Two prose co-occurrences went:
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-REPO_ROOT = Path(__file__).parent.parent.parent
+from tests.unit._prose import REPO_ROOT
+
 AGENTS_DIR = REPO_ROOT / "agents"
 TASKS_DIR = AGENTS_DIR / "tasks"
 STEWARD = AGENTS_DIR / "steward.md"

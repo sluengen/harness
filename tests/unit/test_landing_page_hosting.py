@@ -21,10 +21,9 @@ not in these unit tests — there is nothing in the tree to assert against.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-#: ``tests/unit/test_*.py`` -> ``parents[2]`` is the repo (or worktree) root.
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.unit._prose import REPO_ROOT
+
 DOCS = REPO_ROOT / "docs"
 PAGE = DOCS / "index.html"
 README = REPO_ROOT / "README.md"

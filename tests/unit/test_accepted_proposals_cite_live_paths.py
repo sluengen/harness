@@ -48,9 +48,7 @@ import re
 from pathlib import Path
 
 from tests._gitutil import tracked_files_under
-from tests.unit.test_proposal_status_vocabulary import proposal_status
-
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.unit._prose import REPO_ROOT, proposal_status
 
 #: Suffixes that make a backticked token a *source path* rather than prose. A
 #: token with none of these and no trailing ``/`` — ``sluengen/harness``,
@@ -140,7 +138,7 @@ def dead_path_cites(text: str, tracked: set[str], tracked_dirs: set[str]) -> lis
 
 def _tracked_paths() -> set[str]:
     return {
-        path.relative_to(_REPO_ROOT).as_posix()
+        path.relative_to(REPO_ROOT).as_posix()
         for path in tracked_files_under(".")
     }
 
@@ -315,7 +313,7 @@ def test_the_predicate_reads_real_proposal_text() -> None:
     """
     tracked = _tracked_paths()
     dirs = _tracked_dirs(tracked)
-    real = (_REPO_ROOT / "specs/proposals/design-verb.md").read_text()
+    real = (REPO_ROOT / "specs/proposals/design-verb.md").read_text()
     spliced = "harness/cli/a-path-this-repo-never-had.py"
     before = dead_path_cites(real, tracked, dirs)
     after = dead_path_cites(f"{real}\n\nSee `{spliced}`.\n", tracked, dirs)
@@ -350,7 +348,7 @@ def test_no_accepted_proposal_cites_a_dead_path() -> None:
     dirs = _tracked_dirs(tracked)
     subjects = _accepted_proposals()
     offenders = {
-        path.relative_to(_REPO_ROOT).as_posix(): dead
+        path.relative_to(REPO_ROOT).as_posix(): dead
         for path in subjects
         if (dead := dead_path_cites(path.read_text(), tracked, dirs))
     }

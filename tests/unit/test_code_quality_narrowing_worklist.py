@@ -36,11 +36,10 @@ placement pin collapse into a single tripwire:
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_SKILL = _REPO_ROOT / "skills" / "code-quality" / "references" / "specialized-verification.md"
+from tests.unit._prose import REPO_ROOT
+
+_SKILL = REPO_ROOT / "skills" / "code-quality" / "references" / "specialized-verification.md"
 
 _HEADING = "### Narrowing a nullable is a whole-call-graph change"
 

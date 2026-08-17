@@ -45,8 +45,9 @@ from pathlib import Path
 
 import pytest
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_HOOKS_DIR = _REPO_ROOT / "hooks"
+from tests.unit._prose import REPO_ROOT
+
+_HOOKS_DIR = REPO_ROOT / "hooks"
 _HOOK = _HOOKS_DIR / "workflow-guard.js"
 _PUSH_HOOK = _HOOKS_DIR / "push-target-guard.js"
 

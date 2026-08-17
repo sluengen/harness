@@ -72,6 +72,7 @@ from tests._gitutil import (
     tracked_files_under,
     tracked_py_sources,
 )
+from tests.unit._prose import REPO_ROOT
 
 # size: over the ceiling on declarative data, not on logic — roughly three
 # quarters of this module is the retirement inventory itself: nine tuples naming
@@ -81,7 +82,6 @@ from tests._gitutil import (
 # rather than in a commit body. Ten short test bodies read those tuples; the
 # executable surface is one regex and two helpers.
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 #: Stage 1's retired paths — the deployment envelope, as pathspecs.
 #:
@@ -314,7 +314,7 @@ _SURVIVING_PROMOTION = (
 
 def _relative(paths: set[Path]) -> list[str]:
     """Tracked paths as repo-relative strings, for a legible failure."""
-    return sorted(str(path.relative_to(_REPO_ROOT)) for path in paths)
+    return sorted(str(path.relative_to(REPO_ROOT)) for path in paths)
 
 
 # ---------------------------------------------------------------------------
@@ -624,7 +624,7 @@ def test_an_archived_record_says_it_is_history_and_when_it_became_history(
     it, the six documents most likely to be mistaken for current design are the
     six nothing checks.
     """
-    text = (_REPO_ROOT / new).read_text(encoding="utf-8")
+    text = (REPO_ROOT / new).read_text(encoding="utf-8")
     head = text.splitlines()[:_BANNER_SCAN_LINES]
     dated = [match for match in (_BANNER.match(line) for line in head) if match]
     assert dated, (
@@ -700,7 +700,7 @@ def test_no_surviving_python_imports_the_retired_package() -> None:
         f"the import sweep read only {len(swept)} Python sources — the tracked "
         f"tree carries far more, so the roots have stopped resolving"
     )
-    importers = _engine_importers(swept, root=_REPO_ROOT)
+    importers = _engine_importers(swept, root=REPO_ROOT)
     assert importers == [], (
         f"these modules still import the retired `harness` package: {importers}. "
         f"ADR 0015 deletes it; remove the dependency rather than restoring the "

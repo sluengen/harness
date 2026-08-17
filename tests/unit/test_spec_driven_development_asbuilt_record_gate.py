@@ -40,11 +40,10 @@ substring search run from here.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_SKILL = _REPO_ROOT / "skills" / "spec-driven-development" / "SKILL.md"
+from tests.unit._prose import REPO_ROOT
+
+_SKILL = REPO_ROOT / "skills" / "spec-driven-development" / "SKILL.md"
 
 #: The trigger's direction, anchored to the noun it governs: the gate fires on a
 #: surface whose record does **not** exist. A bare negation over a paragraph this

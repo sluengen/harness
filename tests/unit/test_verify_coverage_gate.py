@@ -28,9 +28,9 @@ from __future__ import annotations
 
 import re
 import shlex
-from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.unit._prose import REPO_ROOT
+
 VERIFY = REPO_ROOT / "scripts" / "verify.sh"
 
 #: The floor the gate enforces, set just under the coverage measured at the

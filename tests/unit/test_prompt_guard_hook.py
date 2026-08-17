@@ -42,12 +42,12 @@ import json
 import re
 import shutil
 import subprocess
-from pathlib import Path
 
 import pytest
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_HOOK = _REPO_ROOT / "hooks" / "prompt-guard.js"
+from tests.unit._prose import REPO_ROOT
+
+_HOOK = REPO_ROOT / "hooks" / "prompt-guard.js"
 
 #: One payload per shipped pattern, keyed by the pattern's own ``source`` string.
 #: The key is what binds a sample to the pattern it is written for: the hook

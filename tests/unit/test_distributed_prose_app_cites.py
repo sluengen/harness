@@ -71,11 +71,10 @@ import re
 from pathlib import Path
 
 from tests._gitutil import tracked_files_under
+from tests.unit._prose import REPO_ROOT
 
-# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_REGISTRY = _REPO_ROOT / "registry.yaml"
-_PRINCIPLES = _REPO_ROOT / "specs" / "architecture-principles.md"
+_REGISTRY = REPO_ROOT / "registry.yaml"
+_PRINCIPLES = REPO_ROOT / "specs" / "architecture-principles.md"
 
 # Files a consuming repo resolves though they are not ``registry.yaml`` ``files:``
 # entries: the installer-derived artifacts (architecture-principles.md, "App vs.
@@ -156,10 +155,10 @@ def _resolve(cite: str, rel_dir: str, tracked: set[Path]) -> str | None:
     names ``harness/cli/start.py``) and as a **file-relative** markdown link (how
     ``[0002](../specs/decisions/0002-...)`` names it, relative to the citing
     file's directory) — the first that lands on a tracked file wins."""
-    for base in ((_REPO_ROOT / cite), (_REPO_ROOT / rel_dir / cite)):
+    for base in ((REPO_ROOT / cite), (REPO_ROOT / rel_dir / cite)):
         resolved = base.resolve()
         try:
-            rel = resolved.relative_to(_REPO_ROOT).as_posix()
+            rel = resolved.relative_to(REPO_ROOT).as_posix()
         except ValueError:
             continue  # a leading ``../`` walked outside the repo — not this cite
         if resolved in tracked:
@@ -298,7 +297,7 @@ def test_no_distributed_prose_cites_an_app_only_path() -> None:
     violations: list[str] = []
     for name in _surface_md_files():
         rel_dir = Path(name).parent.as_posix()
-        for line_no, cite in _scan_text((_REPO_ROOT / name).read_text(), rel_dir):
+        for line_no, cite in _scan_text((REPO_ROOT / name).read_text(), rel_dir):
             violations.append(f"{name}:{line_no}: {cite}")
     assert not violations, (
         "distributed prose cites an app-only path a consuming repo does not have "

@@ -69,19 +69,17 @@ from __future__ import annotations
 
 import hashlib
 import re
-from pathlib import Path
 
 from tests._gitutil import tracked_files_under
+from tests.unit._prose import REPO_ROOT
 
-# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_LICENSE = _REPO_ROOT / "LICENSE"
-_GUIDANCE_MIT = _REPO_ROOT / "GUIDANCE-MIT.md"
-_REGISTRY = _REPO_ROOT / "registry.yaml"
-_PYPROJECT = _REPO_ROOT / "pyproject.toml"
-_README = _REPO_ROOT / "README.md"
-_CONTRIBUTING = _REPO_ROOT / "CONTRIBUTING.md"
-_BOOTSTRAP = _REPO_ROOT / "BOOTSTRAP.md"
+_LICENSE = REPO_ROOT / "LICENSE"
+_GUIDANCE_MIT = REPO_ROOT / "GUIDANCE-MIT.md"
+_REGISTRY = REPO_ROOT / "registry.yaml"
+_PYPROJECT = REPO_ROOT / "pyproject.toml"
+_README = REPO_ROOT / "README.md"
+_CONTRIBUTING = REPO_ROOT / "CONTRIBUTING.md"
+_BOOTSTRAP = REPO_ROOT / "BOOTSTRAP.md"
 
 #: First line of the canonical AGPL-3.0 body. ``LICENSE`` is now the licence
 #: verbatim, so the file *begins* with this line — nothing is prepended.
@@ -169,7 +167,7 @@ def test_license_is_the_only_detectable_licence() -> None:
     root_candidates = sorted(
         p.name
         for p in tracked_files_under(".")
-        if p.parent == _REPO_ROOT and _LICENSE_CANDIDATE.search(p.name)
+        if p.parent == REPO_ROOT and _LICENSE_CANDIDATE.search(p.name)
     )
     assert root_candidates == ["LICENSE"], (
         f"licensee would treat these root files as licence candidates: {root_candidates}. "

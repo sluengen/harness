@@ -36,15 +36,7 @@ from __future__ import annotations
 
 import re
 
-# The slicer lives in the module that exports it to this family rather than in a
-# private copy per bullet: a copy drifts from the prose it slices and produces a
-# confident false green (``craft.md`` → *A positive control must exercise the
-# predicate, not re-implement it*). It carries its own missing-bullet assertion,
-# so a renamed or deleted anchor fires there rather than measuring nothing here.
-from tests.unit.test_review_discipline_context_currency import (
-    _skill_text,
-    _stage_two_bullet,
-)
+from tests.unit._prose import diff_shape_checks_text, stage_two_bullet
 
 _BULLET_TITLE = "Type predicate coverage"
 
@@ -60,7 +52,7 @@ _NOT_A_NIT = re.compile(r"\bnot\b(?:\W+\w+){0,2}?\W+nit\b", re.IGNORECASE)
 
 
 def _bullet() -> str:
-    return _stage_two_bullet(_skill_text(), _BULLET_TITLE)
+    return stage_two_bullet(diff_shape_checks_text(), _BULLET_TITLE)
 
 
 def test_the_type_predicate_rule_grades_a_subset_as_a_defect() -> None:

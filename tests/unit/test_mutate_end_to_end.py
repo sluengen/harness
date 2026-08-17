@@ -48,10 +48,11 @@ from pathlib import Path
 
 import pytest
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_SCRIPT = _REPO_ROOT / "scripts" / "mutate.py"
-_PLUGIN = _REPO_ROOT / "scripts" / "_mutate_outcomes.py"
-_VERIFY = _REPO_ROOT / "scripts" / "verify.sh"
+from tests.unit._prose import REPO_ROOT
+
+_SCRIPT = REPO_ROOT / "scripts" / "mutate.py"
+_PLUGIN = REPO_ROOT / "scripts" / "_mutate_outcomes.py"
+_VERIFY = REPO_ROOT / "scripts" / "verify.sh"
 
 _SENTINEL = "harness-360-synthetic-project"
 

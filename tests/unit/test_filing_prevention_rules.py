@@ -17,7 +17,7 @@ after.
 **The subject is the registered corpus, not the whole tree.** ``registry.yaml``'s
 ``files:`` block is what a consuming repo actually receives, so it is the corpus a
 placement claim is about. The derivation, the reader, and the repo root are
-**imported** from :mod:`tests.unit.test_assurance_filing_rubric` rather than
+**imported** from :mod:`tests.unit._prose` rather than
 re-spelled here — a re-implemented predicate stops protecting the one the other
 module's assertions call, which is the class ``craft.md`` → *Exercise the
 production path, not merely a production constant* names.
@@ -56,17 +56,15 @@ from __future__ import annotations
 
 import re
 
-from tests.unit.test_assurance_filing_rubric import (
-    _REPO_ROOT,
-    _delegates_the_level_choice,
-    _read,
-    _registered_markdown,
-    _sentences,
-)
-from tests.unit.test_assurance_filing_surfaces import (
-    _FILES_AN_ISSUE,
-    _filing_units,
-    _instruction_units,
+from tests.unit._prose import (
+    FILES_AN_ISSUE,
+    REPO_ROOT,
+    delegates_the_level_choice,
+    filing_units,
+    instruction_units,
+    read,
+    registered_markdown,
+    sentences,
 )
 
 # ---------------------------------------------------------------------------
@@ -91,7 +89,7 @@ _ASSESS = "commands/assess.md"
 def _units(text: str) -> list[str]:
     """Instruction units — paragraphs, list items, headings, **and table rows**.
 
-    ``_instruction_units`` is imported, not re-spelled: it is the boundary every
+    ``instruction_units`` is imported, not re-spelled: it is the boundary every
     filing predicate in this tree is anchored on, and a fork of it is a fork of
     the unit those controls were written to hold. What it does not do is split a
     markdown table, because no filing instruction is a table row. Rule 4's home
@@ -105,13 +103,13 @@ def _units(text: str) -> list[str]:
     for line in text.splitlines():
         if line.lstrip().startswith("|"):
             if buffer:
-                units.extend(_instruction_units("\n".join(buffer)))
+                units.extend(instruction_units("\n".join(buffer)))
                 buffer = []
             units.append(" ".join(line.split()))
         else:
             buffer.append(line)
     if buffer:
-        units.extend(_instruction_units("\n".join(buffer)))
+        units.extend(instruction_units("\n".join(buffer)))
     return units
 
 
@@ -293,7 +291,7 @@ def _non_blocking_large_verdict_proposes(text: str) -> list[str]:
     Two conditions on the same cell. *Propose it* is the verdict; the absence of
     a filing instruction is what makes it the rule rather than a renamed
     write-up, since a cell that proposes **and** files has closed nothing. The
-    filing predicate is :data:`_FILES_AN_ISSUE`, imported — the same one that
+    filing predicate is :data:`FILES_AN_ISSUE`, imported — the same one that
     decides what a filing surface is everywhere else in this tree.
     """
     rows = [unit for unit in _units(text) if _NON_BLOCKING_ROW.match(unit)]
@@ -301,7 +299,7 @@ def _non_blocking_large_verdict_proposes(text: str) -> list[str]:
         row
         for row in rows
         if _PROPOSE_VERDICT.search(row.rsplit("|", 2)[-2])
-        and not _FILES_AN_ISSUE.search(row.rsplit("|", 2)[-2])
+        and not FILES_AN_ISSUE.search(row.rsplit("|", 2)[-2])
     ]
 
 
@@ -329,14 +327,14 @@ def _states_the_report_carries_proposals(text: str) -> list[str]:
 def _splits_deferral_by_class(text: str) -> list[str]:
     """Filing units that route bugs and improvements down different paths.
 
-    Derived from ``_filing_units`` — the imported predicate that decides what a
+    Derived from ``filing_units`` — the imported predicate that decides what a
     filing surface *is* — rather than from every unit, because the claim is about
     the instruction that files: the bug branch must still file, in the same unit,
     or the surface stops being a filing surface at all.
     """
     return [
         unit
-        for unit in _filing_units(text)
+        for unit in filing_units(text)
         if _BUG.search(unit) and _IMPROVEMENT.search(unit) and _PROPOSED.search(unit)
     ]
 
@@ -416,7 +414,7 @@ def test_the_registered_corpus_is_populated() -> None:
     *everything except the homes* fails them for a reason nobody could read.
     Both are excluded here, once, so the per-rule failures mean what they say.
     """
-    corpus = _registered_markdown()
+    corpus = registered_markdown()
     assert len(corpus) >= _CORPUS_FLOOR, (
         f"only {len(corpus)} registered markdown files derived from registry.yaml, "
         f"under the floor of {_CORPUS_FLOOR} — the placement sweeps below would be "
@@ -428,7 +426,7 @@ def test_the_registered_corpus_is_populated() -> None:
 
 def test_the_twin_sweep_has_a_home() -> None:
     """R1: the reviewer's obligations require a mechanism's twin to move with it."""
-    assert _states_the_twin_sweep(_read(_REVIEW_DISCIPLINE)), (
+    assert _states_the_twin_sweep(read(_REVIEW_DISCIPLINE)), (
         f"{_REVIEW_DISCIPLINE} does not require the twin of a changed mechanism to "
         f"be updated in the same branch or explicitly deferred. A template, a "
         f"mirror, or a hook's guard left behind ships green — the guard over the "
@@ -438,7 +436,7 @@ def test_the_twin_sweep_has_a_home() -> None:
 
 def test_the_twin_sweep_has_exactly_one_home() -> None:
     """R1 is stated once — AC-1's no-restatement half, which the home test cannot see."""
-    homes = {rel for rel in _registered_markdown() if _states_the_twin_sweep(_read(rel))}
+    homes = {rel for rel in registered_markdown() if _states_the_twin_sweep(read(rel))}
     assert homes == {_REVIEW_DISCIPLINE}, (
         f"the twin sweep is stated in {sorted(homes)}; it belongs in "
         f"{_REVIEW_DISCIPLINE} alone."
@@ -447,7 +445,7 @@ def test_the_twin_sweep_has_exactly_one_home() -> None:
 
 def test_novelty_fails_red_has_a_home() -> None:
     """R2: the craft reference carries the unclassified-member class."""
-    assert _states_novelty_fails_red(_read(_CRAFT)), (
+    assert _states_novelty_fails_red(read(_CRAFT)), (
         f"{_CRAFT} does not require a guard over an enumerable dimension to fail on "
         f"an unclassified member. A classifier whose default branch means 'not my "
         f"subject' stops covering a whole class the day one is added, and reports "
@@ -457,7 +455,7 @@ def test_novelty_fails_red_has_a_home() -> None:
 
 def test_novelty_fails_red_has_exactly_one_home() -> None:
     """R2 is stated once."""
-    homes = {rel for rel in _registered_markdown() if _states_novelty_fails_red(_read(rel))}
+    homes = {rel for rel in registered_markdown() if _states_novelty_fails_red(read(rel))}
     assert homes == {_CRAFT}, (
         f"the unclassified-member rule is stated in {sorted(homes)}; it belongs in "
         f"{_CRAFT} alone."
@@ -466,7 +464,7 @@ def test_novelty_fails_red_has_exactly_one_home() -> None:
 
 def test_the_reach_measurement_has_a_home() -> None:
     """R3: spec-authoring requires a replacement to be measured against the old reach."""
-    assert _states_the_reach_measurement(_read(_SPEC_AUTHORING)), (
+    assert _states_the_reach_measurement(read(_SPEC_AUTHORING)), (
         f"{_SPEC_AUTHORING} does not require an acceptance criterion measuring a "
         f"replacement source against what the old one held. Verifying the new "
         f"form's content passes over every omission by construction."
@@ -475,7 +473,7 @@ def test_the_reach_measurement_has_a_home() -> None:
 
 def test_the_reach_measurement_has_exactly_one_home() -> None:
     """R3 is stated once."""
-    homes = {rel for rel in _registered_markdown() if _states_the_reach_measurement(_read(rel))}
+    homes = {rel for rel in registered_markdown() if _states_the_reach_measurement(read(rel))}
     assert homes == {_SPEC_AUTHORING}, (
         f"the reach-measurement rule is stated in {sorted(homes)}; it belongs in "
         f"{_SPEC_AUTHORING} alone."
@@ -489,7 +487,7 @@ def test_the_reach_measurement_has_exactly_one_home() -> None:
 
 def test_the_bug_improvement_line_has_a_home() -> None:
     """R4: the factual line between filing a bug and proposing an improvement."""
-    assert _states_the_bug_improvement_line(_read(_REVIEW_DISCIPLINE)), (
+    assert _states_the_bug_improvement_line(read(_REVIEW_DISCIPLINE)), (
         f"{_REVIEW_DISCIPLINE} does not state the factual line between a bug, which "
         f"any agent files, and an improvement, which is proposed and never filed. "
         f"Without it the split is a judgment call, and a judgment call is how every "
@@ -499,7 +497,7 @@ def test_the_bug_improvement_line_has_a_home() -> None:
 
 def test_the_bug_improvement_line_has_exactly_one_home() -> None:
     """R4's rule is stated once; the commands that apply it point at it instead."""
-    homes = {rel for rel in _registered_markdown() if _states_the_bug_improvement_line(_read(rel))}
+    homes = {rel for rel in registered_markdown() if _states_the_bug_improvement_line(read(rel))}
     assert homes == {_REVIEW_DISCIPLINE}, (
         f"the bug/improvement line is stated in {sorted(homes)}; it belongs in "
         f"{_REVIEW_DISCIPLINE} alone — the surfaces that apply it cross-reference it."
@@ -513,7 +511,7 @@ def test_the_non_blocking_large_cell_proposes() -> None:
     rule while the table a reviewer actually reads still routes the finding to a
     ticket. This asserts the cell, which is the surface that decides.
     """
-    rows = _non_blocking_large_verdict_proposes(_read(_REVIEW_DISCIPLINE))
+    rows = _non_blocking_large_verdict_proposes(read(_REVIEW_DISCIPLINE))
     assert len(rows) == 1, (
         f"{_REVIEW_DISCIPLINE}'s finding 2×2 has {len(rows)} non-blocking rows whose "
         f"large-fix cell proposes without filing; it must have exactly one. A cell "
@@ -530,7 +528,7 @@ def test_the_report_contract_requires_a_proposals_section() -> None:
     it would be indistinguishable from the write-ups it replaces — raised when
     someone remembered, invisible when nobody did.
     """
-    assert _states_the_report_carries_proposals(_read(_REVIEW_DISCIPLINE)), (
+    assert _states_the_report_carries_proposals(read(_REVIEW_DISCIPLINE)), (
         f"{_REVIEW_DISCIPLINE}'s report contract does not require a Proposals "
         f"section that is written even when empty. A section a report may omit "
         f"gives `/digest` nothing to read and no way to tell an empty window from "
@@ -546,7 +544,7 @@ def test_the_zero_agent_volume_consequence_is_stated() -> None:
     that the improvement volume an agent can file is **none**, and that sentence
     is the only thing in the file that says so.
     """
-    assert _states_the_zero_agent_volume(_read(_REVIEW_DISCIPLINE)), (
+    assert _states_the_zero_agent_volume(read(_REVIEW_DISCIPLINE)), (
         f"{_REVIEW_DISCIPLINE} no longer states that the improvement volume an "
         f"agent can file is zero. Without it the file describes a channel and not "
         f"a bound, and a later edit can keep every step of the mechanism while "
@@ -641,13 +639,13 @@ def test_the_ratification_procedure_is_retired_from_the_corpus() -> None:
     and above. A digest emptied of its proposal handling passes *this* test and
     fails those.
     """
-    assert _states_the_ratification(_read(_DIGEST)) == [], (
+    assert _states_the_ratification(read(_DIGEST)) == [], (
         f"{_DIGEST} still carries the retired per-window ratification procedure — "
         f"promote, drop, and silence is a drop. Entries in the proposals ledger "
         f"accumulate until a drain; a window that silently drops what it surfaced "
         f"is the mechanism the ledger replaced."
     )
-    homes = {rel for rel in _registered_markdown() if _states_the_ratification(_read(rel))}
+    homes = {rel for rel in registered_markdown() if _states_the_ratification(read(rel))}
     assert homes == set(), (
         f"the retired ratification procedure is stated in {sorted(homes)}. Nothing "
         f"in the tree drops a proposal for want of an answer any more."
@@ -814,14 +812,14 @@ def _files_an_improvement(text: str) -> list[str]:
     the filing verb and the improvement noun in one span and reads a correctly
     split path as a violation. Measured in the controls below.
 
-    ``_FILES_AN_ISSUE`` is imported — it is the predicate that decides what a
+    ``FILES_AN_ISSUE`` is imported — it is the predicate that decides what a
     filing instruction is everywhere else in this tree, so a sweep that
     re-implemented it would stop covering what the other module's assertions call.
     """
     return [
         sentence
-        for sentence in _sentences(text)
-        if _FILES_AN_ISSUE.search(sentence)
+        for sentence in sentences(text)
+        if FILES_AN_ISSUE.search(sentence)
         and _IMPROVEMENT_CLASS.search(sentence)
         and not _OPERATOR_PROMOTED.search(sentence)
     ]
@@ -845,8 +843,8 @@ def _spends_the_operator_promotion(text: str) -> list[str]:
     """
     return [
         sentence
-        for sentence in _sentences(text)
-        if _FILES_AN_ISSUE.search(sentence)
+        for sentence in sentences(text)
+        if FILES_AN_ISSUE.search(sentence)
         and _IMPROVEMENT_CLASS.search(sentence)
         and _OPERATOR_PROMOTED.search(sentence)
     ]
@@ -854,7 +852,7 @@ def _spends_the_operator_promotion(text: str) -> list[str]:
 
 def test_the_ledger_recipe_has_a_home() -> None:
     """AC-2: the tracker protocol owns find-or-create-by-label."""
-    assert _states_the_ledger_recipe(_read(_TRACKER)), (
+    assert _states_the_ledger_recipe(read(_TRACKER)), (
         f"{_TRACKER} does not carry the proposals ledger's find-or-create-by-label "
         f"recipe — discovery by label, creation when absent, one open instance per "
         f"repo. Without it every surface that appends an entry has to invent an "
@@ -865,7 +863,7 @@ def test_the_ledger_recipe_has_a_home() -> None:
 
 def test_the_ledger_recipe_has_exactly_one_home() -> None:
     """AC-2's stated-once half — the four surfaces that use the ledger point at it."""
-    homes = {rel for rel in _registered_markdown() if _states_the_ledger_recipe(_read(rel))}
+    homes = {rel for rel in registered_markdown() if _states_the_ledger_recipe(read(rel))}
     assert homes == {_TRACKER}, (
         f"the ledger recipe is stated in {sorted(homes)}; it belongs in {_TRACKER} "
         f"alone — `review-discipline`, `/digest`, `/assess` and `/build`'s DEFER "
@@ -876,7 +874,7 @@ def test_the_ledger_recipe_has_exactly_one_home() -> None:
 
 def test_the_accumulation_semantics_have_a_home() -> None:
     """The ledger accumulates as memory and owes nothing — stated where it is defined."""
-    assert _states_the_accumulation_is_not_a_promise(_read(_TRACKER)), (
+    assert _states_the_accumulation_is_not_a_promise(read(_TRACKER)), (
         f"{_TRACKER} does not state that ledger entries accumulate as memory rather "
         f"than as promises. An append-only list of improvements that reads as a "
         f"commitment is the unbounded queue the filing rules close, relocated."
@@ -885,7 +883,7 @@ def test_the_accumulation_semantics_have_a_home() -> None:
 
 def test_the_proposal_channel_routes_to_the_ledger() -> None:
     """AC-1: the proposal channel names the ledger and defines an entry."""
-    assert _states_what_an_entry_carries(_read(_REVIEW_DISCIPLINE)), (
+    assert _states_what_an_entry_carries(read(_REVIEW_DISCIPLINE)), (
         f"{_REVIEW_DISCIPLINE}'s proposal channel does not route a proposal into the "
         f"ledger with its case, its provenance, and a suggested home. A proposal "
         f"that lives only in the report dies with the report — the gap that made a "
@@ -900,7 +898,7 @@ def test_the_entry_shape_has_exactly_one_home() -> None:
     insight clause spelled the three parts out again, four paragraphs after
     pointing at the channel that defines them. Nothing else would have gone red.
     """
-    homes = {rel for rel in _registered_markdown() if _states_what_an_entry_carries(_read(rel))}
+    homes = {rel for rel in registered_markdown() if _states_what_an_entry_carries(read(rel))}
     assert homes == {_REVIEW_DISCIPLINE}, (
         f"what a ledger entry carries is defined in {sorted(homes)}; it belongs in "
         f"{_REVIEW_DISCIPLINE} alone. Two definitions of an entry agree on the day "
@@ -910,7 +908,7 @@ def test_the_entry_shape_has_exactly_one_home() -> None:
 
 def test_the_digest_surfaces_the_ledger() -> None:
     """AC-3: the digest reads the ledger and surfaces what is new since the window."""
-    assert _states_the_ledger_surfacing(_read(_DIGEST)), (
+    assert _states_the_ledger_surfacing(read(_DIGEST)), (
         f"{_DIGEST} does not read the proposals ledger and surface its new entries. "
         f"With the ratification step retired, surfacing is the digest's whole "
         f"remaining duty here, and dropping both leaves the ledger unread."
@@ -919,7 +917,7 @@ def test_the_digest_surfaces_the_ledger() -> None:
 
 def test_the_drain_has_a_home() -> None:
     """AC-4: `/assess` drains the ledger — group, abstract, prioritise, slate, verdicts."""
-    assert _states_the_drain(_read(_ASSESS)), (
+    assert _states_the_drain(read(_ASSESS)), (
         f"{_ASSESS} does not carry the drain. The ledger accumulates and nothing "
         f"expires, so a ledger with no drain grows without bound — which is the "
         f"same failure as the queue it was built to keep entries out of."
@@ -928,7 +926,7 @@ def test_the_drain_has_a_home() -> None:
 
 def test_the_drain_has_exactly_one_home() -> None:
     """The drain procedure is stated once, in the command that performs it."""
-    homes = {rel for rel in _registered_markdown() if _states_the_drain(_read(rel))}
+    homes = {rel for rel in registered_markdown() if _states_the_drain(read(rel))}
     assert homes == {_ASSESS}, (
         f"the drain procedure is stated in {sorted(homes)}; it belongs in {_ASSESS} "
         f"alone."
@@ -949,9 +947,9 @@ def test_no_registered_file_instructs_an_agent_to_file_an_improvement() -> None:
     otherwise cannot demonstrate.
     """
     offenders = {
-        rel: _files_an_improvement(_read(rel))
-        for rel in _registered_markdown()
-        if _files_an_improvement(_read(rel))
+        rel: _files_an_improvement(read(rel))
+        for rel in registered_markdown()
+        if _files_an_improvement(read(rel))
     }
     assert offenders == {}, (
         f"registered guidance still instructs an agent to file an improvement: "
@@ -998,7 +996,7 @@ def test_the_operator_promoted_exemption_has_exactly_one_home() -> None:
     ``homes`` and fails, and a second spender adds to it and fails.
     """
     homes = {
-        rel for rel in _registered_markdown() if _spends_the_operator_promotion(_read(rel))
+        rel for rel in registered_markdown() if _spends_the_operator_promotion(read(rel))
     }
     assert homes == {_ASSESS}, (
         f"the operator-promotion exemption is spent in {sorted(homes)}; it belongs "
@@ -1128,7 +1126,7 @@ def test_the_improvement_filing_sweep_reads_the_right_unit() -> None:
     wider = [
         unit
         for unit in _units(defer)
-        if _FILES_AN_ISSUE.search(unit) and _IMPROVEMENT_CLASS.search(unit)
+        if FILES_AN_ISSUE.search(unit) and _IMPROVEMENT_CLASS.search(unit)
     ]
     assert wider, (
         "the instruction-unit reading no longer merges the two branches, so the "
@@ -1177,7 +1175,7 @@ def test_the_defer_path_splits_bugs_from_improvements() -> None:
     something several surfaces may legitimately do. An exclusivity assertion here
     would go red the first time another command aligned correctly.
     """
-    assert _splits_deferral_by_class(_read(_BUILD)), (
+    assert _splits_deferral_by_class(read(_BUILD)), (
         f"{_BUILD}'s DEFER path does not separate a bug, which files, from an "
         f"improvement, which is proposed. Routing both through `tracker.create` is "
         f"the agent-filing grant rule 4 closes."
@@ -1194,9 +1192,9 @@ def test_the_defer_path_stays_a_filing_surface_with_its_rubric_pointer() -> None
     filing surface and take its rubric pointer with it. Both halves are asserted
     on the same unit, because that is the unit the other module measures.
     """
-    units = _splits_deferral_by_class(_read(_BUILD))
+    units = _splits_deferral_by_class(read(_BUILD))
     assert units, "no split DEFER filing unit — see the test above"
-    assert any(_delegates_the_level_choice(unit) for unit in units), (
+    assert any(delegates_the_level_choice(unit) for unit in units), (
         f"{_BUILD}'s split DEFER path files without naming `spec-authoring` → "
         f"*Choosing assurance* in the instruction that files. The bug branch still "
         f"creates a ticket, so it still owes the level choice to the one rubric."
@@ -1205,7 +1203,7 @@ def test_the_defer_path_stays_a_filing_surface_with_its_rubric_pointer() -> None
 
 def test_the_r_line_has_a_home() -> None:
     """R5: the digest reports opened versus closed, split by source."""
-    assert _states_the_r_line(_read(_DIGEST)), (
+    assert _states_the_r_line(read(_DIGEST)), (
         f"{_DIGEST} does not report the window's tickets opened versus closed with "
         f"the opened count split by source. The retrospective that produced these "
         f"rules was done by eyeball; the line is what makes it ambient."
@@ -1214,7 +1212,7 @@ def test_the_r_line_has_a_home() -> None:
 
 def test_the_r_line_has_exactly_one_home() -> None:
     """R5 is stated once."""
-    homes = {rel for rel in _registered_markdown() if _states_the_r_line(_read(rel))}
+    homes = {rel for rel in registered_markdown() if _states_the_r_line(read(rel))}
     assert homes == {_DIGEST}, (
         f"the R line is stated in {sorted(homes)}; it belongs in {_DIGEST} alone."
     )
@@ -1222,7 +1220,7 @@ def test_the_r_line_has_exactly_one_home() -> None:
 
 def test_the_occurrence_citation_has_a_home() -> None:
     """R6: a new guard names the occurred defect class it prevents."""
-    assert _states_the_occurrence_citation(_read(_CODE_QUALITY)), (
+    assert _states_the_occurrence_citation(read(_CODE_QUALITY)), (
         f"{_CODE_QUALITY} does not require a new guard to cite the occurrence it "
         f"prevents. A speculative guard costs the same to read, run, and maintain "
         f"as a real one while defending nothing."
@@ -1231,7 +1229,7 @@ def test_the_occurrence_citation_has_a_home() -> None:
 
 def test_the_occurrence_citation_has_exactly_one_home() -> None:
     """R6 is stated once — and deliberately not restated in the assess command."""
-    homes = {rel for rel in _registered_markdown() if _states_the_occurrence_citation(_read(rel))}
+    homes = {rel for rel in registered_markdown() if _states_the_occurrence_citation(read(rel))}
     assert homes == {_CODE_QUALITY}, (
         f"the occurrence-citation rule is stated in {sorted(homes)}; it belongs in "
         f"{_CODE_QUALITY} alone. Its retirement consequence is stated there too, "
@@ -1292,7 +1290,7 @@ def test_the_digest_section_count_matches_every_claim_it_makes() -> None:
     version of the sweep the rule asks a reviewer to do by hand — and it is this
     change's own twin, since this change adds the section.
     """
-    text = _read(_DIGEST)
+    text = read(_DIGEST)
     derived = len(_numbered_sections(text))
     assert derived >= 4, (
         f"only {derived} numbered sections derived from {_DIGEST} — the heading "
@@ -1399,7 +1397,7 @@ def test_the_placement_predicates_discriminate() -> None:
     no_terminal = "The operator promotes the proposal into a ticket, or drops it."
     assert _states_the_ratification(no_terminal) == []
 
-    # R4's DEFER split, through `_filing_units` — so the control also proves the
+    # R4's DEFER split, through `filing_units` — so the control also proves the
     # bug branch is still a filing instruction, which is the constraint the
     # neighbouring module measures.
     defer = (
@@ -1409,7 +1407,7 @@ def test_the_placement_predicates_discriminate() -> None:
     )
     split = _splits_deferral_by_class(defer)
     assert split, "the split-DEFER predicate no longer matches a real filing spelling"
-    assert any(_delegates_the_level_choice(unit) for unit in split)
+    assert any(delegates_the_level_choice(unit) for unit in split)
     proposals_only = (
         "- **DEFER:** every out-of-scope finding is proposed rather than filed, bug "
         "or improvement alike."
@@ -1519,7 +1517,7 @@ def test_the_unit_boundary_splits_table_rows() -> None:
         "a cell from the blocking row is sharing a unit with the non-blocking "
         "verdict — the table is being read as one span"
     )
-    assert _instruction_units(table) == [" ".join(table.split())], (
+    assert instruction_units(table) == [" ".join(table.split())], (
         "the imported splitter no longer merges a table — this module's extra "
         "carve-out is now a second, redundant boundary and should be dropped"
     )
@@ -1549,10 +1547,10 @@ def test_the_section_count_predicates_discriminate() -> None:
 def test_the_module_reads_the_repo_it_is_checked_into() -> None:
     """The imported repo root resolves to a tree carrying the registry.
 
-    A floor on the import itself: every read above goes through `_read`, which
-    joins onto `_REPO_ROOT`. If that resolved somewhere without a `registry.yaml`,
+    A floor on the import itself: every read above goes through `read`, which
+    joins onto `REPO_ROOT`. If that resolved somewhere without a `registry.yaml`,
     the corpus derivation would raise rather than pass — but a *different* harness
     checkout would resolve fine and quietly measure the wrong tree.
     """
-    assert (_REPO_ROOT / "registry.yaml").is_file()
-    assert (_REPO_ROOT / _DIGEST).is_file(), f"{_DIGEST} is not in the tree {_REPO_ROOT}"
+    assert (REPO_ROOT / "registry.yaml").is_file()
+    assert (REPO_ROOT / _DIGEST).is_file(), f"{_DIGEST} is not in the tree {REPO_ROOT}"

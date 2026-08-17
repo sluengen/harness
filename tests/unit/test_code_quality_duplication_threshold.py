@@ -39,13 +39,10 @@ them passes here and is the reviewer's to catch.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-from tests.unit.test_assurance_filing_rubric import _section
+from tests.unit._prose import REPO_ROOT, section
 
-# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_CODE_QUALITY = _REPO_ROOT / "skills" / "code-quality" / "SKILL.md"
+_CODE_QUALITY = REPO_ROOT / "skills" / "code-quality" / "SKILL.md"
 
 _PART_A = "## Part A — Scope"
 _HEADING = "### Grep before writing a helper"
@@ -70,13 +67,13 @@ _NOT_A_JUDGEMENT_CALL = re.compile(
 def _rule() -> str:
     """``### Grep before writing a helper``, sliced from inside ``## Part A``.
 
-    ``_section`` is **imported**, not re-spelled: re-implementing the slicer
+    ``section`` is **imported**, not re-spelled: re-implementing the slicer
     forks it from the samples that measure it (``craft.md`` → *A positive
     control must exercise the predicate, not re-implement it*). Nesting the two
     calls is what folds the placement claim into the anchor.
     """
     text = _CODE_QUALITY.read_text(encoding="utf-8")
-    return _section(_section(text, _PART_A), _HEADING)
+    return section(section(text, _PART_A), _HEADING)
 
 
 def test_the_pre_write_duplication_threshold_has_a_home() -> None:

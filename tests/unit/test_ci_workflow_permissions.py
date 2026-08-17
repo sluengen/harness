@@ -29,8 +29,9 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_WORKFLOW_DIR = _REPO_ROOT / ".github" / "workflows"
+from tests.unit._prose import REPO_ROOT
+
+_WORKFLOW_DIR = REPO_ROOT / ".github" / "workflows"
 
 #: A ``permissions:`` key at any indent — top-level or job-level both satisfy
 #: least privilege, so a workflow that scopes its grant per-job is accepted.

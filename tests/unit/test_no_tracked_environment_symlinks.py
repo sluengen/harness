@@ -41,9 +41,8 @@ from pathlib import Path
 
 import pytest
 
-from tests.unit.test_worktree_ignore_hygiene import _git, _init_hermetic_repo
-
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests._gitutil import git, init_hermetic_repo
+from tests.unit._prose import REPO_ROOT
 
 
 def _tracked_entries() -> list[tuple[str, str]]:
@@ -56,7 +55,7 @@ def _tracked_entries() -> list[tuple[str, str]]:
     made this reproduce everywhere.
     """
     out = subprocess.run(
-        ["git", "-C", str(_REPO_ROOT), "ls-files", "-s"],
+        ["git", "-C", str(REPO_ROOT), "ls-files", "-s"],
         check=True,
         capture_output=True,
         text=True,
@@ -114,20 +113,20 @@ def _resolves_outside(path: str) -> bool:
     ``True``: it resolves nowhere, which is the defect's own shape.
     """
     blob = subprocess.run(
-        ["git", "-C", str(_REPO_ROOT), "cat-file", "-p", f"HEAD:{path}"],
+        ["git", "-C", str(REPO_ROOT), "cat-file", "-p", f"HEAD:{path}"],
         capture_output=True,
         text=True,
     )
     target = blob.stdout.strip() if blob.returncode == 0 else ""
     if not target:
         # Not in HEAD yet (a staged addition) — fall back to the working tree.
-        link = _REPO_ROOT / path
+        link = REPO_ROOT / path
         target = str(link.readlink()) if link.is_symlink() else ""
     if not target:
         return True
-    resolved = (_REPO_ROOT / path).parent / target
+    resolved = (REPO_ROOT / path).parent / target
     try:
-        resolved.resolve(strict=True).relative_to(_REPO_ROOT.resolve())
+        resolved.resolve(strict=True).relative_to(REPO_ROOT.resolve())
     except (ValueError, OSError):
         return True
     return False
@@ -203,17 +202,17 @@ def _environment_tracked_after_add_all(
     committed *by* `git add -A` — it has no third exit to misread, and it is
     equally answerable in both shapes.
 
-    Hermetic: `_init_hermetic_repo` copies this repo's `.gitignore` into a repo
+    Hermetic: `init_hermetic_repo` copies this repo's `.gitignore` into a repo
     whose ``info/exclude`` is comments-only, so the answer comes from the ignore
     rules this repo ships and not from an ambient exclude file. ``gitignore``
     overrides that copy, which is how the killer below feeds in a stripped one.
     """
-    repo = _init_hermetic_repo(tmp_path / "clone")
+    repo = init_hermetic_repo(tmp_path / "clone")
     (repo / ".gitignore").write_text(gitignore)
     _materialise_environment(repo, tmp_path / "outside", name, shape)
 
-    _git(repo, "add", "-A")
-    tracked = _git(repo, "ls-files").stdout.split()
+    git(repo, "add", "-A")
+    tracked = git(repo, "ls-files").stdout.split()
     return {p for p in tracked if p == name or p.startswith(f"{name}/")}
 
 
@@ -264,14 +263,14 @@ def test_the_two_shapes_are_two_shapes(tmp_path: Path, name: str) -> None:
     value.
     """
     symlinked = _materialise_environment(
-        _init_hermetic_repo(tmp_path / "link-repo"), tmp_path / "outside", name, "symlink"
+        init_hermetic_repo(tmp_path / "link-repo"), tmp_path / "outside", name, "symlink"
     )
     assert symlinked.is_symlink()
     target = (symlinked.parent / symlinked.readlink()).resolve()
     assert not target.is_relative_to(symlinked.parent.resolve())
 
     real = _materialise_environment(
-        _init_hermetic_repo(tmp_path / "dir-repo"), tmp_path / "unused", name, "directory"
+        init_hermetic_repo(tmp_path / "dir-repo"), tmp_path / "unused", name, "directory"
     )
     assert not real.is_symlink()
     assert real.is_dir()
@@ -291,7 +290,7 @@ def test_the_environment_directory_is_ignored_in_both_shapes(
     that looks right.
     """
     tracked = _environment_tracked_after_add_all(
-        tmp_path, (_REPO_ROOT / ".gitignore").read_text(), name, shape
+        tmp_path, (REPO_ROOT / ".gitignore").read_text(), name, shape
     )
     assert tracked == set(), (
         f"`git add -A` tracked {sorted(tracked)} — git does not ignore {name!r} "
@@ -317,7 +316,7 @@ def test_removing_the_environment_entries_is_caught_in_both_shapes(
     nothing and this control goes inert — which the first assertion catches
     instead of letting it pass as a control that flags nothing.
     """
-    gitignore = (_REPO_ROOT / ".gitignore").read_text()
+    gitignore = (REPO_ROOT / ".gitignore").read_text()
     stripped = _without_environment_entries(gitignore, name)
     assert stripped != gitignore, (
         f"`.gitignore` carries no entry for {name!r}, so this control strips "

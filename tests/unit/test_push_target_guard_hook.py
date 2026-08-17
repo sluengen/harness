@@ -94,6 +94,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.unit._prose import REPO_ROOT
+
 # size: one hook's acceptance matrix, and the hook is the repo's flagship
 # mechanical guarantee — seven acceptance criteria, each needing its refusal, its
 # never-deny control and (for the directory whitelist #462 added) its over-denial
@@ -101,7 +103,6 @@ import pytest
 # nobody would keep installed. Splitting it would separate a refusal from the
 # floor that proves it is not universal, which is the pairing a reviewer reads.
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 HOOK = REPO_ROOT / "hooks" / "push-target-guard.js"
 WRITER = REPO_ROOT / "scripts" / "gate_marker.py"
 

@@ -54,13 +54,11 @@ from __future__ import annotations
 
 import re
 from collections import Counter
-from pathlib import Path
 
-# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.unit._prose import REPO_ROOT
 
 _SHIP_REL = "commands/ship.md"
-_SHIP = _REPO_ROOT / _SHIP_REL
+_SHIP = REPO_ROOT / _SHIP_REL
 
 #: The section the rule belongs to, and the level its boundaries are drawn at.
 _SECTION_HEADING = "### 2. Integrate"

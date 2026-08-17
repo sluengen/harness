@@ -48,10 +48,10 @@ from pathlib import Path
 import pytest
 
 from tests._gitutil import tracked_files_under
+from tests.unit._prose import REPO_ROOT, proposal_status
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
 _TEMPLATE_REL = "templates/proposal.md"
-_TEMPLATE = _REPO_ROOT / _TEMPLATE_REL
+_TEMPLATE = REPO_ROOT / _TEMPLATE_REL
 
 #: The status line in its frontmatter, with the vocabulary in its trailing
 #: comment: ``status: draft   # draft | under-decision | accepted | ...``.
@@ -61,10 +61,6 @@ _STATUS_LINE = re.compile(
     r"^status:\s*\S+\s*#\s*(?P<vocab>[a-z][a-z-]*(?:\s*\|\s*[a-z][a-z-]*)+)\s*$",
     re.MULTILINE,
 )
-
-#: A proposal's own frontmatter status, same anchoring, no trailing comment
-#: required.
-_PROPOSAL_STATUS = re.compile(r"^status:\s*(?P<status>[a-z][a-z-]*)\s*(?:#.*)?$", re.MULTILINE)
 
 
 def status_vocabulary(text: str) -> frozenset[str]:
@@ -84,21 +80,6 @@ def status_vocabulary(text: str) -> frozenset[str]:
             f"letting the derivation go quiet."
         )
     return frozenset(word.strip() for word in match.group("vocab").split("|"))
-
-
-def proposal_status(text: str) -> str:
-    """The ``status:`` a proposal's frontmatter declares.
-
-    Raises on a proposal with no parseable status, for the same reason: a
-    proposal that declares nothing must not read as a proposal that declares
-    something valid.
-    """
-    match = _PROPOSAL_STATUS.search(text)
-    if match is None:
-        raise AssertionError(
-            "no parseable 'status:' line in this proposal's frontmatter"
-        )
-    return match.group("status")
 
 
 def _tracked_proposals() -> list[Path]:
@@ -185,7 +166,7 @@ def test_every_tracked_proposal_carries_a_known_status() -> None:
     """No proposal declares a status the vocabulary does not define."""
     vocabulary = status_vocabulary(_TEMPLATE.read_text())
     offenders = {
-        path.relative_to(_REPO_ROOT).as_posix(): status
+        path.relative_to(REPO_ROOT).as_posix(): status
         for path in _tracked_proposals()
         if (status := proposal_status(path.read_text())) not in vocabulary
     }

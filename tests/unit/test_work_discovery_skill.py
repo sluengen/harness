@@ -75,9 +75,9 @@ and negative space, never meaning*; ADR 0016).
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-REPO_ROOT = Path(__file__).parent.parent.parent
+from tests.unit._prose import REPO_ROOT
+
 SKILL = REPO_ROOT / "skills" / "work-discovery" / "SKILL.md"
 ROUTINE_COMMAND = REPO_ROOT / "commands" / "routine.md"
 REGISTRY = REPO_ROOT / "registry.yaml"

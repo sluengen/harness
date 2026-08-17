@@ -8,8 +8,10 @@ the state that drifts.
 
 **#435 restored this module after the package it imported went.** Its whole
 filing-time subject survives verbatim, so the only edit was to write the level
-vocabulary here rather than import it. Claims about the deleted package stay in
-the past tense; they are why these assertions are shaped the way they are.
+vocabulary down rather than import it from the package; #467 moved that
+vocabulary on to :mod:`tests.unit._prose` with the rest of the shared
+primitives. Claims about the deleted package stay in the past tense; they are
+why these assertions are shaped the way they are.
 
 This ticket puts that second answer in exactly one place (``spec-authoring`` →
 *Choosing assurance*), makes assurance a mandatory input **and** postcondition of
@@ -46,7 +48,7 @@ fourth level is covered the day it is added.
 
 **The pairing rests on two things below it, and both were once the defect.** A
 polarity predicate asks *"does this unit say the opposite?"*, so it is only as
-honest as what counts as a **unit** (:func:`_sentences` — a rule ending inside
+honest as what counts as a **unit** (:func:`sentences` — a rule ending inside
 emphasis merged with the sentence contradicting it and lent it the rule's own
 ``Never``) and what each polarity token is **anchored to**
 (:data:`_NEGATED_INFERENCE`, :func:`_levels_chosen` — a negation forbids the verb
@@ -61,84 +63,31 @@ already contains *"exactly one home"*, and ``commands/build.md`` already contain
 therefore scoped to the section or instruction that **is** the rule.
 """
 
-# size: over the ceiling on the shared prose-predicate primitives re-homed here
-# by #435, which are ~90 lines of recorded measurement — which escape each
-# negation anchor still misses, and what each emphasis half was measured letting
-# through — attached to five short definitions. Splitting the primitives from
-# `_sentences`/`_section` would fork the unit boundary every polarity predicate
-# in this tree is anchored on, which is the one thing that must not have two
-# renderings.
+# The `# size:` justification this module carried until #467 is gone with its
+# subject: the shared prose-predicate primitives it justified moved to
+# `tests/unit/_prose.py`, and the module now sits under the declarative ceiling.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 import pytest
 
-# The registered-surface derivation has exactly one home in the suite; #327's
-# guard owns it and its own floor asserts it parses ≥ 25 files. Re-deriving it
-# here would be a second copy of the definition of "distributed", which is the
-# duplication `code-quality` → *grep before writing a helper* forbids.
-from tests.unit.test_tracker_neutral_lifecycle import _registered_surface
+from tests.unit._prose import (
+    ASSURANCE,
+    ASSURANCE_LEVELS,
+    EXACTLY_ONE,
+    RUBRIC_HOME,
+    RUBRIC_SECTION_TITLE,
+    TRACKER_SKILL,
+    delegates_the_level_choice,
+    read,
+    registered_markdown,
+    section,
+    sentences,
+    states_an_incomplete_filing,
+)
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_REGISTRY = _REPO_ROOT / "registry.yaml"
-
-#: The assurance vocabulary — its one remaining home. Imported from
-#: ``harness.assurance`` until #435 deleted the package; ADR 0015 keeps the
-#: levels and the namespace, which are tracker labels a filer applies rather
-#: than runtime machinery. The floor below pins the decided set.
-ASSURANCE_LEVELS = ("trivial", "simple", "complex")
-ASSURANCE_LABEL_PREFIX = "assurance:"
-
-#: The one home of the filing-time rubric.
-_RUBRIC_HOME = "skills/spec-authoring/SKILL.md"
-#: The rubric's subsection title — what a pointer has to name to be a pointer.
-_RUBRIC_SECTION_TITLE = "Choosing assurance"
-#: The backend-neutral contract that carries assurance as input and postcondition.
-_TRACKER_SKILL = "skills/tracker/SKILL.md"
 _TRACKER_CREATE_SECTION = "### `create` contract"
-_GITHUB_SKILL = "skills/github-issues/SKILL.md"
-_LINEAR_SKILL = "skills/linear/SKILL.md"
-
-
-def _read(rel: str) -> str:
-    return (_REPO_ROOT / rel).read_text(encoding="utf-8")
-
-
-def _registered_markdown() -> list[str]:
-    """Every registered `.md` file, as repo-relative posix paths."""
-    return [p.as_posix() for p in _registered_surface()]
-
-
-def _sentences(text: str) -> list[str]:
-    """``text`` split into sentences, each with its internal wrapping normalized.
-
-    Prose in this tree is hard-wrapped, so a rule routinely spans two source
-    lines. Normalizing inside the sentence is what lets a predicate anchor on a
-    phrase (*"a small estimated diff alone"*) rather than on a line break.
-
-    **The closing emphasis is part of the boundary.** This tree bolds its
-    load-bearing rules, so a sentence ends ``…diff alone.**`` — a ``*``, not a
-    ``.``, before the space. A splitter looking one character back never fires
-    there, and the rule merges with everything after it. That is not cosmetic:
-    every polarity predicate below asks *"is there a negation in this unit"*, so
-    a merged unit lends a rule's own ``Never`` to the sentence contradicting it.
-    Closing ``*``, ``_``, backtick, ``)`` and ``]`` are therefore consumed first.
-    """
-    return [
-        " ".join(s.split()) for s in re.split(r"(?<=[.!?])[*_`)\]]*\s+|\n\n", text) if s.strip()
-    ]
-
-
-def _section(text: str, header: str) -> str:
-    """The body of ``header``, from the header line to the next heading of its level or above."""
-    match = re.search(rf"^{re.escape(header)}\s*$", text, re.MULTILINE)
-    assert match, f"missing section header {header!r}"
-    level = len(header) - len(header.lstrip("#"))
-    rest = text[match.end() :]
-    end = re.search(rf"^#{{1,{level}}} ", rest, re.MULTILINE)
-    return rest[: end.start()] if end else rest
 
 
 # ---------------------------------------------------------------------------
@@ -156,27 +105,11 @@ def _section(text: str, header: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# AC-2 — every filing surface points at the one rubric
-# ---------------------------------------------------------------------------
-
-#: A pointer names **both** the rubric's home skill and its subsection. Naming
-#: the skill alone is not enough: `commands/start.md` and `commands/propose.md`
-#: both already name `spec-authoring` in prose that says nothing about choosing
-#: a level, so a bare-skill check passes on the pre-change tree.
-_POINTS_AT_THE_RUBRIC = re.compile(
-    rf"`spec-authoring`[^.]{{0,120}}?{_RUBRIC_SECTION_TITLE}"
-    rf"|{_RUBRIC_SECTION_TITLE}[^.]{{0,120}}?`spec-authoring`",
-    re.IGNORECASE,
-)
-
-
-def _delegates_the_level_choice(unit: str) -> bool:
-    """Does this instruction delegate the level choice to the rubric's one home?"""
-    return bool(_POINTS_AT_THE_RUBRIC.search(unit))
-
-
-# ---------------------------------------------------------------------------
 # AC-2 / AC-5b — the rubric, its two load-bearing rules, and their polarity
+#
+# AC-2's pointer predicate (`POINTS_AT_THE_RUBRIC` / `delegates_the_level_choice`)
+# moved to `tests/unit/_prose.py` in #467, with the rest of the primitives more
+# than one module reads.
 # ---------------------------------------------------------------------------
 
 _UNIVERSAL_NEGATION = re.compile(r"\bnever\b|\bmust not\b|\bmay not\b|\bcannot\b", re.IGNORECASE)
@@ -223,7 +156,7 @@ def _states_the_trivial_inference_ban(text: str) -> list[str]:
     """
     return [
         sentence
-        for sentence in _sentences(text)
+        for sentence in sentences(text)
         if _NEGATED_INFERENCE.search(sentence)
         and _TRIVIAL.search(sentence)
         and _ALONE.search(sentence)
@@ -243,7 +176,7 @@ def _permits_trivial_inference(text: str) -> list[str]:
     """
     return [
         sentence
-        for sentence in _sentences(text)
+        for sentence in sentences(text)
         if _INFERS.search(sentence)
         and _TRIVIAL.search(sentence)
         and _names_text_properties(sentence) >= 2
@@ -284,7 +217,7 @@ def _routes_uncertainty_to_simple(text: str) -> list[str]:
     """R1. Sentences making ``simple`` the answer when the filer cannot place the work."""
     return [
         sentence
-        for sentence in _sentences(text)
+        for sentence in sentences(text)
         if _UNCERTAINTY.search(sentence) and "simple" in _levels_chosen(sentence)
     ]
 
@@ -299,21 +232,21 @@ def _routes_uncertainty_away_from_simple(text: str) -> list[str]:
     """
     return [
         sentence
-        for sentence in _sentences(text)
+        for sentence in sentences(text)
         if _UNCERTAINTY.search(sentence) and (_levels_chosen(sentence) - {"simple"})
     ]
 
 
 def _rubric() -> str:
     """The rubric subsection of the one home."""
-    return _section(_read(_RUBRIC_HOME), f"### {_RUBRIC_SECTION_TITLE}")
+    return section(read(RUBRIC_HOME), f"### {RUBRIC_SECTION_TITLE}")
 
 
 def test_the_rubric_has_a_home() -> None:
     """AC-2: the one canonical rubric exists, as a named subsection of the craft skill."""
-    text = _read(_RUBRIC_HOME)
-    assert re.search(rf"^### {re.escape(_RUBRIC_SECTION_TITLE)}\s*$", text, re.MULTILINE), (
-        f"{_RUBRIC_HOME} has no `### {_RUBRIC_SECTION_TITLE}` subsection — the "
+    text = read(RUBRIC_HOME)
+    assert re.search(rf"^### {re.escape(RUBRIC_SECTION_TITLE)}\s*$", text, re.MULTILINE), (
+        f"{RUBRIC_HOME} has no `### {RUBRIC_SECTION_TITLE}` subsection — the "
         f"filing-time rubric has nowhere to live, and every pointer written for "
         f"AC-2 points at nothing (#354 AC-2)."
     )
@@ -358,9 +291,9 @@ def test_the_rubric_disclaims_the_runtime_direction() -> None:
 
 def test_the_rubric_states_the_trivial_inference_ban() -> None:
     """AC-5b: R2 is stated, with its negation and its quantifier."""
-    stated = _states_the_trivial_inference_ban(_read(_RUBRIC_HOME))
+    stated = _states_the_trivial_inference_ban(read(RUBRIC_HOME))
     assert stated, (
-        f"{_RUBRIC_HOME} does not forbid inferring `trivial` from a ticket's own "
+        f"{RUBRIC_HOME} does not forbid inferring `trivial` from a ticket's own "
         f"text. All three properties — a claim of minorness, the description, the "
         f"estimated diff size — are authored by whoever filed the issue, so a "
         f"rubric without this rule lets a ticket argue its way down (#354 AC-5b)."
@@ -376,15 +309,15 @@ def test_the_trivial_inference_ban_has_exactly_one_home() -> None:
     run-time form of the same default. Writing exclusivity for both out of
     symmetry would fail on correct prose.
     """
-    homes = {rel for rel in _registered_markdown() if _states_the_trivial_inference_ban(_read(rel))}
-    assert homes == {_RUBRIC_HOME}, (
+    homes = {rel for rel in registered_markdown() if _states_the_trivial_inference_ban(read(rel))}
+    assert homes == {RUBRIC_HOME}, (
         f"the trivial-inference ban is stated in {sorted(homes)}; it belongs in "
-        f"{_RUBRIC_HOME} alone. A second copy agrees with the first the day it is "
+        f"{RUBRIC_HOME} alone. A second copy agrees with the first the day it is "
         f"written and drifts later (#354 AC-2)."
     )
 
 
-@pytest.mark.parametrize("rel", _registered_markdown(), ids=lambda r: r)
+@pytest.mark.parametrize("rel", registered_markdown(), ids=lambda r: r)
 def test_no_registered_document_permits_inferring_trivial(rel: str) -> None:
     """AC-5b, the inversion: no distributed file relates ``trivial`` to a ticket's
     own text without forbidding it.
@@ -397,7 +330,7 @@ def test_no_registered_document_permits_inferring_trivial(rel: str) -> None:
     ``test_the_rule_predicates_read_the_real_rubrics_unit_boundaries`` measures
     both against the real rubric.
     """
-    offenders = _permits_trivial_inference(_read(rel))
+    offenders = _permits_trivial_inference(read(rel))
     assert not offenders, (
         f"{rel} permits inferring `trivial` from properties of a ticket's own "
         f"text: {offenders}. Those properties are author-controlled, so this is "
@@ -410,18 +343,18 @@ def test_the_rubric_routes_uncertainty_to_simple() -> None:
 
     Presence only — see the asymmetry documented on the exclusivity test above.
     """
-    stated = _routes_uncertainty_to_simple(_read(_RUBRIC_HOME))
+    stated = _routes_uncertainty_to_simple(read(RUBRIC_HOME))
     assert stated, (
-        f"{_RUBRIC_HOME} does not say that uncertain work is `simple`. Guessing "
+        f"{RUBRIC_HOME} does not say that uncertain work is `simple`. Guessing "
         f"high costs one design pass; guessing low costs the review that would "
         f"have caught the guess (#354 AC-5b)."
     )
 
 
-@pytest.mark.parametrize("rel", _registered_markdown(), ids=lambda r: r)
+@pytest.mark.parametrize("rel", registered_markdown(), ids=lambda r: r)
 def test_no_registered_document_routes_uncertainty_away_from_simple(rel: str) -> None:
     """R1's inversion: uncertainty must never be sent to a level other than ``simple``."""
-    offenders = _routes_uncertainty_away_from_simple(_read(rel))
+    offenders = _routes_uncertainty_away_from_simple(read(rel))
     assert not offenders, (
         f"{rel} sends uncertain work somewhere other than `simple`: {offenders}. "
         f"Both homes of the assurance decision fail toward *more* verification "
@@ -512,7 +445,7 @@ def test_the_rule_predicates_read_the_real_rubrics_unit_boundaries() -> None:
     Every sample in ``test_the_rubric_rule_predicates_discriminate`` is a
     standalone, already-clean sentence, so that test can only fail for a defect
     in a predicate's *tokens*. The sweeps it certifies never see such sentences:
-    they run :func:`_sentences` over a whole markdown file, where a rule ending
+    they run :func:`sentences` over a whole markdown file, where a rule ending
     inside emphasis (``…diff alone.**``) merged with everything after it and lent
     its ``Never`` to prose contradicting it. These splice each inversion into the
     **real** rubric and sweep it with the functions the tree assertions call.
@@ -554,15 +487,6 @@ def test_the_rule_predicates_read_the_real_rubrics_unit_boundaries() -> None:
 # AC-6 — assurance is an input and a postcondition of `create`, with a failure shape
 # ---------------------------------------------------------------------------
 
-_ASSURANCE = re.compile(r"\bassurance\b", re.IGNORECASE)
-#: The quantifier, **anchored to the noun it governs**. A bare `exactly one`
-#: check would be satisfied by any of the four unrelated "exactly one"s already
-#: in the tree; a sentence-wide conjunction with `assurance` would be satisfied
-#: by a sentence that pins the count of something else entirely.
-_EXACTLY_ONE = re.compile(
-    r"\bexactly one\b[^.]{0,40}?\bassurance\b|\bassurance\b[^.]{0,80}?\bexactly one\b",
-    re.IGNORECASE,
-)
 #: The quantifiers that would make a partial filing legal — anchored the same
 #: way, and for a second reason: the contract's input sentence legitimately says
 #: *optional labels or priority*, so a sentence-wide `optional` ban would forbid
@@ -577,33 +501,33 @@ _QUEUE_READY = re.compile(r"queue[- ]ready", re.IGNORECASE)
 
 
 def _create_contract() -> str:
-    return _section(_read(_TRACKER_SKILL), _TRACKER_CREATE_SECTION)
+    return section(read(TRACKER_SKILL), _TRACKER_CREATE_SECTION)
 
 
 def _states_assurance_as_create_input(text: str) -> list[str]:
     """Sentences declaring what ``create`` takes, that name assurance among it."""
     return [
         sentence
-        for sentence in _sentences(text)
-        if re.search(r"\binput is\b", sentence, re.IGNORECASE) and _ASSURANCE.search(sentence)
+        for sentence in sentences(text)
+        if re.search(r"\binput is\b", sentence, re.IGNORECASE) and ASSURANCE.search(sentence)
     ]
 
 
 def _requires_exactly_one_assurance(text: str) -> list[str]:
     """Sentences pinning the assurance-label count at exactly one."""
-    return [sentence for sentence in _sentences(text) if _EXACTLY_ONE.search(sentence)]
+    return [sentence for sentence in sentences(text) if EXACTLY_ONE.search(sentence)]
 
 
 def _permits_partial_assurance(text: str) -> list[str]:
     """The **inversion**: a weakened quantifier on the assurance label."""
-    return [sentence for sentence in _sentences(text) if _WEAKENED_QUANTIFIER.search(sentence)]
+    return [sentence for sentence in sentences(text) if _WEAKENED_QUANTIFIER.search(sentence)]
 
 
 def _refuses_a_queue_ready_identifier(text: str) -> list[str]:
     """Sentences refusing a queue-ready result when the label could not be applied."""
     return [
         sentence
-        for sentence in _sentences(text)
+        for sentence in sentences(text)
         if _QUEUE_READY.search(sentence) and _UNIVERSAL_NEGATION.search(sentence)
     ]
 
@@ -612,25 +536,8 @@ def _permits_a_queue_ready_identifier(text: str) -> list[str]:
     """The **inversion**: a queue-ready identifier returned anyway."""
     return [
         sentence
-        for sentence in _sentences(text)
+        for sentence in sentences(text)
         if _QUEUE_READY.search(sentence) and not _UNIVERSAL_NEGATION.search(sentence)
-    ]
-
-
-def _states_an_incomplete_filing(text: str) -> list[str]:
-    """Sentences naming the incomplete-filing outcome and what to do with it.
-
-    AC-6's failure shape has to reach the **provider**, not only the protocol.
-    The protocol can say a filing is incomplete all it likes; the recipe an agent
-    actually follows is where the behaviour either happens or does not. Both
-    provider skills are checked with this one predicate, and the surfaces module
-    imports it rather than re-spelling it per backend.
-    """
-    return [
-        sentence
-        for sentence in _sentences(text)
-        if re.search(r"\bincomplete\b", sentence, re.IGNORECASE)
-        and re.search(r"\bstop\b|\bidentifier\b|\bURL\b", sentence, re.IGNORECASE)
     ]
 
 
@@ -638,7 +545,7 @@ def test_the_create_contract_takes_assurance_as_an_input() -> None:
     """AC-6: assurance is declared alongside the body file and Todo placement."""
     stated = _states_assurance_as_create_input(_create_contract())
     assert stated, (
-        f"{_TRACKER_SKILL} → {_TRACKER_CREATE_SECTION} does not name assurance "
+        f"{TRACKER_SKILL} → {_TRACKER_CREATE_SECTION} does not name assurance "
         f"among `create`'s inputs. A postcondition with no input is a rule the "
         f"caller has no way to satisfy (#354 AC-6)."
     )
@@ -651,14 +558,14 @@ def test_the_create_contract_requires_exactly_one_assurance_label() -> None:
     assurance value"* — a file-wide or tree-wide check on that phrase is
     satisfied by the pre-change tree.
     """
-    section = _create_contract()
-    assert _requires_exactly_one_assurance(section), (
-        f"{_TRACKER_SKILL} → {_TRACKER_CREATE_SECTION} does not require exactly "
+    section_body = _create_contract()
+    assert _requires_exactly_one_assurance(section_body), (
+        f"{TRACKER_SKILL} → {_TRACKER_CREATE_SECTION} does not require exactly "
         f"one assurance label on a created issue (#354 AC-6)."
     )
-    assert not _permits_partial_assurance(section), (
+    assert not _permits_partial_assurance(section_body), (
         f"the `create` contract weakens the assurance quantifier: "
-        f"{_permits_partial_assurance(section)}. Two labels fail safe to `simple` "
+        f"{_permits_partial_assurance(section_body)}. Two labels fail safe to `simple` "
         f"at runtime, so a weakened contract loses the filer's choice silently "
         f"(#354 AC-6)."
     )
@@ -671,15 +578,15 @@ def test_the_create_contract_refuses_a_queue_ready_identifier_without_the_label(
     readers act on what a ticket says about itself, so a filing reported as
     successful without a level is picked up as though it had been classified.
     """
-    section = _create_contract()
-    assert _refuses_a_queue_ready_identifier(section), (
-        f"{_TRACKER_SKILL} → {_TRACKER_CREATE_SECTION} does not refuse a "
+    section_body = _create_contract()
+    assert _refuses_a_queue_ready_identifier(section_body), (
+        f"{TRACKER_SKILL} → {_TRACKER_CREATE_SECTION} does not refuse a "
         f"queue-ready identifier for a filing that could not carry exactly one "
         f"assurance label (#354 AC-6)."
     )
-    assert not _permits_a_queue_ready_identifier(section), (
+    assert not _permits_a_queue_ready_identifier(section_body), (
         f"the `create` contract permits returning a queue-ready identifier "
-        f"anyway: {_permits_a_queue_ready_identifier(section)} (#354 AC-6)."
+        f"anyway: {_permits_a_queue_ready_identifier(section_body)} (#354 AC-6)."
     )
 
 
@@ -705,10 +612,10 @@ def test_the_create_contract_predicates_discriminate() -> None:
     assert _refuses_a_queue_ready_identifier(inverted) == []
 
     incomplete = "That is an incomplete filing: report the identifier and URL, and stop."
-    assert _states_an_incomplete_filing(incomplete) == [incomplete]
+    assert states_an_incomplete_filing(incomplete) == [incomplete]
     # Discrimination: naming the word without saying what to do with it is not
     # the rule — the outcome is what an agent acts on.
-    assert _states_an_incomplete_filing("An incomplete taxonomy is a separate problem.") == []
+    assert states_an_incomplete_filing("An incomplete taxonomy is a separate problem.") == []
 
     # Discrimination: an input sentence that names no assurance is not the rule.
     pre_change = (
@@ -745,100 +652,15 @@ def test_the_create_contract_carries_no_classification_criteria() -> None:
     first — which is the drift this ticket closes, arriving through the door
     marked "just one clarifying sentence".
     """
-    section = _create_contract()
-    assert not _states_the_trivial_inference_ban(section), (
+    section_body = _create_contract()
+    assert not _states_the_trivial_inference_ban(section_body), (
         "the `create` contract restates the rubric's R2 — point at "
-        f"`spec-authoring` → *{_RUBRIC_SECTION_TITLE}* instead (#354 AC-2)."
+        f"`spec-authoring` → *{RUBRIC_SECTION_TITLE}* instead (#354 AC-2)."
     )
-    assert _delegates_the_level_choice(" ".join(section.split())), (
+    assert delegates_the_level_choice(" ".join(section_body.split())), (
         f"the `create` contract must name `spec-authoring` → "
-        f"*{_RUBRIC_SECTION_TITLE}* as where the level comes from (#354 AC-2)."
+        f"*{RUBRIC_SECTION_TITLE}* as where the level comes from (#354 AC-2)."
     )
 
 
-# ---------------------------------------------------------------------------
-# Shared prose-predicate primitives
-# ---------------------------------------------------------------------------
-# `_units`, `_BLOCKING_VERBS`/`_NEGATION_GAP` and `_EMPHASIS` were #288's and
-# lived in `test_build_assurance_workflow`, which #435 deleted with the verb
-# loop it described. They are re-homed here, beside `_sentences` and `_section`,
-# rather than re-spelled at each call site: every polarity predicate in this
-# tree is only as honest as this boundary, and a fork of it is a fork of the
-# unit the controls were written to hold.
-
-def _units(text: str) -> str:
-    """``text`` re-joined one :func:`_sentences` unit per paragraph.
-
-    Loss-free for every predicate here, because every one of them runs over
-    ``_sentences`` units and ``_sentences`` already normalizes whitespace inside
-    a unit. What it buys is **wrap-insensitivity for the controls below**: a
-    control anchored on a hard-wrapped phrase stops landing the moment the
-    paragraph is re-wrapped at another column width, and a re-wrap must not read
-    as a finding. Call it on a section body, never on the whole file — ``_section``
-    needs its headers on lines of their own.
-    """
-    return "\n\n".join(_sentences(text))
-
-
-# ---------------------------------------------------------------------------
-# The shared negation gap — what a negation is allowed to reach across
-# ---------------------------------------------------------------------------
-
-#: Verbs that **block** whatever follows them. A negation landing on one of
-#: these states the *opposite* of the rule it appears to state: *"does not
-#: preclude proceeding"*, *"does not block integration"* and *"does not forbid
-#: writing"* each read to a negation-then-verb anchor as the prohibition intact,
-#: while granting exactly what the prohibition forbids. Measured, one sentence at
-#: a time, against the real file: each of those three left the whole module at
-#: **25 passed**. So the gap a negation may reach across excludes them — a
-#: negation whose object is a blocking verb governs the blocking, not the verb
-#: beyond it, and the predicate must decline to treat the occurrence as covered.
-#:
-#: ``fail`` and ``hesitat`` are here for the double negation (*"never fails to
-#: proceed"*), which is the same false converse reached by a different idiom.
-#: Prefixes, not whole words: ``preclud`` covers *precludes/precluding*, ``rul``
-#: covers *rule out/rules out*.
-_BLOCKING_VERBS = (
-    r"preclud|prevent|block|forbid|prohibit|bar|stop|halt|refus|restrict|"
-    r"impede|hinder|obstruct|disallow|deter|rul|fail|hesitat"
-)
-#: The gap between a negation and the verb it governs: up to two words, none of
-#: them a blocking verb. Two is #354's measured bound — every legitimate spelling
-#: here keeps them adjacent or within two words (*"never proceeds"*, *"No one
-#: writes"*, *"never integrate"*, *"refusal to integrate"*), and a negation
-#: further off governs something else.
-#:
-#: **What this does not catch, measured rather than assumed.** Eighteen further
-#: grant-shaped wordings were spliced into the real file one at a time, and the
-#: line falls in a describable place:
-#:
-#: *Caught.* A grant whose blocking word is a noun or an idiom wider than the gap
-#: — *"is no bar to proceeding"*, *"does not stand in the way of proceeding"*,
-#: *"Nothing here prevents proceeding"*, *"is not a reason to withhold
-#: proceeding"* — matches **no** negation at all, so the occurrence stays
-#: uncovered and the sweep flags it. That is the fail-closed side, and it is why
-#: the exclusion only has to rescue the cases where a negation *does* match.
-#:
-#: *Escapes.* **An outer negation over a well-formed inner prohibition** — *"It
-#: is not true that no one writes an as-built record on a `trivial` run"*,
-#: *"There is no rule that a mismatch must not be integrated"*, *"A thin design
-#: is not a reason the run cannot proceed"*. The inner clause is exactly the rule
-#: these predicates look for, spelled correctly, with a clean gap; the grant
-#: lives in the matrix clause, which no token-window anchor can reach. All three
-#: were measured escaping all three predicates. It is a different class from the
-#: one fixed here — sentential negation scope, not a verb inside a gap — and it
-#: is **not** closed. Closing it needs clause structure, not a wider window, so
-#: it is recorded here at its measured size rather than papered over.
-_NEGATION_GAP = rf"(?:\s+(?!(?:{_BLOCKING_VERBS})\w*\b)\w+){{0,2}}"
-
-
-#: Emphasis, stripped before any *anchored* predicate runs: this tree bolds its
-#: rules, so ``**stops**`` puts a ``*`` between the verb and the words that
-#: release it, and a "verb, then up to N words" anchor never crosses it.
-#: **Asterisks only** — ``_`` emphasis is unused here and ``certified_tree`` is
-#: not, and splitting one identifier into two tokens spends two of an anchor's
-#: gap allowance on a single word. Both halves measured: the first let
-#: ``**stops** only when the operator asks`` read as unconditional, the second
-#: let ``Comparing `HEAD^{tree}` to `certified_tree` is optional`` escape.
-_EMPHASIS = re.compile(r"\*+")
 #: A stop **released by a qualifier**. The rule is unconditional by design —

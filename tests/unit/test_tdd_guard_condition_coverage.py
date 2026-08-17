@@ -41,12 +41,11 @@ vocabulary and passed (ADR 0016).
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_SKILL = _REPO_ROOT / "skills" / "test-driven-development" / "SKILL.md"
-_REGISTRY = _REPO_ROOT / "registry.yaml"
+from tests.unit._prose import REPO_ROOT
+
+_SKILL = REPO_ROOT / "skills" / "test-driven-development" / "SKILL.md"
+_REGISTRY = REPO_ROOT / "registry.yaml"
 
 #: The rule's direction, as an adjacency rather than two free tokens: a
 #: deletion that leaves the suite green means the condition is untested. Either

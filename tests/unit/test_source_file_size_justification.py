@@ -148,9 +148,7 @@ from pathlib import Path
 import pytest
 
 from tests._gitutil import tracked_files_under
-
-# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.unit._prose import REPO_ROOT
 
 # Part B / Part C of ``code-quality``: the hard limit for a module/file.
 _HARD_LIMIT = 500
@@ -357,7 +355,7 @@ def test_marker_in_the_wrong_comment_syntax_does_not_justify(prefix: str, sample
 
 def _tracked_files() -> set[Path]:
     """Every file git tracks, absolute."""
-    return tracked_files_under(".", repo_root=_REPO_ROOT)
+    return tracked_files_under(".", repo_root=REPO_ROOT)
 
 
 def _unclassified_suffixes() -> set[str]:
@@ -385,7 +383,7 @@ def _tracked_source_trees() -> set[str]:
     for path in _tracked_files():
         if _comment_prefix(path) is None:
             continue
-        parts = path.relative_to(_REPO_ROOT).parts
+        parts = path.relative_to(REPO_ROOT).parts
         if len(parts) > 1:
             trees.add(parts[0])
     return trees
@@ -401,7 +399,7 @@ def _offenders(ceilings: dict[str, int] | None = None) -> list[tuple[Path, int, 
     """
     found: list[tuple[Path, int, int]] = []
     for tree, ceiling in sorted((_TREE_CEILINGS if ceilings is None else ceilings).items()):
-        for path in sorted(tracked_files_under(tree, repo_root=_REPO_ROOT)):
+        for path in sorted(tracked_files_under(tree, repo_root=REPO_ROOT)):
             offence = _offending(path, ceiling)
             if offence is not None:
                 found.append((path, *offence))
@@ -483,7 +481,7 @@ def test_the_tree_derivation_sees_a_tree_holding_no_python() -> None:
     weakening, and the fix is to point it at whatever tree carries that property
     then.
     """
-    hook_sources = tracked_files_under("hooks", repo_root=_REPO_ROOT)
+    hook_sources = tracked_files_under("hooks", repo_root=REPO_ROOT)
     assert hook_sources, "expected a tracked `hooks/` tree"
     assert not [p for p in hook_sources if p.suffix == ".py"], (
         "`hooks/` no longer holds zero Python, so it can no longer stand for "
@@ -502,7 +500,7 @@ def test_over_limit_source_files_carry_a_size_justification() -> None:
         "shell, `//` in JavaScript) recording why the file may exceed the "
         "ceiling, or split it:\n"
         + "\n".join(
-            f"  - {p.relative_to(_REPO_ROOT)}: {lines} lines (ceiling {ceiling})"
+            f"  - {p.relative_to(REPO_ROOT)}: {lines} lines (ceiling {ceiling})"
             for p, lines, ceiling in offenders
         )
     )
@@ -520,7 +518,7 @@ def test_the_tree_walk_reaches_javascript_not_only_python() -> None:
     """
     unmarked_js = [
         path
-        for path in tracked_files_under("hooks", repo_root=_REPO_ROOT)
+        for path in tracked_files_under("hooks", repo_root=REPO_ROOT)
         if path.suffix == ".js" and not _has_size_justification(path, "//")
     ]
     assert unmarked_js, (

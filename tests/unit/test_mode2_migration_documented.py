@@ -54,9 +54,9 @@ for traceability (test files are not scanned by that guard).
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.unit._prose import REPO_ROOT
+
 BOOTSTRAP = REPO_ROOT / "BOOTSTRAP.md"
 UPDATE_GUIDANCE = REPO_ROOT / "commands" / "update-guidance.md"
 

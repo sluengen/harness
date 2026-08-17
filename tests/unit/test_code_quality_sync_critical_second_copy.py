@@ -52,13 +52,10 @@ this paragraph is the record of that call.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-from tests.unit.test_assurance_filing_rubric import _section
+from tests.unit._prose import REPO_ROOT, section
 
-# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_CODE_QUALITY = _REPO_ROOT / "skills" / "code-quality" / "SKILL.md"
+_CODE_QUALITY = REPO_ROOT / "skills" / "code-quality" / "SKILL.md"
 
 _PART_B = "## Part B — Structure"
 _HEADING = "### Extract on the third strike"
@@ -83,12 +80,12 @@ _DOES_NOT_APPLY = re.compile(
 def _second_copy_paragraph() -> str:
     """The sync-critical paragraph, selected by content — never by index.
 
-    ``_section`` is imported rather than re-spelled, and the two calls are
+    ``section`` is imported rather than re-spelled, and the two calls are
     nested so Part B membership lives in the anchor instead of a second test.
     """
     text = _CODE_QUALITY.read_text(encoding="utf-8")
-    section = _section(_section(text, _PART_B), _HEADING)
-    paragraphs = [block.strip() for block in section.split("\n\n") if block.strip()]
+    section_body = section(section(text, _PART_B), _HEADING)
+    paragraphs = [block.strip() for block in section_body.split("\n\n") if block.strip()]
     hits = [p for p in paragraphs if re.search(r"\bsecond\b", p, re.IGNORECASE)]
     assert hits, (
         f"no paragraph in {_HEADING!r} states a second-copy threshold — the "

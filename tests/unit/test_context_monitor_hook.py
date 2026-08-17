@@ -33,8 +33,9 @@ from pathlib import Path
 
 import pytest
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_HOOK = _REPO_ROOT / "hooks" / "context-monitor.js"
+from tests.unit._prose import REPO_ROOT
+
+_HOOK = REPO_ROOT / "hooks" / "context-monitor.js"
 
 
 def _node() -> str:

@@ -31,13 +31,7 @@ from __future__ import annotations
 
 import re
 
-# The slicer lives in the module that exports it to this family rather than in a
-# private copy per bullet (``craft.md`` → *A positive control must exercise the
-# predicate, not re-implement it*); it carries its own missing-bullet assertion.
-from tests.unit.test_review_discipline_context_currency import (
-    _skill_text,
-    _stage_two_bullet,
-)
+from tests.unit._prose import diff_shape_checks_text, stage_two_bullet
 
 _BULLET_TITLE = "Port-time orphan"
 
@@ -55,7 +49,7 @@ _NO_LATER_REVIEWER = re.compile(
 
 
 def _bullet() -> str:
-    return _stage_two_bullet(_skill_text(), _BULLET_TITLE)
+    return stage_two_bullet(diff_shape_checks_text(), _BULLET_TITLE)
 
 
 def test_the_port_orphan_rule_demands_a_production_importer_at_port_time() -> None:

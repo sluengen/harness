@@ -20,7 +20,7 @@ rule is deleted, and an inversion sweep that fires when a release is *appended*
 while the rule survives. #288 measured why the second half is not optional — a
 rule's own ``never`` shields the sentence appended after it, so a
 "is this section negated" predicate is fail-open. Every negated-verb pattern here
-is therefore built as a negation + :data:`_NEGATION_GAP` + the verb, and every
+is therefore built as a negation + :data:`NEGATION_GAP` + the verb, and every
 sweep matches **per occurrence** (``match.end() not in negated``), never per
 sentence: an unanchored negation reads *"does not preclude capturing the full
 page"* as a prohibition and computes the opposite boolean.
@@ -54,36 +54,14 @@ from pathlib import Path
 
 import pytest
 
-from tests._gitutil import tracked_files_under
+from tests._gitutil import git, init_hermetic_repo, tracked_files_under
+from tests.unit._prose import EMPHASIS, NEGATION_GAP, REPO_ROOT, section, sentences, units
 
-# `_sentences` (the unit boundary), `_section` (the scope), `_units` (the
-# wrap-insensitive re-join the controls need), `_EMPHASIS` (bold stripped before
-# any anchored predicate runs) and `_NEGATION_GAP` (what a negation may reach
-# across, blocking verbs excluded) are #354's and #288's, and every polarity
-# predicate below is only as honest as they are. Importing across test modules
-# is the established pattern here — `test_assurance_filing_surfaces` imports
-# from `test_assurance_filing_rubric` for the same reason. (`_units`,
-# `_EMPHASIS` and `_NEGATION_GAP` were #288's and reached this module from
-# `test_build_assurance_workflow` until #435 deleted it with the verb loop it
-# described; they now live beside `_sentences` and `_section` in the one module
-# that owns the boundary.) Re-spelling them here would fork the very boundary
-# #288's controls were written to hold.
-from tests.unit.test_assurance_filing_rubric import (
-    _EMPHASIS,
-    _NEGATION_GAP,
-    _section,
-    _sentences,
-    _units,
-)
-from tests.unit.test_worktree_ignore_hygiene import _git, _init_hermetic_repo
-
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-
-BUILD = _REPO_ROOT / "commands" / "build.md"
-REVIEW = _REPO_ROOT / "commands" / "review.md"
-START = _REPO_ROOT / "commands" / "start.md"
-REVIEWER = _REPO_ROOT / "agents" / "reviewer.md"
-DISCIPLINE = _REPO_ROOT / "skills" / "review-discipline" / "SKILL.md"
+BUILD = REPO_ROOT / "commands" / "build.md"
+REVIEW = REPO_ROOT / "commands" / "review.md"
+START = REPO_ROOT / "commands" / "start.md"
+REVIEWER = REPO_ROOT / "agents" / "reviewer.md"
+DISCIPLINE = REPO_ROOT / "skills" / "review-discipline" / "SKILL.md"
 
 _VISUAL_SECTION = "### Visual evidence for a user-facing change"
 _HANDOFF_STEP = "### 3. Run the reviewer"
@@ -131,7 +109,7 @@ _NEGATION = (
 
 
 def _negated(verbs: str) -> re.Pattern[str]:
-    """A negation governing ``verbs``, across :data:`_NEGATION_GAP`, **at the end**.
+    """A negation governing ``verbs``, across :data:`NEGATION_GAP`, **at the end**.
 
     The gap excludes blocking verbs, which is #288's measured fix: anchored
     naively, *"does not preclude capturing the full page"* scores as *"never
@@ -154,7 +132,7 @@ def _negated(verbs: str) -> re.Pattern[str]:
     the release in a sentence of its own.
     """
     return re.compile(
-        rf"\b(?:{_NEGATION})\b{_NEGATION_GAP}\s+(?:{verbs})\s*$", re.IGNORECASE
+        rf"\b(?:{_NEGATION})\b{NEGATION_GAP}\s+(?:{verbs})\s*$", re.IGNORECASE
     )
 
 
@@ -166,7 +144,7 @@ def _ungoverned(unit: str, verbs: str) -> list[str]:
     review cycles closing. Each occurrence is asked about separately, by
     matching :func:`_negated` against the text *up to and including* it.
     """
-    plain = _EMPHASIS.sub(" ", unit)
+    plain = EMPHASIS.sub(" ", unit)
     governed = _negated(verbs)
     return [
         match.group(0)
@@ -186,8 +164,8 @@ def _released(text: str, subject: re.Pattern[str], release: str) -> list[str]:
     """
     return [
         unit
-        for unit in _sentences(text)
-        if subject.search(_EMPHASIS.sub(" ", unit)) and _ungoverned(unit, release)
+        for unit in sentences(text)
+        if subject.search(EMPHASIS.sub(" ", unit)) and _ungoverned(unit, release)
     ]
 
 
@@ -217,7 +195,7 @@ _SELF_HEAL = re.compile(
 
 
 def _visual_section() -> str:
-    return _section(_read(BUILD), _VISUAL_SECTION)
+    return section(_read(BUILD), _VISUAL_SECTION)
 
 
 def _unconditional_obligations(text: str) -> list[str]:
@@ -230,9 +208,9 @@ def _unconditional_obligations(text: str) -> list[str]:
     """
     return [
         unit
-        for unit in _sentences(text)
+        for unit in sentences(text)
         if _USER_FACING.search(unit)
-        and _UNIVERSAL.search(_EMPHASIS.sub(" ", unit))
+        and _UNIVERSAL.search(EMPHASIS.sub(" ", unit))
         and _ungoverned(unit, _OBLIGES)
     ]
 
@@ -252,7 +230,7 @@ def test_the_capture_section_names_the_documented_location() -> None:
     """AC-1: one documented, per-ticket, repo-relative home for the captures."""
     stated = [
         unit
-        for unit in _sentences(_visual_section())
+        for unit in sentences(_visual_section())
         if _EVIDENCE_DIR in unit and _TICKET_KEY.search(unit) and _PLACEMENT.search(unit)
     ]
     assert stated, (
@@ -274,7 +252,7 @@ def test_the_section_self_heals_a_missing_ignore_rule() -> None:
     """
     stated = [
         unit
-        for unit in _sentences(_visual_section())
+        for unit in sentences(_visual_section())
         if ".gitignore" in unit and _EVIDENCE_DIR in unit and _SELF_HEAL.search(unit)
     ]
     assert stated, (
@@ -311,19 +289,19 @@ _SHRINK = r"\b(?:shrink\w*|downscal\w*|scale down|reduc\w*)\b"
 
 def _height_bounds(text: str) -> set[int]:
     """Every capture-height ceiling ``text`` states, in px."""
-    return {int(match.group(1)) for match in _HEIGHT_BOUND.finditer(_EMPHASIS.sub(" ", text))}
+    return {int(match.group(1)) for match in _HEIGHT_BOUND.finditer(EMPHASIS.sub(" ", text))}
 
 
 def _capture_bounds(text: str) -> set[int]:
     """Every capture-count cap ``text`` states."""
-    return {int(match.group(1)) for match in _CAPTURE_BOUND.finditer(_EMPHASIS.sub(" ", text))}
+    return {int(match.group(1)) for match in _CAPTURE_BOUND.finditer(EMPHASIS.sub(" ", text))}
 
 
 def _slice_units(text: str) -> list[str]:
     """Units stating the slice rule: a viewport, a slice, and an un-negated capture."""
     return [
         unit
-        for unit in _sentences(text)
+        for unit in sentences(text)
         if _VIEWPORT.search(unit) and _SLICE.search(unit) and _ungoverned(unit, _CAPTURE_VERB)
     ]
 
@@ -360,7 +338,7 @@ def test_the_height_ceiling_cites_the_measurement_that_set_it() -> None:
     """
     stated = [
         unit
-        for unit in _sentences(_visual_section())
+        for unit in sentences(_visual_section())
         if _MEASUREMENT.search(unit) and _BODY_TEXT_SIZE.search(unit) and _FIDELITY.search(unit)
     ]
     assert stated, (
@@ -373,16 +351,16 @@ def test_the_height_ceiling_cites_the_measurement_that_set_it() -> None:
 
 def test_the_capture_count_cap_survives_with_its_cost_reason() -> None:
     """AC-3: the retired flag's cap survives as guidance, and says why."""
-    section = _visual_section()
-    bounds = _capture_bounds(section)
+    section_body = _visual_section()
+    bounds = _capture_bounds(section_body)
     assert bounds == {_MAX_CAPTURES}, (
         f"`commands/build.md` → {_VISUAL_SECTION} caps captures at "
         f"{sorted(bounds) or 'nothing'}; the decided cap is {_MAX_CAPTURES}."
     )
     reasoned = [
         unit
-        for unit in _sentences(section)
-        if _CAPTURE_BOUND.search(_EMPHASIS.sub(" ", unit))
+        for unit in sentences(section_body)
+        if _CAPTURE_BOUND.search(EMPHASIS.sub(" ", unit))
         or ("token" in unit.lower() and "latency" in unit.lower())
     ]
     assert any("token" in unit.lower() and "latency" in unit.lower() for unit in reasoned), (
@@ -398,15 +376,15 @@ def test_exceeding_the_cap_narrows_the_set_not_the_images() -> None:
     exists to prevent, so the two halves must be asserted together: a section
     that says "narrow" but permits shrinking has not stated the rule.
     """
-    units = _sentences(_visual_section())
-    narrows = [unit for unit in units if _NARROW.search(unit) and _SET_NOUN.search(unit)]
+    units_body = sentences(_visual_section())
+    narrows = [unit for unit in units_body if _NARROW.search(unit) and _SET_NOUN.search(unit)]
     assert narrows, (
         f"`commands/build.md` → {_VISUAL_SECTION} no longer says to narrow the "
         f"capture set when a change needs more than the cap."
     )
     forbids = [
         unit
-        for unit in units
+        for unit in units_body
         if re.search(_SHRINK, unit, re.IGNORECASE) and not _ungoverned(unit, _SHRINK)
     ]
     assert forbids, (
@@ -428,10 +406,10 @@ _INCOMPLETE = re.compile(r"\bincomplete\b|\bnot an answer\b", re.IGNORECASE)
 
 def test_review_step_three_supplies_the_capture_directory() -> None:
     """AC-2: the reviewer is handed the directory and its manifest, not a list."""
-    step = _units(_section(_read(REVIEW), _HANDOFF_STEP))
+    step = units(section(_read(REVIEW), _HANDOFF_STEP))
     stated = [
         unit
-        for unit in _sentences(step)
+        for unit in sentences(step)
         if _EVIDENCE_DIR in unit and "manifest.md" in unit and _SUPPLY.search(unit)
     ]
     assert stated, (
@@ -450,7 +428,7 @@ def _report_enumeration() -> str:
     so a whole-bullet substring check stays green after the item is struck from
     the list it belongs to.
     """
-    return _sentences(_report_bullet())[0]
+    return sentences(_report_bullet())[0]
 
 
 def test_the_report_contract_requires_a_visual_evidence_statement() -> None:
@@ -518,7 +496,7 @@ def test_silence_is_not_an_answer_in_the_report_contract() -> None:
     """
     stated = [
         unit
-        for unit in _sentences(_report_bullet())
+        for unit in sentences(_report_bullet())
         if _VISUAL_EVIDENCE.search(unit) and _INCOMPLETE.search(unit)
     ]
     assert stated, (
@@ -530,10 +508,10 @@ def test_silence_is_not_an_answer_in_the_report_contract() -> None:
 
 def test_the_reviewer_agent_report_carries_the_visual_evidence_item() -> None:
     """AC-2: the agent's own report contract renders the line."""
-    reviewer = _units(_read(REVIEWER))
+    reviewer = units(_read(REVIEWER))
     stated = [
         unit
-        for unit in _sentences(reviewer)
+        for unit in sentences(reviewer)
         if _VISUAL_EVIDENCE.search(unit) and _CONSULTED.search(unit)
     ]
     assert stated, (
@@ -546,10 +524,10 @@ def test_the_reviewer_agent_report_carries_the_visual_evidence_item() -> None:
 
 def test_the_review_command_report_step_carries_the_visual_evidence_item() -> None:
     """AC-2: `/review`'s printed report carries the line and points at its home."""
-    step = _units(_section(_read(REVIEW), _REPORT_STEP))
+    step = units(section(_read(REVIEW), _REPORT_STEP))
     stated = [
         unit
-        for unit in _sentences(step)
+        for unit in sentences(step)
         if _VISUAL_EVIDENCE.search(unit) and "review-discipline" in unit
     ]
     assert stated, (
@@ -573,7 +551,7 @@ def _report_bullet() -> str:
     the visual-evidence line and its reason set. Both of those files are
     renderings of it.
     """
-    obligations = _section(_read(DISCIPLINE), _OBLIGATIONS)
+    obligations = section(_read(DISCIPLINE), _OBLIGATIONS)
     for line in obligations.splitlines():
         if line.lstrip().startswith("- **Report:**"):
             return line
@@ -592,7 +570,7 @@ def _verdict_grammar() -> str:
     than returning ``""`` is the floor: a bullet that no longer defines the
     line's grammar must fail here, not pass an assertion over nothing.
     """
-    for unit in _sentences(_report_bullet()):
+    for unit in sentences(_report_bullet()):
         if "exactly one reason" in unit:
             return unit
     raise AssertionError(
@@ -633,7 +611,7 @@ def test_the_not_consulted_reasons_live_in_exactly_one_home() -> None:
         text = _read(path).lower()
         restated = [reason for reason in reasons if reason in text]
         assert not restated, (
-            f"{path.relative_to(_REPO_ROOT)} restates the reason set "
+            f"{path.relative_to(REPO_ROOT)} restates the reason set "
             f"{restated} that `review-discipline` owns. A rendering points at "
             f"the home; a second copy of a closed set is what drifts."
         )
@@ -646,8 +624,8 @@ def test_the_capture_numbers_live_in_exactly_one_file() -> None:
     parsers the AC-3 tests use, so a deleted home empties the set and fails here
     rather than silently satisfying the sweep.
     """
-    section = _visual_section()
-    numbers = _height_bounds(section) | _capture_bounds(section)
+    section_body = _visual_section()
+    numbers = _height_bounds(section_body) | _capture_bounds(section_body)
     assert numbers, (
         f"FLOOR: `commands/build.md` → {_VISUAL_SECTION} states neither a "
         f"capture-height ceiling nor a capture cap, so the single-home sweep "
@@ -660,7 +638,7 @@ def test_the_capture_numbers_live_in_exactly_one_file() -> None:
     for path in (START, REVIEW, REVIEWER, DISCIPLINE):
         found = restatement.findall(_read(path))
         assert not found, (
-            f"{path.relative_to(_REPO_ROOT)} restates a capture number {found}; "
+            f"{path.relative_to(REPO_ROOT)} restates a capture number {found}; "
             f"`commands/build.md` → {_VISUAL_SECTION} is the one home for the "
             f"ceiling and the cap, and every other file points at it."
         )
@@ -677,7 +655,7 @@ def _pointer_units(text: str) -> list[str]:
     """
     return [
         unit
-        for unit in _sentences(text)
+        for unit in sentences(text)
         if "commands/build.md" in unit
         and "Visual evidence for a user-facing change" in unit
         and _VISUAL_EVIDENCE.search(unit)
@@ -685,7 +663,7 @@ def _pointer_units(text: str) -> list[str]:
 
 
 def _start_pointer_units() -> list[str]:
-    return _pointer_units(_units(_section(_read(START), _BUILD_STEP)))
+    return _pointer_units(units(section(_read(START), _BUILD_STEP)))
 
 
 def test_start_points_at_the_capture_convention() -> None:
@@ -703,7 +681,7 @@ def test_start_points_at_the_capture_convention() -> None:
 # AC-5 — the ignore rule, proven behaviourally in a hermetic repo
 # ---------------------------------------------------------------------------
 #
-# `_init_hermetic_repo` (`test_worktree_ignore_hygiene`) exists for a measured
+# `init_hermetic_repo` (`test_worktree_ignore_hygiene`) exists for a measured
 # reason: *this* checkout's `.git/info/exclude` carries local, uncommitted rules,
 # so any assertion evaluated against the live worktree passes whether or not the
 # committed `.gitignore` carries the fix. The fixture copies the real
@@ -718,13 +696,13 @@ def test_a_capture_directory_is_invisible_to_git_status(tmp_path: Path) -> None:
     worktree root, and any gate that counts untracked files then refuses the
     run — after the work is done and often after it has passed review.
     """
-    repo = _init_hermetic_repo(tmp_path / "clone")
+    repo = init_hermetic_repo(tmp_path / "clone")
     captures = repo / ".evidence" / "434"
     captures.mkdir(parents=True)
     (captures / "settings-empty-1440w-01.png").write_bytes(b"\x89PNG\r\n\x1a\n")
     (captures / "manifest.md").write_text("| page | state | width | slice |\n")
 
-    porcelain = _git(repo, "status", "--porcelain").stdout
+    porcelain = git(repo, "status", "--porcelain").stdout
     assert ".evidence" not in porcelain, (
         f".gitignore must ignore {_EVIDENCE_DIR} — a capture directory reads as "
         f"a dirty worktree:\n{porcelain}"
@@ -740,14 +718,14 @@ def test_captures_are_not_swept_into_the_index_by_add_all(tmp_path: Path) -> Non
     permanent history. That is the hazard `41d7fb6` already had to revert once
     for `gate.log`.
     """
-    repo = _init_hermetic_repo(tmp_path / "clone")
+    repo = init_hermetic_repo(tmp_path / "clone")
     captures = repo / ".evidence" / "434"
     captures.mkdir(parents=True)
     (captures / "settings-empty-1440w-01.png").write_bytes(b"\x89PNG\r\n\x1a\n")
     (captures / "manifest.md").write_text("| page | state | width | slice |\n")
 
-    _git(repo, "add", "-A")
-    listing = _git(repo, "ls-files").stdout.splitlines()
+    git(repo, "add", "-A")
+    listing = git(repo, "ls-files").stdout.splitlines()
     assert not [path for path in listing if path.startswith(".evidence/")], (
         f"`git add -A` staged a capture — it would reach public history:\n{listing}"
     )
@@ -770,7 +748,7 @@ def test_the_evidence_ignore_does_not_hide_a_tracked_reference_image(
     hand-written note whose name merely contains "evidence", would be a worse
     bug than the one being fixed.
     """
-    repo = _init_hermetic_repo(tmp_path / "clone")
+    repo = init_hermetic_repo(tmp_path / "clone")
     (repo / "design").mkdir()
     (repo / "design" / "reference-1440.png").write_bytes(b"\x89PNG\r\n\x1a\n")
     (repo / "docs").mkdir()
@@ -779,7 +757,7 @@ def test_the_evidence_ignore_does_not_hide_a_tracked_reference_image(
     # `git check-ignore`, not `git status`: git collapses a wholly-untracked
     # directory into one `?? design/` line, so a porcelain assertion about a path
     # *under* it answers a question about the parent and would pass however
-    # broad the rule got (`_init_hermetic_repo`'s docstring records the same
+    # broad the rule got (`init_hermetic_repo`'s docstring records the same
     # trap for `.claude/`). `check-ignore` answers per path.
     for path in ("design/reference-1440.png", "docs/evidence-notes.md"):
         probe = subprocess.run(
@@ -931,7 +909,7 @@ def test_no_unit_makes_the_visual_evidence_line_optional() -> None:
     offenders: list[str] = []
     for path in (DISCIPLINE, REVIEWER, REVIEW, BUILD):
         for unit in _released(_read(path), _VISUAL_EVIDENCE, _LINE_RELEASE):
-            offenders.append(f"{path.relative_to(_REPO_ROOT)}: {unit}")
+            offenders.append(f"{path.relative_to(REPO_ROOT)}: {unit}")
     assert not offenders, (
         "the visual-evidence line is released somewhere:\n" + "\n".join(offenders)
     )
@@ -997,19 +975,19 @@ def test_the_full_page_sweep_catches_a_rewritten_permission(permission: str) -> 
     must fire on the rewrite **and** the presence half must be unchanged by it,
     which is what proves the two guards see different edits.
     """
-    section = _units(_visual_section())
+    section_body = units(_visual_section())
     prohibition = "**Never capture the full page in one image**, at any width."
-    assert prohibition in section, (
+    assert prohibition in section_body, (
         "the full-page prohibition moved — re-anchor this paraphrase sweep"
     )
-    spliced = section.replace(prohibition, permission)
+    spliced = section_body.replace(prohibition, permission)
 
-    before = _released(section, _FULL_PAGE, _FULL_PAGE_RELEASE)
+    before = _released(section_body, _FULL_PAGE, _FULL_PAGE_RELEASE)
     after = _released(spliced, _FULL_PAGE, _FULL_PAGE_RELEASE)
     assert len(after) > len(before), (
         f"a rewritten permission escapes the full-page sweep: {permission!r}"
     )
-    assert _slice_units(spliced) == _slice_units(section), (
+    assert _slice_units(spliced) == _slice_units(section_body), (
         f"replacing the prohibition changed what the slice presence half reads "
         f"({permission!r}) — then the two halves are one guard stated twice, "
         f"and the sweep is not testing anything the presence half misses."
@@ -1019,7 +997,7 @@ def test_the_full_page_sweep_catches_a_rewritten_permission(permission: str) -> 
 @pytest.mark.parametrize("wording", _OPTIONAL_LINE_WORDINGS)
 def test_the_optional_line_sweep_catches_a_rewritten_release(wording: str) -> None:
     """A re-worded release of the report line is caught, and the item survives it."""
-    reviewer = _units(_read(REVIEWER))
+    reviewer = units(_read(REVIEWER))
     spliced = f"{reviewer.rstrip()}\n\n{wording}"
 
     before = _released(reviewer, _VISUAL_EVIDENCE, _LINE_RELEASE)
@@ -1029,12 +1007,12 @@ def test_the_optional_line_sweep_catches_a_rewritten_release(wording: str) -> No
     )
     item_before = [
         unit
-        for unit in _sentences(reviewer)
+        for unit in sentences(reviewer)
         if _VISUAL_EVIDENCE.search(unit) and _CONSULTED.search(unit)
     ]
     item_after = [
         unit
-        for unit in _sentences(spliced)
+        for unit in sentences(spliced)
         if _VISUAL_EVIDENCE.search(unit) and _CONSULTED.search(unit)
     ]
     assert item_after == item_before, (
@@ -1072,18 +1050,18 @@ def test_the_visual_predicates_read_the_real_documents_boundaries() -> None:
     under test. Counting keeps the claim ("the splice adds an offender") true
     whichever offenders the file already carries.
     """
-    section = _units(_visual_section())
+    section_body = units(_visual_section())
     build = _read(BUILD)
-    reviewer = _units(_read(REVIEWER))
+    reviewer = units(_read(REVIEWER))
 
     # 1. The capture pass, made optional by an appended sentence — the shape a
     #    `is this section negated` predicate is blind to.
-    spliced = f"{section.rstrip()}\n\nFor a small change the capture pass is optional."
-    assert spliced != section, "the visual section is empty — re-anchor this control"
+    spliced = f"{section_body.rstrip()}\n\nFor a small change the capture pass is optional."
+    assert spliced != section_body, "the visual section is empty — re-anchor this control"
     assert len(_released(spliced, _CAPTURE_SUBJECT, _OPTIONAL_RELEASE)) > len(
-        _released(section, _CAPTURE_SUBJECT, _OPTIONAL_RELEASE)
+        _released(section_body, _CAPTURE_SUBJECT, _OPTIONAL_RELEASE)
     ), "an appended `the capture pass is optional` is invisible to the sweep."
-    assert _unconditional_obligations(spliced) == _unconditional_obligations(section), (
+    assert _unconditional_obligations(spliced) == _unconditional_obligations(section_body), (
         "appending an exception changed what the `when` presence half reads — "
         "the two halves are then one guard, and the appended release is "
         "precisely what the presence half cannot see."
@@ -1098,15 +1076,15 @@ def test_the_visual_predicates_read_the_real_documents_boundaries() -> None:
     # 3. The prohibition flipped in place: the sweep fires, and the slice
     #    presence half is untouched — flipping a prohibition leaves every noun
     #    the slice rule names intact, which is why they are two guards.
-    flipped = section.replace("**Never capture", "**Capture")
-    assert flipped != section, "the full-page prohibition moved — re-anchor this control"
+    flipped = section_body.replace("**Never capture", "**Capture")
+    assert flipped != section_body, "the full-page prohibition moved — re-anchor this control"
     assert len(_released(flipped, _FULL_PAGE, _FULL_PAGE_RELEASE)) > len(
-        _released(section, _FULL_PAGE, _FULL_PAGE_RELEASE)
+        _released(section_body, _FULL_PAGE, _FULL_PAGE_RELEASE)
     ), (
         "`Capture the full page in one image` reads as the prohibition intact — "
         "the negation is not anchored to the verb it governs."
     )
-    assert _slice_units(flipped) == _slice_units(section), (
+    assert _slice_units(flipped) == _slice_units(section_body), (
         "flipping the prohibition changed what the slice presence half reads — "
         "it is reading the prohibition rather than the slice rule, and the two "
         "guards are then one stated twice."
@@ -1114,22 +1092,24 @@ def test_the_visual_predicates_read_the_real_documents_boundaries() -> None:
 
     # 4. The ceiling turned advisory.
     spliced = (
-        f"{section.rstrip()}\n\nThe 2000 px ceiling is advisory for a page that nearly fits."
+        f"{section_body.rstrip()}\n\nThe 2000 px ceiling is advisory for a page that nearly fits."
     )
     assert len(_released(spliced, _HEIGHT_SUBJECT, _HEIGHT_RELEASE)) > len(
-        _released(section, _HEIGHT_SUBJECT, _HEIGHT_RELEASE)
+        _released(section_body, _HEIGHT_SUBJECT, _HEIGHT_RELEASE)
     ), "an appended `the ceiling is advisory` is invisible to the height sweep."
-    assert _height_bounds(spliced) == _height_bounds(section), (
+    assert _height_bounds(spliced) == _height_bounds(section_body), (
         "the advisory sentence changed the parsed ceiling — the number parser "
         "is reading prose about the bound as a statement of it."
     )
 
     # 5. The cap, released.
-    spliced = f"{section.rstrip()}\n\nMore than twelve captures are fine when the change is large."
+    spliced = (
+        f"{section_body.rstrip()}\n\nMore than twelve captures are fine when the change is large."
+    )
     assert len(_released(spliced, _CAP_SUBJECT, _CAP_RELEASE)) > len(
-        _released(section, _CAP_SUBJECT, _CAP_RELEASE)
+        _released(section_body, _CAP_SUBJECT, _CAP_RELEASE)
     ), "an appended `more than twelve captures are fine` is invisible to the cap sweep."
-    assert _capture_bounds(spliced) == _capture_bounds(section), (
+    assert _capture_bounds(spliced) == _capture_bounds(section_body), (
         "the release sentence changed the parsed cap — the parser is reading a "
         "sentence *about* the cap as the cap."
     )
@@ -1146,10 +1126,12 @@ def test_the_visual_predicates_read_the_real_documents_boundaries() -> None:
     # 7. The false converse, per negation predicate. Each was #288's measured
     #    escape: a negation whose object is a *blocking verb* governs the
     #    blocking, not the verb beyond it, and grants exactly what it appears to
-    #    forbid. `_NEGATION_GAP`'s exclusion is what closes them.
-    converse = f"{section.rstrip()}\n\nA tall surface does not preclude capturing the full page."
+    #    forbid. `NEGATION_GAP`'s exclusion is what closes them.
+    converse = (
+        f"{section_body.rstrip()}\n\nA tall surface does not preclude capturing the full page."
+    )
     assert len(_released(converse, _FULL_PAGE, _FULL_PAGE_RELEASE)) > len(
-        _released(section, _FULL_PAGE, _FULL_PAGE_RELEASE)
+        _released(section_body, _FULL_PAGE, _FULL_PAGE_RELEASE)
     ), (
         "`does not preclude capturing the full page` reads as a prohibition — "
         "the negation is being credited with governing the verb beyond the "
@@ -1165,11 +1147,11 @@ def test_the_visual_predicates_read_the_real_documents_boundaries() -> None:
     #    sees it; this is the control that proves the release arm reads both
     #    word orders.
     fronted = (
-        f"{section.rstrip()}\n\nOnly where a page is unusually long is a "
+        f"{section_body.rstrip()}\n\nOnly where a page is unusually long is a "
         f"full-page capture ruled out."
     )
     assert len(_released(fronted, _FULL_PAGE, _FULL_PAGE_RELEASE)) > len(
-        _released(section, _FULL_PAGE, _FULL_PAGE_RELEASE)
+        _released(section_body, _FULL_PAGE, _FULL_PAGE_RELEASE)
     ), (
         "a fronted `Only where …` qualifier leaves the full-page rule reading "
         "as unconditional — the sweep is anchored in one word order only."
@@ -1186,10 +1168,10 @@ def test_the_visual_predicates_read_the_real_documents_boundaries() -> None:
         "a reason phrase pasted into `agents/reviewer.md` is invisible to the "
         "single-home sweep — it is matching the home rather than the rendering."
     )
-    unpointed = _units(_section(_read(START), _BUILD_STEP)).replace(
+    unpointed = units(section(_read(START), _BUILD_STEP)).replace(
         "*Visual evidence for a user-facing change*", "the capture rules"
     )
-    assert unpointed != _units(_section(_read(START), _BUILD_STEP)), (
+    assert unpointed != units(section(_read(START), _BUILD_STEP)), (
         "the start pointer moved — re-anchor this control"
     )
     assert not _pointer_units(unpointed), (
@@ -1205,21 +1187,21 @@ def test_the_visual_predicates_read_the_real_documents_boundaries() -> None:
     #     negated verb earlier in this unit" rather than "is *this* occurrence
     #     governed", and the rule's own `Never` shields the clause sharing its
     #     sentence. Measured: one offender anchored, zero unanchored.
-    compound = section.replace(
+    compound = section_body.replace(
         "**Never capture the full page in one image**, at any width.",
         "**Never capture the full page in one image**, at any width, but "
         "capture the whole page when it is short.",
     )
-    assert compound != section, "the full-page prohibition moved — re-anchor this control"
+    assert compound != section_body, "the full-page prohibition moved — re-anchor this control"
     assert len(_released(compound, _FULL_PAGE, _FULL_PAGE_RELEASE)) > len(
-        _released(section, _FULL_PAGE, _FULL_PAGE_RELEASE)
+        _released(section_body, _FULL_PAGE, _FULL_PAGE_RELEASE)
     ), (
         "a release sharing a sentence with the prohibition escapes the "
         "full-page sweep — the negation is being credited with governing every "
         "capture verb after it, which is the per-sentence fail-open #288 closed."
     )
 
-    # 11. Emphasis *inside* the anchor window — the one property `_EMPHASIS`
+    # 11. Emphasis *inside* the anchor window — the one property `EMPHASIS`
     #     exists for, and the one nothing else in this tree reaches. Every real
     #     unit and every splice above bolds a rule at its edges (`**Never
     #     capture … image**`), where the asterisks fall outside the negation-to-
@@ -1227,18 +1209,18 @@ def test_the_visual_predicates_read_the_real_documents_boundaries() -> None:
     #     the negation and the verb it governs and the anchor must still cross
     #     it: unstripped, `\w+` cannot match `*ever*`, the gap closes, the
     #     negation stops reaching `capture`, and the rule reads as its own
-    #     release. Measured on the merged tree: `_EMPHASIS` compiled to a
+    #     release. Measured on the merged tree: `EMPHASIS` compiled to a
     #     pattern that never matches, and to `\*\*` alone, both leave the whole
     #     suite green without this splice — the control that held them lived in
     #     `test_build_assurance_workflow`, which #435 deleted with the verb loop
     #     it described, and the primitive outlived its guard.
-    emphasised = section.replace("**Never capture", "**Never *ever* capture")
-    assert emphasised != section, "the full-page prohibition moved — re-anchor this control"
+    emphasised = section_body.replace("**Never capture", "**Never *ever* capture")
+    assert emphasised != section_body, "the full-page prohibition moved — re-anchor this control"
     assert len(_released(emphasised, _FULL_PAGE, _FULL_PAGE_RELEASE)) == len(
-        _released(section, _FULL_PAGE, _FULL_PAGE_RELEASE)
+        _released(section_body, _FULL_PAGE, _FULL_PAGE_RELEASE)
     ), (
         "emphasis between the negation and the verb it governs makes the "
-        "prohibition read as released — `_EMPHASIS` is not stripping every "
+        "prohibition read as released — `EMPHASIS` is not stripping every "
         "spelling this tree bolds its rules with, so an anchored predicate "
         "cannot cross it."
     )
@@ -1249,7 +1231,7 @@ def test_the_visual_predicates_read_the_real_documents_boundaries() -> None:
     released = emphasised.replace("**Never *ever* capture", "**Capture")
     assert released != emphasised, "the emphasis splice moved — re-anchor this control"
     assert len(_released(released, _FULL_PAGE, _FULL_PAGE_RELEASE)) > len(
-        _released(section, _FULL_PAGE, _FULL_PAGE_RELEASE)
+        _released(section_body, _FULL_PAGE, _FULL_PAGE_RELEASE)
     ), (
         "flipping the emphasised prohibition releases nothing — the sweep is "
         "not reading the emphasised unit at all, so the equality above holds "

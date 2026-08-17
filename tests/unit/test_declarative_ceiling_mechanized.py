@@ -38,13 +38,10 @@ or that 1.5x is the right multiple.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-from tests.unit.test_assurance_filing_rubric import _section
+from tests.unit._prose import REPO_ROOT, section
 
-# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_CODE_QUALITY = _REPO_ROOT / "skills" / "code-quality" / "SKILL.md"
+_CODE_QUALITY = REPO_ROOT / "skills" / "code-quality" / "SKILL.md"
 
 _PART_B = "## Part B — Structure"
 _HEADING = "### Size"
@@ -65,11 +62,11 @@ _NOT_ENFORCEABLE = re.compile(
 def _declarative_ceiling_paragraph() -> str:
     """The declarative-ceiling grant inside ``### Size``, inside ``## Part B``.
 
-    ``_section`` is imported rather than re-spelled, and the two calls are
+    ``section`` is imported rather than re-spelled, and the two calls are
     nested so Part B membership lives in the anchor instead of a second test.
     """
     text = _CODE_QUALITY.read_text(encoding="utf-8")
-    size = _section(_section(text, _PART_B), _HEADING)
+    size = section(section(text, _PART_B), _HEADING)
     paragraphs = [block.strip() for block in size.split("\n\n") if block.strip()]
     hits = [
         p for p in paragraphs if re.search(r"\bdeclarative files\b", p, re.IGNORECASE)

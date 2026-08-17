@@ -27,10 +27,9 @@ dependency (mirrors ``test_guidance_footprint``).
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-#: ``tests/unit/test_*.py`` -> ``parents[2]`` is the repo (or worktree) root.
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.unit._prose import REPO_ROOT
+
 PAGE = REPO_ROOT / "docs" / "index.html"
 REGISTRY = REPO_ROOT / "registry.yaml"
 

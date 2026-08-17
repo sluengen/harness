@@ -34,64 +34,24 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from tests._gitutil import tracked_files_under
-
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-
-
-def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    """Synchronous git invocation for test setup/assertions."""
-    return subprocess.run(
-        ["git", *args],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-
-
-def _init_hermetic_repo(path: Path) -> Path:
-    """``git init`` a repo whose ``info/exclude`` is comments-only, with a
-    tracked `.claude/settings.json` — the real repo's shape, where `.claude/`
-    is itself a tracked directory (`test_agent_worktree_is_ignored_by_the_committed_gitignore`'s
-    docstring explains why that tracked file has to exist *before* the
-    untracked-worktree assertions: otherwise `git status --porcelain` collapses
-    a wholly-untracked `.claude/` into a single `?? .claude/` line and every
-    assertion about a path *under* it passes vacuously, ignored or not.
-
-    A plain ``init_repo`` (``tests._gitutil``) still runs on *this* machine, so
-    its default ``info/exclude`` is whatever the local git config templates in
-    — never this repo's `.claude/worktrees/` line (that lives in *this* repo's
-    own `.git/info/exclude`, not the git template), but hermetic on principle:
-    the guard must derive its ignore behaviour from the copied `.gitignore`
-    alone, not from any ambient exclude file.
-    """
-    path.mkdir(parents=True, exist_ok=True)
-    # Branch stated, not inherited from the host's `init.defaultBranch` (#369) —
-    # which is the same hermeticity this fixture already argues for above.
-    _git(path, "init", "-q", "-b", "dev")
-    (path / ".gitignore").write_text((_REPO_ROOT / ".gitignore").read_text())
-    (path / ".claude").mkdir()
-    (path / ".claude" / "settings.json").write_text("{}\n")
-    _git(path, "add", ".gitignore", ".claude/settings.json")
-    _git(path, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", "init")
-    return path
+from tests._gitutil import git, init_hermetic_repo, tracked_files_under
+from tests.unit._prose import REPO_ROOT
 
 
 def test_agent_worktree_is_ignored_by_the_committed_gitignore(tmp_path: Path) -> None:
     """A `.claude/worktrees/<name>/` directory is invisible to `git status`.
 
-    `.claude/` already carries a tracked file (see `_init_hermetic_repo`), so
+    `.claude/` already carries a tracked file (see `init_hermetic_repo`), so
     git descends into it instead of collapsing the untracked subtree into a
     single `?? .claude/` line — without that, this assertion would pass
     whether or not the new directory is actually ignored.
     """
-    repo = _init_hermetic_repo(tmp_path / "clone")
+    repo = init_hermetic_repo(tmp_path / "clone")
     stale = repo / ".claude" / "worktrees" / "zen-driscoll-4c2cf9"
     stale.mkdir(parents=True)
     (stale / "README.md").write_text("x")
 
-    porcelain = _git(repo, "status", "--porcelain").stdout
+    porcelain = git(repo, "status", "--porcelain").stdout
     assert ".claude/worktrees" not in porcelain
 
 
@@ -103,10 +63,10 @@ def test_gitignore_does_not_blanket_ignore_dot_claude(tmp_path: Path) -> None:
     in `git status` so a real settings change is never silently dropped from
     review.
     """
-    repo = _init_hermetic_repo(tmp_path / "clone")
+    repo = init_hermetic_repo(tmp_path / "clone")
     (repo / ".claude" / "settings.json").write_text('{"changed": true}\n')
 
-    porcelain = _git(repo, "status", "--porcelain").stdout
+    porcelain = git(repo, "status", "--porcelain").stdout
     assert ".claude/settings.json" in porcelain
 
 
@@ -117,18 +77,18 @@ def test_nested_worktree_is_not_staged_as_a_gitlink(tmp_path: Path) -> None:
     ignore rule stops `git add -A` from picking it up at all, so the index
     never gains a gitlink pointing at unrelated branch/SHA history.
     """
-    repo = _init_hermetic_repo(tmp_path / "clone")
+    repo = init_hermetic_repo(tmp_path / "clone")
     (repo / "README.md").write_text("root\n")
-    _git(repo, "add", "README.md")
-    _git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", "root")
+    git(repo, "add", "README.md")
+    git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", "root")
 
     nested = repo / ".claude" / "worktrees" / "some-agent-run"
     nested.mkdir(parents=True)
     # Branch stated, not inherited from the host's `init.defaultBranch` (#369).
-    _git(nested, "init", "-q", "-b", "dev")
+    git(nested, "init", "-q", "-b", "dev")
     (nested / "file.txt").write_text("x")
-    _git(nested, "add", "file.txt")
-    _git(
+    git(nested, "add", "file.txt")
+    git(
         nested,
         "-c",
         "user.email=t@t",
@@ -139,8 +99,8 @@ def test_nested_worktree_is_not_staged_as_a_gitlink(tmp_path: Path) -> None:
         "nested",
     )
 
-    _git(repo, "add", "-A")
-    listing = _git(repo, "ls-files", "-s").stdout
+    git(repo, "add", "-A")
+    listing = git(repo, "ls-files", "-s").stdout
     assert "160000" not in listing
 
 
@@ -162,11 +122,11 @@ def test_run_artifacts_do_not_read_as_a_dirty_worktree(tmp_path: Path) -> None:
     design for `--design-file` — would be refused with `dirty_worktree` *after*
     a passing review. `git status --porcelain` is the same view that gate takes.
     """
-    repo = _init_hermetic_repo(tmp_path / "clone")
+    repo = init_hermetic_repo(tmp_path / "clone")
     (repo / "gate.log").write_text("=== ruff ===\nAll checks passed!\n")
     (repo / "design.md").write_text("# Design\n")
 
-    porcelain = _git(repo, "status", "--porcelain").stdout
+    porcelain = git(repo, "status", "--porcelain").stdout
     assert "gate.log" not in porcelain
     assert "design.md" not in porcelain
 
@@ -178,12 +138,12 @@ def test_run_artifacts_are_not_swept_into_the_index_by_add_all(tmp_path: Path) -
     so an unignored `gate.log` is published into permanent history — as one
     already was, in the commit `41d7fb6` had to revert.
     """
-    repo = _init_hermetic_repo(tmp_path / "clone")
+    repo = init_hermetic_repo(tmp_path / "clone")
     (repo / "gate.log").write_text("=== ruff ===\n")
     (repo / "design.md").write_text("# Design\n")
 
-    _git(repo, "add", "-A")
-    listing = _git(repo, "ls-files").stdout.splitlines()
+    git(repo, "add", "-A")
+    listing = git(repo, "ls-files").stdout.splitlines()
     assert "gate.log" not in listing
     assert "design.md" not in listing
 
@@ -197,7 +157,7 @@ def test_design_ignore_is_anchored_to_the_root_only(tmp_path: Path) -> None:
     anchor actually holds: silently ignoring a hand-written design doc would be
     a worse bug than the one being fixed.
     """
-    repo = _init_hermetic_repo(tmp_path / "clone")
+    repo = init_hermetic_repo(tmp_path / "clone")
     nested = repo / "docs" / "design.md"
     nested.mkdir(parents=True, exist_ok=True)
     nested.rmdir()
@@ -225,7 +185,7 @@ def test_gitignore_ignores_run_artifacts_as_whole_lines() -> None:
     """
     patterns = {
         line.strip()
-        for line in (_REPO_ROOT / ".gitignore").read_text().splitlines()
+        for line in (REPO_ROOT / ".gitignore").read_text().splitlines()
         if line.strip() and not line.lstrip().startswith("#")
     }
     assert "gate.log" in patterns, (
@@ -245,7 +205,7 @@ def test_gitignore_ignores_agent_worktrees_as_a_whole_line() -> None:
     """
     patterns = {
         line.strip()
-        for line in (_REPO_ROOT / ".gitignore").read_text().splitlines()
+        for line in (REPO_ROOT / ".gitignore").read_text().splitlines()
         if line.strip() and not line.lstrip().startswith("#")
     }
     assert ".claude/worktrees/" in patterns, (

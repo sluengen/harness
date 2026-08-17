@@ -23,9 +23,11 @@ a FAIL. It is layer-aware — the record is ``specs/features/`` where
   the record and its deferral **on one line**, so neither can state the record
   step without its escape.
 
-It also owns :func:`_obligations_section` and :func:`_obligation_bullets`, which
-``test_final_evidence_ordering`` imports rather than re-spelling — the two guards
-read adjacent bullets of the same section and must not disagree about where it is.
+:func:`tests.unit._prose.obligations_section` and
+:func:`tests.unit._prose.obligation_bullets` are read from the neutral home by
+this module and by ``test_final_evidence_ordering`` — #467 moved them out of here
+— because the two guards read adjacent bullets of the same section and must not
+disagree about where it is.
 
 Five term co-occurrences collapsed into those two (ADR 0016), three of them
 near-identical: the same four words asserted over the whole skill, over the
@@ -42,11 +44,10 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_SKILL = _REPO_ROOT / "skills" / "review-discipline" / "SKILL.md"
-_COMMAND = _REPO_ROOT / "commands" / "review.md"
-_AGENT = _REPO_ROOT / "agents" / "reviewer.md"
+from tests.unit._prose import REPO_ROOT, obligation_bullets
+
+_COMMAND = REPO_ROOT / "commands" / "review.md"
+_AGENT = REPO_ROOT / "agents" / "reviewer.md"
 
 #: The subject that selects the gate's bullet out of the obligations list.
 _GATE_TERM = "as-built-record gate"
@@ -65,47 +66,9 @@ def _text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def _obligations_section() -> str:
-    """The ``## Reviewer obligations`` section, where the record gate lives.
-
-    Imported by ``test_final_evidence_ordering``, which reads the ordering bullet
-    of the same section. One slicer, so the two guards cannot disagree about where
-    the obligations begin and end.
-    """
-    text = _text(_SKILL)
-    start = text.find("## Reviewer obligations")
-    assert start != -1, "review-discipline must have a Reviewer obligations section"
-    end = text.find("## On a FAIL", start)
-    assert end != -1, (
-        "review-discipline must have an 'On a FAIL' section after obligations"
-    )
-    return text[start:end]
-
-
-def _obligation_bullets() -> list[str]:
-    """The section's top-level ``- **`` bullets, one string each.
-
-    The text unit is part of the predicate: the obligations are five separate
-    rules, and a predicate read over the whole section lets a term from one bullet
-    satisfy a claim about another.
-    """
-    bullets: list[str] = []
-    current: list[str] = []
-    for line in _obligations_section().splitlines():
-        if line.startswith("- **"):
-            if current:
-                bullets.append("\n".join(current).strip())
-            current = [line]
-        elif current:
-            current.append(line)
-    if current:
-        bullets.append("\n".join(current).strip())
-    return bullets
-
-
 def _gate_bullets() -> list[str]:
     """Obligation bullets carrying the as-built-record gate."""
-    return [b for b in _obligation_bullets() if _GATE_TERM in b]
+    return [b for b in obligation_bullets() if _GATE_TERM in b]
 
 
 def test_the_asbuilt_record_gate_is_stated_where_the_reviewer_reads_it() -> None:
@@ -173,7 +136,7 @@ def test_each_operating_surface_names_the_gate_and_its_escape() -> None:
     the two on one line is what ties the escape to the obligation it qualifies.
     """
     missing = [
-        str(path.relative_to(_REPO_ROOT))
+        str(path.relative_to(REPO_ROOT))
         for path in (_COMMAND, _AGENT)
         if not any(
             "as-built" in line.lower() and "deferral" in line.lower()

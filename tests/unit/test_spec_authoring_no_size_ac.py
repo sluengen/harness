@@ -34,11 +34,10 @@ any English paragraph satisfies.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_SKILL = _REPO_ROOT / "skills" / "spec-authoring" / "SKILL.md"
+from tests.unit._prose import REPO_ROOT
+
+_SKILL = REPO_ROOT / "skills" / "spec-authoring" / "SKILL.md"
 
 #: The size half's direction, anchored to the noun it governs. A bare negation
 #: anywhere in the paragraph would be decoration; what the rule says is that the

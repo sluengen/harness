@@ -58,7 +58,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.unit._prose import REPO_ROOT
+
 LINEAR_SKILL = REPO_ROOT / "skills" / "linear" / "SKILL.md"
 #: #327 split the backend-neutral policy out of this skill into `tracker`. The
 #: rules below (CAL-910, CAL-1165) are unchanged — they are pinned against the

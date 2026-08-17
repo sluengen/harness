@@ -43,11 +43,10 @@ swallow the prose after it. :func:`test_fence_filter_is_line_anchored` is that c
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_REGISTRY = _REPO_ROOT / "registry.yaml"
+from tests.unit._prose import REPO_ROOT
+
+_REGISTRY = REPO_ROOT / "registry.yaml"
 
 #: A member of ``registry.yaml``'s ``files:`` block — a two-space-indented mapping key
 #: naming a markdown path. The same shape ``hooks/guidance-freshness.js`` calls
@@ -269,7 +268,7 @@ def test_no_registered_skill_prose_has_an_orphan_table_row() -> None:
     """
     violations: list[str] = []
     for rel in _registered_skill_prose():
-        for number in _orphan_table_rows((_REPO_ROOT / rel).read_text()):
+        for number in _orphan_table_rows((REPO_ROOT / rel).read_text()):
             violations.append(f"{rel}:{number}")
 
     assert not violations, (
@@ -364,7 +363,7 @@ def test_no_registered_reference_file_has_an_empty_leaf_section() -> None:
     """
     violations: list[str] = []
     for rel in _registered_reference_files():
-        for number, title in _empty_leaf_sections((_REPO_ROOT / rel).read_text()):
+        for number, title in _empty_leaf_sections((REPO_ROOT / rel).read_text()):
             violations.append(f"{rel}:{number} — {title}")
 
     assert not violations, (
@@ -387,7 +386,7 @@ def test_specialized_verification_lost_exactly_the_stub_heading() -> None:
     home is ``skills/code-quality/SKILL.md``, which the second assertion pins so the
     content cannot vanish from the tree along with the stub.
     """
-    reference = _REPO_ROOT / "skills" / "code-quality" / "references"
+    reference = REPO_ROOT / "skills" / "code-quality" / "references"
     source = (reference / "specialized-verification.md").read_text()
     titles = [title for _, _, _, title in _headings(source)]
 
@@ -400,7 +399,7 @@ def test_specialized_verification_lost_exactly_the_stub_heading() -> None:
         "Narrowing a nullable is a whole-call-graph change, not a grep-and-replace",
     ]
 
-    home = (_REPO_ROOT / "skills" / "code-quality" / "SKILL.md").read_text()
+    home = (REPO_ROOT / "skills" / "code-quality" / "SKILL.md").read_text()
     assert "### A green suite is only evidence if its inputs are real" in home, (
         "the stub heading was deleted from the reference file on the grounds that its "
         "content lives in the core skill — if that home goes, the deletion becomes a "
@@ -458,7 +457,7 @@ def test_no_registered_skill_prose_carries_a_template_placeholder() -> None:
     """
     violations: list[str] = []
     for rel in _registered_skill_prose():
-        for number, token in _placeholder_tokens((_REPO_ROOT / rel).read_text()):
+        for number, token in _placeholder_tokens((REPO_ROOT / rel).read_text()):
             violations.append(f"{rel}:{number} — {token}")
 
     assert not violations, (
@@ -477,7 +476,7 @@ def test_the_template_convention_this_sweep_excludes_is_still_live() -> None:
     the exact convention the two leaks copied, so a change of convention names itself
     here (`craft.md` → *The conditional guard whose skip reads as green*).
     """
-    template = (_REPO_ROOT / "templates" / "CONTEXT.template.md").read_text()
+    template = (REPO_ROOT / "templates" / "CONTEXT.template.md").read_text()
     assert _placeholder_tokens(template), (
         "templates/CONTEXT.template.md no longer carries a {…} placeholder — the "
         "reason this sweep is scoped to skills/ may have expired (#454)"
@@ -534,7 +533,7 @@ def test_readme_states_no_specific_test_count() -> None:
     the gate collects (a pin would have to be re-measured on every ticket that adds a
     test, which is the same rot with more ceremony).
     """
-    readme = _REPO_ROOT / "README.md"
+    readme = REPO_ROOT / "README.md"
     violations = [
         f"README.md:{number} — {phrase}"
         for number, phrase in _test_counts(readme.read_text())

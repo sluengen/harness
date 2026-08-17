@@ -29,9 +29,8 @@ is ``test_guidance_efficiency_topology``.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+from tests.unit._prose import REPO_ROOT
 
 _NEGATION = re.compile(
     r"\b(never|not|no|nothing|none|neither|nor|cannot|can't)\b", re.IGNORECASE
@@ -39,7 +38,7 @@ _NEGATION = re.compile(
 
 
 def _read(relative: str) -> str:
-    return (ROOT / relative).read_text()
+    return (REPO_ROOT / relative).read_text()
 
 
 def _sentences(block: str) -> list[str]:

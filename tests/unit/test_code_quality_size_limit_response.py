@@ -49,11 +49,10 @@ C draws for the ``size:`` marker itself.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_SKILL = _REPO_ROOT / "skills" / "code-quality" / "references" / "specialized-verification.md"
+from tests.unit._prose import REPO_ROOT
+
+_SKILL = REPO_ROOT / "skills" / "code-quality" / "references" / "specialized-verification.md"
 
 _HEADING = "### A file over the hard limit is an auditable choice, not silent drift"
 
@@ -122,7 +121,7 @@ def test_the_size_limit_response_rule_is_stated_in_its_home() -> None:
 
 def test_the_cited_part_b_rule_still_exists() -> None:
     """Structural correspondence: the rule cites *Compose, don't inline* by name."""
-    core = _REPO_ROOT / "skills" / "code-quality" / "SKILL.md"
+    core = REPO_ROOT / "skills" / "code-quality" / "SKILL.md"
     assert _PART_B_RULE in core.read_text(encoding="utf-8"), (
         f"Part B must still carry {_PART_B_RULE!r}; the size-limit response rule "
         "cites it by name, and a cite whose target is gone points nowhere"

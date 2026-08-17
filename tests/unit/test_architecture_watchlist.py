@@ -41,18 +41,20 @@ itself, so it exercises no production path and can only fail if its own three
 lines are edited — ``craft.md`` → *Exercise the production path, not merely a
 production constant*.
 
-**This module exports ``_review_watchlist_bullet``**, imported by
-``test_review_discipline_watchlist_entry_currency`` and
-``test_review_discipline_extraction_test_home``, which read two later clauses of
-the same bullet.
+**``review_watchlist_bullet`` lives in :mod:`tests.unit._prose`** since #467, and
+is read from there by this module, by
+``test_review_discipline_watchlist_entry_currency`` and by
+``test_review_discipline_extraction_test_home``, which take two later clauses of
+the same bullet. One slicer, three callers, and no test module standing in as a
+library for the other two.
 """
 
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.unit._prose import REPO_ROOT, review_watchlist_bullet
+
 ARCHITECTURE = REPO_ROOT / "skills" / "architecture" / "SKILL.md"
 SPEC_AUTHORING = REPO_ROOT / "skills" / "spec-authoring" / "SKILL.md"
 REVIEW_DISCIPLINE = (
@@ -106,18 +108,6 @@ def _section(text: str, header: str) -> str:
     assert m, f"missing section header {header!r}"
     rest = text[m.end() :]
     end = re.search(r"^## ", rest, re.MULTILINE)
-    return rest[: end.start()] if end else rest
-
-
-def _review_watchlist_bullet(text: str) -> str:
-    """The Stage-2 ``- **Architecture watchlist**`` bullet, to the next bullet/heading."""
-    m = re.search(r"^- \*\*Architecture watchlist\*\*", text, re.MULTILINE)
-    assert m, (
-        "review-discipline Stage 2 has no '- **Architecture watchlist**' check "
-        "(CAL-815 AC-3)."
-    )
-    rest = text[m.end() :]
-    end = re.search(r"^(?:- \*\*|## |### )", rest, re.MULTILINE)
     return rest[: end.start()] if end else rest
 
 
@@ -252,7 +242,7 @@ def test_the_review_trigger_grades_an_unhandled_watchlisted_file() -> None:
     a co-occurrence of the same terms describes the mechanism just as well
     while obliging the reviewer to do nothing about it (AC-3).
     """
-    block = _review_watchlist_bullet(REVIEW_DISCIPLINE.read_text()).lower()
+    block = review_watchlist_bullet(REVIEW_DISCIPLINE.read_text()).lower()
 
     missing = [t for t in _REVIEW_TRIGGER_TERMS if t not in block]
     assert not missing, (

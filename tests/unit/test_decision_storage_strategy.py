@@ -38,13 +38,10 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from tests.unit.test_distributed_prose_no_repo_ids import _registered_prose_files
-from tests.unit.test_skill_boundary_dedup import _section
+from tests.unit._prose import REPO_ROOT, registered_prose_files, section_by_title
 
-# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_SPEC_AUTHORING = _REPO_ROOT / "skills" / "spec-authoring" / "SKILL.md"
-_CONTEXT = _REPO_ROOT / "CONTEXT.md"
+_SPEC_AUTHORING = REPO_ROOT / "skills" / "spec-authoring" / "SKILL.md"
+_CONTEXT = REPO_ROOT / "CONTEXT.md"
 _DECISION_SECTION = "Decisions live in the spec they govern"
 
 #: Phrases that state the storage prohibition. A line carrying one is making a
@@ -95,8 +92,8 @@ def _unconditional_ban(line: str) -> bool:
 def _prohibition_lines() -> list[tuple[str, str]]:
     """``(relpath, line)`` for every registered-prose line stating a prohibition."""
     found: list[tuple[str, str]] = []
-    for path in _registered_prose_files():
-        rel = path.relative_to(_REPO_ROOT).as_posix()
+    for path in registered_prose_files():
+        rel = path.relative_to(REPO_ROOT).as_posix()
         for line in path.read_text().splitlines():
             if _states_prohibition(line):
                 found.append((rel, line))
@@ -104,7 +101,7 @@ def _prohibition_lines() -> list[tuple[str, str]]:
 
 
 def _decision_section() -> str:
-    return _section(_SPEC_AUTHORING.read_text(), _DECISION_SECTION)
+    return section_by_title(_SPEC_AUTHORING.read_text(), _DECISION_SECTION)
 
 
 def _context_paths_block() -> str:
@@ -183,7 +180,7 @@ def test_spec_authoring_defers_placement_to_the_repo_architecture_index() -> Non
 
 def test_architect_agent_permits_a_configured_decision_directory() -> None:
     """The role's prohibition is scoped to a directory the repo never declared."""
-    text = (_REPO_ROOT / "agents" / "architect.md").read_text()
+    text = (REPO_ROOT / "agents" / "architect.md").read_text()
     offenders = [ln for ln in text.splitlines() if _unconditional_ban(ln)]
     assert not offenders, f"architect still bans a configured ADR outright: {offenders}"
     assert "paths.decisions" in text, (
@@ -271,7 +268,7 @@ def test_the_sweep_corpus_and_its_comparison_set_are_non_vacuous() -> None:
     at all. Both are pinned, and the second is anchored on the four files that
     keep the phrase conditionally.
     """
-    corpus = {p.relative_to(_REPO_ROOT).as_posix() for p in _registered_prose_files()}
+    corpus = {p.relative_to(REPO_ROOT).as_posix() for p in registered_prose_files()}
     assert len(corpus) > 20, f"registered-prose corpus collapsed to {len(corpus)} files"
     assert "skills/spec-authoring/SKILL.md" in corpus
 
@@ -289,7 +286,7 @@ def test_the_sweep_corpus_and_its_comparison_set_are_non_vacuous() -> None:
 
 def test_context_template_declares_the_optional_decisions_path() -> None:
     """The installed template offers the switch, with the bar and the default."""
-    text = (_REPO_ROOT / "templates" / "CONTEXT.template.md").read_text()
+    text = (REPO_ROOT / "templates" / "CONTEXT.template.md").read_text()
     m = re.search(r"\n[ \t]*decisions:.*", text)
     assert m, "templates/CONTEXT.template.md paths: carries no optional `decisions:` key"
     entry = m.group(0).lower()
@@ -306,11 +303,11 @@ def test_this_repo_configures_a_decisions_path_and_its_index_states_the_rules() 
     m = re.search(r"^\s*decisions:\s*(?P<value>\S+)", paths, re.MULTILINE)
     if m is None:  # a repo may drop the directory; then there is nothing to check
         return
-    directory = _REPO_ROOT / m.group("value")
+    directory = REPO_ROOT / m.group("value")
     assert directory.is_dir(), f"paths.decisions names no directory: {directory}"
     assert list(directory.glob("*.md")), f"configured decision directory is empty: {directory}"
 
-    index = _section(_CONTEXT.read_text(), "Decisions index").lower()
+    index = section_by_title(_CONTEXT.read_text(), "Decisions index").lower()
     for token in ("cross-cutting", "expensive to reverse"):
         assert token in index, (
             f"the decisions index must state the placement threshold ({token!r}) "
@@ -335,8 +332,8 @@ def test_architecture_principles_indexes_the_configured_decision_directory() -> 
     m = re.search(r"^\s*decisions:\s*(?P<value>\S+)", paths, re.MULTILINE)
     if m is None:
         return
-    spec = _REPO_ROOT / "specs" / "architecture-principles.md"
-    section = _section(spec.read_text(), "Cross-cutting decisions")
+    spec = REPO_ROOT / "specs" / "architecture-principles.md"
+    section = section_by_title(spec.read_text(), "Cross-cutting decisions")
     assert m.group("value") in section, (
         "the architecture index must name the configured decision directory "
         f"({m.group('value')}) — universal guidance defers placement to it."
@@ -383,16 +380,16 @@ def test_the_adr_index_names_exactly_the_records_on_disk() -> None:
     m = re.search(r"^\s*decisions:\s*(?P<value>\S+)", paths, re.MULTILINE)
     if m is None:  # a repo may drop the directory; then there is no index to hold
         return
-    on_disk = {path.name for path in (_REPO_ROOT / m.group("value")).glob("*.md")}
+    on_disk = {path.name for path in (REPO_ROOT / m.group("value")).glob("*.md")}
     assert on_disk, (
         f"no ADRs under {m.group('value')} — the correspondence below would hold "
         "over two empty sets and measure nothing"
     )
 
-    spec = _REPO_ROOT / "specs" / "architecture-principles.md"
-    # `_section` raises when the heading is gone, so re-titling the index fails
+    spec = REPO_ROOT / "specs" / "architecture-principles.md"
+    # `section_by_title` raises when the heading is gone, so re-titling the index fails
     # here rather than quietly reducing this guard to a pair of empty sets.
-    index = _section(spec.read_text(), "The ADR index")
+    index = section_by_title(spec.read_text(), "The ADR index")
     targets = re.findall(r"\]\((?!\w+:)([^)\s#]+\.md)\)", index)
     unresolved = [target for target in targets if not (spec.parent / target).is_file()]
     assert not unresolved, (
@@ -416,7 +413,7 @@ def test_no_feature_spec_duplicates_an_adr_decision() -> None:
     if m is None or f is None:
         return
     titles = {}
-    for adr in sorted((_REPO_ROOT / m.group("value")).glob("*.md")):
+    for adr in sorted((REPO_ROOT / m.group("value")).glob("*.md")):
         head = adr.read_text().splitlines()[0]
         # The strip must *fire*: ``re.sub`` returns the heading unchanged when it
         # misses, which leaves ``titles`` non-empty (so a bare emptiness floor
@@ -431,7 +428,7 @@ def test_no_feature_spec_duplicates_an_adr_decision() -> None:
     )
 
     duplicated: list[str] = []
-    for spec in sorted((_REPO_ROOT / f.group("value")).glob("*.md")):
+    for spec in sorted((REPO_ROOT / f.group("value")).glob("*.md")):
         for heading in re.findall(r"^#{2,4}\s*Decision:\s*(.+)$", spec.read_text(), re.M):
             if heading.strip().lower() in titles:
                 duplicated.append(f"{spec.name}: {heading.strip()}")

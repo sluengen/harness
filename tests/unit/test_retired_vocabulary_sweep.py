@@ -77,10 +77,9 @@ import re
 from pathlib import Path
 
 from tests._gitutil import tracked_files_under
+from tests.unit._prose import REPO_ROOT
 
-# ``tests/unit/test_*.py`` → ``parents[2]`` is the repo (or worktree) root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_REGISTRY = _REPO_ROOT / "registry.yaml"
+_REGISTRY = REPO_ROOT / "registry.yaml"
 
 #: The universal-prose directories — the same set ``test_distributed_prose_no_repo_ids``
 #: sweeps, which is the hook's ``PROSE`` set.
@@ -111,7 +110,7 @@ def _registered_prose_files() -> list[Path]:
         for path in sorted(tracked_files_under(prose_dir)):
             if path.suffix != ".md":
                 continue
-            rel = path.relative_to(_REPO_ROOT).as_posix()
+            rel = path.relative_to(REPO_ROOT).as_posix()
             if _is_registered(rel, registry_src):
                 found.append(path)
     return found
@@ -244,7 +243,7 @@ def test_the_corpus_is_non_empty_and_holds_known_members() -> None:
     source of the three root mirrors and the first file every agent reads, from
     the swept corpus with the whole suite green (#455).
     """
-    rels = {p.relative_to(_REPO_ROOT).as_posix() for p in _registered_prose_files()}
+    rels = {p.relative_to(REPO_ROOT).as_posix() for p in _registered_prose_files()}
     for anchor in (
         "skills/assessment-craft/SKILL.md",
         "commands/assess.md",
@@ -278,7 +277,7 @@ def test_the_splitter_keeps_the_semicolon_clause_together() -> None:
     a rewording of that sentence re-anchors the control instead of leaving it
     describing text that moved.
     """
-    text = (_REPO_ROOT / "skills" / "review-discipline" / "SKILL.md").read_text()
+    text = (REPO_ROOT / "skills" / "review-discipline" / "SKILL.md").read_text()
     carrying = [s for s in _sentences(text) if _SEVERITY.search(s) and ";" in s]
     assert carrying, (
         "review-discipline no longer states the retirement in a semicolon clause "
@@ -420,7 +419,7 @@ def test_no_registered_prose_carries_retired_vocabulary() -> None:
     """#455 AC-1/AC-2: no registered prose file states a retired model as live."""
     violations: list[str] = []
     for path in _registered_prose_files():
-        rel = path.relative_to(_REPO_ROOT).as_posix()
+        rel = path.relative_to(REPO_ROOT).as_posix()
         for found in _retired_constructions(path.read_text()):
             violations.append(f"{rel}\n      {found}")
 

@@ -29,8 +29,8 @@ import re
 from pathlib import Path
 from typing import Any
 
-#: ``tests/unit/test_*.py`` -> ``parents[2]`` is the repo (or worktree) root.
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.unit._prose import REPO_ROOT
+
 DESIGN_ROOT = REPO_ROOT / "design"
 PAGE = REPO_ROOT / "docs" / "index.html"
 CONTEXT = REPO_ROOT / "CONTEXT.md"
