@@ -1,4 +1,4 @@
-# guidance:registry@0.5.166
+# guidance:registry@0.5.167
 # Single source of truth for versions. Everything version-stamped or installed
 # is listed here, so /update-guidance and the freshness hook can see it:
 #   files: — copied into a repo (md/js carry a matching guidance: header;
@@ -43,7 +43,7 @@ files:
   # --- skills (Agent Skills shape: skills/<id>/SKILL.md, D2) ---
   skills/engineering-principles/SKILL.md: { id: engineering-principles,   version: 0.4.0, profiles: [harness] }
   skills/spec-driven-development/SKILL.md: { id: spec-driven-development,  version: 0.7.0, profiles: [harness] }
-  skills/spec-authoring/SKILL.md: { id: spec-authoring,           version: 0.16.0, profiles: [harness] }
+  skills/spec-authoring/SKILL.md: { id: spec-authoring,           version: 0.17.0, profiles: [harness] }
   skills/test-driven-development/SKILL.md: { id: test-driven-development,  version: 0.6.0, profiles: [harness] }
   skills/code-quality/SKILL.md: { id: code-quality,             version: 0.25.0, profiles: [harness] }
   skills/code-quality/references/untrusted-fetch.md: { id: code-quality-untrusted-fetch, version: 0.1.0, profiles: [harness] }
@@ -175,4 +175,4 @@ files:
 # The freshness hook checks their header against the version here; they never appear in a repo's lock.
 meta:
   BOOTSTRAP.md:                        { id: bootstrap,                version: 0.5.7 }
-  registry.yaml:                      { id: registry,                 version: 0.5.166 }
+  registry.yaml:                      { id: registry,                 version: 0.5.167 }

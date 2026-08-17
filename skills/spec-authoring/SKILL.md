@@ -2,7 +2,7 @@
 name: spec-authoring
 description: Use when writing or revising any spec — a proposal, a change spec (the ticket), or a feature/reference spec — including its design and the decisions behind it. The craft of the spec; spec-driven-development is the lifecycle.
 ---
-<!-- guidance:spec-authoring@0.16.0 -->
+<!-- guidance:spec-authoring@0.17.0 -->
 # Spec Authoring
 
 How to write a spec that is actionable, consistent, and complete — including the **design** and the **decisions** behind it. Specs come in two families: **lifecycle specs** that flow with a task, and **reference specs** that document a standing part of the system. `spec-driven-development` is the lifecycle; this is the craft.
@@ -103,6 +103,8 @@ Two rules carry the weight.
 The canonical, as-built record of what the product does today, plus the decisions that shaped it (Decision blocks). Written by the **reviewer** on PASS, from the diff — never by the builder (`spec-driven-development`). See `templates/feature.md`. It answers "how does X work, and why is it that way?", grouped by user-visible behaviour, with the data model and interface surface that back it.
 
 An as-built record must not enumerate a set the code owns — a class family, a command surface, or a reason vocabulary. Name the module that owns it and stop; or, where the list genuinely aids the reader, pair it with a guard that derives the set from the code and fails when the two disagree. A prose list with no derivation is a claim nothing measures, and it goes stale at the commit that adds the next member.
+
+An as-built record must not state a present-tense quantity on its own: the figure names the commit it was measured at, or a guard derives it and fails when tree and claim disagree, or the record restates it as the invariant the number was evidence for, because a count with no anchor falsifies silently at the next commit that touches its subject.
 
 ## Quality bar
 
