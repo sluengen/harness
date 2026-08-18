@@ -55,6 +55,10 @@ Both branch-reading hooks parse the spine's `branches:` block first and fall bac
 
 `tests/unit/` holds 24 test modules (~10.6k lines, both derived at this record's date) admitted under ADR 0017 D5's rule: (a) behaviour of executable code, (b) a property of the spine, (c) integrity of shipped assets, (d) frontmatter compliance, (e) tree-consistency — existence and correspondence of two things both in the tree, never prose meaning. The prose-guard corpus (118 modules on `dev` at 2026-08-17) is deleted; what survives executes the hooks under node, the gate scripts, the mutation instrument, and the workflows' contract modules. New guards are admitted against the rule, not by momentum.
 
+### The assessment layer
+
+`/assess` writes one dated report per pass to `assessments/<YYYY-MM-DD>-<scope>.md` in the `templates/assessment.md` format. That template owns the **retention convention**; `commands/assess.md` step 4 applies it after each pass, folding every superseded report into a one-line entry in the rolling `assessments/LOG.md` and deleting the file. The rule keeps the latest report per scope plus any report with an open finding, and since #468 a **retired scope** is its one exception: a report whose scope the current `/assess` can no longer produce — ADR 0015 narrowed the scopes to `code | architecture` — is superseded once none of its findings are open, with the open-finding bound still binding until then. The clause had one live subject and the same change folded it: `assessments/2026-08-04-system.md`, the last `system` pass, whose nine findings' tickets (#327, #329–#333, #342–#344) plus the two filed alongside it that day by the `code` and `architecture` passes (#328, #334) were all verified closed against the tracker before the deletion. `assessments/` holds three reports at this record's date — `2026-07-19-pre-publication-readiness.md`, which exempts itself from the rotation in its own header, `2026-08-04-architecture.md`, and `2026-08-17-code.md` — plus `LOG.md`.
+
 ### The Codex surface, compiled
 
 `scripts/generate_codex_artifacts.py` compiles the secondary surface from the canonical files: `AGENTS.md` (the spine verbatim plus a generated index of commands and skills), `.codex/agents/*.toml`, `.codex/skills/<skill>` symlinks, and a `command-<name>` skill adapter per command (Codex discovers skills, not repo-local slash commands). The outputs are committed; `--check` runs as a gate stage, so a stale compile is a red gate. Hooks do not port — Codex sessions never had them, and enforcement of record is runtime-independent.
@@ -87,6 +91,7 @@ No persistent state beyond the tree itself and the gate marker: one JSON file pe
 - **The landing page's guidance catalog is unguarded** between the deletion of `scripts/check_landing_page_guidance.py` and its rebuild against a post-v5 source (#482, D8); the design-token guard still holds `docs/index.html` to `design/`.
 - **No lock-file consumer has performed the migration yet** — `MIGRATION.md` is written from the mechanisms and says so.
 - **`hooks/hooks.json` has no integrity guard** (class (c) would admit one); the manifest is exercised only by installation.
+- **No guard enforces the assessment retention convention.** Deriving a report filename from an `assessments/LOG.md` line means parsing that line's prose into a path, which ADR 0017 D5 class (e) excludes — it admits a *cited* path and the file it names, not a constructed one. The retired `test_assessments_retention.py` went in the v5 cull on that ground and was not revived; the state is checked by a reviewer against `git ls-files`.
 - The proposals-ledger and tracker behaviours (D7's sweep, holds, boards) are tracker-side and leave no footprint in this tree beyond the provider skills.
 
 ## Decisions
