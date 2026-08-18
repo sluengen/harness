@@ -12,7 +12,7 @@ rule in `review-discipline`; stop when that rule says to stop and put the ticket
 on operator hold rather than silently starting a fresh loop.
 
 This is a thin driver. Tracker operations go through the `tracker` skill
-(`linear` or `github-issues` as selected by `CONTEXT.md`), isolation through
+(`linear` or `github-issues` as selected by `CLAUDE.md`), isolation through
 `worktree-isolation`, implementation through `test-driven-development` and
 `code-quality`, design through `architecture`, UI work through `ux-design` and
 the conditional `design-system`, and review standards through
@@ -42,7 +42,7 @@ downgrade it. Record an upgrade on the ticket with its reason.
 
 ## 1. Set up
 
-1. Read `CONTEXT.md`, the entry process document, and the relevant as-built
+1. Read `CLAUDE.md`, the entry process document, and the relevant as-built
    record. Store the entry document verbatim as `PROJECT_PROCESS_DOC`; require
    the integration branch and verify command.
 2. Use `tracker` to open the ticket and transition it to In Progress. Treat the
@@ -159,7 +159,7 @@ certification:
 cd "$worktree_path" && git add -A && git write-tree    # certified_tree
 ```
 
-Run `CONTEXT.md`'s `assurance.trivial_certify` command against that staged diff
+Run `CLAUDE.md`'s `assurance.trivial_certify` command against that staged diff
 and bind its printed certificate to `certified_tree`. If the command is absent,
 fails, or the diff is ineligible, upgrade assurance to `simple` and continue with
 independent review. The certifier must reject any user-facing or as-built-record

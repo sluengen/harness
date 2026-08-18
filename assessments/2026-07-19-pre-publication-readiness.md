@@ -114,7 +114,7 @@ Should-do 4.
 
 ## AC-3 — Personal & operational disclosure across docs
 
-Reviewed `README.md`, `SECURITY.md`, `RUNBOOK.md`, `CONTEXT.md`, `CLAUDE.md`,
+Reviewed `README.md`, `SECURITY.md`, `RUNBOOK.md`, `CLAUDE.md`, `CLAUDE.md`,
 `CONTRIBUTING.md`, `ONBOARDING.md`, `BOOTSTRAP.md`, `RELEASING.md`, `AGENTS.md`,
 `GEMINI.md`, and the `.claude/`, `.codex/`, `commands/`, `agents/`, `skills/`,
 `specs/` (incl. `proposals/`, `retired/`, `decisions/`), and `assessments/` trees.
@@ -237,7 +237,7 @@ which also pins the AGPL body's SHA-256 so the operative text stays verbatim.
 - **No bug bounty / no support SLA** is stated plainly (`SECURITY.md:38-41`,
   `CONTRIBUTING.md`).
 
-**One accuracy gap (should-do):** `README.md:46` and `CONTEXT.md:67` describe the
+**One accuracy gap (should-do):** `README.md:46` and `CLAUDE.md:67` describe the
 `review` verb as "**run Codex** against the worktree HEAD," but the actual **default
 review engine is Claude** — `--engine codex` is a host-only cross-model option
 (ADR 0002; `commands/harness.md:65,85,91`: "engine defaults to claude"). A public
@@ -264,7 +264,7 @@ exists in the tree or history.
 2. **Review the tone of third-party critiques.** `specs/proposals/borrow-from-ponytail.md:14-20`
    gives a named external author's public tool a "do not install / net-negative"
    verdict. Keep the technical conclusion; soften the framing, or genericize the name.
-3. **Correct the review-engine description** in `README.md:46` and `CONTEXT.md:67`:
+3. **Correct the review-engine description** in `README.md:46` and `CLAUDE.md:67`:
    the default review engine is **Claude**, not Codex (`--engine codex` is a host-only
    option). One-line fix in each; high-confidence accuracy improvement.
 4. **Make the git-history disclosure decision explicit.** History retains the private

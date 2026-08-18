@@ -26,4 +26,4 @@ The three verdicts are `review-discipline`'s *The verdict vocabulary* — PASS, 
 Print the verdict, Stage 1 result per acceptance criterion, Stage 2 findings placed in `review-discipline`'s 2×2 with what happened to each, a **Proposals** section carrying every improvement the review proposes rather than files — one line each with its case, or the word `none`, never an omitted section, and each one also appended to the proposals ledger (`review-discipline` → *The proposal channel*) — the verification output, and the reviewer's **visual-evidence line** — consulted, or not consulted with its reason (`review-discipline` → *Reviewer obligations* owns the reasons).
 
 ## Note
-On PASS this command leaves the branch review-clean and the canonical spec updated, but does not merge. Integration and ticket-closing belong to `/ship` and the repo's branch model (`CONTEXT.md`).
+On PASS this command leaves the branch review-clean and the canonical spec updated, but does not merge. Integration and ticket-closing belong to `/ship` and the repo's branch model (`CLAUDE.md`).

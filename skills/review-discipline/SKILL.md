@@ -106,4 +106,4 @@ Every entry point reads this list. No command, agent or report may act on a word
 
 ## On a FAIL — the review→fix stop rule
 
-A FAIL returns the blocking findings to the builder and re-reviews. How many times that may happen, and what an exhausted budget obliges, is one policy owned by [`skills/review-discipline/references/fail-stop-rule.md`](references/fail-stop-rule.md) — load it on a FAIL and follow it there. Its numbers live in `CONTEXT.md` → `loop:`.
+A FAIL returns the blocking findings to the builder and re-reviews. How many times that may happen, and what an exhausted budget obliges, is one policy owned by [`skills/review-discipline/references/fail-stop-rule.md`](references/fail-stop-rule.md) — load it on a FAIL and follow it there. Its numbers live in `CLAUDE.md` → `loop:`.

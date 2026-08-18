@@ -16,7 +16,7 @@ versioned.
 
 ## The queue
 
-Work off the Build queue defined in `CONTEXT.md`. Its scope is set by the
+Work off the Build queue defined in `CLAUDE.md`. Its scope is set by the
 **optional** `repo.project` — resolve it at runtime, never hardcode it:
 
 - **`repo.project` set** — scope to that one project: the named Build queue.

@@ -6,7 +6,7 @@ Answers one question: **what needs the operator today?** Never build, fix, merge
 
 ## Sources
 
-Load the `tracker` skill first, then the provider skill `CONTEXT.md`'s `tracker:` names — they own the auth, the query recipes, and the hold semantics (the hold labels, and the In-Review assigned/unassigned distinction). Do not invent a query shape. Tracker and git are the truth for ticket and branch state; run logs explain *why* something stopped but never override the tracker.
+Load the `tracker` skill first, then the provider skill `CLAUDE.md`'s `tracker:` names — they own the auth, the query recipes, and the hold semantics (the hold labels, and the In-Review assigned/unassigned distinction). Do not invent a query shape. Tracker and git are the truth for ticket and branch state; run logs explain *why* something stopped but never override the tracker.
 
 ## Sections — always all five, in this order
 

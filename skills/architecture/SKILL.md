@@ -26,7 +26,7 @@ Do **not** record a decision for a routine choice with no lasting consequence. T
 
 ## Where the decision is recorded
 
-The mechanics — which spec a decision lives in, the block's shape, and how to supersede it — are owned by `spec-authoring` → "Decisions live in the spec they govern". The short version: a decision is recorded **in the spec it governs** (a Decision block in the feature spec, or the architecture-principles spec for a cross-cutting one) and superseded **in place** with a dated note — never a standalone ADR or a `decisions/` folder unless the repo declares one (`CONTEXT.md` → `paths.decisions`), which is the only switch and carries its own threshold. This skill governs only *when* a choice rises to a decision (above) and *that* it is recorded honestly (below); the recording rule itself lives in one place, there.
+The mechanics — which spec a decision lives in, the block's shape, and how to supersede it — are owned by `spec-authoring` → "Decisions live in the spec they govern". The short version: a decision is recorded **in the spec it governs** (a Decision block in the feature spec, or the architecture-principles spec for a cross-cutting one) and superseded **in place** with a dated note — never a standalone ADR or a `decisions/` folder unless the repo declares one (`CLAUDE.md` → `paths.decisions`), which is the only switch and carries its own threshold. This skill governs only *when* a choice rises to a decision (above) and *that* it is recorded honestly (below); the recording rule itself lives in one place, there.
 
 ## Recording, not deciding alone
 
@@ -34,7 +34,7 @@ Document the alternatives you rejected and why. A design that contradicts a reco
 
 ## Architecture watchlist
 
-Some files are **gravity wells** — the screen, orchestrator, or module where state, branching, and rendering keep accumulating because every nearby change is easiest to bolt on right there. "Refactor opportunistically when you touch one" is not a reliable instruction in a fully agentic system: if the trigger lives only in conversational memory, the next builder and reviewer never see it. A repo makes the trigger durable by naming those files in an **optional** `architecture_watchlist` in its `CONTEXT.md`:
+Some files are **gravity wells** — the screen, orchestrator, or module where state, branching, and rendering keep accumulating because every nearby change is easiest to bolt on right there. "Refactor opportunistically when you touch one" is not a reliable instruction in a fully agentic system: if the trigger lives only in conversational memory, the next builder and reviewer never see it. A repo makes the trigger durable by naming those files in an **optional** `architecture_watchlist` in its `CLAUDE.md`:
 
 ```yaml
 architecture_watchlist:
@@ -42,7 +42,7 @@ architecture_watchlist:
     - <repo-relative path or glob>   # a screen / orchestrator / module that keeps growing
 ```
 
-The list is **repo-owned**: a repo opts in by naming its *own* gravity wells, and the universal guidance never hard-codes paths. It is **preserved across guidance updates** — `/update-guidance` never touches `CONTEXT.md`, so a repo's entries are never overwritten from the source. A repo that does not opt in has no `architecture_watchlist`, and the mechanism is a **no-op** for it.
+The list is **repo-owned**: a repo opts in by naming its *own* gravity wells, and the universal guidance never hard-codes paths. It is **preserved across guidance updates** — `/update-guidance` never touches `CLAUDE.md`, so a repo's entries are never overwritten from the source. A repo that does not opt in has no `architecture_watchlist`, and the mechanism is a **no-op** for it.
 
 **The trigger.** When the files a change touches — *planned* (the builder, before writing the change spec) or *actual* (the reviewer, from the diff) — intersect `architecture_watchlist.files`, the change must carry a **`Watchlist trigger`** section (in the change spec, confirmed at review) with exactly one of two outcomes:
 
@@ -53,17 +53,17 @@ Either outcome is valid; an *unrecorded* one is not. Touching a gravity well is 
 
 **Who carries the section.** Review is the last checkpoint, not the only one — where the repo's process runs a distinct design step before the build, that step is the earlier carrier: when its grounding diff or ticket touches `architecture_watchlist.files`, its output should include the `Watchlist trigger` section, the same way its other sections are already conditioned on what the change touches. The section stays **conditional** — present only when the touched set intersects the watchlist, absent otherwise. Review then *confirms* the record is there rather than being the first and only place it could have been remembered; a repo with no such stage is unaffected, and the builder stays the carrier with review as the sole confirmation, exactly as today.
 
-**Computing the touched set (the reviewer).** Compare the actual diff against the repo's **integration branch** (`CONTEXT.md` → `branches.integration`):
+**Computing the touched set (the reviewer).** Compare the actual diff against the repo's **integration branch** (`CLAUDE.md` → `branches.integration`):
 
 ```bash
 git diff --name-only "<integration-branch>...HEAD"
 ```
 
-If the integration branch is unknown or unavailable — a detached checkout, or a `CONTEXT.md` that omits `branches.integration` — **fall back** to the working-tree diff (`git diff --name-only HEAD` plus staged and untracked files) so the check still runs against whatever this change adds, rather than skipping silently. Match each changed path against the watchlist globs.
+If the integration branch is unknown or unavailable — a detached checkout, or a `CLAUDE.md` that omits `branches.integration` — **fall back** to the working-tree diff (`git diff --name-only HEAD` plus staged and untracked files) so the check still runs against whatever this change adds, rather than skipping silently. Match each changed path against the watchlist globs.
 
 **Refreshing the list.** The watchlist is not write-once. When the steward (`/assess code`, and the `--deep` arm) finds a recurring gravity well or repeated architectural drag in a file, it proposes adding that file to `architecture_watchlist` so the next change there trips the trigger (`assessment-craft`). This skill is the one home for the mechanism; the builder reference is in `spec-authoring` (the change-spec section) and the reviewer reference in `review-discipline` (the Stage-2 check).
 
-**Growing the list from a change.** A **second seam extraction** from the same **non-watchlisted module** is itself the signal that the module is a gravity well: add it to `CONTEXT.md`'s `architecture_watchlist.files` in that change. Give the entry the same descriptive comment the entry-currency rule requires. One extraction alone does not qualify; the point is to make repeated structural drag durable without waiting for a steward pass.
+**Growing the list from a change.** A **second seam extraction** from the same **non-watchlisted module** is itself the signal that the module is a gravity well: add it to `CLAUDE.md`'s `architecture_watchlist.files` in that change. Give the entry the same descriptive comment the entry-currency rule requires. One extraction alone does not qualify; the point is to make repeated structural drag durable without waiting for a steward pass.
 
 ## Architecture assessment
 

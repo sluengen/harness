@@ -63,7 +63,7 @@ _PROTECTED_SET = {
     _PUSH_HOOK: "[...h.protectedBranches(process.cwd())].sort().join(',')",
     _STOP_HOOK: (
         "[...h.protectedBranches("
-        "h.declaredBranches(require('path').join(process.cwd(), 'CONTEXT.md')),"
+        "h.declaredConfig(process.cwd()),"
         " process.cwd())].sort().join(',')"
     ),
 }
@@ -143,8 +143,9 @@ def _git(repo: Path, *args: str) -> str:
     return completed.stdout.strip()
 
 
-def _repo_with(tmp_path: Path, context: str | None) -> Path:
-    """A repository whose ``CONTEXT.md`` is ``context``, or absent for ``None``.
+def _repo_with(tmp_path: Path, context: str | None, spine: str | None = None) -> Path:
+    """A repository whose ``CONTEXT.md`` is ``context`` and ``CLAUDE.md`` is
+    ``spine``; either is absent for ``None``.
 
     No remote and so no ``origin/HEAD``: that arm adds the same name to both
     sets by the same call, so including it would only add a second reason for
@@ -157,6 +158,8 @@ def _repo_with(tmp_path: Path, context: str | None) -> Path:
     _git(root, "config", "user.name", "t")
     if context is not None:
         (root / "CONTEXT.md").write_text(context)
+    if spine is not None:
+        (root / "CLAUDE.md").write_text(spine)
     (root / "a.txt").write_text("one\n")
     _git(root, "add", "-A")
     _git(root, "commit", "-q", "-m", "first")
@@ -312,7 +315,46 @@ def test_the_expressions_match_the_call_sites_they_stand_in_for() -> None:
         f"{_STOP_HOOK} no longer composes protectedBranches over a parsed "
         "declaration, so this module's expression for it is stale"
     )
-    assert 'declaredBranches(path.join(' in stop, (
-        f"{_STOP_HOOK} no longer parses CONTEXT.md by joining it onto a "
-        "repository path, so this module's expression for it is stale"
+    assert "declaredConfig(sessionTop)" in stop and "declaredConfig(top)" in stop, (
+        f"{_STOP_HOOK} no longer resolves its declaration through "
+        "declaredConfig at both call sites, so this module's expression for "
+        "it is stale"
+    )
+    for hook_name, source in ((_PUSH_HOOK, push), (_STOP_HOOK, stop)):
+        assert 'CLAUDE.md' in source and 'CONTEXT.md' in source, (
+            f"{hook_name} no longer reads the spine first with the CONTEXT.md "
+            "fallback, so the preference tests below measure a path that is "
+            "not the production one"
+        )
+
+
+# --- the spine is preferred; CONTEXT.md is the fallback (v5) -------------------
+
+_SPINE_DECLARED = _DECLARED.replace("# CONTEXT.md", "# spine").replace(
+    "feature-lane", "spine-lane"
+)
+
+
+@pytest.mark.parametrize("hook", [_PUSH_HOOK, _STOP_HOOK])
+def test_the_spine_wins_when_both_files_declare(hook: str, tmp_path: Path) -> None:
+    """A repo carrying both files reads ``CLAUDE.md``, not ``CONTEXT.md``.
+
+    The two fixtures declare different sets, so a hook still reading
+    ``CONTEXT.md`` first produces ``feature-lane`` and fails here.
+    """
+    repo = _repo_with(tmp_path, _DECLARED, spine=_SPINE_DECLARED)
+    got = _protected(hook, repo)
+    assert "spine-lane" in got and "feature-lane" not in got, (
+        f"{hook} read CONTEXT.md although CLAUDE.md declares branches: {got}"
+    )
+
+
+@pytest.mark.parametrize("hook", [_PUSH_HOOK, _STOP_HOOK])
+def test_a_spine_without_branches_falls_through(hook: str, tmp_path: Path) -> None:
+    """A generic ``CLAUDE.md`` with no ``branches:`` block must not mask the
+    declaration in ``CONTEXT.md`` — the un-migrated-repo case."""
+    repo = _repo_with(tmp_path, _DECLARED, spine="# just a memory file\n")
+    got = _protected(hook, repo)
+    assert "feature-lane" in got, (
+        f"{hook} let a block-less CLAUDE.md mask CONTEXT.md's declaration: {got}"
     )

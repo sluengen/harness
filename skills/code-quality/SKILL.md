@@ -63,7 +63,7 @@ When you spot something genuinely worth fixing but out of scope, do not fix it s
 
 ## Part B — Structure
 
-Defaults below. A repo may override the numbers in `CONTEXT.md`; the principles do not change.
+Defaults below. A repo may override the numbers in `CLAUDE.md`; the principles do not change.
 
 ### Size
 
@@ -109,7 +109,7 @@ Any statement implying the work is finished ("done", "fixed", "passing", "ready 
 
 ### The gate, in order
 
-1. **Identify** the command that proves the claim (see `CONTEXT.md` for the repo's lint / type / test commands).
+1. **Identify** the command that proves the claim (see `CLAUDE.md` for the repo's lint / type / test commands).
 2. **Execute** it now. Not "I ran it earlier" — you have changed code since.
 3. **Read** the full output: exit code, pass/fail counts, warnings.
 4. **Verify** the output actually supports the claim. "5 passed, 1 skipped" means explain the skip. A warning means investigate it.
@@ -131,7 +131,7 @@ Skipping a step is not efficiency. It is claiming something you have not checked
 
 ### A measurable criterion needs a measuring test
 
-When an acceptance criterion is stated as a quantity — "uses N queries instead of M", "responds in under X ms", "at most N requests", a cache-hit or error rate — the only evidence is a test that *measures that quantity* and asserts the bound. A structural change that ought to reduce it is not proof that it did. Write the test that counts the thing (queries, calls, allocations, bytes) and fails outside the bound; the measurement tool is repo-specific (`CONTEXT.md`).
+When an acceptance criterion is stated as a quantity — "uses N queries instead of M", "responds in under X ms", "at most N requests", a cache-hit or error rate — the only evidence is a test that *measures that quantity* and asserts the bound. A structural change that ought to reduce it is not proof that it did. Write the test that counts the thing (queries, calls, allocations, bytes) and fails outside the bound; the measurement tool is repo-specific (`CLAUDE.md`).
 
 ### A new guard cites the occurrence it prevents
 

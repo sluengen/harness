@@ -1,12 +1,12 @@
 ---
 name: github-issues
-description: Use when the repo's CONTEXT.md says tracker github and you need to read or update a ticket — opening an issue, filing one onto the Projects v2 board, setting its Status, commenting, holding it, or pulling the Todo queue. The GitHub provider recipes; the backend-neutral policy is in the tracker skill.
+description: Use when the repo's CLAUDE.md says tracker github and you need to read or update a ticket — opening an issue, filing one onto the Projects v2 board, setting its Status, commenting, holding it, or pulling the Todo queue. The GitHub provider recipes; the backend-neutral policy is in the tracker skill.
 ---
 # GitHub Issues
 
 The **GitHub provider recipes** for the tracker protocol. Policy — the operation set, the state names, placement, holds, sync rules, the `none` degrade — lives in the **`tracker`** skill. Read that first; this file is only *how* each operation is performed against GitHub Issues plus a Projects v2 board.
 
-Applies when `CONTEXT.md` says `tracker: github`. The addresses come from its `github:` block:
+Applies when `CLAUDE.md` says `tracker: github`. The addresses come from its `github:` block:
 
 ```yaml
 tracker: github

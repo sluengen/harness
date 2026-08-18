@@ -6,7 +6,7 @@ description: Use when designing or changing any code — the durable principles 
 
 The durable values every design, change, and review is measured against. The architect designs to them, the developer builds to them, the reviewer reviews against them. When the three load the same principles, "what you build" cannot drift from "what you are judged on."
 
-These are universal. Each repo extends them with its own principles in `CONTEXT.md` and records consequential, repo-specific choices as decisions in the spec they govern (see `architecture`). A repo principle never contradicts one here without a recorded decision that says so explicitly.
+These are universal. Each repo extends them with its own principles in `CLAUDE.md` and records consequential, repo-specific choices as decisions in the spec they govern (see `architecture`). A repo principle never contradicts one here without a recorded decision that says so explicitly.
 
 ## The principles
 

@@ -18,11 +18,11 @@ stops the hop cold. The audit trail is ordinary git history and the PR.
 
 ## Argument resolution
 
-Each word resolves against this repo's `CONTEXT.md` `branches:` roles first,
+Each word resolves against this repo's `CLAUDE.md` `branches:` roles first,
 falling back to a literal branch ref:
 
 1. If the word is one of the three canonical role keys — `integration`,
-   `staging`, `release` — and `CONTEXT.md` defines that role, resolve to the
+   `staging`, `release` — and `CLAUDE.md` defines that role, resolve to the
    branch name it names.
 2. Otherwise, use the word itself as a literal branch ref.
 
@@ -54,8 +54,8 @@ resolver is what changes, not the command.
 2. **Merge the source in.** Merge `<src>` into it. **On conflict: stop and
    report** — the conflicting files and a diff summary. No repair attempt,
    bounded or otherwise; this path has no repair authority at all.
-3. **Gate it.** Run the repo's `CONTEXT.md` `commands.verify` gate in that
-   worktree — read the command fresh from `CONTEXT.md` every run and
+3. **Gate it.** Run the repo's `CLAUDE.md` `commands.verify` gate in that
+   worktree — read the command fresh from `CLAUDE.md` every run and
    never hardcode a gate command here, since this path keeps no state to
    remember one in. Capture the output. **On red: stop and report** the
    captured output. No retry.

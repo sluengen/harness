@@ -8,7 +8,7 @@ One tick of the unattended build loop: discover the next actionable ticket, buil
 
 1. **Discover.** Invoke the `work-discovery` skill against this repo's Build queue and pick the next wholly actionable ticket. If nothing is actionable, report that in one line and stop — an empty queue is a clean outcome, not a failure.
 2. **Build.** Run `/build <TICKET>` on the pick.
-3. **Ship.** Build in the ticket's own worktree branched from the **integration branch** (`branches:` role `integration`), then integrate exactly as `CONTEXT.md`'s branch model declares and close the ticket. The model is the whole instruction: a direct push where it allows one, a PR where it requires one — and where the PR needs a human to merge it, that is a hold, not a failure. Do not substitute a merge mechanism this command names for the one the repo declares.
+3. **Ship.** Build in the ticket's own worktree branched from the **integration branch** (`branches:` role `integration`), then integrate exactly as `CLAUDE.md`'s branch model declares and close the ticket. The model is the whole instruction: a direct push where it allows one, a PR where it requires one — and where the PR needs a human to merge it, that is a hold, not a failure. Do not substitute a merge mechanism this command names for the one the repo declares.
 
 ## Standing authorisation
 

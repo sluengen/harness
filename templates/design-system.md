@@ -2,7 +2,7 @@
 
 The contract for **standing up** a layered design system, not a copy of one.
 Its counterpart is `skills/design-system/SKILL.md` — the discipline for *using*
-a system once it exists, routing to `CONTEXT.md` `paths.design_system` for
+a system once it exists, routing to `CLAUDE.md` `paths.design_system` for
 where the result lives. This doc is what goes at that path when nothing does
 yet.
 
@@ -156,6 +156,6 @@ scaffolds**: a `README.md` with `status: scaffold` and a one-line note on what
 belongs there. An absent layer reads as *not applicable*; a scaffold reads as
 *not yet*. Only the second is honest when the layer is coming.
 
-`paths.design_system` in `CONTEXT.md` may point at an in-tree directory or an
+`paths.design_system` in `CLAUDE.md` may point at an in-tree directory or an
 external package/repo — this contract describes a tree relative to that path
 and never assumes a repo-root `design/`.

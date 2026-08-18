@@ -24,7 +24,7 @@ One minimal test that demonstrates the desired behaviour. Clear name stating wha
 
 **Cover each of a guard's conditions, not just the one that trips first.** A guard with several independent trigger conditions (refuse-vs-diverge, stale-vs-malformed, an `||` of checks) needs one test per condition, each seeded so *only* that condition fires. Prove it the same way you prove a RED: delete each condition in turn and confirm a **named** assertion goes red for it. A condition whose deletion leaves the suite green is untested, however many assertions surround it — the guard is covered, the condition is not.
 
-**Cover the new stage under every configuration the lifecycle supports.** When a change adds a stage to a documented lifecycle, grep for the suites that exercise the sibling stages under a configuration or layer (`CONTEXT.md` `layers:` / `tracker:`) and add the new stage's case to each; name those suites in the change spec. A stage's own unit suite proves the stage. It does not prove that the lifecycle still holds under every configuration the repo claims to support — and a stage that other stages now refuse without is the case where that gap is most expensive.
+**Cover the new stage under every configuration the lifecycle supports.** When a change adds a stage to a documented lifecycle, grep for the suites that exercise the sibling stages under a configuration or layer (`CLAUDE.md` `layers:` / `tracker:`) and add the new stage's case to each; name those suites in the change spec. A stage's own unit suite proves the stage. It does not prove that the lifecycle still holds under every configuration the repo claims to support — and a stage that other stages now refuse without is the case where that gap is most expensive.
 
 ### Verify RED — confirm it fails correctly
 
@@ -71,4 +71,4 @@ That test is now the regression guard. Never fix a bug without one.
 - [ ] Tests cover error and edge cases, not just the happy path.
 - [ ] The full suite passes with clean output (no warnings, no unexplained skips).
 
-The test command is repo-specific: see `CONTEXT.md`.
+The test command is repo-specific: see `CLAUDE.md`.

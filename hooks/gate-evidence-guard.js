@@ -313,7 +313,10 @@ function scalar(raw) {
   return stripQuotes((hash === -1 ? raw : raw.slice(0, hash)).trim());
 }
 
-/** The ``branches:`` map declared in a repo CONTEXT.md, as plain key/value.
+/** The ``branches:`` map declared in a repo's spine, as plain key/value.
+ *
+ * The spine is ``CLAUDE.md`` (v5); callers fall back to ``CONTEXT.md`` for a
+ * repo hydrated before the spine absorbed it.
  *
  * A small line parser, the same shape ``guidance-freshness.js`` already uses for
  * ``registry.yaml``: the file is markdown with a fenced yaml block, so a real
@@ -323,7 +326,7 @@ function declaredBranches(contextFile) {
   try {
     text = fs.readFileSync(contextFile, "utf8");
   } catch (err) {
-    // No CONTEXT.md is the ordinary case in a repo that has not adopted the
+    // No spine is the ordinary case in a repo that has not adopted the
     // guidance; the conservative fallback applies and that is not an error.
     void err;
     return {};
@@ -345,6 +348,13 @@ function declaredBranches(contextFile) {
     if (value) found[match[1]] = value;
   }
   return found;
+}
+
+/** The declared ``branches:`` map for the repo at ``top`` — spine first, fallback second. */
+function declaredConfig(top) {
+  const fromSpine = declaredBranches(path.join(top, "CLAUDE.md"));
+  if (Object.keys(fromSpine).length) return fromSpine;
+  return declaredBranches(path.join(top, "CONTEXT.md"));
 }
 
 /** A ref name reduced to its branch name. */
@@ -602,7 +612,7 @@ function* candidates(input, sessionCwd) {
 
   const top = git(sessionCwd, ["rev-parse", "--show-toplevel"]);
   const sessionTop = top === null ? null : resolved(top) || top;
-  const declared = sessionTop === null ? {} : declaredBranches(path.join(sessionTop, "CONTEXT.md"));
+  const declared = sessionTop === null ? {} : declaredConfig(sessionTop);
   const skip = protectedBranches(declared, anchor);
 
   let checked = 0;
@@ -633,7 +643,7 @@ function verdictFor(dir) {
   if (tree === null) return null; // not a worktree, or git had no answer
 
   const top = git(dir, ["rev-parse", "--show-toplevel"]);
-  const declared = top === null ? {} : declaredBranches(path.join(top, "CONTEXT.md"));
+  const declared = top === null ? {} : declaredConfig(top);
   const branch = git(dir, ["rev-parse", "--abbrev-ref", "HEAD"]);
   if (branch !== null && protectedBranches(declared, dir).has(branch)) return null;
 
@@ -697,7 +707,7 @@ function main() {
       `This turn claims the work is finished, but no gate marker covers the current ` +
         `tree ${verdict.tree.slice(0, 12)} in ${where}. ${scope}The gate has not been ` +
         `run green over these exact bytes — a marker from before the last edit is not ` +
-        `evidence about them. Run the repo verify command (CONTEXT.md commands.verify) ` +
+        `evidence about them. Run the repo verify command (commands.verify in the spine, CLAUDE.md) ` +
         `in ${where}, read its output, and name the test that proves each acceptance ` +
         `criterion; then say you are done. Expected marker: ${reportable(verdict.marker)}. ` +
         `If the gate is red and you cannot fix it, say so plainly instead of claiming ` +
@@ -726,7 +736,7 @@ if (require.main === module) {
 // never runs the hook.
 //
 // ``declaredBranches`` and ``protectedBranches`` join them for the same reason,
-// one duplication further along: ``CONTEXT.md``'s ``branches:`` block is parsed
+// one duplication further along: the spine's ``branches:`` block is parsed
 // here **and** in ``push-target-guard.js``, and the two have already drifted in
 // shape (a map here, an array there). A drift in what the two consider
 // *protected* is silent in both directions — this hook would stop skipping a
@@ -739,6 +749,7 @@ module.exports = {
   maxAgeSeconds,
   currentTree,
   declaredBranches,
+  declaredConfig,
   protectedBranches,
   CLAIM_PATTERNS,
 };

@@ -53,7 +53,7 @@ result to an independent reviewer, and ships it. The repo contributes three
 things to that loop and nothing else:
 
 - **The process**, in [`CLAUDE.md`](./CLAUDE.md) (and its byte-identical
-  `AGENTS.md` / `GEMINI.md` mirrors) plus [`CONTEXT.md`](./CONTEXT.md) — the
+  `AGENTS.md` / `GEMINI.md` mirrors) plus [`CLAUDE.md`](./CLAUDE.md) — the
   lifecycle every agent follows, and this repo's own values for it.
 - **The gate**, `bash scripts/verify.sh` — the one command whose output is
   evidence. It is the same command in CI, in a local checkout, and in the
@@ -106,7 +106,7 @@ harness/
 ├── tests/         ← the guard suite
 ├── scripts/       ← the verify gate (scripts/verify.sh) and the mutation instrument
 ├── design/        ← the design system for docs/index.html
-├── CONTEXT.md     ← agent-facing repo context (read first)
+├── CLAUDE.md     ← agent-facing repo context (read first)
 └── CLAUDE.md      ← the process, mirrored to AGENTS.md and GEMINI.md
 ```
 
@@ -121,7 +121,7 @@ Python 3.11+ (stdlib only) · pytest · ruff · mypy · uv
 ## Related
 
 - **Design ancestry:** Inspired by [Archon](https://github.com/coleam00/Archon) (worktree-per-run, event log) and Anthropic's "build skills, not agents" guidance. Greenfield Python rewrite, not a fork.
-- **Read first:** [`CONTEXT.md`](./CONTEXT.md) (agents) · [`CLAUDE.md`](./CLAUDE.md) (the process) · [`specs/decisions/`](./specs/decisions/) (why it is shaped this way).
+- **Read first:** [`CLAUDE.md`](./CLAUDE.md) (agents) · [`CLAUDE.md`](./CLAUDE.md) (the process) · [`specs/decisions/`](./specs/decisions/) (why it is shaped this way).
 
 ## Contributing & security
 

@@ -43,7 +43,7 @@ Behaviour where it is non-obvious or edge cases are easy to forget.
 
 ## Watchlist trigger
 
-*Conditional — include this section only when the planned diff touches a file in `CONTEXT.md` `architecture_watchlist.files`. Record exactly one outcome: a small behavior-preserving seam extraction (name the seam and the test/smoke evidence), or an explicit deferral with a reason. See `architecture` → Architecture watchlist. Omit the section entirely when no watchlisted file is touched (or the repo has no watchlist).*
+*Conditional — include this section only when the planned diff touches a file in `CLAUDE.md` `architecture_watchlist.files`. Record exactly one outcome: a small behavior-preserving seam extraction (name the seam and the test/smoke evidence), or an explicit deferral with a reason. See `architecture` → Architecture watchlist. Omit the section entirely when no watchlisted file is touched (or the repo has no watchlist).*
 
 ## Acceptance criteria
 

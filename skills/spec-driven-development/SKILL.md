@@ -14,7 +14,7 @@ How a task flows from "idea" to "shipped and recorded" with the least ceremony t
 | **Change spec** | What one piece of work *intends* to do (incl. its design) | The **tracker issue** | While the task is in flight |
 | **Feature spec** | What the product *actually does* today | `specs/features/<feature>.md` | Permanent |
 
-**There is no `manifest.yaml`.** The tracker is the queue of in-flight work and the home of the change spec. Route every tracker operation through the `tracker` skill: it reads `CONTEXT.md`'s `tracker:` field and dispatches to the matching provider recipe (`linear` → the `linear` skill, `github` → the `github-issues` skill, `none` → its documented degrade). A proposal (when needed) is decided and broken into change specs; each change is built, and its delivered behaviour is recorded into the feature spec. Small, clear work skips the proposal. All three are prose; keep them honest (`writing-quality`).
+**There is no `manifest.yaml`.** The tracker is the queue of in-flight work and the home of the change spec. Route every tracker operation through the `tracker` skill: it reads `CLAUDE.md`'s `tracker:` field and dispatches to the matching provider recipe (`linear` → the `linear` skill, `github` → the `github-issues` skill, `none` → its documented degrade). A proposal (when needed) is decided and broken into change specs; each change is built, and its delivered behaviour is recorded into the feature spec. Small, clear work skips the proposal. All three are prose; keep them honest (`writing-quality`).
 
 ## The separation that makes it work
 
@@ -33,7 +33,7 @@ The builder does **not** edit `specs/features/`. If a builder touches the featur
 6. **If scope shifts, update the change spec.** Silent divergence between the spec and the work is a process violation. Edit the change spec in place the moment the plan changes.
 7. **Hand off to review.** Set the issue **In Review**. The reviewer checks output *and* process (`review-discipline`).
 8. **On PASS, the reviewer records reality.** The reviewer updates `specs/features/<feature>.md` to match what shipped, committed **into the candidate before the certifying gate and the verdict** — the tree the verdict covers is the tree that merges (`review-discipline`'s *final-evidence ordering* rule). When a surface's as-built record does not exist yet, the first ticket touching that surface creates it — a feature spec in `specs/features/` where `feature_specs` is on, otherwise the section of the design doc / `SPEC.md` that governs the surface. A surface is not permitted to accumulate more than one shipped ticket without an as-built record; the record is where a gap between tickets becomes visible, and it cannot do that job retroactively.
-9. **Ship and close.** Integrate per the repo's branch model (see the `/ship` command and `CONTEXT.md`), set the issue **Done**. The change spec stays on the issue as history; the durable record is now in `specs/features/`.
+9. **Ship and close.** Integrate per the repo's branch model (see the `/ship` command and `CLAUDE.md`), set the issue **Done**. The change spec stays on the issue as history; the durable record is now in `specs/features/`.
 
 ## No claim without evidence
 
@@ -45,4 +45,4 @@ If you cannot proceed because information is missing, do not guess. State the sp
 
 ## Layer note
 
-The as-built record's shape is a per-repo choice, not a profile: with the `feature_specs` layer on the record is a feature spec in `specs/features/`; off, it is the design doc / `SPEC.md`. See `CONTEXT.md` `layers:` for what a given repo uses, and `process/harness.md` for the one shared flow.
+The as-built record's shape is a per-repo choice, not a profile: with the `feature_specs` layer on the record is a feature spec in `specs/features/`; off, it is the design doc / `SPEC.md`. See `CLAUDE.md` `layers:` for what a given repo uses, and `process/harness.md` for the one shared flow.

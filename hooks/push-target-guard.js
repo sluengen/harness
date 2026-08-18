@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // size: one deny decision over a `git push`, which needs the whole path from
 // tokens to verdict in one place — refspec parsing, `-C`/`--git-dir` directory
-// resolution, `CONTEXT.md` branch declaration, and the tree/marker evidence.
+// resolution, the spine branch declaration, and the tree/marker evidence.
 // #436 declined a shared `hooks/lib/`, so the marker reading this shares with
 // `gate-evidence-guard.js` is duplicated by that decision rather than by
 // accident. What that decision did not remove is a dependency on one flat
@@ -236,10 +236,13 @@ function scalar(raw) {
   return stripQuotes((hash === -1 ? raw : raw.slice(0, hash)).trim());
 }
 
-/** The branch names declared under ``branches:`` in a repo's CONTEXT.md.
+/** The branch names declared under ``branches:`` in a repo's spine.
  *
- * A small line parser, the same shape ``guidance-freshness.js`` already uses for
- * ``registry.yaml``: the file is markdown with a fenced yaml block, so a real
+ * The spine is ``CLAUDE.md`` (v5); ``CONTEXT.md`` is read as the fallback for a
+ * repo hydrated before the spine absorbed it. An empty parse falls through, so
+ * a repo whose CLAUDE.md carries no ``branches:`` block still finds its config.
+ *
+ * A small line parser: the file is markdown with a fenced yaml block, so a real
  * yaml load would need a dependency this surface does not have. Every value
  * under the block counts — ``integration``, ``staging``, ``release`` and any key
  * a repo invents — because the question is which branches the repo treats as
@@ -249,7 +252,7 @@ function declaredBranches(contextFile) {
   try {
     text = fs.readFileSync(contextFile, "utf8");
   } catch (err) {
-    // No CONTEXT.md is the ordinary case in a repo that has not adopted the
+    // No spine is the ordinary case in a repo that has not adopted the
     // guidance; the conservative fallback set applies and that is not an error.
     void err;
     return [];
@@ -281,7 +284,9 @@ function branchName(ref) {
 /** The set of branches a push must carry evidence to reach, resolved in ``dir``. */
 function protectedBranches(dir) {
   const top = git(dir, ["rev-parse", "--show-toplevel"]);
-  const declared = top === null ? [] : declaredBranches(path.join(top, "CONTEXT.md"));
+  const fromSpine = top === null ? [] : declaredBranches(path.join(top, "CLAUDE.md"));
+  const declared =
+    fromSpine.length || top === null ? fromSpine : declaredBranches(path.join(top, "CONTEXT.md"));
   const names = declared.length ? declared : FALLBACK_PROTECTED;
   const set = new Set(names.map(branchName));
   const remoteHead = git(dir, ["symbolic-ref", "refs/remotes/origin/HEAD"]);
@@ -673,7 +678,7 @@ if (require.main === module) {
 // introspection never runs the hook.
 // ``declaredBranches`` and ``protectedBranches`` are exported for the same
 // reason and by the same argument, one duplication further along:
-// ``CONTEXT.md``'s ``branches:`` block is parsed here **and** in
+// the spine's ``branches:`` block is parsed here **and** in
 // ``gate-evidence-guard.js``, and the two have already drifted in shape (an
 // array here, a map there). Drift in what the two consider *protected* is
 // silent in both directions — this guard would stop refusing a push the Stop

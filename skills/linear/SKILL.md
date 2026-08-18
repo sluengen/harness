@@ -1,14 +1,14 @@
 ---
 name: linear
-description: Use when the repo's CONTEXT.md says tracker linear and you need to read or update a ticket — opening an issue, filing one, resolving team/state/label IDs, moving status, or commenting. The Linear provider recipes; the backend-neutral policy is in the tracker skill.
+description: Use when the repo's CLAUDE.md says tracker linear and you need to read or update a ticket — opening an issue, filing one, resolving team/state/label IDs, moving status, or commenting. The Linear provider recipes; the backend-neutral policy is in the tracker skill.
 ---
 # Linear
 
 The **Linear provider recipes** for the tracker protocol. Policy — the operation set, the state names, filing and placement, holds, sync rules, the `none` degrade — lives in the **`tracker`** skill. Read that first; this file is only *how* each operation is performed against Linear's API.
 
-Applies when `CONTEXT.md` says `tracker: linear`. The team key is `repo.linear`; the queue scope is `repo.project`.
+Applies when `CLAUDE.md` says `tracker: linear`. The team key is `repo.linear`; the queue scope is `repo.project`.
 
-**You already have access — it is one `curl` away.** Linear's GraphQL API is the same for everyone; the only repo-specific part is the token (in an env file). The workspace identifiers you need are **resolved at runtime** from the API — a state by its stable `type`, a team by its key — so no per-repo ID setup is required (see [Resolving states by type](#resolving-states-by-type-the-default)). Do not conclude you lack access or that a tool is missing. If a repo ships a wrapper CLI, `CONTEXT.md` (`tools.linear_cli`) names it, but the curl below always works.
+**You already have access — it is one `curl` away.** Linear's GraphQL API is the same for everyone; the only repo-specific part is the token (in an env file). The workspace identifiers you need are **resolved at runtime** from the API — a state by its stable `type`, a team by its key — so no per-repo ID setup is required (see [Resolving states by type](#resolving-states-by-type-the-default)). Do not conclude you lack access or that a tool is missing. If a repo ships a wrapper CLI, `CLAUDE.md` (`tools.linear_cli`) names it, but the curl below always works.
 
 ## Labels
 
@@ -34,9 +34,9 @@ Linear's GitHub integration links an issue to a PR when the ticket id appears in
 
 ## Accessing Linear (GraphQL via curl)
 
-**Get the token.** Look for an env file holding `LINEAR_API_KEY`: the one named in `CONTEXT.md` (`env.file`), else `.env` / `.env.local` in the repo root. Source it (`set -a && source .env && set +a`). Never echo or commit the token; the env file must be gitignored.
+**Get the token.** Look for an env file holding `LINEAR_API_KEY`: the one named in `CLAUDE.md` (`env.file`), else `.env` / `.env.local` in the repo root. Source it (`set -a && source .env && set +a`). Never echo or commit the token; the env file must be gitignored.
 
-**If no `LINEAR_API_KEY` is found in any env file, that is the only blocker — stop and ask the user for one.** Do not conclude you lack access before checking the env files. (If `CONTEXT.md` defines `tools.linear_cli`, you may use that wrapper instead; the curls below are the universal fallback and always work.)
+**If no `LINEAR_API_KEY` is found in any env file, that is the only blocker — stop and ask the user for one.** Do not conclude you lack access before checking the env files. (If `CLAUDE.md` defines `tools.linear_cli`, you may use that wrapper instead; the curls below are the universal fallback and always work.)
 
 Every call posts to the same endpoint with the token in the `Authorization` header:
 
@@ -85,7 +85,7 @@ LINEAR 'query { teams { nodes { id key name } } }'
 LINEAR 'query { issueLabels { nodes { id name } } }'
 ```
 
-**CONTEXT override (the exception, not the default).** If a repo has *custom or renamed* states that `type` + name cannot disambiguate, cache those specific state UUIDs in `CONTEXT.md` and use them directly. That override is for the unusual case — the type-based resolution above is the standard path and needs no per-repo setup.
+**CONTEXT override (the exception, not the default).** If a repo has *custom or renamed* states that `type` + name cannot disambiguate, cache those specific state UUIDs in `CLAUDE.md` and use them directly. That override is for the unusual case — the type-based resolution above is the standard path and needs no per-repo setup.
 
 **Move an issue's status** (resolve `<state-id>` by `type` per above; the issue id may be the `<issue-id>` identifier):
 ```bash
@@ -99,7 +99,7 @@ LINEAR 'mutation { issueCreate(input: { teamId: \"<team-uuid>\", projectId: \"<p
 
 `labelIds` **must** include the resolved id of the `assurance:<level>` label the filer chose. Resolve it at runtime from the `issueLabels` query above, the same way as every other label id. An id that does not resolve — the workspace has no such label, or the mutation reports fewer labels than were passed — is an **incomplete filing**, not a filing without the label: report the identifier and URL, say so, and stop. Read the created issue's labels back before reporting; the mutation's `success` field says the call ran, not that the postcondition holds.
 
-Resolve `projectId` at runtime by the name in `CONTEXT.md` → `repo.project`, and `assigneeId` for the current operator via `viewer` (the same runtime-resolution rule as team/state/label IDs — no per-repo UUID setup):
+Resolve `projectId` at runtime by the name in `CLAUDE.md` → `repo.project`, and `assigneeId` for the current operator via `viewer` (the same runtime-resolution rule as team/state/label IDs — no per-repo UUID setup):
 ```bash
 LINEAR 'query { projects(filter: { name: { eq: \"<repo.project>\" } }) { nodes { id name } } }'
 LINEAR 'query { viewer { id name } }'
@@ -110,4 +110,4 @@ LINEAR 'query { viewer { id name } }'
 LINEAR 'mutation { commentCreate(input: { issueId: \"<issue-id>\", body: \"...\" }) { success } }'
 ```
 
-State, team, and label IDs are **resolved at runtime** from the queries above — the same call for every Linear workspace, no per-repo setup. `CONTEXT.md` carries an ID only as an *override* for a custom or renamed state the `type` enum cannot disambiguate; it is not where the standard states live.
+State, team, and label IDs are **resolved at runtime** from the queries above — the same call for every Linear workspace, no per-repo setup. `CLAUDE.md` carries an ID only as an *override* for a custom or renamed state the `type` enum cannot disambiguate; it is not where the standard states live.
