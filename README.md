@@ -1,148 +1,136 @@
 # harness
 
-📖 **[Read the one-page guide →](https://sluengen.github.io/harness/)** — the operating model and the guidance at a glance. (This README stays the canonical text; the page is its visual companion.)
+📖 **[Read the one-page guide →](https://sluengen.github.io/harness/)** — the operating model at a glance. (This README stays the canonical text; the page is its visual companion.)
 
-**A thin verification layer for agent-driven development**: a versioned set of
-skills, agents, commands and hooks that tell an agent how work happens here, plus
-a deterministic gate that decides whether a change is allowed to land.
+**A spec-driven development process for agent-driven repos, shipped as a Claude
+Code plugin**: nine lifecycle commands, the craft skills behind them, four agent
+roles, and enforcement hooks that make a green gate the only path to a shared
+branch.
 
 > Let the agent do the judgement work; make the repo own the evidence.
 
 An AI agent does everything that needs judgement — the design, the code, the
-fixes, the decision about how to answer a review finding. This repo owns only the
-parts that must not depend on an agent remembering them:
+fixes, the answer to a review finding. The harness owns the parts that must not
+depend on an agent remembering them:
 
-- **One verification gate.** `bash scripts/verify.sh` is the whole contract: lint,
-  types, the test suite under a coverage floor, and the drift guards that hold
-  generated artifacts to their sources. Green is the only evidence a completion
-  claim may cite.
-- **Executable guidance.** The skills, agents and commands that encode *how work
-  happens here* are version-stamped, distributed from this repo, and — where they
-  make a checkable claim — held by a test that reads the tree. A rule with a test
-  is a bound; a rule in prose alone is advice.
+- **One verification gate.** The repo's verify command (here,
+  `bash scripts/verify.sh`) decides green and writes a marker named after the
+  exact git tree it verified. Green over those exact bytes is the only evidence
+  a completion claim may cite; one more edit invalidates it.
+- **The spine.** A repo-owned `CLAUDE.md` carries the iron laws, the lifecycle
+  contract, and the repo's own config block — always loaded, never optional.
+  Skills carry the depth and load by task.
 - **Builder / recorder separation.** The agent that promises delivery is not the
   one that records it, which keeps the as-built record honest.
-- **Mutation proof for new guards.** A test that was green the moment it was born
-  has not been shown to measure anything. `scripts/mutate.py` is the instrument
-  that proves it does.
+- **Hooks that refuse.** A completion claim without fresh gate evidence, a push
+  to a protected branch without a marker over the pushed tree, and any history
+  rewrite are refused at the agent host. The controls of record stay
+  server-side: branch protection and gate output in CI.
 
-It is **dogfooded on its own development**: every change here is built through the
-same `/build` lifecycle, against the same gate, that the guidance publishes.
+It is **dogfooded on its own development**: every change here ships through the
+process the plugin publishes, against the same gate.
 
-**Status:** v4 — a verification layer, no runtime. The earlier deterministic YAML
-workflow engine was retired in CAL-574, and the verb model that replaced it (a
-CLI, a SQLite run ledger, a Docker container and a close gate) was retired in
-[ADR 0015](./specs/decisions/0015-harness-v4-thin-verification-layer.md). Their
-as-built records are kept under [`specs/retired/`](./specs/retired/).
+## Install
 
-## Is this turnkey? No — it's dogfood infrastructure
+The guidance ships as a Claude Code plugin from this repo (which is also its
+marketplace):
 
-**This is infrastructure one maintainer runs on their own machine, published to
-read and adapt — not a turnkey product.** It assumes a particular setup — an
-agent host, a GitHub tracker, this repo's own branch model — and nothing here is
-packaged for installation: there is no image, no wrapper, and no console script
-to put on PATH. Treat the whole repo as a worked example to **adapt to taste**,
-not a dependency to install unchanged. The concepts — a gate that cannot be
-talked around, the builder/recorder split, guards that read the tree — are the
-portable part; the plumbing around them is not.
+```
+/plugin marketplace add sluengen/harness
+/plugin install harness@harness
+```
 
-## What it does
+Then, in the repo you want to run the process in:
 
-A single agent session reads the ticket, writes the code and tests, hands the
-result to an independent reviewer, and ships it. The repo contributes three
-things to that loop and nothing else:
+```
+/harness:init
+```
 
-- **The process**, in [`CLAUDE.md`](./CLAUDE.md) (and its byte-identical
-  `AGENTS.md` / `GEMINI.md` mirrors) plus [`CLAUDE.md`](./CLAUDE.md) — the
-  lifecycle every agent follows, and this repo's own values for it.
-- **The gate**, `bash scripts/verify.sh` — the one command whose output is
-  evidence. It is the same command in CI, in a local checkout, and in the
-  nightly `dev → staging` promotion.
-- **The guards**, under `tests/` — most of them read the tracked tree and fail
-  when a document, a version stamp, or a generated artifact stops matching its
-  source.
+`init` interviews for the repo's values and writes the handful of files that
+must be repo-owned: the spine (`CLAUDE.md`), the specs scaffold, the
+infrastructure record, and — where the repo has no gate yet — a
+`scripts/verify.sh` skeleton with the marker write. After a plugin update,
+`/harness:init --refresh` regenerates the spine's generated block and nothing
+else.
 
-There are **no non-goals worth listing as absences** any more, but two are worth
-stating because the repo used to do them: it runs no long-lived process and
-schedules nothing of its own. What used to be a daemon and a cron is now a
-command an operator or an agent host invokes.
+Codex is a secondary, compiled surface: `AGENTS.md` and `.codex/` are generated
+from the same sources by `scripts/generate_codex_artifacts.py`, and a gate
+stage keeps them from drifting. Codex sessions get the spine and the skills,
+not the hooks.
 
-## Quickstart
+## The nine commands
 
-The honest minimum: clone it and run the gate.
+| Command | Does |
+|---|---|
+| `/build <ticket>` | Implement, verify, review, and ship a ticket — the one lifecycle driver |
+| `/capture` | File an already-decided change straight to Todo |
+| `/propose` | Work an idea before it becomes work; accepted proposals spawn tickets |
+| `/review` | Review the current branch when it needs only that |
+| `/routine` | One unattended discover→build→ship cycle |
+| `/promote` | Move completed work toward release along the repo's role branches |
+| `/digest` | The operator's console: report, then drain held decisions |
+| `/assess` | Periodic whole-system health assessment |
+| `/harness:init` | Hydrate a repo (the one command that needs its prefix spoken) |
+
+Small fixes need no command and no ticket: the fast lane is the same isolation
+and the same gate, invoked by asking.
+
+## The triad
+
+Three skills split *how* from *what*: `engineering` (build), `architecture`
+(design and decide), `infrastructure` (operate and promote). Each is a generic
+skill body, a plugin asset where the argued rationale accretes, and a repo
+asset seeded by `init` — the repo's own stack, decisions, and topology. The
+builder and the reviewer read the same files, so the bar is identical on both
+sides.
+
+## This repo
+
+The plugin's source, dogfooding itself. Three parts: the guidance surface
+(`commands/`, `skills/`, `agents/`, `hooks/`), the gate (`scripts/verify.sh`:
+ruff, mypy, pytest under a coverage floor, drift guards, marker write), and the
+guards (`tests/unit/`, admitted by ADR 0017's rule — behaviour of executable
+code, properties of the spine, integrity of shipped assets, frontmatter). There
+is no runtime and nothing to install beyond the plugin: ADR 0015 retired the
+CLI, ADR 0017 retired the per-file versioning that followed it.
 
 ```bash
-git clone https://github.com/sluengen/harness.git harness
-cd harness
-uv sync --extra dev          # resolve the dev dependency group (needs uv)
-bash scripts/verify.sh       # the canonical gate — lint, types, tests, drift guards
+git clone https://github.com/sluengen/harness.git && cd harness
+uv sync --extra dev          # the dev toolchain (needs uv)
+bash scripts/verify.sh       # the canonical gate
 ```
 
-There is nothing to install. The repo is not a Python package: it has no console
-script, no wheel, and no runtime dependencies.
+Work moves `dev → main`: feature branches merge to `dev` through the gate, and
+a nightly promotes `dev` to `main` only when the gate is green on the exact
+candidate, fast-forward only (`specs/infrastructure.md`).
 
-## Driving a ticket
-
-Work is agent-led and there is one way to drive it. Unattended, that is
-`/build <TICKET>` — implement, verify, review, and ship, end to end. Attended, it
-is the same lifecycle a step at a time: `/start → /review → /ship`. Both are
-available in every repo on this guidance, and neither needs anything beyond the
-agent host and this repo's own gate.
-
-The full lifecycle, its load-bearing rules, and the skills that carry them are in
-[`CLAUDE.md`](./CLAUDE.md).
-
-## Repository layout
-
-```
-harness/
-├── agents/        ← agent role definitions (dev, reviewer, architect, steward)
-├── skills/        ← reusable skills (TDD, scope discipline, review discipline, …)
-├── commands/      ← user-invocable slash commands (/build, /start, /review, /ship, …)
-├── hooks/         ← agent-host hooks (guidance freshness, context monitor, push guards)
-├── process/       ← the canonical process doc the root mirrors are generated from
-├── templates/     ← the shapes specs, decisions and assessments are written in
-├── specs/         ← design specs, decisions/ for ADRs, retired/ for superseded records
-├── tests/         ← the guard suite
-├── scripts/       ← the verify gate (scripts/verify.sh) and the mutation instrument
-├── design/        ← the design system for docs/index.html
-├── CLAUDE.md     ← agent-facing repo context (read first)
-└── CLAUDE.md      ← the process, mirrored to AGENTS.md and GEMINI.md
-```
-
-`agents/`, `skills/`, `commands/` are agent-agnostic (plain markdown). Claude Code
-sees them via symlinks under `.claude/`; the Codex adapters under `.codex/` are
-generated from the same sources.
-
-## Tech stack
-
-Python 3.11+ (stdlib only) · pytest · ruff · mypy · uv
+**Stack:** Python 3.11+ (stdlib only) · pytest · ruff · mypy · uv
 
 ## Related
 
-- **Design ancestry:** Inspired by [Archon](https://github.com/coleam00/Archon) (worktree-per-run, event log) and Anthropic's "build skills, not agents" guidance. Greenfield Python rewrite, not a fork.
-- **Read first:** [`CLAUDE.md`](./CLAUDE.md) (agents) · [`CLAUDE.md`](./CLAUDE.md) (the process) · [`specs/decisions/`](./specs/decisions/) (why it is shaped this way).
+- **Why it is shaped this way:** [`specs/decisions/`](./specs/decisions/) —
+  ADR 0015 (the verification layer), ADR 0017 (the plugin shape); retired
+  designs live under [`specs/retired/`](./specs/retired/).
+- **Design ancestry:** inspired by [Archon](https://github.com/coleam00/Archon)
+  and Anthropic's "build skills, not agents" guidance. Greenfield rewrite, not
+  a fork.
 
 ## Contributing & security
 
-Issues and pull requests are welcome and handled on a **best-effort** basis — this
-is a single-maintainer, dogfood project. See [`CONTRIBUTING.md`](./CONTRIBUTING.md)
-for the contribution stance. To report a security issue, do **not** open a public
-issue — follow [`SECURITY.md`](./SECURITY.md) to disclose it privately.
+Issues and pull requests are welcome and handled on a **best-effort** basis —
+this is a single-maintainer, dogfood project. See
+[`CONTRIBUTING.md`](./CONTRIBUTING.md) for the stance. To report a security
+issue, do **not** open a public issue — follow [`SECURITY.md`](./SECURITY.md)
+to disclose it privately.
 
 ## License
 
 Two licences, split along what gets installed where:
 
-- **This repo's own code** — the gate, the mutation instrument, the drift guards
-  and the test suite — is **AGPL-3.0-only** ([`LICENSE`](./LICENSE)). Use it for
-  anything, including commercially; a derivative you distribute or run as a
-  network service carries the same freedoms. It cannot be taken proprietary.
-- **The guidance** — the skills, agents, commands, templates, hooks, process doc
-  and settings the installer copies into *your* repo — is **MIT**
-  ([`GUIDANCE-MIT.md`](./GUIDANCE-MIT.md)). Install it into any repository,
-  including a closed-source one, and it encumbers nothing.
-
-The boundary is not hand-maintained prose: the `files:` block of
-[`registry.yaml`](./registry.yaml) *is* the set the installer copies out, so it
-defines what is MIT, and a test holds the two in correspondence.
+- **This repo's own code** — the gate, the mutation instrument, and the test
+  suite — is **AGPL-3.0-only** ([`LICENSE`](./LICENSE)).
+- **The guidance** — the skills, commands, agents, hooks, templates, and
+  settings the plugin carries into *your* sessions — is **MIT**
+  ([`GUIDANCE-MIT.md`](./GUIDANCE-MIT.md), which lists the covered paths).
+  Use it in any repository, including a closed-source one; it encumbers
+  nothing.
