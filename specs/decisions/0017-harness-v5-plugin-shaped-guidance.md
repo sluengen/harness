@@ -1,0 +1,45 @@
+# ADR 0017 — Harness v5: the guidance ships as a plugin; the package manager is retired
+
+- **Status:** Accepted
+- **Date:** 2026-08-17
+- **Source:** proposal `specs/proposals/plugin-shaped-guidance.md`; anchor ticket #481.
+- **Amends:** [ADR 0003](0003-promotion-lifecycle.md) (branch topology becomes per-repo configuration). Retires the mechanism of [ADR 0004](0004-repo-guide-drift-guard.md)'s guidance-catalog guard (its data source, `registry.yaml`, is deleted; the design-token guard stands).
+
+## Context
+
+ADR 0015 retired the runtime and left three parts: the guidance surface, the gate, and the guards. Fourteen days of post-0015 activity said the layer was not yet thin. Measured on `dev` to 2026-08-17: the product (skills + commands + agents, ~3,400 lines) took ~90 commits; `tests/unit/` (~35,500 lines, 138 modules — **118 of them reading prose**) took 205; `registry.yaml` alone took 85. The overhead had three causes in a chain: a hand-rolled per-file versioning and install scheme (whose self-version is a monotonic shared append point that collided on concurrent work — observed on #461 one day after #443 shipped a vigilance rule against exactly that); a prose reference graph (161 cross-citations, with restatement drift catalogued by #456); and a guard suite grown to police both, by then policing itself. The measured symptom downstream: one in five shipped commits paid a reconciliation, four tickets in the window paid twice.
+
+The trajectory: `harness-as-tool` (v3) removed the orchestrator; ADR 0015 (v4) removed the runtime; this record (v5) removes the package manager.
+
+## Decision
+
+**The guidance ships as a Claude Code plugin — one artifact, one semver, bumped at release — and the always-on context collapses into a single hydrated spine. The proposal's decision table resolved as follows; the proposal's target-inventory tables are the normative shape.**
+
+1. **Distribution is the plugin** (D1). `registry.yaml`, per-file `guidance:` headers, the freshness hook, `/update-guidance`, `BOOTSTRAP.md`, and the consumer lock all delete. Commands arrive runtime-namespaced; only `/harness:init` needs the prefix spoken (native `/init` collision).
+2. **The contract lives in the spine** (D2) — the always-on `CLAUDE.md` (and `AGENTS.md` compiled from the same source), absorbing `CONTEXT.md`: iron laws, the lifecycle contract (states, holds, assurance, verdicts, tree-oid binding, tracker dispatch, the isolation norm), and the repo's executive summary including the machine-readable config block the hooks parse. Skills are conditional; the contract cannot be. The cost — one-off Q&A sessions carry unused context — is accepted. **The contract states the fast lane:** the enforcement layer is tree-based and never asked for a ticket, so a small fix ships with the same isolation and the same gate and no ticket; a ticket is filed when work changes documented behaviour, spans commits, or needs independent review. No command carries the fast lane — the conversation is the interface.
+3. **The how/what pattern applies to the triad** (D3): `engineering`, `architecture`, `infrastructure` each split into a generic skill body (the how, with principles *stated*), a plugin asset (the universal argument, where learning accretes — `review-discipline`'s craft.md is the running precedent), and a repo asset seeded by `init` (the local reality). Ownership splits by file, never by mixed sections. The pattern stops at the triad until an `/assess` argues otherwise.
+4. **The inventories collapse** (D4): skills 17 → 13 (`engineering` absorbs `code-quality`, `engineering-principles`, `test-driven-development`; `infrastructure` is born; `worktree-isolation` stays as mechanics with its norm in the spine), commands 13 → 9 (`start`/`ship` fold into `/build`; `bug`+`tweak` → `capture`; `decision` folds into `digest`; `update-guidance` deleted; `init` added), agents 5 → 4 (`researcher` deleted; `architect` kept for its config-bearing frontmatter), hooks 7 → 5 (`guidance-freshness`, `context-monitor` deleted), templates 12 → 9, re-homed as skill assets.
+5. **Guards live by an admission rule** (D5). A guard may assert: **(a)** behavior of executable code; **(b)** a property of the spine; **(c)** integrity of shipped assets; **(d)** frontmatter compliance. Prose-about-prose guards — version parity, pointer targets, restatement agreement, positional pins — die *with their subjects, in the same change, never before*. This rule is standing policy for future guards, not a one-time cull criterion. Expected order: 138 modules → ~40; the before/after counts are recorded here when chunk 4 lands.
+6. **Branch topology is per-repo configuration** (D6). This repo runs `dev → main`; the amendment is recorded in ADR 0003, and the harness's own infrastructure asset carries the topology as its first entry.
+7. **The in-flight backlog was swept on acceptance** (D7): nine closed as superseded or folded (#479, #480, #471, #473, #474, #475, #476, #477, #478 — the folded ones named inside the v5 chunks so they cannot be lost), four kept (#450, #464, #468, #472).
+8. **The landing page is kept, not retired** (D8). Its guidance-catalog guard reads `registry.yaml` and deletes with it; the page stands unguarded on that axis until its rebuild against a post-v5 source (#482). The design-token guard stands throughout.
+
+### Implementation
+
+On branch `v5`, four chunks — delete; dogfood minimum; dogfood and finish; audit and polish — deliberately **outside** the assurance machinery being retired: no per-chunk change specs, review cycles, or version bumps, and no per-increment shippability. What binds instead: the gate is green at every chunk boundary (forced, not chosen — deleting guards with their subjects is the only way chunk 1 can end green), the hooks stay armed throughout, and the operator's review of the `v5` merge is where assurance for the restructure concentrates. Codex remains a secondary, compiled surface; a disappointing compile verification narrows that surface rather than stopping the work.
+
+## Alternatives rejected
+
+- **Status quo plus targeted fixes** (#479, #480, ad-hoc culling). Optimises the hand-rolled package manager instead of questioning it; the guard churn — the actual load — continues.
+- **Plugin distribution only.** Kills the versioning cost but leaves 118 prose guards their subjects; the dominant churn survives. Kept as the fallback shape if the Codex compile verification had gated (it does not).
+- **Full decoupling, discovery only.** Right for craft skills, wrong twice at the system level: contracts (builder and reviewer must share a wire format — #456's orphaned `DEFER` is what discovery cannot prevent) and governance (pull is probabilistic; a stop rule cannot be). The spine is the bounded concession to both.
+- **Running the restructure through the retiring assurance process.** Eleven staged, individually-shippable, individually-reviewed tickets — each paying version fan-out to the very machinery being deleted. Rejected as the one clearly absurd spend; assurance concentrates at the merge instead.
+
+## Consequences
+
+- **The guard admission rule outlives the cull.** It is the standing answer to "may I write this guard," recorded here so admission is by rule, not momentum.
+- **The spine is repo-owned and can go stale** against a moved plugin; `/harness:init --refresh` regenerates its generated sections. Spine growth and asset bloat are the first post-v5 `/assess` metrics; the ≤250-line spine target and the body-states/asset-argues split are the counterweights.
+- **The fast lane admits unticketed change.** Bounded by the contract's ticket criteria and mechanically by the unchanged gate; leakage (behaviour change shipping unrecorded) is a steward-pass concern.
+- **Consumers migrate per-repo, not flag-day.** A consumer without plugin support keeps the current install until it can move; per-file pinning flattens to forking a skill locally.
+- **Between chunk 1 and #482 the landing page is unguarded on the catalog axis.** Accepted; the token guard still holds it to the design source.
+- **A measured claim in this record** (the counts in Context) is anchored to 2026-08-17 and does not update; the chunk-4 before/after guard counts are the one addition this record expects.

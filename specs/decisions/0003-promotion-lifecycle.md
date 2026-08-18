@@ -24,6 +24,8 @@ The repo already chose an always-on local loop as the default substrate for auto
 
 There is **no interim `dev → main` compatibility path**. The three-tier model is common, understandable, and safer for autonomous promotion. This is recorded as policy in `CONTEXT.md` (`branches:`); the branch-model *code* (`harness/cli/start.py`, `harness/cli/worktrees.py`) still hardcodes `dev`/`main`/`master` today — reading the model from `CONTEXT.md` is separate work (CAL-1106), so this ADR changes policy and docs only, with no runtime behaviour change.
 
+> **Amended 2026-08-17 (ADR 0017, D6) — the topology is per-repo configuration; this repo drops `staging`.** The three-tier model was adopted as universal policy when this repo deployed a runtime. ADR 0015 removed the runtime, and with it the middle hop's meaning *here*: `staging` is a deployment concept, and with nothing to deploy it had become a third gate run and a third merge verifying the same trees. Branch roles are already read from per-repo configuration, so v5 records the harness's own topology as **`dev → main`** — carried in the repo's infrastructure asset — with `promotion-step.sh` promoting accordingly. Repos that ship to staging environments keep all three roles; the "no interim `dev → main` path" rule above stands as their default and stops being a universal claim. The rest of this record — candidate-branch merging, gate-before-advance, fast-forward-only publishing, the release hop's deliberateness — is topology-independent and unchanged.
+
 ### Lifecycle states
 
 A promotion row moves through:

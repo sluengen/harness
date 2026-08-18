@@ -73,7 +73,7 @@ Every numbered record, in one place. `CONTEXT.md` → *Decisions index* states t
 
 - [0001 — local loop default; optional per-target cloud](decisions/0001-cloud-runnable-harness-loop.md) — superseded in mechanism by 0015
 - [0002 — in-container review engine](decisions/0002-in-container-review-engine.md), amended by [0013](decisions/0013-codex-engines-in-container.md) — superseded in mechanism by 0015
-- [0003 — promotion lifecycle and branch topology](decisions/0003-promotion-lifecycle.md) — the topology stands; the `harness promote` verb that drove it is retired by 0015
+- [0003 — promotion lifecycle and branch topology](decisions/0003-promotion-lifecycle.md) — the topology stands; the `harness promote` verb that drove it is retired by 0015; amended by 0017 (topology is per-repo configuration — this repo runs `dev → main`)
 - [0004 — repo-guide drift guard](decisions/0004-repo-guide-drift-guard.md)
 - [0005 — retired per-ticket model tiering](decisions/0005-per-ticket-model-tiering.md) — superseded in mechanism by 0015
 - [0006 — hold kinds](decisions/0006-hold-kinds.md)
@@ -86,6 +86,7 @@ Every numbered record, in one place. `CONTEXT.md` → *Decisions index* states t
 - [0014 — changelog from commits](decisions/0014-changelog-from-commits.md) — the rule stands (the commit body *is* the entry); the `CHANGELOG.md` a release assembled into is deleted by 0015, since there is nothing left to release
 - [0015 — harness v4: retire the runtime, thin verification layer](decisions/0015-harness-v4-thin-verification-layer.md)
 - [0016 — tests own structure and negative space; the reviewer owns meaning](decisions/0016-tests-own-structure-and-negative-space.md)
+- [0017 — harness v5: the guidance ships as a plugin; the package manager is retired](decisions/0017-harness-v5-plugin-shaped-guidance.md)
 
 ### Decision: Invert the orchestration boundary — harness becomes verbs, the agent orchestrates
 
