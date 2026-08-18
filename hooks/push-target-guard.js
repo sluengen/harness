@@ -24,11 +24,11 @@
  * tree the gate covered and the tree a push carries are the same object by the
  * process's own rule. This hook checks that equality mechanically.
  *
- * **No command-based exemption, and none is needed.** ``/ship``, ``/routine`` and
- * ``/promote`` all push a tree the gate has already covered, so they authorise
- * themselves by the only evidence a hook can actually verify. A hook cannot see
- * which slash command is driving the session, and building enforcement on a
- * claim it cannot check would be theatre.
+ * **No command-based exemption, and none is needed.** ``/build``, ``/routine``
+ * and ``/promote`` all push a tree the gate has already covered, so they
+ * authorise themselves by the only evidence a hook can actually verify. A hook
+ * cannot see which slash command is driving the session, and building
+ * enforcement on a claim it cannot check would be theatre.
  *
  * **One shell parser, not two.** The lexer, wrapper resolution and substitution
  * detection are imported from ``git-push-guard.js``. A second naive parser would
@@ -48,9 +48,14 @@
  *      no opinion: pass through, loudly, on stderr.
  *   2. The hook ran but could not establish the facts (git unavailable, an
  *      unresolvable source, a shell expansion in a refspec, a push directory
- *      that is not spelled as a literal path) — **deny**. Cheap-to-clear guards
- *      fail closed: one gate run clears a false deny, while a false allow is the
- *      irreversible act.
+ *      that is not spelled as a literal path, a directory-stack shape the
+ *      tracking does not model, a ``--git-dir``/``GIT_DIR=`` operand aiming the
+ *      push at a repository the tracking does not follow) — **deny**.
+ *      Cheap-to-clear guards fail closed: one gate run clears a false deny,
+ *      while a false allow is the irreversible act. The directory tracking
+ *      itself follows ``cd``, ``pushd``/``popd`` (a literal target moves the
+ *      directory and a bare ``popd`` restores it; rotations, flags and
+ *      expansion targets are unknowable, #477) and ``git -C``.
  *   3. The hook ran, established the facts, and found no evidence — **deny**. Not
  *      a fall-open at all; it is the decision the hook exists to make.
  *
@@ -304,15 +309,24 @@ function parsePush(rawTokens, parser) {
   const tokens = parser.resolveCommand(rawTokens);
   if (tokens.length === 0 || !parser.isGit(tokens[0])) return null;
 
+  // ``GIT_DIR=…`` is an environment-assignment spelling of ``--git-dir`` that
+  // ``resolveCommand`` strips with the other assignment prefixes, so it is read
+  // off the raw tokens before resolution (#477). Scanned everywhere rather than
+  // only in prefix position: ``env GIT_DIR=… git push`` interleaves it with a
+  // wrapper, and a stray match in an operand slot costs only a cheap deny.
+  let namesGitDir = rawTokens.some((token) => /^GIT_DIR=/.test(String(token)));
+
   let i = 1;
   let dir = null;
   while (i < tokens.length) {
     const token = tokens[i];
     if (parser.GIT_GLOBAL_WITH_ARG.has(token)) {
       if (token === "-C") dir = tokens[i + 1];
+      if (token === "--git-dir") namesGitDir = true;
       i += 2;
       continue;
     }
+    if (token.startsWith("--git-dir=")) namesGitDir = true;
     if (token.startsWith("-")) {
       i += 1;
       continue;
@@ -345,7 +359,15 @@ function parsePush(rawTokens, parser) {
   }
   // git push [<repository> [<refspec>...]] — the first operand is always the
   // repository, so a refspec can never claim that slot.
-  return { dir, refspecs: operands.slice(1), isDelete, mirrors, movesAllRefs, tagsOnly };
+  return {
+    dir,
+    namesGitDir,
+    refspecs: operands.slice(1),
+    isDelete,
+    mirrors,
+    movesAllRefs,
+    tagsOnly,
+  };
 }
 
 //: The characters a directory token may be built from and still be read as the
@@ -473,12 +495,48 @@ function pushesIn(command, startDir, parser, depth) {
   const found = [];
   const { commands, substitutions } = parser.lex(command);
   let dir = startDir;
+  // The shell's directory stack, mirrored only as far as ``pushd <literal>`` /
+  // bare ``popd`` build it (#477). A fresh stack per lexed sequence, and a
+  // fresh one per nested script below, matches the shell: a child shell
+  // inherits its parent's cwd but starts its own dirstack.
+  let dirStack = [];
   for (const { tokens } of commands) {
     const resolved = parser.resolveCommand(tokens);
-    if (resolved.length && parser.basename(resolved[0]) === "cd") {
+    const head = resolved.length ? parser.basename(resolved[0]) : "";
+    if (head === "cd") {
       const target = resolved.slice(1).find((t) => !t.startsWith("-"));
       if (!isLiteralDir(target)) dir = null;
       else if (dir !== null) dir = path.resolve(dir, target);
+      continue;
+    }
+    if (head === "pushd") {
+      const operands = resolved.slice(1);
+      const target = operands.find((t) => !t.startsWith("-") && !t.startsWith("+"));
+      const shuffles = operands.some((t) => t.startsWith("-") || t.startsWith("+"));
+      if (shuffles || target === undefined || !isLiteralDir(target)) {
+        // A rotation (``pushd +2``), a flag (``-n`` does not move at all), a
+        // bare ``pushd`` (swap) or an expansion target all rearrange the
+        // shell's stack in ways this model does not mirror. After any of them
+        // both the directory and the stack are unknowable.
+        dir = null;
+        dirStack = [];
+      } else {
+        dirStack.push(dir);
+        dir = dir === null ? null : path.resolve(dir, target);
+      }
+      continue;
+    }
+    if (head === "popd") {
+      // A rotation operand shuffles rather than pops; a popd with no matching
+      // pushd in this model may be consuming a stack built by a shape the
+      // model refused above. Both are unknowable; only the bare pop of a
+      // tracked entry restores a directory.
+      if (resolved.length > 1 || dirStack.length === 0) {
+        dir = null;
+        dirStack = [];
+      } else {
+        dir = dirStack.pop();
+      }
       continue;
     }
     const push = parsePush(tokens, parser);
@@ -560,6 +618,17 @@ function verdict(push, parser) {
       "this push would carry — is unknowable. Spell the directory literally: a " +
       "git -C <path> is the same unknowable directory one operand further along, " +
       "and is refused here too."
+    );
+  }
+  if (push.namesGitDir) {
+    // Before the work-tree probe below: a --git-dir push runs against the
+    // repository the operand names even from a cwd that is no repository at
+    // all, so "not inside a work tree" must not read as "not my concern" (#477).
+    return (
+      "Blocked a push that names its repository with --git-dir (or GIT_DIR=). " +
+      "The directory this guard resolves — cd, pushd/popd, git -C — is not the " +
+      "one such a push runs against, so the marker check would read the wrong " +
+      "repository. Spell it as `git -C <path> push`, which this guard resolves."
     );
   }
   if (git(dir, ["rev-parse", "--is-inside-work-tree"]) !== "true") return null;

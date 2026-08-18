@@ -224,7 +224,7 @@ def _denied(command: str, cwd: Path, **kwargs: object) -> bool:
 def test_a_push_to_a_protected_branch_with_a_marker_passes(repo: Path) -> None:
     """The gate ran green over this exact tree, so the push is authorised.
 
-    There is no command-based exemption for ``/ship`` or ``/routine`` and none is
+    There is no command-based exemption for ``/build`` or ``/routine`` and none is
     needed: those paths push a gated tree, and a gated tree is the only
     authorisation a hook can actually verify.
     """
@@ -500,6 +500,115 @@ def test_the_push_directory_is_the_one_the_cd_names(repo: Path, tmp_path: Path) 
     assert not _denied(f"cd {repo} && git push origin HEAD:main", repo), (
         "a cd back into the verified checkout must still pass, or the guard is "
         "merely denying every command that contains a cd"
+    )
+
+
+# --- #477: the directory-tracking gap — pushd/popd and --git-dir --------------
+
+
+def test_pushd_names_the_push_directory(repo: Path, tmp_path: Path) -> None:
+    """``pushd`` moves the effective directory exactly as ``cd`` does.
+
+    Until #477 only ``cd`` and ``git -C`` were tracked, so ``pushd <worktree> &&
+    git push`` resolved HEAD at the session cwd — the same defect the cd test
+    above pins, one builtin along. Both directions on one fixture: the ungated
+    worktree is refused through a pushd, and a pushd back into the gated
+    checkout still passes.
+    """
+    _write_marker(repo)
+    worktree = tmp_path / "task"
+    _git(repo, "worktree", "add", "-q", "-b", "task", str(worktree))
+    _commit(worktree, "unverified.txt", "never gated\n")
+
+    assert _denied(f"pushd {worktree} && git push origin HEAD:main", repo), (
+        "the guard resolved HEAD at the hook's cwd instead of the directory the "
+        "pushd names, so the root checkout's marker authorised a push of the "
+        "worktree's ungated tree"
+    )
+    assert not _denied(f"pushd {repo} && git push origin HEAD:main", repo), (
+        "a pushd into the verified checkout must still pass, or the guard is "
+        "merely denying every command that contains a pushd"
+    )
+
+
+def test_popd_returns_the_push_to_the_directory_it_left(repo: Path, tmp_path: Path) -> None:
+    """``popd`` restores the directory a matching ``pushd`` left.
+
+    The control without the popd proves the deny is the popd being followed,
+    not pushd sequences being refused wholesale.
+    """
+    _write_marker(repo)
+    worktree = tmp_path / "task"
+    _git(repo, "worktree", "add", "-q", "-b", "task", str(worktree))
+    _commit(worktree, "unverified.txt", "never gated\n")
+
+    assert _denied(
+        f"cd {worktree} && pushd {repo} && popd && git push origin HEAD:main", repo
+    ), (
+        "after the popd the push runs back in the ungated worktree, but the "
+        "guard read it as still inside the gated checkout"
+    )
+    assert not _denied(f"cd {worktree} && pushd {repo} && git push origin HEAD:main", repo), (
+        "without the popd the push runs in the gated checkout and must pass"
+    )
+
+
+def test_an_unknowable_pushd_or_popd_is_denied(repo: Path) -> None:
+    """The directory-stack shapes this guard does not model are refused.
+
+    An expansion target, a bare ``pushd`` (swap), a rotation flag, and a
+    ``popd`` with no matching ``pushd`` all leave the effective directory
+    unknowable, which is the same answer an unreadable ``cd`` target gets.
+    """
+    _write_marker(repo)
+    for command in (
+        'pushd "$W" && git push origin HEAD:main',
+        "pushd && git push origin HEAD:main",
+        "pushd -n /tmp && git push origin HEAD:main",
+        "popd && git push origin HEAD:main",
+    ):
+        assert _denied(command, repo), command
+
+
+def test_a_git_dir_operand_is_refused_in_every_spelling(repo: Path, tmp_path: Path) -> None:
+    """``--git-dir`` (and ``GIT_DIR=``) aims the push at a repository the
+    directory tracking does not follow, so the guard refuses it by name.
+
+    The hook's cwd is gated — its marker must not authorise a push against a
+    different repository named by the operand. The refusal is unconditional and
+    names the respelling (``git -C``), which the guard *does* resolve.
+    """
+    _write_marker(repo)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    _git(elsewhere, "init", "-q", "--initial-branch=main")
+    _git(elsewhere, "config", "user.email", "t@example.com")
+    _git(elsewhere, "config", "user.name", "t")
+    _commit(elsewhere, "other.txt", "never gated\n")
+
+    for command in (
+        f"git --git-dir={elsewhere}/.git push origin HEAD:main",
+        f"git --git-dir {elsewhere}/.git push origin HEAD:main",
+        f"GIT_DIR={elsewhere}/.git git push origin HEAD:main",
+    ):
+        output = _hook_output(command, repo)
+        assert output.get("permissionDecision") == "deny", command
+        assert "git-dir" in output.get("permissionDecisionReason", "").lower(), (
+            f"the refusal must name the operand it refused: {output!r}"
+        )
+
+
+def test_a_git_dir_push_is_refused_even_outside_a_repository(
+    repo: Path, tmp_path: Path
+) -> None:
+    """The open half of the gap: outside a work tree the guard passes through,
+    while ``--git-dir`` aims the push at a real repository anyway."""
+    outside = tmp_path / "outside"
+    outside.mkdir()
+
+    assert _denied(f"git --git-dir={repo}/.git push origin HEAD:main", outside), (
+        "a non-repo cwd read as 'not my concern' while the --git-dir operand "
+        "carried the push into a real repository with no marker check at all"
     )
 
 
