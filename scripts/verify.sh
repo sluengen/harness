@@ -33,7 +33,9 @@ echo "=== ruff ==="
 uv run --extra dev ruff check .
 
 echo "=== mypy ==="
-uv run --extra dev mypy scripts templates
+# `scripts` is the only Python tree left: v5 chunk 3 moved the Codex compile
+# step out of `templates/`, which now holds markdown templates alone.
+uv run --extra dev mypy scripts
 
 echo "=== pytest ==="
 # One stage, across the host's cores. The two-stage `-m docker` / `-m "not
@@ -55,6 +57,12 @@ echo "=== design-token drift guard ==="
 # narrowed (#243): the guidance catalog above stays guarded and hand-authored;
 # this block is mechanical, generated content instead.
 uv run --extra dev python scripts/build_design_tokens.py --check
+
+echo "=== codex drift guard ==="
+# Fail the gate if the committed AGENTS.md or .codex/ has drifted from a
+# regeneration off CLAUDE.md, agents/, commands/, and skills/ — the Codex
+# surface is compiled, never hand-edited (ADR 0017; v5 chunk 3).
+uv run --extra dev python scripts/generate_codex_artifacts.py --check
 
 echo "=== gate marker ==="
 # Record that the gate exited 0 over *these exact bytes* (#436). The marker is
