@@ -54,7 +54,15 @@ Acceptance criteria:
   with work to claim. A protected branch is not a build
   (:func:`test_a_session_on_a_protected_branch_is_never_blocked`), and neither is
   a clean checkout at the integration tip
-  (:func:`test_nothing_to_claim_is_never_blocked`).
+  (:func:`test_nothing_to_claim_is_never_blocked`). Answering that question means
+  first *resolving* the integration tip, and #483 is what it cost to resolve it
+  as a local ref only — inert in every clone that carries the branch as
+  ``refs/remotes/origin/<b>`` alone, which is every cloud and CI checkout. The
+  paired :func:`test_the_integration_branch_as_a_remote_ref_only_still_blocks`
+  and :func:`test_the_integration_branch_as_a_local_ref_only_still_blocks` hold
+  each arm of the fallback chain, and
+  :func:`test_an_integration_branch_that_resolves_as_neither_ref_allows` holds
+  the fall-open the fix deliberately leaves open.
 * **AC-5** — the fail-open posture of the design's §8: a Stop hook that blocked
   because it could not read git would wedge the session in a loop the model has
   no way to exit, so state 2 opens here where it closes in the push guard.
@@ -586,6 +594,153 @@ def test_committed_work_ahead_of_the_integration_branch_still_counts(tmp_path: P
     _commit(root, "b.txt", "committed but ungated\n")
 
     assert _blocked(_run(root, _transcript(tmp_path, CLAIM)))
+
+
+# --- AC-4, continued: resolving the integration branch ------------------------
+#
+# `hasWorkToClaim` asks whether HEAD has moved past the integration tip, and to
+# ask it at all it must first resolve that tip. Resolving it as a *local* ref
+# only is #483: a clone that carries the branch as `refs/remotes/origin/<b>`
+# alone answers null, which reads as "nothing to claim" and allows — silently,
+# in precisely the cloud and CI checkouts the guard exists for.
+#
+# The two tests below are a pair, and each fixture holds the branch as exactly
+# **one** ref. That is the load-bearing property, not a tidiness preference: a
+# repository holding both spellings satisfies either arm on its own, so deleting
+# an arm of the fallback chain survives such a suite and the coverage reads as
+# green. #483 measured that directly — with both refs present, removing the
+# local arm killed nothing.
+#
+# They drive the hook through the **production** payload shape rather than the
+# transcript fallback. The environment this defect lives in is a real cloud
+# session, and a test for it that took a path no such session takes would be
+# answering an easier question than the one asked.
+
+#: The declared `branches:` block these fixtures ship, matching the spelling
+#: `declaredConfig` reads out of `CONTEXT.md`.
+_DECLARES_DEV = "```yaml\nbranches:\n  integration: dev\n```\n"
+
+
+def _resolves(repo: Path, ref: str) -> bool:
+    """True iff ``ref`` resolves in ``repo``. Not ``_git``: a ref that is absent
+    is the answer here, not a failure, so this one may not raise on it."""
+    completed = subprocess.run(
+        ["git", "rev-parse", "--verify", "--quiet", ref],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
+    return completed.returncode == 0
+
+
+def _seed(repo: Path) -> None:
+    """Identity plus the declared integration branch, committed on ``dev``."""
+    _git(repo, "config", "user.email", "t@example.com")
+    _git(repo, "config", "user.name", "t")
+    (repo / "CONTEXT.md").write_text(_DECLARES_DEV)
+    _git(repo, "add", "CONTEXT.md")
+    _git(repo, "commit", "-q", "-m", "context")
+
+
+def _integration_only_local(tmp_path: Path) -> Path:
+    """A repository holding ``dev`` as ``refs/heads/dev`` and nothing else.
+
+    No remote is configured at all, so the remote spelling cannot resolve even
+    by accident — the condition that makes the local arm independently killable.
+    """
+    root = tmp_path / "local-only"
+    root.mkdir()
+    _git(root, "init", "-q", "--initial-branch=dev")
+    _seed(root)
+    _git(root, "checkout", "-q", "-b", "task/local-only")
+    _commit(root, "b.txt", "committed but ungated\n")
+    return root
+
+
+def _integration_only_remote(tmp_path: Path) -> Path:
+    """A clone holding ``dev`` as ``refs/remotes/origin/dev`` and nothing else —
+    the shape of every cloud session, CI checkout, and ``--single-branch`` clone.
+
+    Built the way one really arises rather than by hand-writing a ref: clone,
+    branch off for the task, then drop the local ``dev`` the clone came with.
+    The committed work leaves the tree **clean**, which is essential — the
+    uncommitted-work short-circuit one line earlier in ``hasWorkToClaim``
+    returns true before the tip is ever looked up, and a dirty fixture would
+    therefore pass against the defect.
+    """
+    origin = tmp_path / "origin"
+    origin.mkdir()
+    _git(origin, "init", "-q", "--initial-branch=dev")
+    _seed(origin)
+
+    clone = tmp_path / "clone"
+    _git(tmp_path, "clone", "-q", str(origin), str(clone))
+    _git(clone, "config", "user.email", "t@example.com")
+    _git(clone, "config", "user.name", "t")
+    _git(clone, "checkout", "-q", "-b", "task/remote-only")
+    _commit(clone, "b.txt", "committed but ungated\n")
+    _git(clone, "branch", "-D", "dev")
+    return clone
+
+
+def test_the_integration_branch_as_a_remote_ref_only_still_blocks(tmp_path: Path) -> None:
+    """#483 — the defect. A clone whose only ``dev`` is ``refs/remotes/origin/dev``
+    has work to claim, and the hook must say so.
+
+    Against the unfixed hook the tip lookup returns null, ``hasWorkToClaim``
+    reports *nothing to claim*, and ``verdictFor`` has no opinion — so the hook
+    emits ``{"continue": true}`` with nothing on stderr and the installation
+    looks healthy while the guard has no effect at all.
+    """
+    repo = _integration_only_remote(tmp_path)
+    assert _resolves(repo, "refs/remotes/origin/dev"), "the fixture lost its remote ref"
+    assert not _resolves(repo, "refs/heads/dev"), (
+        "the fixture kept a local dev, so it would satisfy the local arm alone "
+        "and could not see #483"
+    )
+    assert _git(repo, "status", "--porcelain") == "", (
+        "the fixture is dirty, so the uncommitted-work short-circuit answers "
+        "before the tip is resolved and the test proves nothing"
+    )
+
+    assert _blocked(_run_real(repo, tmp_path)), (
+        "a completion claim over ungated work was allowed because the "
+        "integration branch is only a remote ref"
+    )
+
+
+def test_the_integration_branch_as_a_local_ref_only_still_blocks(tmp_path: Path) -> None:
+    """The other arm, pinned. Local-first resolution is what keeps #483's fix
+    from changing behaviour anywhere a local ref exists, and this fixture has no
+    remote at all — so an edit that dropped the local arm and kept only the
+    remote one fails here and nowhere else."""
+    repo = _integration_only_local(tmp_path)
+    assert _resolves(repo, "refs/heads/dev"), "the fixture lost its local ref"
+    assert not _resolves(repo, "refs/remotes/origin/dev"), (
+        "the fixture grew a remote ref, so it would satisfy the remote arm alone"
+    )
+    assert _git(repo, "status", "--porcelain") == "", "the fixture is dirty"
+
+    assert _blocked(_run_real(repo, tmp_path))
+
+
+def test_an_integration_branch_that_resolves_as_neither_ref_allows(tmp_path: Path) -> None:
+    """The fall-open #483 deliberately does **not** close. A declared branch that
+    resolves nowhere is a genuinely ambiguous state, and a Stop hook that blocked
+    on it would wedge the session with no way out (§8). The fix narrows the set
+    of cases that reach here; it does not change what happens when one does."""
+    root = tmp_path / "no-dev"
+    root.mkdir()
+    _git(root, "init", "-q", "--initial-branch=task/orphan")
+    _git(root, "config", "user.email", "t@example.com")
+    _git(root, "config", "user.name", "t")
+    (root / "CONTEXT.md").write_text(_DECLARES_DEV)
+    _git(root, "add", "CONTEXT.md")
+    _git(root, "commit", "-q", "-m", "context")
+    assert not _resolves(root, "refs/heads/dev")
+    assert not _resolves(root, "refs/remotes/origin/dev")
+
+    assert _run_real(root, tmp_path) == {"continue": True}
 
 
 # --- the one-block ceiling ----------------------------------------------------
