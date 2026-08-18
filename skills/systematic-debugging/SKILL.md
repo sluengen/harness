@@ -1,6 +1,6 @@
 ---
 name: systematic-debugging
-description: Use whenever you hit a failing test, unexpected behaviour, or a bug report — reproduce, isolate the root cause, fix minimally, prove it fixed. Load instead of guessing at a fix; pairs with test-driven-development for the regression test.
+description: Use whenever you hit a failing test, unexpected behaviour, or a bug report — reproduce, isolate the root cause, fix minimally, prove it fixed. Load instead of guessing at a fix; pairs with engineering's test-first loop for the regression test.
 ---
 # Systematic Debugging
 

@@ -16,7 +16,7 @@ How the change lands — the shape of the solution at a glance.
 
 ## Grounding
 
-*Record current reality for the facts this change rests on — every one that names a file / function / flag / version / decision — verified against the code as it is now, not recalled from memory. State what was checked with a `path:line` anchor (or a current version / flag value), surface any decision the ticket assumed settled that is actually open or superseded, and list open questions. Where a sub-agent host is available this is the read-only `researcher` agent's brief, recorded here verbatim; otherwise the executor self-grounds inline (the fallback). Always present, scaled to size — a one-line fix gets one line ("verified `foo.py:rename_flag` still exists"). See `spec-authoring` → Grounding.*
+*Record current reality for the facts this change rests on — every one that names a file / function / flag / version / decision — verified against the code as it is now, not recalled from memory. State what was checked with a `path:line` anchor (or a current version / flag value), surface any decision the ticket assumed settled that is actually open or superseded, and list open questions. Where a sub-agent host is available this is a host-native read-only sub-agent's brief, recorded here verbatim; otherwise the executor self-grounds inline (the fallback). Always present, scaled to size — a one-line fix gets one line ("verified `foo.py:rename_flag` still exists"). See `spec-authoring` → Grounding.*
 
 ## Assurance
 

@@ -30,7 +30,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: dev
-          # The canonical gate reads history when checking feature-spec currency.
+          # Full history: scripts/promotion-step.sh checks the fast-forward
+          # ancestry (git merge-base --is-ancestor) before advancing main, and a
+          # shallow clone cannot answer that. Pinned by
+          # tests/unit/test_nightly_promotion_workflow.py.
           fetch-depth: 0
 
       - name: Install uv

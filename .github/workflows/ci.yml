@@ -13,7 +13,7 @@ concurrency:
 # Least privilege, declared here rather than inherited from the repo-level
 # default: a default widened in the GitHub UI silently widens every job that
 # declares nothing, and this workflow runs on every push to main and dev. Lint-and-test
-# needs only the checkout. Pinned by tests/unit/test_ci_workflow_permissions.py.
+# needs only the checkout.
 permissions:
   contents: read
 
@@ -26,14 +26,10 @@ jobs:
     timeout-minutes: 20
 
     steps:
+      # The default shallow checkout: no gate stage reads git history since
+      # the feature-spec currency stage was retired (ADR 0017; the nightly
+      # keeps its own full fetch for the fast-forward ancestry check).
       - uses: actions/checkout@v4
-        with:
-          # Full history, not the default depth-1. The feature-spec currency
-          # guard (#280) asks git for the last commit touching each
-          # specs/features/*.md; in a shallow clone git answers with the graft
-          # boundary, so every spec reads as touched at HEAD and the run goes
-          # red on whichever specs were not edited that day (#326). Pinned by
-          # tests/unit/test_ci_workflow_full_history.py.
 
       - name: Install uv
         uses: astral-sh/setup-uv@v3
