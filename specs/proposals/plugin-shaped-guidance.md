@@ -8,7 +8,7 @@ related: [0015-harness-v4-thin-verification-layer, guidance-system, harness-as-t
 
 # Proposal: Ship the guidance as a plugin — one version, one spine, hydrated repos, and a guard cull
 
-> Stop being a hand-rolled package manager for cross-referenced prose. Package the surface as a plugin (skills, commands, agents, hooks — one version, bumped at release), collapse the always-on context into a single hydrated spine that carries the iron laws, the shared contract, and the repo's executive summary, make every skill a freestanding leaf, replace the installer with a hydration command, collapse the command/agent/template inventories to what earns its keep, and delete the guard classes whose subjects those moves remove.
+> Stop being a hand-rolled package manager for cross-referenced prose. Package the surface as a plugin (skills, commands, agents, hooks — one version, bumped at release), collapse the always-on context into a single hydrated spine that carries the iron laws, the shared contract, and the repo's executive summary, make every skill a freestanding leaf, restructure the build/design/operate triad as generic method over evolving assets, replace the installer with a hydration command, collapse the command/agent/template inventories to what earns its keep, and delete the guard classes whose subjects those moves remove.
 
 ## Problem / motivation
 
@@ -54,35 +54,54 @@ An earlier draft placed the shared contract in a `lifecycle` hub *skill*. That i
 The spine also absorbs `CONTEXT.md`. What `CONTEXT.md` holds — stack, commands, branches, tracker, layers — is the repo's executive summary, which is exactly the corpus that must be loaded every time; keeping it in a second always-read file next to the first is a division without a difference. The spine's shape, hydrated per repo:
 
 1. **Iron laws** — test-first; a measurable criterion needs a measuring test; no completion claim without fresh gate evidence; builder does not write the as-built record.
-2. **The contract** — lifecycle steps, the six ticket states, hold labels + assignment semantics, assurance levels, verdict vocabulary (PASS / FAIL / DEFER), the tree-oid / gate-marker binding, tracker dispatch.
+2. **The contract** — lifecycle steps, the six ticket states, hold labels + assignment semantics, assurance levels, verdict vocabulary (PASS / FAIL / DEFER), the tree-oid / gate-marker binding, tracker dispatch — and the **isolation norm**: many agents work these repos concurrently, so nobody builds on a shared branch; every change works isolated, ticketed or not.
 3. **Repo cliff notes** — the machine-readable config block hooks parse today from `CONTEXT.md` (commands, branches, tracker, layers, paths), retargeted, plus the prose summary of what the repo is.
 
+**Not every change is a ticket.** The enforcement layer is already ticket-agnostic — the gate marker names a *tree*, and no hook asks for an issue id — so the contract states the fast lane plainly: a small fix takes the same isolation and the same gate, and ships without a ticket. A ticket is filed when the work deserves a record: it changes documented behaviour, spans commits, or needs independent review. Today's prose ("the tracker issue is the front door") stated a ceremony the mechanics never required; the spine aligns the stated contract with the enforced one.
+
 Target ≤250 lines total. Skills become depth behind the spine: the spine states *that* reviews are two-stage and bounded; `review-discipline` holds *how*. Leaves may assume the spine (it is guaranteed loaded — zero hops) and reference nothing else. The spine is repo-owned after hydration; `/harness:init --refresh` regenerates the generated sections (laws + contract) in place after a plugin update, preserving the repo-values section — the one drift surface this design accepts, and the refresh command is its remedy.
+
+### The how/what pattern: generic method over evolving assets
+
+For the build/design/operate triad — `engineering`, `architecture`, `infrastructure` — each skill splits into a generic *how* and an evolving *what*:
+
+| Layer | Owner | Content | Update path |
+|---|---|---|---|
+| Skill body — the how, with the principles **stated** | plugin | the method, plus the one-liner working vocabulary (a dozen lines) | plugin release |
+| Plugin asset — the universal what, **argued** | plugin | elaboration, examples, learned cases — the corpus with room to grow | plugin release; this is where the system learns across repos |
+| Repo asset — the local what | repo, seeded by `init` | this repo's principles, decisions, and infrastructure reality | the repo's own lifecycle |
+
+The pattern is already running in this repo, twice. `review-discipline` carries `references/craft.md` — the skill body is the method, and craft.md is the learning asset that #443 *appended to* when the counterfeit-delimiter and version-collision classes were discovered. And `architecture` is the pattern by another name: the skill is the how, and the repo-owned architecture-principles spec (plus its decisions) is the what. This proposal names the pattern and completes the triad rather than inventing it.
+
+Two boundaries hold the pattern honest. **The body is never an empty pointer:** the principles stay *stated* in the skill (they are working vocabulary, needed on every load); the asset carries the *argument* — rationale, examples, accumulated cases — opened when a principle is contested or a hard call is being made. And **ownership splits by file, not by section:** the spine needs generated-plus-repo sections because it must be one file; assets have no such constraint, and the repo-owned what-documents are heavily edited (decisions accrete, infrastructure changes), so mixed-ownership files would turn every `--refresh` into a merge. Two files, clean owners, the skill reads both.
+
+Restraint: three instances is a pattern; six is a reorganization. `ux-design`/`design-system` rhyme with it (the design directory is already a repo-owned what), but they wait for the first `/assess` after the triad ships.
 
 ### Target inventory
 
 **One plugin, `harness`, one semver, bumped at release** — the promotion of ADR 0003, whose version bump and changelog fold (ADR 0014) happen there. No file-level versions, no `guidance:` headers, no registry, no lock. Commands are runtime-namespaced (`/harness:build`); in practice only `init` needs the prefix spoken, to avoid the native `/init`.
 
-**Skills — 17 → 14 freestanding leaves** (the contract having moved to the spine):
+**Skills — 17 → 13 freestanding leaves** (the contract having moved to the spine):
 
 | Skill | What it is | Disposition |
 |---|---|---|
 | `spec-driven-development` | The lifecycle spine as prose | **Absorbed into the spine** (contract section) |
 | `tracker` | Backend-neutral tracker protocol: operations, states, holds, filing | **Absorbed into the spine** (states/holds/dispatch) — recipes stay in providers, so spine → provider is the only hop |
 | `linear` / `github-issues` | Provider recipes (API mechanics per backend) | Keep, freestanding |
-| `review-discipline` | Two-stage review, finding 2×2, final-evidence ordering, stop rule; `references/` craft files | Keep; verdict vocabulary moves to spine |
-| `code-quality` | Scope discipline, structure, verification gate | **Merge with `engineering-principles`** — two files, one subject (how building is judged) |
-| `engineering-principles` | The durable design principles | ↑ merged |
+| `review-discipline` | Two-stage review, finding 2×2, final-evidence ordering, stop rule; `references/craft.md` is the pattern's precedent | Keep; verdict vocabulary moves to spine |
+| `code-quality` | Scope discipline, structure, verification gate | **Merge into `engineering`** with `engineering-principles` and `test-driven-development` — the co-loading test: no agent builds without all three, and `dev.md`'s mandatory reading list is the evidence they were one load wearing three names |
+| `engineering-principles` | The durable design principles | ↑ merged; principles stay *stated* in the body, move *argued* into the plugin asset (the how/what pattern's build leg) |
+| `test-driven-development` | The iron law, expanded — watch it fail for the right reason, red-green-refactor | ↑ merged — the law's salience lives in the spine unconditionally; the skill only ever carried the craft, which belongs with the rest of the building craft |
+| *(new)* `infrastructure` | The operate leg: environments, what a gate means at each boundary, promotion discipline, CI/CD movement, release mechanics | **Add** — this how is currently smeared across ADR 0003, `/promote`, and `promotion-step.sh` with no skill home; its repo asset (seeded from the `infrastructure.md` template) records the actual topology, environments, and services |
 | `spec-authoring` | The craft of proposals / change specs / as-built records | Keep; gains the spec templates as assets |
-| `test-driven-development` | The iron law, expanded | Keep |
-| `systematic-debugging` | Reproduce → isolate → fix → prove | Keep |
+| `systematic-debugging` | Reproduce → isolate → fix → prove | Keep — fires conditionally (on a failure), which is what the trigger mechanism is for |
 | `writing-quality` | Prose standards | Keep |
-| `architecture` | Design decisions and where they are recorded | Keep |
+| `architecture` | The design leg: how decisions are made and where they are recorded | Keep — already instantiates the pattern (skill = how; repo-owned architecture-principles spec = what) |
 | `ux-design` | Designing user-facing surfaces | Keep |
 | `design-system` | Using a design system without degrading it (layer-gated) | Keep; gains the design-system scaffold as an asset |
 | `assessment-craft` | The steward's finding bar and severity method | Keep |
 | `work-discovery` | How the unattended loop picks its next ticket | Keep |
-| `worktree-isolation` | Branch-in-worktree discipline | Keep |
+| `worktree-isolation` | Workspace mechanics for any change | Keep, reframed — the *norm* (concurrent agents, nobody on a shared branch) moves to the spine, where it binds unconditionally, ticket or not; this leaf keeps the mechanics. Deliberately **not** folded into `/build`: the fast lane needs it too |
 
 **Commands — 13 → 9.** The lifecycle collapses onto `/build`: it already runs the whole arc, and the attended path is the same arc watched, not a different arc.
 
@@ -135,16 +154,16 @@ Hooks are code: they keep their real tests (the surviving class), and they are C
 | `adjustment.md` | Capture-optimized front half of a change spec, for `/bug`/`/tweak` at the moment of noticing | **Merge into `change.md`** as its capture mode — one ticket template; capture fills the front sections, `/build` extends with Grounding/Design. Matches the `/capture` merge |
 | `proposal.md` | Proposal spec structure | Keep → `spec-authoring` asset |
 | `feature.md` | As-built feature record (`feature_specs` on) | Keep → `spec-authoring` asset |
-| `infrastructure.md` | Reference spec for operational reality (domains, hosting, services) | Keep → `spec-authoring` asset |
 | `architecture.md` | Architecture-principles reference spec scaffold | Keep → `spec-authoring` asset |
 | `decision.md` | Embeddable four-part decision block | Keep → `spec-authoring` asset |
 | `assessment.md` | The steward's report format + retention rule | Keep → `assessment-craft` asset |
 | `design-system.md` | Contract for standing up a layered design system | Keep → `design-system` asset |
-| `size-guard.md` | Ready-to-adopt test enforcing `code-quality`'s 500-line justification tripwire mechanically | Keep → `code-quality` asset (it is a shipped test, admission class (c)) |
+| `infrastructure.md` | Reference spec for operational reality (domains, hosting, services) | Keep → the seed for the `infrastructure` skill's **repo asset**, written by `init` |
+| `size-guard.md` | Ready-to-adopt test enforcing the 500-line justification tripwire mechanically | Keep → `engineering` asset (it is a shipped test, admission class (c)) |
 | `CONTEXT.template.md` | The `CONTEXT.md` scaffold | **Retire** — folds into the spine template (`init` asset) |
 | `generate_codex_artifacts.py` | Generates `.codex/` agents, skills, and commands from the canonical files | Move to `scripts/` as the release-time compile step |
 
-**Scripts:** `verify.sh`, `gate_marker.py`, `mutate.py` (retargeted at surviving guard classes), `promotion-step.sh` (adjusted below) keep. `check_landing_page_guidance.py` and `build_design_tokens.py` follow the landing-page decision (D7) — the former reads `registry.yaml` and cannot survive teardown unchanged.
+**Scripts:** `verify.sh`, `gate_marker.py`, `mutate.py` (retargeted at surviving guard classes), `promotion-step.sh` (adjusted below) keep. `check_landing_page_guidance.py` and `build_design_tokens.py` follow the landing-page decision (D8) — the former reads `registry.yaml` and cannot survive teardown unchanged.
 
 **What a consuming repo holds after `/harness:init`:** the spine (`CLAUDE.md` + compiled `AGENTS.md`), `scripts/verify.sh` + `gate_marker.py`, `.claude/settings.json` (hook wiring), `specs/{proposals,features,decisions}/` scaffold. Five things, all repo-owned. No lock, no registry, no `CONTEXT.md`.
 
@@ -167,7 +186,7 @@ Everything asserting prose-about-prose — version parity, pointer targets, rest
 
 ### Skip staging in this repo
 
-`dev → staging → main` is ADR 0003's general topology, but staging is a deployment concept and this repo deploys nothing — for the harness it is a third gate run and a third merge that verify the same trees. Branch roles are already per-repo config: the harness declares `integration: dev`, `release: main`; `/promote` and `promotion-step.sh` drive `dev → main`. Repos that ship to staging environments keep all three roles — the topology becomes configuration, which it already almost is.
+`dev → staging → main` is ADR 0003's general topology, but staging is a deployment concept and this repo deploys nothing — for the harness it is a third gate run and a third merge that verify the same trees. Branch roles are already per-repo config: the harness declares `integration: dev`, `release: main`; `/promote` and `promotion-step.sh` drive `dev → main`. Repos that ship to staging environments keep all three roles — the topology becomes what it already almost is: configuration, and with the `infrastructure` skill it gains its natural home — the harness's own infra asset records the two-branch topology as its first entry, with the prose for *why* attached instead of a bare YAML key.
 
 ### How the system comes together
 
@@ -182,32 +201,36 @@ Everything asserting prose-about-prose — version parity, pointer targets, rest
 | Decision | Who decides | Recorded in |
 |---|---|---|
 | **D1 — Distribution: plugin + marketplace, or keep the installer?** Rec: plugin. Registry, freshness hook, `/update-guidance`, `BOOTSTRAP.md`, and the lock all delete. | user | ADR 0016 |
-| **D2 — The contract lives in the always-on spine (absorbing `CONTEXT.md`), not a conditional skill?** Rec: yes. The lifecycle is needed in every working session; only one-off Q&A pays unused context, and that price is right for a contract that cannot fail to load. Accepts the spine-refresh drift surface (`init --refresh` is the remedy). | user | ADR 0016 |
-| **D3 — Inventory dispositions.** Approve the fold/delete columns: commands 13→9 (`start`/`ship` into `build`; `bug`+`tweak`→`capture`; `decision` into `digest`; `update-guidance` deleted; `init` added), agents 5→4 (`researcher` deleted, `architect` kept), hooks 7→5, templates 12→9 (`adjustment` into `change`; `CONTEXT.template` retired). Contestable items are marked in the tables — `/review` kept vs folded, `researcher`, `architect`. | user | ADR 0016 + the collapse tickets |
-| **D4 — Guard admission rule (a–d) and the cull.** The payoff decision — without it D1–D3 relocate the overhead. | user | ADR 0016 |
-| **D5 — This repo skips staging** (`dev → main`); the three-role topology stays available as configuration for repos with staging environments. | user | ADR 0003 (amended in place) |
-| **D6 — In-flight work disposition.** #479 superseded by D1 — hold now, close on acceptance. #480 proceeds — its ordering fix lands in `/build`'s ship step once `/ship` folds. The open guard-hardening tickets (#471, #472, #475, #476) hold pending D4 — building guards the cull would delete is the one clearly wrong move while this sits undecided. | user | the tickets |
-| **D7 — The landing page.** `docs/index.html` and its drift guards read `registry.yaml`, which D1 deletes. Retire the page, or re-point it at the plugin manifest? | user | feature spec |
+| **D2 — The contract lives in the always-on spine (absorbing `CONTEXT.md`), not a conditional skill — and it states the fast lane?** Rec: yes to both. The lifecycle is needed in every working session; only one-off Q&A pays unused context, and that price is right for a contract that cannot fail to load. The fast lane (small fixes ship with the same isolation and gate but no ticket) is a real contract change from "the issue is the front door" and is called out as such — the enforcement layer never required the ticket; the prose did. Accepts the spine-refresh drift surface (`init --refresh` is the remedy). | user | ADR 0016 |
+| **D3 — The how/what pattern, applied to the triad only.** `engineering`, `architecture`, `infrastructure` each split into a generic skill body, a plugin asset (the universal argument, where learning accretes), and a repo asset (the local reality, seeded by `init`). `ux-design`/`design-system` wait for the first `/assess` after the triad ships. | user | ADR 0016 |
+| **D4 — Inventory dispositions.** Approve the fold/delete columns: skills 17→13 (`engineering` absorbs `code-quality`, `engineering-principles`, and `test-driven-development`; `infrastructure` added; `worktree-isolation` kept as mechanics with its norm in the spine), commands 13→9 (`start`/`ship` into `build`; `bug`+`tweak`→`capture`; `decision` into `digest`; `update-guidance` deleted; `init` added), agents 5→4 (`researcher` deleted, `architect` kept), hooks 7→5, templates 12→9 (`adjustment` into `change`; `CONTEXT.template` retired). Contestable items are marked in the tables — `/review` kept vs folded, `researcher`, `architect`, the TDD merge. | user | ADR 0016 + the collapse tickets |
+| **D5 — Guard admission rule (a–d) and the cull.** The payoff decision — without it D1–D4 relocate the overhead. | user | ADR 0016 |
+| **D6 — This repo skips staging** (`dev → main`), recorded as the first entry in the harness's own infrastructure asset; the three-role topology stays available as configuration for repos with staging environments. | user | ADR 0003 (amended in place) + the infra asset |
+| **D7 — In-flight work disposition.** #479 superseded by D1 — hold now, close on acceptance. #480 proceeds — its ordering fix lands in `/build`'s ship step once `/ship` folds. The open guard-hardening tickets (#471, #472, #475, #476) hold pending D5 — building guards the cull would delete is the one clearly wrong move while this sits undecided. | user | the tickets |
+| **D8 — The landing page.** `docs/index.html` and its drift guards read `registry.yaml`, which D1 deletes. Retire the page, or re-point it at the plugin manifest? | user | feature spec |
 
 ## Breakdown
 
 Sequenced; each shippable alone. Suggested assurance in brackets.
 
-1. **Spine extraction** [simple] — author the spine source (laws + contract + repo config block); retarget the hooks' config parsing from `CONTEXT.md` to it; retire `CONTEXT.template.md` and the three-mirror arrangement; retarget the #456 vocabulary guard at the spine.
-2. **Inventory collapse** [simple] — commands 13→9, agents 5→4, hooks 7→5, template merges, per the tables; #480's reconcile-before-certify ordering lands in `/build`'s ship step here.
-3. **De-reference pass** [simple] — leaves assume the spine and reference nothing else; delete restatements in the same change as the guards that policed them.
-4. **Plugin packaging** [simple] — plugin + marketplace manifests, directory shape, namespacing; the repo installs its own plugin from source.
-5. **`/harness:init` hydration** [simple] — the init command with its assets (spine template, verify template, settings, scaffold) and `--refresh`; absorbs and deletes `BOOTSTRAP.md`.
-6. **Codex compile** [simple] — move `generate_codex_artifacts.py` to `scripts/`, extend to emit `AGENTS.md` + skill-typed commands at release; scratch-repo verification as an AC, not a gate.
-7. **Distribution teardown** [simple] — delete `registry.yaml`, `guidance:` headers, the freshness hook, `/update-guidance`; release becomes the version bump. Lands only after 1–6 are green.
-8. **Guard cull** [simple] — apply D4's admission rule to the surviving suite; retarget `mutate.py`; record before/after counts in the ADR.
-9. **Staging skip** [simple] — branch-role config to `dev → main` for this repo; adjust `promotion-step.sh`; amend ADR 0003 in place.
-10. **Consumer migration + first plugin release** [simple] — migration note for lock-file consumers; promote; publish.
+1. **Spine extraction** [simple] — author the spine source (laws + contract incl. the isolation norm and the fast lane + repo config block); retarget the hooks' config parsing from `CONTEXT.md` to it; retire `CONTEXT.template.md` and the three-mirror arrangement; retarget the #456 vocabulary guard at the spine.
+2. **Triad restructure** [simple] — merge `code-quality` + `engineering-principles` + `test-driven-development` into `engineering` (principles stated in the body, argued in the plugin asset); birth `infrastructure` (skill + repo asset seeded from the template, absorbing the promotion discipline from ADR 0003 / `/promote`); name the pattern with `review-discipline`'s craft.md as its precedent.
+3. **Inventory collapse** [simple] — commands 13→9, agents 5→4, hooks 7→5, template merges, per the tables; #480's reconcile-before-certify ordering lands in `/build`'s ship step here.
+4. **De-reference pass** [simple] — leaves assume the spine and reference nothing else; delete restatements in the same change as the guards that policed them.
+5. **Plugin packaging** [simple] — plugin + marketplace manifests, directory shape, namespacing; the repo installs its own plugin from source.
+6. **`/harness:init` hydration** [simple] — the init command with its assets (spine template, verify template, settings, scaffold, the triad's repo-asset seeds) and `--refresh`; absorbs and deletes `BOOTSTRAP.md`.
+7. **Codex compile** [simple] — move `generate_codex_artifacts.py` to `scripts/`, extend to emit `AGENTS.md` + skill-typed commands at release; scratch-repo verification as an AC, not a gate.
+8. **Distribution teardown** [simple] — delete `registry.yaml`, `guidance:` headers, the freshness hook, `/update-guidance`; release becomes the version bump. Lands only after 1–7 are green.
+9. **Guard cull** [simple] — apply D5's admission rule to the surviving suite; retarget `mutate.py`; record before/after counts in the ADR.
+10. **Staging skip** [simple] — branch-role config to `dev → main` for this repo, recorded in the harness's infra asset; adjust `promotion-step.sh`; amend ADR 0003 in place.
+11. **Consumer migration + first plugin release** [simple] — migration note for lock-file consumers; promote; publish.
 
 ## Risks / unknowns
 
 - **Spine refresh drift.** The spine is repo-owned after hydration, so a plugin update does not rewrite it; a consumer that never runs `init --refresh` carries a stale contract. Bounded: the laws and contract change rarely by design, and the refresh is one command. The generated/repo-owned boundary must be mechanically obvious in the file.
 - **Spine scope creep.** The one always-loaded file is the tempting home for everything; every addition taxes every session's context. The ≤250-line target and a class-(b) guard on its section inventory are the counterweight; spine growth is the metric for the first `/assess` after shipping.
+- **Asset bloat.** The plugin assets exist to grow, which is also how they decay into encyclopedias agents skip. Two counterweights, both proven on craft.md: the asset states its own admission rule at its head, and the skill body names *when* to open it — the body is the working surface, the asset is the argument.
+- **The fast lane could leak.** "Small fix, no ticket" invites scope drift — a behaviour change shipping unrecorded. The bound is stated in the contract (documented-behaviour changes, multi-commit work, and review-needing work are tickets), the gate still binds mechanically either way, and the steward's pass is where leakage would surface.
 - **Plugin runtime maturity.** Consumers need plugin-capable hosts; marketplace hosting and private access need checking per consumer. A consumer that cannot run plugins keeps the current install until it can — per-consumer migration, not flag-day.
 - **One version flattens per-file pinning.** A consumer today can hold one file back via the lock; under the plugin they take releases whole, and a consumer needing a divergent skill forks it locally (repo-local files layer over plugin content). Accepted as the point.
 - **The cull could delete a guard that was catching something real.** Mitigations: cull by class with the subject's removal (never a standalone deletion pass before the subject dies), keep the mutation instrument over survivors, record every culled class in the ADR with what replaced its protection — usually, that the subject no longer exists to drift.
