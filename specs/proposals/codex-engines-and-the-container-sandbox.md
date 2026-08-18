@@ -1,4 +1,3 @@
-<!-- guidance:template-proposal@0.1.2 -->
 ---
 proposal: codex-engines-and-the-container-sandbox
 status: superseded         # draft | under-decision | accepted | shipped | rejected | split

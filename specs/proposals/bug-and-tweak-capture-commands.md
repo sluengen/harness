@@ -1,4 +1,3 @@
-<!-- guidance:template-proposal@0.1.2 -->
 ---
 proposal: bug-and-tweak-capture-commands
 status: shipped         # draft | under-decision | accepted | shipped | rejected | split

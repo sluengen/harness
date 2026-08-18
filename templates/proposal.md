@@ -1,4 +1,3 @@
-<!-- guidance:template-proposal@0.1.4 -->
 ---
 proposal: {short-slug}
 status: draft            # draft | under-decision | accepted | shipped | rejected | split | superseded

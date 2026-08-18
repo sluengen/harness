@@ -1,4 +1,3 @@
-<!-- guidance:template-assessment@0.6.0 -->
 # Assessment report (the steward's output format)
 
 The shape of a `/assess` report. The steward writes one dated file per pass; `assessment-craft` holds the *craft* (the finding bar, how a finding is placed on the 2×2, the insight-vs-finding test), this holds the *format*. Drop sections a pass does not need; never pad to fill them.

@@ -1,4 +1,3 @@
-<!-- guidance:template-proposal@0.1.2 -->
 ---
 proposal: resume-earned-stages
 status: superseded         # draft | under-decision | accepted | shipped | rejected | split

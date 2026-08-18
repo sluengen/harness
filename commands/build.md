@@ -1,4 +1,3 @@
-<!-- guidance:build@1.16.0 -->
 # /build — implement, verify, review, and ship a ticket
 
 Usage: `/build <TICKET-ID> [--engine codex]`

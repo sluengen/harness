@@ -123,8 +123,6 @@ _EXPECTED_CLASS_A = {
     "prompt-guard.js": 2,          # readStdin + the main() wrapper it gained in #303
     "git-push-guard.js": 2,        # readStdin + the main() wrapper
     "workflow-guard.js": 1,        # the main() wrapper (stdin is read inside main)
-    "context-monitor.js": 1,       # ditto
-    "guidance-freshness.js": 1,    # ditto
     "push-target-guard.js": 2,     # readStdin + the main() wrapper (#436)
     "gate-evidence-guard.js": 2,   # ditto
 }
@@ -140,8 +138,6 @@ _EXPECTED_CLASS_A = {
 #: repo without a CONTEXT.md would chatter.
 _HOOKS_WITH_CLASS_B = {
     "workflow-guard.js",
-    "context-monitor.js",
-    "guidance-freshness.js",
     "push-target-guard.js",
     "gate-evidence-guard.js",
 }
@@ -505,30 +501,6 @@ def test_the_notice_is_one_line_and_does_not_echo_the_payload(
     assert proc.stderr.count(_TOKEN) == 1, (
         f"{hook} wrote {proc.stderr.count(_TOKEN)} fail-open markers where one "
         f"was expected: {proc.stderr!r}"
-    )
-
-
-# --- AC-5 (behavioural half) --------------------------------------------------
-
-
-def test_a_throw_inside_main_is_caught_and_reported(tmp_path: Path) -> None:
-    """A wrapper must *catch*, not merely be present.
-
-    ``guidance-freshness.js`` reaches ``rel()``'s ``file.startsWith(cwd)`` with a
-    non-string ``file_path`` and raises a ``TypeError`` well past the stdin read,
-    so this exercises the ``main()`` wrapper rather than the parse path — the one
-    AC-5 is about. Before #303 it fell open here silently too.
-    """
-    proc = _run(
-        "guidance-freshness.js",
-        json.dumps({"tool_name": "Write", "tool_input": {"file_path": 5}}),
-        tmp_path,
-    )
-    assert proc.returncode == 0, f"expected a fall-open, not a crash: {proc.stderr!r}"
-    assert json.loads(proc.stdout) == {"continue": True}
-    assert _TOKEN in proc.stderr and _tag("guidance-freshness.js") in proc.stderr, (
-        "a throw raised inside main() fell open without a notice, so the wrapper "
-        f"is present but silent. stderr was: {proc.stderr!r}"
     )
 
 

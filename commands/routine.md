@@ -1,4 +1,3 @@
-<!-- guidance:routine@0.3.0 -->
 # /routine — one unattended build cycle
 
 Usage: `/routine` (no arguments — discovery picks the ticket)

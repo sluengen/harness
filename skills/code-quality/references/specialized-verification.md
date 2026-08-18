@@ -1,4 +1,3 @@
-<!-- guidance:code-quality-specialized-verification@0.1.1 -->
 # Specialized verification checks
 
 Load only the section whose trigger matches the change.

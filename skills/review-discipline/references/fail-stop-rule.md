@@ -1,4 +1,3 @@
-<!-- guidance:review-discipline-fail-stop-rule@0.1.0 -->
 # On a FAIL — the review→fix stop rule
 
 Load this when a review returns **FAIL**. Nothing else routes here: a PASS ends

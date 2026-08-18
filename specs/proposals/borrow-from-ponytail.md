@@ -1,4 +1,3 @@
-<!-- guidance:template-proposal@0.1.1 -->
 ---
 proposal: borrow-from-ponytail
 status: shipped          # draft | under-decision | accepted | shipped | rejected | split

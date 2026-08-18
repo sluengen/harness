@@ -2,7 +2,6 @@
 name: work-discovery
 description: Use when an unattended routine must pick its own next ticket off the Build queue — how to read the queue, rank candidates, judge what is wholly actionable, and defer what is not. The discovery knowledge the routine invokes; the routine command owns the control flow, this skill owns the judgment.
 ---
-<!-- guidance:work-discovery@0.10.0 -->
 # Work Discovery
 
 An unattended loop discovers its own work: it reads the task queue and decides,

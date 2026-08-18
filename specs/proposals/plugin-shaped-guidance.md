@@ -1,4 +1,3 @@
-<!-- guidance:template-proposal@0.1.3 -->
 ---
 proposal: plugin-shaped-guidance
 status: accepted         # draft | under-decision | accepted | shipped | rejected | split
@@ -167,7 +166,7 @@ Hooks are code: they keep their real tests (the surviving class), and they are C
 
 **What a consuming repo holds after `/harness:init`:** the spine (`CLAUDE.md` + compiled `AGENTS.md`), `scripts/verify.sh` + `gate_marker.py`, `.claude/settings.json` (hook wiring), the `specs/` scaffold (proposals, features, decisions). Five things, all repo-owned. No lock, no registry, no `CONTEXT.md`.
 
-**What stays a repo (the source):** the plugin source and marketplace manifest, the compile step, the gate scripts and `mutate.py`, the surviving tests, `specs/` (the product's memory), `README`, `CONTRIBUTING`. The `process/harness.md` + three byte-identical mirrors arrangement is retired: one spine source, hydrated per repo, compiled per runtime.
+**What stays a repo (the source):** the plugin source and marketplace manifest, the compile step, the gate scripts and `mutate.py`, the surviving tests, `specs/` (the product's memory), `README`, `CONTRIBUTING`. The process-doc-plus-three-byte-identical-mirrors arrangement is retired: one spine source, hydrated per repo, compiled per runtime.
 
 ### Codex is a secondary surface, compiled not maintained
 

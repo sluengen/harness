@@ -1,4 +1,3 @@
-<!-- guidance:review-discipline-diff-shape-checks@0.2.0 -->
 # Diff-shape checks
 
 Load only when the diff matches one of these shapes. These checks extend the

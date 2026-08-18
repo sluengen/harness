@@ -1,4 +1,3 @@
-<!-- guidance:template-proposal@0.1.1 -->
 ---
 proposal: harden-loop-layer
 status: shipped          # draft | under-decision | accepted | shipped | rejected | split

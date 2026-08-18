@@ -1,4 +1,3 @@
-<!-- guidance:template-architecture@0.2.0 -->
 ---
 spec: architecture-principles
 last_updated: YYYY-MM-DD

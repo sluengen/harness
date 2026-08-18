@@ -1,4 +1,3 @@
-<!-- guidance:template-proposal@0.1.1 -->
 ---
 proposal: pre-launch-consolidation
 status: shipped          # draft | under-decision | accepted | shipped | rejected | split

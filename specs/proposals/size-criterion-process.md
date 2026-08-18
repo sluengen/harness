@@ -1,4 +1,3 @@
-<!-- guidance:template-proposal@0.1.2 -->
 ---
 proposal: size-criterion-process
 status: shipped

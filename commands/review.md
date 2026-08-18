@@ -1,4 +1,3 @@
-<!-- guidance:review@0.6.0 -->
 # /review — review the current branch
 
 Usage: `/review` (reviews the active branch's diff against its change spec)

@@ -1,4 +1,3 @@
-<!-- guidance:template-proposal@0.1.3 -->
 ---
 proposal: assurance-led-lifecycle
 status: shipped

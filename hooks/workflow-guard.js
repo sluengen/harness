@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// guidance:hook-workflow-guard@0.3.0
 /**
  * Workflow guard (PreToolUse: Write|Edit).
  * Advisory warning when editing source code on the default branch or outside a

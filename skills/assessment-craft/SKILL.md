@@ -2,7 +2,6 @@
 name: assessment-craft
 description: Use when running a periodic codebase audit as the steward (via /assess) — the finding bar, the blocking×size 2×2, and the insight-vs-finding test. Load during an assessment pass, not routine task work.
 ---
-<!-- guidance:assessment-craft@0.6.0 -->
 # Assessment Craft
 
 Shared knowledge for the `steward` whenever it periodically audits a codebase. Defines the finding bar, how a finding is placed on the blocking×size 2×2, and the insight-vs-finding test. The methodology for every `/assess` scope; the per-scope domain standards live in their own skills — the code-domain skills for `code`, `architecture` and `engineering-principles` for `architecture`.

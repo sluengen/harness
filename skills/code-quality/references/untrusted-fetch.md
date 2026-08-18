@@ -1,4 +1,3 @@
-<!-- guidance:code-quality-untrusted-fetch@0.1.0 -->
 # Untrusted network fetch checklist
 
 Load only when code fetches a URL derived from user input, third-party pages,

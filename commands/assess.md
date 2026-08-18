@@ -1,5 +1,3 @@
-<!-- guidance:assess@0.13.0 -->
-
 **Tracker operations go through the `tracker` skill.** Read `CONTEXT.md`'s `tracker:` field and use the matching provider recipe — `linear` → the `linear` skill, `github` → the `github-issues` skill, `none` → the degrade the `tracker` skill documents. Do not embed provider API calls here.
 # /assess — run a periodic assessment
 

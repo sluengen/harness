@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// guidance:hook-gate-evidence-guard@0.2.2
 // size: one Stop decision, and its three halves cannot be separated from it —
 // the claim filter, the worktree-scope derivation (#439: transcript cwds
 // intersected with `git worktree list`), and the tree/marker evidence. #436

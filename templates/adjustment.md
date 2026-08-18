@@ -1,4 +1,3 @@
-<!-- guidance:template-adjustment@0.1.0 -->
 ---
 kind: bug              # bug | tweak
 area: {surface/feature}

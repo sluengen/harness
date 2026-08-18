@@ -1,4 +1,3 @@
-<!-- guidance:template-proposal@0.1.3 -->
 ---
 proposal: visual-evidence-for-review
 status: shipped

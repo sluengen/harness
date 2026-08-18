@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// guidance:hook-git-push-guard@0.5.2
 // size: most of this file is a POSIX shell lexer — quoting, `$(…)`, backticks,
 // ANSI-C escapes, parameter expansion — because deciding a force-push from the
 // raw command string is what CAL-1001 proved cannot be done. A lexer is one

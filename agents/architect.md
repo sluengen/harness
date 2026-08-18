@@ -1,4 +1,3 @@
-<!-- guidance:architect@0.4.1 -->
 ---
 name: architect
 description: Designs data models, contracts, and system structure, and records consequential decisions in the spec they govern. Produces design artifacts, never code.

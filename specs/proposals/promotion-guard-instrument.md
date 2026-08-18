@@ -1,4 +1,3 @@
-<!-- guidance:template-proposal@0.1.3 -->
 ---
 proposal: promotion-guard-instrument
 status: shipped

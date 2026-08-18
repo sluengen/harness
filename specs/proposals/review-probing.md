@@ -1,4 +1,3 @@
-<!-- guidance:template-proposal@0.1.3 -->
 ---
 proposal: review-probing
 status: superseded

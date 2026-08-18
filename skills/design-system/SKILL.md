@@ -2,7 +2,6 @@
 name: design-system
 description: Use when doing frontend work in a repo whose design-system layer is on — building UI with its tokens, primitives, and patterns rather than degrading them. Routing and discipline, not a copy of the rules. Pair with ux-design for new-surface design.
 ---
-<!-- guidance:design-system@0.4.0 -->
 # Design System
 
 How to do frontend work without degrading the design system. Applies only when the repo's `design_system` layer is on; the system itself (tokens, primitives, principles) lives at the path in `CONTEXT.md`, often a dedicated subpackage or repo. This skill is routing and discipline, not a copy of the rules.

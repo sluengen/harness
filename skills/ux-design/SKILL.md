@@ -2,7 +2,6 @@
 name: ux-design
 description: Use when designing, prototyping, or reviewing any user-facing interface — how humans think and behave, information architecture, flow, and every state (empty/loading/error/edge). The design-the-right-thing skill; then use design-system to materialize it.
 ---
-<!-- guidance:ux-design@0.2.0 -->
 # UX Design
 
 User-experience craft: how humans think and behave, applied to any user-facing interface you mock up, build, or review. This is the **design the right thing** skill — the human, the psychology, the flow, the states. Its sibling `design-system` is the **don't degrade the system** skill — tokens, primitives, conformance. When you design or prototype a new surface, start here for the shape; then use `design-system` to materialize it in real tokens and primitives (so a mockup is faithful and convertible, never bespoke throwaway markup).

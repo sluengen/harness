@@ -2,7 +2,6 @@
 name: systematic-debugging
 description: Use whenever you hit a failing test, unexpected behaviour, or a bug report — reproduce, isolate the root cause, fix minimally, prove it fixed. Load instead of guessing at a fix; pairs with test-driven-development for the regression test.
 ---
-<!-- guidance:systematic-debugging@0.2.0 -->
 # Systematic Debugging
 
 Applies whenever you hit a failing test, unexpected behaviour, or a bug report. Do not guess at fixes.

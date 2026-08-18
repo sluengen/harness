@@ -1,4 +1,3 @@
-<!-- guidance:review-discipline-craft@0.6.1 -->
 # Review craft: defect classes that read as green
 
 Load this when the change adds or edits a guard, a prose predicate, a mutation

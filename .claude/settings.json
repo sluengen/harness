@@ -43,11 +43,11 @@
       "$defaults",
       "Pushing reviewed work to the `dev` integration branch (e.g. `git push origin dev`, `git push origin HEAD:dev`, `git push origin <sha>:dev`) is allowed. In this repo `dev` is the integration branch and the agent led review action is the merge gate, so a direct push of an already-reviewed commit does not bypass review. Force-pushes to dev remain blocked.",
       "Deferring a tracker ticket is allowed for the unattended `/routine` tick, on a ticket it picked off this repo's Build queue and judged not-yet-actionable: posting the reason as a comment, additively applying the `input` or `operator` label, and assigning the ticket to the operator. The routine's own versioned guidance (`work-discovery`) instructs exactly this write: assignment is the machine-readable signal that a human holds the ticket, and without it a deferred ticket wedges the queue with the reason recorded nowhere anyone looks. The write adds a note, a triage label, and a hold-assignment to an item already on the queue the routine pulls from; the only assignment it ever sets is to the operator, and it never closes or re-scopes work.",
-      "Creating tracker issues on this repo's Build queue for the findings of an `/assess` pass is allowed, filed to Todo with the Build project attached. Filing them is the assessment's entire finding output — a finding it cannot file is lost when the run ends. Filing to Todo means a later unattended tick may build a finding without a human in between; the operator accepted that loop on 2026-07-18 (ticket-protocol-hygiene): the bounds are the assessment's finding bar at filing time and the merge-time review gate before anything ships. Each filed issue is a new item; the pass never changes existing work. A steward's systemic insight is not filed at all — it is appended to the proposals ledger under the clause below.",
-      "Appending an entry to this repo's proposals ledger is allowed for any unattended run, together with opening that ledger when the label search finds none. An improvement is proposed and never filed (`review-discipline`), and the ledger is the only place a proposal durably lands, so a run without this permission loses every improvement it noticed the moment it ends. The bound is what makes it safe: the write is a comment on one standing issue found by its `proposals-ledger` label, or that issue's creation held — assigned to the operator, carrying the `operator` label — so nothing on the Build queue is created, changed, or closed by it, and no unattended tick can ever pick the ledger up as work. Deciding an entry is the operator's, at an `/assess` drain; an unattended run appends and never promotes, drops, or removes one.",
-      "Removing a merged run's own git worktree and branch is allowed as the unattended routine's housekeeping, including deleting that branch locally and on `origin`. The bound is what makes a delete safe: only a worktree whose branch has already merged into `dev`/`main`/`master`, plus a worktree directory a plain `git worktree remove` can no longer reach. Never an unmerged or in-flight worktree, and never a branch carrying unmerged commits — `git branch -d`, never `-D`, so git itself refuses the unsafe case.",
-      "Closing a shipped ticket is allowed for the unattended routine — the configured tracker transition to Done, and the merge and push of the run's own branch into the integration branch. The permission rides on a condition rather than on trust, and it is the same one `/ship` enforces: a review PASS must be on record whose `reviewed_tree` equals the current HEAD's git tree object, and the verify gate must have been run and read on that tree. Anything landing after the verdict voids it, so re-review before shipping. It can therefore only land work this run opened and a review already passed on, which is the same reviewed-work-only condition the `dev`-push clause above rests on.",
-      "Committing and pushing an advisory `/assess` report to the `dev` integration branch is allowed for an unattended `/assess` run, together with the `assessments/LOG.md` retention compaction that `/assess` step 4 instructs in the same commit. The routine's own versioned guidance instructs exactly this write: a report is advisory evidence, not a code change — it carries nothing reviewable, so it needs no merge gate, and a PR per run would pile up trivial approvals under a scheduled cadence. The bound is what makes it safe: the commit may touch only `assessments/` — the dated report plus the rolling log — and never code, a spec, or configuration, so it changes no behaviour a review could gate. The retention half only folds a superseded report into a one-line log entry and never removes a report carrying an open finding. This clause does not widen the reviewed-work-only dev-push clause above to code, and force-pushes to `dev` remain blocked."
+      "Creating tracker issues on this repo's Build queue for the findings of an `/assess` pass is allowed, filed to Todo with the Build project attached. Filing them is the assessment's entire finding output \u2014 a finding it cannot file is lost when the run ends. Filing to Todo means a later unattended tick may build a finding without a human in between; the operator accepted that loop on 2026-07-18 (ticket-protocol-hygiene): the bounds are the assessment's finding bar at filing time and the merge-time review gate before anything ships. Each filed issue is a new item; the pass never changes existing work. A steward's systemic insight is not filed at all \u2014 it is appended to the proposals ledger under the clause below.",
+      "Appending an entry to this repo's proposals ledger is allowed for any unattended run, together with opening that ledger when the label search finds none. An improvement is proposed and never filed (`review-discipline`), and the ledger is the only place a proposal durably lands, so a run without this permission loses every improvement it noticed the moment it ends. The bound is what makes it safe: the write is a comment on one standing issue found by its `proposals-ledger` label, or that issue's creation held \u2014 assigned to the operator, carrying the `operator` label \u2014 so nothing on the Build queue is created, changed, or closed by it, and no unattended tick can ever pick the ledger up as work. Deciding an entry is the operator's, at an `/assess` drain; an unattended run appends and never promotes, drops, or removes one.",
+      "Removing a merged run's own git worktree and branch is allowed as the unattended routine's housekeeping, including deleting that branch locally and on `origin`. The bound is what makes a delete safe: only a worktree whose branch has already merged into `dev`/`main`/`master`, plus a worktree directory a plain `git worktree remove` can no longer reach. Never an unmerged or in-flight worktree, and never a branch carrying unmerged commits \u2014 `git branch -d`, never `-D`, so git itself refuses the unsafe case.",
+      "Closing a shipped ticket is allowed for the unattended routine \u2014 the configured tracker transition to Done, and the merge and push of the run's own branch into the integration branch. The permission rides on a condition rather than on trust, and it is the same one `/ship` enforces: a review PASS must be on record whose `reviewed_tree` equals the current HEAD's git tree object, and the verify gate must have been run and read on that tree. Anything landing after the verdict voids it, so re-review before shipping. It can therefore only land work this run opened and a review already passed on, which is the same reviewed-work-only condition the `dev`-push clause above rests on.",
+      "Committing and pushing an advisory `/assess` report to the `dev` integration branch is allowed for an unattended `/assess` run, together with the `assessments/LOG.md` retention compaction that `/assess` step 4 instructs in the same commit. The routine's own versioned guidance instructs exactly this write: a report is advisory evidence, not a code change \u2014 it carries nothing reviewable, so it needs no merge gate, and a PR per run would pile up trivial approvals under a scheduled cadence. The bound is what makes it safe: the commit may touch only `assessments/` \u2014 the dated report plus the rolling log \u2014 and never code, a spec, or configuration, so it changes no behaviour a review could gate. The retention half only folds a superseded report into a one-line log entry and never removes a report carrying an open finding. This clause does not widen the reviewed-work-only dev-push clause above to code, and force-pushes to `dev` remain blocked."
     ]
   },
   "hooks": {
@@ -55,36 +55,38 @@
       {
         "matcher": "Write|Edit",
         "hooks": [
-          { "type": "command", "command": "node .claude/hooks/prompt-guard.js" },
-          { "type": "command", "command": "node .claude/hooks/workflow-guard.js" }
+          {
+            "type": "command",
+            "command": "node .claude/hooks/prompt-guard.js"
+          },
+          {
+            "type": "command",
+            "command": "node .claude/hooks/workflow-guard.js"
+          }
         ]
       },
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": "node .claude/hooks/git-push-guard.js" },
-          { "type": "command", "command": "node .claude/hooks/push-target-guard.js" }
+          {
+            "type": "command",
+            "command": "node .claude/hooks/git-push-guard.js"
+          },
+          {
+            "type": "command",
+            "command": "node .claude/hooks/push-target-guard.js"
+          }
         ]
       }
     ],
     "Stop": [
       {
         "hooks": [
-          { "type": "command", "command": "node .claude/hooks/gate-evidence-guard.js", "timeout": 15 }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Write|Edit",
-        "hooks": [
-          { "type": "command", "command": "node .claude/hooks/guidance-freshness.js" }
-        ]
-      },
-      {
-        "matcher": "*",
-        "hooks": [
-          { "type": "command", "command": "node .claude/hooks/context-monitor.js" }
+          {
+            "type": "command",
+            "command": "node .claude/hooks/gate-evidence-guard.js",
+            "timeout": 15
+          }
         ]
       }
     ]

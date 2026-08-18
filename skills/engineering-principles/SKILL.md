@@ -2,7 +2,6 @@
 name: engineering-principles
 description: Use when designing or changing any code — the durable principles every change is measured against (simplicity over cleverness, smallest change, no premature abstraction, separation of concerns, errors never swallowed). Load when making a design decision or judging whether a change fits the codebase's standards.
 ---
-<!-- guidance:engineering-principles@0.4.0 -->
 # Engineering Principles
 
 The durable values every design, change, and review is measured against. The architect designs to them, the developer builds to them, the reviewer reviews against them. When the three load the same principles, "what you build" cannot drift from "what you are judged on."

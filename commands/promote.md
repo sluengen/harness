@@ -1,4 +1,3 @@
-<!-- guidance:promote@0.4.0 -->
 # /promote — move completed work toward release
 
 Usage: `/promote <src> to <dst>`

@@ -1,4 +1,3 @@
-<!-- guidance:dev@0.2.2 -->
 ---
 name: dev
 description: Implementation agent. Builds features and fixes bugs test-first, strictly in scope, and verifies before handoff. Adapts to the repo's stack from CONTEXT.md.

@@ -1,4 +1,3 @@
-<!-- guidance:template-proposal@0.1.2 -->
 ---
 proposal: persistent-runtime-host
 status: superseded         # draft | under-decision | accepted | shipped | rejected | split

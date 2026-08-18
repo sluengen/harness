@@ -49,12 +49,6 @@ echo "=== pytest ==="
 # below it as the regression it is.
 uv run --extra dev pytest -n "${HARNESS_TEST_WORKERS:-auto}" --durations=20 --cov=scripts --cov-fail-under=82
 
-echo "=== landing-page drift guard ==="
-# Fail the gate if docs/index.html names a command/skill/agent the registry no
-# longer has (a renamed or removed piece of guidance the page still references).
-# Lean guard, not a generator — ADR 0004 (CAL-1202). Stdlib only.
-uv run --extra dev python scripts/check_landing_page_guidance.py
-
 echo "=== design-token drift guard ==="
 # Fail the gate if docs/index.html's generated :root block has drifted from
 # design/03-tokens/tokens.json — the source of truth (#242). ADR 0004,

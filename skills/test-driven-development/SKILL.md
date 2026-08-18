@@ -2,7 +2,6 @@
 name: test-driven-development
 description: Use at the start of any implementation task — building a feature, fixing a bug, or writing production code. Enforces the test-first iron law — write the failing test before the implementation, watch it fail for the right reason, then write the minimal code to pass. Load before writing code, not after.
 ---
-<!-- guidance:test-driven-development@0.6.0 -->
 # Test-Driven Development
 
 Applies to all implementation work. Not a suggestion. It is how code gets written here.

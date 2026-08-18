@@ -1,4 +1,3 @@
-<!-- guidance:template-infrastructure@0.1.0 -->
 ---
 spec: infrastructure
 last_updated: YYYY-MM-DD

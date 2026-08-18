@@ -50,7 +50,6 @@ things about the same hook.
 from __future__ import annotations
 
 import json
-import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -61,12 +60,7 @@ from tests.unit._prose import REPO_ROOT
 
 _HOOKS_DIR = REPO_ROOT / "hooks"
 _MANIFEST = _HOOKS_DIR / "package.json"
-_REGISTRY = REPO_ROOT / "registry.yaml"
 
-#: Node's own budget in ``context-monitor.js`` is 200_000 tokens at ~4 chars per
-#: token; the critical warning fires past 0.85 of it. This transcript is well
-#: clear of that edge so the probe is deterministic.
-_CRITICAL_TRANSCRIPT_CHARS = 200_000 * 4 * 90 // 100
 
 
 def _node() -> str:
@@ -169,32 +163,6 @@ def _probe_workflow_guard(fixture: Path, tmp_path: Path) -> bool:
     return "[WORKFLOW-GUARD]" in _advisory_context(out)
 
 
-def _probe_context_monitor(fixture: Path, tmp_path: Path) -> bool:
-    """Designed behaviour: warn once the transcript passes the critical fraction."""
-    transcript = tmp_path / "transcript.jsonl"
-    transcript.write_text("x" * _CRITICAL_TRANSCRIPT_CHARS)
-    _, out, _ = _run(
-        "context-monitor.js",
-        {"transcript_path": str(transcript)},
-        fixture,
-        tmp_path,
-    )
-    return "[CONTEXT" in _advisory_context(out)
-
-
-def _probe_guidance_freshness(fixture: Path, tmp_path: Path) -> bool:
-    """Designed behaviour: flag the derived entry files drifting apart."""
-    (fixture / "AGENTS.md").write_text("# process\n")
-    (fixture / "CLAUDE.md").write_text("# process, but edited\n")
-    _, out, _ = _run(
-        "guidance-freshness.js",
-        {"tool_name": "Write", "tool_input": {"file_path": str(fixture / "CLAUDE.md")}},
-        fixture,
-        tmp_path,
-    )
-    return "[GUIDANCE-FRESHNESS]" in _advisory_context(out)
-
-
 def _init_repo(fixture: Path, branch: str) -> None:
     """Make ``fixture`` a real repository with one commit, on ``branch``.
 
@@ -288,8 +256,6 @@ _PROBES = {
     "prompt-guard.js": _probe_prompt_guard,
     "git-push-guard.js": _probe_git_push_guard,
     "workflow-guard.js": _probe_workflow_guard,
-    "context-monitor.js": _probe_context_monitor,
-    "guidance-freshness.js": _probe_guidance_freshness,
     "push-target-guard.js": _probe_push_target_guard,
     "gate-evidence-guard.js": _probe_gate_evidence_guard,
 }
@@ -415,31 +381,6 @@ def test_removing_the_manifest_is_loud_on_stderr(hook: str, tmp_path: Path) -> N
 
 
 # --- AC-3: the installer actually ships it ------------------------------------
-
-
-def _registry_entry(path: str) -> str | None:
-    """The raw ``files:`` line for ``path``, or None.
-
-    Line-parsed rather than PyYAML-loaded: PyYAML is not a declared dependency
-    of this repo, and every other registry guard here parses the same way.
-    """
-    for line in _REGISTRY.read_text().splitlines():
-        stripped = line.strip()
-        if stripped.startswith(f"{path}:"):
-            return stripped
-    return None
-
-
-def test_manifest_is_a_registry_file_in_the_harness_profile() -> None:
-    entry = _registry_entry("hooks/package.json")
-    assert entry is not None, (
-        "hooks/package.json is not a registry.yaml files: entry, so the "
-        "installer will not copy it into a consuming repo — the fix would "
-        "exist here and nowhere it is needed."
-    )
-    assert re.search(r"profiles:\s*\[[^\]]*\bharness\b", entry), (
-        f"hooks/package.json is not in the harness profile: {entry}"
-    )
 
 
 def test_manifest_declares_commonjs() -> None:

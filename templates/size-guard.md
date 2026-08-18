@@ -1,4 +1,3 @@
-<!-- guidance:template-size-guard@0.4.0 -->
 # Size-marker guard (reference implementation)
 
 A ready-to-adopt test that enforces `code-quality`'s size rule **mechanically**,

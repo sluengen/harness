@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// guidance:hook-prompt-guard@0.2.1
 /**
  * Prompt-injection scanner (PreToolUse: Write|Edit).
  * Scans content being written for known injection patterns and warns.

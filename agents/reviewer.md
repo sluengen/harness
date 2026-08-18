@@ -1,4 +1,3 @@
-<!-- guidance:reviewer@0.8.0 -->
 ---
 name: reviewer
 description: Final gate before merge. Reviews a branch diff for spec compliance and quality, runs verification independently, and records what actually shipped to the canonical feature spec.

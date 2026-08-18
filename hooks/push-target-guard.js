@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// guidance:hook-push-target-guard@0.4.0
 // size: one deny decision over a `git push`, which needs the whole path from
 // tokens to verdict in one place — refspec parsing, `-C`/`--git-dir` directory
 // resolution, `CONTEXT.md` branch declaration, and the tree/marker evidence.

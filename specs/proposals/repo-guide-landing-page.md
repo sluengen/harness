@@ -1,4 +1,3 @@
-<!-- guidance:template-proposal@0.1.2 -->
 ---
 proposal: repo-guide-landing-page
 status: shipped            # draft | under-decision | accepted | shipped | rejected | split

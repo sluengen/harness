@@ -1,4 +1,3 @@
-<!-- guidance:template-decision@0.2.0 -->
 # Decision block (embeddable)
 
 A consequential decision is **not a standalone file** unless the repo declares `paths.decisions`. Paste this block into the spec it governs — a feature decision into that feature spec, a cross-cutting one into the architecture-principles spec (`spec-authoring`, `architecture`). Keep the what and the why together. Drop sub-headings the decision does not need.

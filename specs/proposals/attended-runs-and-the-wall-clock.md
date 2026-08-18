@@ -1,4 +1,3 @@
-<!-- guidance:template-proposal@0.1.2 -->
 ---
 proposal: attended-runs-and-the-wall-clock
 status: shipped             # draft | under-decision | accepted | shipped | rejected | split

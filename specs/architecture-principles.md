@@ -1,4 +1,3 @@
-<!-- guidance:template-architecture@0.1.0 -->
 ---
 spec: architecture-principles
 last_updated: 2026-08-17  # #461: the ADR index moves here from CONTEXT.md, beside the bar a record is filed against

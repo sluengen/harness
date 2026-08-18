@@ -2,7 +2,6 @@
 name: spec-driven-development
 description: Use at the start of a tracked task to follow the spec-driven flow from idea to shipped-and-recorded with minimal ceremony — when each spec (proposal, change, feature) is produced and what handoff means. The spine the other skills hang off.
 ---
-<!-- guidance:spec-driven-development@0.7.0 -->
 # Spec-Driven Development
 
 How a task flows from "idea" to "shipped and recorded" with the least ceremony that still guarantees quality. This is the spine the other skills hang off. How to *write* each spec is in `spec-authoring`; this is *when* each one is produced.

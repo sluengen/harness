@@ -1,4 +1,3 @@
-<!-- guidance:digest@0.3.0 -->
 # /digest — the morning report
 
 Usage: `/digest` (read-only — the report is the single deliverable)

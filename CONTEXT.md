@@ -1,4 +1,3 @@
-<!-- guidance:template-context@0.1.4 -->
 # CONTEXT.md
 
 Agent-facing current state for **harness**. Universal process lives in the entry process document; rationale and history live in the linked specs and decisions.

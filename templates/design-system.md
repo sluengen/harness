@@ -1,4 +1,3 @@
-<!-- guidance:template-design-system@0.1.0 -->
 # Design-system scaffold (reference contract)
 
 The contract for **standing up** a layered design system, not a copy of one.

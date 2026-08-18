@@ -1,4 +1,3 @@
-<!-- guidance:template-feature@0.6.0 -->
 ---
 feature: {short-slug}
 status: implemented        # implemented | partial | planned

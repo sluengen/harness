@@ -1,4 +1,3 @@
-<!-- guidance:steward@0.5.1 -->
 ---
 name: steward
 description: Periodic whole-system health assessment — the patterns no per-change review can see because they are cross-file and cumulative. One process agent; `/assess` names the scope (`code` | `architecture`, optionally `--deep`), and the domain standards are skills pulled just-in-time. Reports findings and systemic insights; does not fix.

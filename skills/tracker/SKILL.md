@@ -2,7 +2,6 @@
 name: tracker
 description: Use for any issue-tracker operation in the lifecycle — opening a ticket, filing one, moving its status, commenting, holding it for a human, or pulling the queue. The backend-neutral protocol; read CONTEXT.md's tracker: field and follow the matching provider recipe (linear or github-issues). Load this before either provider skill.
 ---
-<!-- guidance:tracker@0.6.2 -->
 # Tracker
 
 The **backend-neutral protocol** for keeping the tracker and the in-flight work in step. This skill owns the *policy* — which operations exist, what the states mean, where a new ticket lands, what holds it. The *recipes* live in one skill per backend, and this skill never contains an API call.

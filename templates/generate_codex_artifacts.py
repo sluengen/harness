@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# guidance:generate-codex-artifacts@0.3.0
 """Generate Codex-local guidance artifacts from the canonical repo guidance."""
 
 from __future__ import annotations

@@ -2,7 +2,6 @@
 name: linear
 description: Use when the repo's CONTEXT.md says tracker linear and you need to read or update a ticket — opening an issue, filing one, resolving team/state/label IDs, moving status, or commenting. The Linear provider recipes; the backend-neutral policy is in the tracker skill.
 ---
-<!-- guidance:linear@0.9.0 -->
 # Linear
 
 The **Linear provider recipes** for the tracker protocol. Policy — the operation set, the state names, filing and placement, holds, sync rules, the `none` degrade — lives in the **`tracker`** skill. Read that first; this file is only *how* each operation is performed against Linear's API.

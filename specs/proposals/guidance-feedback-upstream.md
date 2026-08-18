@@ -1,4 +1,3 @@
-<!-- guidance:template-proposal@0.1.2 -->
 ---
 proposal: guidance-feedback-upstream
 status: shipped             # draft | under-decision | accepted | shipped | rejected | split
