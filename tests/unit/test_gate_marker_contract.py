@@ -9,9 +9,9 @@ and finds a marker that covers something else.
 
 Three cheap duplicated implementations beat one shared ``hooks/lib/`` module
 here, and the reason is structural rather than aesthetic:
-``test_hooks_fail_open_is_loud.py``, ``test_hooks_module_type.py`` and
-``test_hooks_no_empty_catch.py`` all scan ``hooks/*.js`` **non-recursively**, so
-a ``lib/`` subdirectory would be a silent hole in three guards; and a shared
+``test_hooks_fail_open_is_loud.py`` and ``test_hooks_module_type.py`` both scan
+``hooks/*.js`` **non-recursively**, so
+a ``lib/`` subdirectory would be a silent hole in those guards; and a shared
 module's own load failure would disarm both enforcement hooks at once. An
 equivalence test that *executes* all three catches the drift those guards would
 miss, and adds no new failure mode of its own.
@@ -32,12 +32,11 @@ Acceptance criteria:
 * **AC-4** — the freshness bound agrees. Three parsers of one environment
   variable is exactly the shape that drifts.
   :func:`test_every_implementation_reads_the_same_freshness_bound`.
-* **AC-5** — the mechanism is *published*: both hooks are registry ``files:``
-  entries, so the installer copies them into a consuming repo, and the process
-  doc says they exist. An enforcement hook that ships to nobody, or that a repo
-  meets for the first time as an unexplained refusal, is a worse outcome than no
-  hook at all. :func:`test_both_hooks_are_installed_by_the_registry` and
-  :func:`test_the_process_doc_documents_the_enforcement_hooks`.
+* **AC-5** — *retired with its subjects* (ADR 0017 D1): the registry-membership
+  and process-doc assertions that published the mechanism died with
+  ``registry.yaml`` and the process doc. The plugin ships ``hooks/`` wholesale,
+  and the spine's Enforcement section is where a repo now learns the hooks
+  exist.
 """
 
 from __future__ import annotations

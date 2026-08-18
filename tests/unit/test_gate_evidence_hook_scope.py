@@ -109,7 +109,7 @@ NO_CLAIM = "I wrote the failing test and watched it fail; implementing next."
 
 #: The **verbatim** JSONL entry a real host wrote, lifted from a live Claude Code
 #: 2.1.220 transcript. Only ``cwd`` is redacted — it named the capturing
-#: operator's home directory, which ``test_no_private_surfaces`` rightly refuses
+#: operator's home directory, which has no business
 #: in a tracked file — and every fixture here rebinds it to its own ``tmp_path``
 #: anyway. Every other key, including the several this hook does not read, is
 #: byte-for-byte what the host wrote.

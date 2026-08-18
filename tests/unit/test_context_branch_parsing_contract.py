@@ -2,9 +2,9 @@
 
 ``hooks/push-target-guard.js`` and ``hooks/gate-evidence-guard.js`` each carry
 their own parser for ``CONTEXT.md``'s ``branches:`` block, because #436 declined
-a shared ``hooks/lib/`` (``test_hooks_fail_open_is_loud``,
-``test_hooks_module_type`` and ``test_hooks_no_empty_catch`` all scan
-``hooks/*.js`` **non-recursively**, so a subdirectory would be a hole in three
+a shared ``hooks/lib/`` (``test_hooks_fail_open_is_loud`` and
+``test_hooks_module_type`` both scan
+``hooks/*.js`` **non-recursively**, so a subdirectory would be a hole in those
 guards at once, and a shared module's own load failure would disarm both
 enforcement hooks together).
 

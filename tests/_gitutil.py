@@ -1,108 +1,44 @@
 """Shared test git helpers.
 
-Five of them, all about not hand-rolling git in test modules.
-
-:func:`init_repo` makes a throw-away directory a real repository. Since #214 the
-verbs refuse a ``--repo`` that is not a git top-level, so any fixture handing a
-bare ``tmp_path`` to a verb has to initialize it first — a need that landed in
-five test modules at once, which is why the two-line call lives here instead of
-being pasted into each.
+Two of them, both about deriving file sets from git instead of the filesystem.
 
 :func:`tracked_files_under` enumerates the files git *tracks* under a path.
 
-Retirement / hygiene guards must judge the **committed** tree, not the working
-tree. A guard whose contract is "this module is gone from the repo" must pass on
-a clean checkout even when untracked cruft lingers on disk — an editor's
-``.DS_Store``, or a stale ``__pycache__`` left behind when the ``.py`` source was
-deleted. Scanning the working tree with ``Path.exists()`` / ``rglob`` conflates
-the two and fails the canonical local gate on cruft (CAL-619 / CODE-INSIGHT-1;
-the CODE-3 ``intake/__pycache__`` papercut and the PR #72 ``.DS_Store`` papercut).
-
-``git ls-files`` is the authoritative tracked set. This helper wraps it so every
-guard derives its file set from the same source instead of hand-rolling
-dotfile / ``__pycache__`` skips.
+Tree-reading guards must judge the **committed** tree, not the working tree. A
+guard whose contract is "this module is gone from the repo" must pass on a
+clean checkout even when untracked cruft lingers on disk — an editor's
+``.DS_Store``, or a stale ``__pycache__`` left behind when the ``.py`` source
+was deleted. Scanning the working tree with ``Path.exists()`` / ``rglob``
+conflates the two and fails the canonical local gate on cruft (CAL-619 /
+CODE-INSIGHT-1). ``git ls-files`` is the authoritative tracked set; this helper
+wraps it so every guard derives its file set from the same source instead of
+hand-rolling dotfile / ``__pycache__`` skips.
 
 :func:`tracked_py_sources` is that set projected onto Python sources.
 
 Four tree-walking guards enumerated their own ``*.py`` set with ``rglob`` and no
-exclusion for a nested git worktree, so two abandoned worktrees left inside
-``harness/`` made old copies of guarded sources read as living code and failed
-seven tests with no regression behind them (#215). The projection lives here,
-next to the tracked set it is built from, so the answer to "which files are
-living sources" has one home rather than four.
+exclusion for a nested git worktree, so two abandoned worktrees made old copies
+of guarded sources read as living code and failed seven tests with no
+regression behind them (#215). The projection lives here, next to the tracked
+set it is built from, so the answer to "which files are living sources" has one
+home rather than four.
 
-:func:`last_commit_date` reports the day of the last commit that touched a path.
-
-A doc that declares its own currency — a feature spec's ``last_updated``
-frontmatter — asserts something only git can check, and until #280 nothing did:
-the guard required the key to exist and never read its value, so every date
-froze while the file changed underneath it. Answering "when did this file last
-actually change?" needs the *author* date of the last commit touching that path,
-which is the one date a writer can know at the moment they type the value —
-read as a **UTC** day, because git renders a day in the commit's own recorded
-offset otherwise, and a comparison whose two sides live in different frames goes
-red on a record that is accurate (#463).
-
-That answer is only as good as the fetched history. In a shallow clone git
-reports the **graft boundary** for a path whose real last commit was never
-fetched — a truncated answer that looks exactly like a real one — so
-:func:`last_commit_date` refuses it with :class:`ShallowHistoryError` rather than
-returning it (#326). #280 returned it, which is how CI (``actions/checkout``
-defaults to ``fetch-depth: 1``) read every feature spec as touched at HEAD.
-
-:func:`path_ever_existed` answers whether a path was ever real at all.
-
-An absence guard — "this retired module is gone from the tree" — is satisfied by
-a name that never existed, so it needs a companion proving the name was real.
-That is a question about the whole history graph, and asking it with a plain
-``git log`` gets a topology-dependent answer: default simplification prunes a
-path born and deleted entirely on one side of a merge, so on a release candidate
-the companion reported "never existed" about a module the repo demonstrably had
-(#451). This helper asks ``--full-history`` instead, and — unlike
-:func:`last_commit_date` — treats a graft-boundary answer as existence rather
-than refusing it. The two questions diverge because a truncated history makes a
-*date* untrustworthy and leaves *existence* proven.
+The history readers this module once carried (``last_commit_date``,
+``path_ever_existed``, the graft-boundary probe) served the feature-spec
+currency and absence guards; ADR 0017 D5 deleted those guards with their
+subjects, and the chunk-4 audit removed the then-importerless helpers. The
+repo-fixture builders (``init_repo``, ``init_hermetic_repo``, ``git``) went the
+same way — the surviving hook tests build their fixtures locally, against the
+payload shapes each hook actually reads.
 """
 
 from __future__ import annotations
 
 import subprocess
-from datetime import UTC, date, datetime
 from pathlib import Path
 
 # ``tests/_gitutil.py`` → ``parents[1]`` is the repo (or worktree) root.
 _DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[1]
-
-
-def init_repo(path: Path) -> Path:
-    """``git init`` a real repository at ``path`` (creating it) and return it.
-
-    For fixtures that hand a throw-away directory to a verb's ``--repo``: since
-    #214 the verbs refuse a path that is not a git top-level, so a bare
-    ``tmp_path`` no longer resolves.
-
-    A real ``git init`` rather than a hand-made ``.git`` directory, so the
-    fixture stays true to the *contract* ("this is a repository root") rather
-    than to one implementation of the check. ``init`` needs no user identity —
-    only ``commit`` does — so this stays cheap and hermetic.
-
-    The branch is stated, not inherited (#369). ``git init`` alone takes its
-    branch from the *host's* ``init.defaultBranch``, which made a sibling
-    fixture pass locally and fail in CI for two days. No consumer of this helper
-    reads the branch name today, so the value is free; what matters is that the
-    suite means the same thing on every host that runs it. ``dev`` is this
-    repo's integration branch, so a repo handed to a verb that resolves a base
-    branch already resolves.
-    """
-    path.mkdir(parents=True, exist_ok=True)
-    subprocess.run(
-        ["git", "init", "-q", "-b", "dev"],
-        cwd=path,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return path
 
 
 def tracked_files_under(
@@ -135,183 +71,6 @@ def tracked_files_under(
     }
 
 
-class ShallowHistoryError(RuntimeError):
-    """Git's answer for a path resolves to a shallow clone's graft boundary.
-
-    A distinct type rather than a bare :class:`RuntimeError` so a caller that
-    legitimately wants to tolerate truncated history can catch exactly this. No
-    caller does today, deliberately: the feature-spec currency guard must go red
-    and named on a truncated tree, not skip (#326).
-    """
-
-
-def _graft_boundaries(repo_root: Path) -> frozenset[str]:
-    """The root commits of a shallow clone — empty when history is complete.
-
-    In a shallow clone the fetch boundary is grafted to look parentless, so
-    ``rev-list --max-parents=0`` names exactly the commits whose history is
-    truncated. Gated on ``--is-shallow-repository`` first, so a genuine root
-    commit in a complete clone is never mistaken for a boundary.
-
-    Both probes use ``check=True``: a git failure here must raise, not degrade
-    to "not shallow", which would silently restore the swallow this exists to
-    remove.
-    """
-    shallow = subprocess.run(
-        ["git", "rev-parse", "--is-shallow-repository"],
-        cwd=repo_root,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    if shallow.stdout.strip() != "true":
-        return frozenset()
-    roots = subprocess.run(
-        ["git", "rev-list", "--max-parents=0", "HEAD"],
-        cwd=repo_root,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return frozenset(roots.stdout.split())
-
-
-def last_commit_date(
-    path: str | Path,
-    *,
-    repo_root: Path = _DEFAULT_REPO_ROOT,
-) -> date | None:
-    """Return the author date of the last commit touching ``path``, or ``None``.
-
-    ``path`` is a pathspec relative to ``repo_root``. ``None`` means git reports
-    no commit for that path — a file staged but never committed. Callers must
-    distinguish that from a real date rather than coercing it, because the two
-    answer different questions ("never committed" vs "committed on day D").
-
-    Raises :class:`ShallowHistoryError` when git's answer resolves to a shallow
-    clone's graft boundary: the real last commit lies outside the fetched
-    history, and from inside the clone a truncated answer is indistinguishable
-    from a real one (#326). The imprecision is one-directional and deliberate —
-    a path whose genuine last commit *is* the boundary is refused rather than
-    answered. Refusing an answer that happens to be right is safe; returning one
-    that is wrong is what #280 shipped.
-
-    The **author** date, not the committer date. Author date is the day the
-    writer commits and survives the merge that lands it; committer date is
-    rewritten by a rebase or merge the writer cannot predict at the moment they
-    type a ``last_updated`` value, which would make such a field impossible to
-    write correctly. The choice is about which date a human can *know*.
-
-    **The day is UTC**, read from the raw author timestamp (``%at``, epoch
-    seconds) rather than from a rendered day. Asking git for ``--date=short``
-    renders the day in the *commit's own recorded offset* — a third frame,
-    declared by neither side of the comparison this feeds — so a ``+10:00``
-    commit made just past local midnight reported the following day while the
-    record it was measured against declared the current one, and the currency
-    guard went red on an accurate record (#463). The comparison it feeds is
-    ``declared >= committed``: a declared day at or after the commit's UTC day
-    passes, and no upper bound is asserted.
-
-    The host is not what changed, and saying so would be wrong: ``--date=short``
-    renders in the *commit's* offset and ignores the ambient ``TZ`` — measured at
-    review across three ``TZ`` values, which all rendered the same day. What the
-    fix changes is *which* frame is declared, from the commit's own offset (which
-    no caller declares) to UTC (which both sides of the comparison now do).
-    ``--date=short-local`` is the repair not taken, for that reason: it would
-    trade an undeclared frame for a host-dependent one.
-
-    One frame cannot make a zoneless calendar day and an instant agree in every
-    case — a writer who types the value on one side of UTC midnight and commits
-    on the other is still a day behind. UTC narrows that window to the one every
-    caller shares; it does not close it.
-
-    Judges the **committed** tree, matching this module's purpose: an
-    uncommitted working-tree edit is invisible here by construction. A git-level
-    failure raises rather than degrading to ``None``, so a broken invocation can
-    never read as "no history" (``engineering-principles``: errors are never
-    swallowed). That covers not being a repository, git being missing, and a
-    repository holding no commits at all — git refuses the last outright rather
-    than reporting it as an empty result, so ``None`` always means "this path
-    has no commit", never "this repo has none".
-    """
-    completed = subprocess.run(
-        ["git", "log", "-1", "--format=%H%x09%at", "--", str(path)],
-        cwd=repo_root,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    line = completed.stdout.strip()
-    if not line:
-        return None
-    sha, _, stamp = line.partition("\t")
-    # The log runs first, so a non-repository or a repository with no commits
-    # still raises CalledProcessError from the same command as before — the
-    # boundary probe never gets to reinterpret a git-level failure.
-    if sha in _graft_boundaries(repo_root):
-        raise ShallowHistoryError(
-            f"git reports {sha} as the last commit touching {path}, but that is "
-            f"a shallow graft boundary in {repo_root} — the real last commit is "
-            "outside the fetched history. Fetch full history (actions/checkout "
-            "fetch-depth: 0, or git fetch --unshallow); do not read this date as "
-            "real (#326)."
-        )
-    return datetime.fromtimestamp(int(stamp), tz=UTC).date()
-
-
-def path_ever_existed(
-    path: str | Path,
-    *,
-    repo_root: Path = _DEFAULT_REPO_ROOT,
-) -> bool:
-    """Return whether any commit anywhere in history ever touched ``path``.
-
-    ``path`` is a pathspec relative to ``repo_root``. ``True`` means git found a
-    commit that touched it; ``False`` means the name was never real — a typo, or
-    a path that never existed under that spelling. A path that was *renamed
-    away* is not that case: the rename commit touches the old name, so both
-    spellings answer ``True``. That is the question an absence guard must be
-    measured against, and it is a *different* question from
-    :func:`last_commit_date`'s, which is why the two do not share a query.
-
-    ``--full-history`` is load-bearing, not decoration. Git's default history
-    simplification stops at a merge that is TREESAME to one parent and walks
-    only that side, so a path created **and** deleted entirely on one side of a
-    merge is pruned out of the answer: ``git log -1 -- <path>`` reports no
-    commit at all. That is exactly the shape of a release candidate — a merge of
-    the release branch and the integration branch — where a module was born and
-    retired since the last release, and it made an absence guard go red on a
-    legitimate candidate while staying green on the integration branch it was
-    written against (#451). A simplified answer is a fact about the topology it
-    was asked over; the full-graph answer is a fact about the path.
-
-    **A shallow clone's graft boundary counts as existence**, deliberately, and
-    this is the second divergence from :func:`last_commit_date`, which refuses
-    such an answer with :class:`ShallowHistoryError`. What truncated history
-    makes untrustworthy is the *date*: the boundary commit stands in for however
-    much history was never fetched, so reading its date as the path's last change
-    is wrong. It does not make existence untrustworthy — git found a commit
-    touching the path, and existence is precisely what that proves. Refusing here
-    would red every caller on any shallow checkout for the one reason that has
-    nothing to do with what they measure, and a guard that fails for an unrelated
-    reason gets weakened by whoever hits it next. No boundary probe is therefore
-    run at all.
-
-    A git-level failure raises rather than degrading to ``False``, so a broken
-    invocation can never read as "this path never existed"
-    (``engineering-principles``: errors are never swallowed). That covers not
-    being a repository, git being missing, and a repository holding no commits.
-    """
-    completed = subprocess.run(
-        ["git", "log", "--full-history", "-1", "--format=%H", "--", str(path)],
-        cwd=repo_root,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return bool(completed.stdout.strip())
-
-
 def tracked_py_sources(
     *bases: str,
     repo_root: Path = _DEFAULT_REPO_ROOT,
@@ -334,45 +93,3 @@ def tracked_py_sources(
     for base in bases:
         found |= tracked_files_under(base, repo_root=repo_root)
     return sorted(path for path in found if path.suffix == ".py")
-
-
-def git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    """Synchronous git invocation for test setup and assertions.
-
-    ``check=True`` and captured output: a setup step that fails silently makes
-    the assertion after it measure a tree that was never built.
-    """
-    return subprocess.run(
-        ["git", *args],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-
-
-def init_hermetic_repo(path: Path, *, repo_root: Path = _DEFAULT_REPO_ROOT) -> Path:
-    """``git init`` a repo whose ``info/exclude`` is comments-only, with a
-    tracked `.claude/settings.json` — the real repo's shape, where `.claude/`
-    is itself a tracked directory. That tracked file has to exist *before* any
-    untracked-worktree assertion: otherwise `git status --porcelain` collapses
-    a wholly-untracked `.claude/` into a single `?? .claude/` line and every
-    assertion about a path *under* it passes vacuously, ignored or not.
-
-    A plain :func:`init_repo` still runs on *this* machine, so its default
-    ``info/exclude`` is whatever the local git config templates in — never this
-    repo's `.claude/worktrees/` line (that lives in *this* repo's own
-    `.git/info/exclude`, not the git template), but hermetic on principle: a
-    guard must derive its ignore behaviour from the copied `.gitignore` alone,
-    not from any ambient exclude file.
-    """
-    path.mkdir(parents=True, exist_ok=True)
-    # Branch stated, not inherited from the host's `init.defaultBranch` (#369) —
-    # which is the same hermeticity this fixture already argues for above.
-    git(path, "init", "-q", "-b", "dev")
-    (path / ".gitignore").write_text((repo_root / ".gitignore").read_text())
-    (path / ".claude").mkdir()
-    (path / ".claude" / "settings.json").write_text("{}\n")
-    git(path, "add", ".gitignore", ".claude/settings.json")
-    git(path, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", "init")
-    return path

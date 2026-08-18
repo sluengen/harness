@@ -26,8 +26,8 @@ from __future__ import annotations
 #: yet contain the turn being stopped, and can never fire. The message is handed
 #: over directly instead, as the top-level ``last_assistant_message``.
 #: The two path fields are **redacted**, and they are the only two: they named
-#: the capturing operator's home directory, which ``test_no_private_surfaces``
-#: rightly refuses in a tracked file. Nothing is lost by it — every test rebinds
+#: the capturing operator's home directory, which has no business in a tracked
+#: file. Nothing is lost by it — every test rebinds
 #: both to its own tmp_path anyway, because the captured directories do not exist
 #: here. Every other key is byte-for-byte what the host sent.
 REAL_STOP_PAYLOAD: dict[str, object] = {

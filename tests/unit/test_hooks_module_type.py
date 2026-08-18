@@ -36,11 +36,10 @@ Acceptance criteria:
   shipped file rather than to a hand-authored stand-in.
   :func:`test_removing_the_manifest_breaks_every_hook` and
   :func:`test_removing_the_manifest_disarms_prompt_guard_but_says_so`.
-* **AC-3** — ``hooks/package.json`` is a ``registry.yaml`` ``files:`` entry in
-  the ``harness`` profile, so the installer copies it into a consuming repo, and
-  it actually declares CommonJS.
-  :func:`test_manifest_is_a_registry_file_in_the_harness_profile` and
-  :func:`test_manifest_declares_commonjs`.
+* **AC-3** — the shipped manifest actually declares CommonJS:
+  :func:`test_manifest_declares_commonjs`. (The other half of the original
+  criterion — registry membership, so the installer copied the file — died with
+  ``registry.yaml``: the plugin ships ``hooks/`` wholesale, manifest included.)
 
 The positive and mutation cases share one predicate
 (:func:`_behaves_as_designed`), so they cannot drift into asserting different

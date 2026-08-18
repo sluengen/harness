@@ -24,11 +24,13 @@ Two claims, and the second is the one that can rot:
   asserting the serialized dump does not contain it — so adding ``"old": m.old``
   to the payload fails here rather than leaking in production.
 
-The *wiring* — that ``--json`` actually writes what :func:`mutate.json_report`
-returns, and that ``review``'s probe reader parses it — is proven end to end
-against the real subprocess in :mod:`tests.unit.test_review_probe_end_to_end`,
-where producer and consumer are both real. Asserting it again here against a stub
-would be a second copy of the contract, not a second proof of it.
+The consumer this channel was built for — ``harness review``'s probe stage —
+was retired with the runtime (ADR 0015), and the end-to-end module that proved
+the wiring against that real subprocess went with it. What remains proven here
+is the producer's contract: the shape, the node-id sets, and the
+no-source-text guarantee of :func:`mutate.json_report` itself. ``--json`` stays
+because it is mutate's machine interface for whatever next consumes a run —
+the same reason the flag was added.
 """
 
 from __future__ import annotations

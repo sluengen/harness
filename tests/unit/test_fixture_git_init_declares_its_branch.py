@@ -56,15 +56,17 @@ from pathlib import Path
 
 from tests._gitutil import tracked_py_sources
 
-#: The scanned base. Fixtures are the subject: ``harness/`` never runs ``git
-#: init``, and a production call would be a different rule with different
-#: reasoning.
+#: The scanned base. Fixtures are the subject: no production code in this repo
+#: runs ``git init``, and a production call would be a different rule with
+#: different reasoning.
 _SCANNED_BASE = "tests"
 
 #: A file the derivation must still reach. Non-empty alone would go green on a
 #: scan narrowed to nothing; a named member fails loudly on a rename instead of
-#: quietly shrinking the subject set.
-_ANCHOR = "tests/_gitutil.py"
+#: quietly shrinking the subject set. The hook-manifest module builds fixture
+#: repos with literal ``git init`` argvs (including the loop-variable shape this
+#: detector was widened for), so it anchors both the file list and the detector.
+_ANCHOR = "tests/unit/test_hooks_module_type.py"
 
 #: Spellings that make the branch explicit. ``-b`` and ``--initial-branch`` are
 #: the two git accepts; both appear in this tree.
@@ -197,7 +199,7 @@ def test_no_fixture_inherits_its_default_branch_from_the_host() -> None:
         "fixture that omits one is only self-consistent by accident — this is "
         "what kept CI red for two days while the local gate stayed green "
         "(#369). Pass an explicit `-b <name>` (or `--initial-branch=<name>`), "
-        "matching whatever branch the fixture's CONTEXT.md or its verb "
+        "matching whatever branch the fixture's spine declares or its hook "
         f"resolves. Offending sites: {offenders}"
     )
 
@@ -214,8 +216,8 @@ def test_the_scan_reaches_the_fixtures_it_claims_to() -> None:
 
     assert len(scanned) > 1, f"the {_SCANNED_BASE}/ scan derived to {scanned}"
     assert _ANCHOR in scanned, (
-        f"the scan no longer reaches {_ANCHOR}, which owns the shared "
-        f"`init_repo` helper; it found {len(scanned)} sources"
+        f"the scan no longer reaches {_ANCHOR}, which builds fixture repos "
+        f"with literal `git init` argvs; it found {len(scanned)} sources"
     )
 
     found = _scan(git_init_calls)

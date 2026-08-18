@@ -3,8 +3,8 @@
 CAL-1106 wrote this module for one defect: ``hooks/workflow-guard.js`` warns
 (advisory, never blocks) when source is edited on a *default* branch, and its set
 was ``main|master|dev|develop`` — overfit to the common names and blind to
-``trunk``. The tests execute the hook as a node subprocess (the style of
-``test_registry_self_version_hook``) against a real git repo on the branch under
+``trunk``. The tests execute the hook as a node subprocess
+against a real git repo on the branch under
 test and read the warning it produces.
 
 #457 added the rest of the guard's contract, all three parts measured the same

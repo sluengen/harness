@@ -16,8 +16,8 @@ current ``hookSpecificOutput.permissionDecision: "deny"`` contract) if any of:
 bundle, or any refspec beginning with ``+``. The existing deny globs stay as
 belt-and-braces; this is the parser layer on top.
 
-These tests execute the hook as a node subprocess (in the style of
-``test_registry_self_version_hook``) and assert the decision over two corpora:
+These tests execute the hook as a node subprocess
+and assert the decision over two corpora:
 
 * **AC-1 — the bypass corpus is denied.** Every force-push spelling in
   :data:`_MUST_DENY`, including the forms a glob cannot reach.

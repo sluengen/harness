@@ -60,11 +60,13 @@ Acceptance criteria:
 * **AC-5** — every hook agrees on wrapping ``main()``; ``prompt-guard.js`` no
   longer differs from the rest by accident.
   :func:`test_every_hook_wraps_main` (structural, derived from the same scanner)
-  and :func:`test_a_throw_inside_main_is_caught_and_reported` (behavioural, so a
-  wrapper is proven to *catch* rather than merely to be present).
-* **AC-6** — ``test_hooks_no_empty_catch`` still passes (it runs in its own
-  module); the classifier here requires a *reporting call* in a Class A catch,
-  which is strictly stronger than that guard's "not empty".
+  and :func:`test_falling_open_names_the_hook_and_the_reason_on_stderr`
+  (behavioural, so a wrapper is proven to *catch* rather than merely to be
+  present).
+* **AC-6** — the classifier here requires a *reporting call* in a Class A
+  catch, strictly stronger than the "not empty" the since-deleted
+  ``test_hooks_no_empty_catch`` guard asserted (this module subsumes it; the
+  ADR 0017 D5 cull removed the weaker duplicate).
 
 The classifier is exercised on **synthetic source** by
 :func:`test_classifier_flags_a_silent_class_a_site`,

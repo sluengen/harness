@@ -675,9 +675,9 @@ if (require.main === module) {
 // Nothing below is a decision: these are pure functions over a command string,
 // so the force-push verdicts this hook reaches are unchanged by exporting them.
 // A shared ``hooks/lib/`` module was the alternative and was rejected —
-// ``test_hooks_fail_open_is_loud.py``, ``test_hooks_module_type.py`` and
-// ``test_hooks_no_empty_catch.py`` all scan ``hooks/*.js`` non-recursively, so a
-// subdirectory would be a silent hole in three guards at once.
+// ``test_hooks_fail_open_is_loud.py`` and ``test_hooks_module_type.py`` both
+// scan ``hooks/*.js`` non-recursively, so a
+// subdirectory would be a silent hole in those guards at once.
 module.exports = {
   WRAPPERS,
   SHELLS,
