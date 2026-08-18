@@ -64,11 +64,11 @@ spec needs problem, approach, and acceptance criteria.
   this" signal the held-tickets skip rule reads (the label explains *why* it is
   held). The loop **skips both** kinds the same way — the outbound hold
   semantics do not depend on which label was applied; only the return path
-  (e.g. `/decision`) distinguishes between them, selecting `input` and nothing
+  (e.g. `/digest --drain`) distinguishes between them, selecting `input` and nothing
   else.
   Make all three — comment, label, assignment — through the provider skill's
   provider-neutral hold operation. All three, not the label alone: assignment is
-  what the skip rule below actually reads, and the comment is what `/decision`
+  what the skip rule below actually reads, and the comment is what the drain
   presents to the operator. The tracker issue *is* the audit trail; a deferral
   recorded nowhere else is still fully recorded.
 
@@ -127,7 +127,7 @@ inventing busywork.
 The Actionability and Held-tickets sections above are the outbound half: defer
 what cannot be actioned, skip what a human holds. This is the inverse — what
 makes a held ticket ready to come back, and what "released" means once it is.
-`/decision` (the versioned sweep that drains `input`-held tickets) delegates
+`/digest --drain` (the versioned sweep that clears `input`-held tickets) delegates
 this judgment here rather than restating it; this section owns the test, that
 command owns only its control flow.
 

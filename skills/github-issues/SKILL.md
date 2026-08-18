@@ -100,7 +100,7 @@ gh issue list --repo <owner>/<name> --state open --limit 100 \
 
 Skip anything with a non-empty `assignees` (a human holds it) or a hold label. Cross-reference the board for Status when the distinction between Todo and In Progress matters.
 
-**The held pile is the same operation with that filter inverted** — the set `/decision` drains. Ask for the hold label *and* the operator's own assignment, both conditions, plus the fields a triage read needs (the queue read above returns neither `url` nor `body`):
+**The held pile is the same operation with that filter inverted** — the set `/digest --drain` clears. Ask for the hold label *and* the operator's own assignment, both conditions, plus the fields a triage read needs (the queue read above returns neither `url` nor `body`):
 
 ```bash
 gh issue list --repo <owner>/<name> --state open \

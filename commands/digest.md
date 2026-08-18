@@ -1,8 +1,8 @@
-# /digest — the morning report
+# /digest — the operator's console: report, then drain
 
-Usage: `/digest` (read-only — the report is the single deliverable)
+Usage: `/digest` (report only) · `/digest --drain` (report, then drain the input-held tickets interactively)
 
-Answers one question: **what needs the operator today?** Never build, fix, merge, or change any ticket state. This is the versioned home of the morning-digest prompt; a scheduled run should say no more than "run `/digest` in `<repo path>`".
+Answers one question: **what needs the operator today?** — and, at the operator's option, drains it. The report half never builds, fixes, merges, or changes any ticket state; the drain half changes exactly one kind of state — resolving held tickets — and only interactively. A scheduled run says no more than "run `/digest` in `<repo path>`" and never passes `--drain`: the drain exists to put a human judgment call in the loop, so it runs only with the operator at the keyboard.
 
 ## Sources
 
@@ -27,3 +27,9 @@ Load the provider skill `CLAUDE.md`'s `tracker:` names — they own the auth, th
 ## Output
 
 Lead with two or three lines: how many items need the operator, and the single most important one. Then the five sections, each item one or two lines, most consequential first, every ticket as its id with its URL. No preamble. If nothing needs the operator at all, say that in one line and stop.
+
+## The drain (`--drain`, attended only)
+
+After the report, pull every open ticket carrying the **`input`** label **and** assigned to the operator — both conditions, matching the exact state a deferral leaves a ticket in — through the provider skill's held-pile recipe. Present each in turn: the ticket, the question its latest comments actually ask, and the context an answer needs. An item **answerable from the ticket alone** gets the operator's call captured, written into the change spec, and released — resolution recorded, hold label removed, operator unassigned, per `work-discovery`'s *Return path*, which owns what "released" means and is not restated here. An item that needs the operator to **go do something first** (a credential, infrastructure) is skipped and stays held — clear it by doing the thing, then answering.
+
+Selection is by hold label alone, never a re-triage of what a ticket "really" needs — that classification was made once, at defer time. `operator`-labelled tickets are never surfaced here: those are hands-on errands, cleared at the keyboard on the actual task.

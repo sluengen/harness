@@ -1,6 +1,8 @@
 # Change spec
 
-The structure for a single piece of work. This is the body of the **tracker issue** (`tracker`) — there is no separate file. It is what the builder builds and the reviewer reviews against. Scale every section to the size of the work: a one-line fix needs a sentence, a cross-cutting change needs all of it.
+The structure for a single piece of work. This is the body of the **tracker issue** — there is no separate file. It is what the builder builds and the reviewer reviews against. Scale every section to the size of the work: a one-line fix needs a sentence, a cross-cutting change needs all of it.
+
+**Capture mode.** `/capture` fills this template at the moment of noticing, not the moment of building: the kind (`bug` — as-built contradicts intent, repro required · `tweak` — correct behaviour being upgraded), what was observed, the desired outcome, the situation that surfaced it, and the acceptance criteria. Grounding and Design stay empty until `/build` extends the spec at build time. A tweak that turns out to carry a real decision or spawn more than one change is not a tweak — stop and `/propose` it.
 
 ---
 

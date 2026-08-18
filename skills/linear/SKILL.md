@@ -30,7 +30,7 @@ Keep the taxonomy flat and small. The hold labels and what they mean are the spi
 
 ## A merged PR auto-transitions every ticket it names
 
-Linear's GitHub integration links an issue to a PR when the ticket id appears in the PR **branch**, **title**, **body**, or a **commit** message, and moves it to **Done** automatically on merge. This is integration behaviour, not a lifecycle step: `/ship` transitions state on purpose; the integration does it on sight of an id. The deliberate-linking rule is `tracker` sync rule 6.
+Linear's GitHub integration links an issue to a PR when the ticket id appears in the PR **branch**, **title**, **body**, or a **commit** message, and moves it to **Done** automatically on merge. This is integration behaviour, not a lifecycle step: `/build`'s ship step transitions state on purpose; the integration does it on sight of an id. The deliberate-linking rule is in *Shared rules* below.
 
 ## Accessing Linear (GraphQL via curl)
 
@@ -56,7 +56,7 @@ LINEAR 'query { issue(id:\"<issue-id>\") { identifier title description url stat
 LINEAR 'query { issues(filter: { team: { key: { eq: \"<team-key>\" } }, state: { name: { eq: \"Todo\" } } }) { nodes { identifier title } } }'
 ```
 
-**Pull the held pile** — the set `/decision` drains. Both conditions, and the fields a triage read needs; add a `project` clause to the same filter, matching on the name `repo.project` gives, when that scope is set:
+**Pull the held pile** — the set `/digest --drain` clears. Both conditions, and the fields a triage read needs; add a `project` clause to the same filter, matching on the name `repo.project` gives, when that scope is set:
 ```bash
 LINEAR 'query { issues(filter: { team: { key: { eq: \"<team-key>\" } }, labels: { name: { eq: \"input\" } }, assignee: { isMe: { eq: true } } }) { nodes { identifier title url description updatedAt } } }'
 ```
