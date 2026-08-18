@@ -68,7 +68,10 @@ If you do open a PR:
   when at least one was `inert`. `4` dominates `1`: "your table proved nothing"
   is the louder answer, and it calls for different work.
 
-  It refuses before it writes a byte, in this order: a malformed **table**, a
+  It refuses before it writes a byte, in this order: an ungated tree (the
+  **gate lock** — `run` requires a fresh gate marker over the tree's exact
+  bytes, the same `scripts/gate_marker.py` convention the hooks read; `check`
+  is exempt), a malformed **table**, a
   **containment** failure (the wrong tree), a **landing** failure (`old` absent
   or ambiguous), a red **baseline**, a mistyped **prediction**, and an unusable
   **observable** (nondeterministic, or already failing on the pristine tree). It

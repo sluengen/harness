@@ -58,6 +58,16 @@ What it refuses, and when
 Every refusal happens **before any file is written**, in this order, so a wrong
 tree is never mutated and a wrong table never costs a suite run:
 
+0. **Gate lock** (#473, ``run`` only) — a fresh gate marker covers the tree's
+   current oid, reusing ``scripts/gate_marker.py``'s convention
+   (``<git-common-dir>/harness/gate/<tree-oid>.json``, the hooks' freshness
+   bound). A mutation report is evidence *about a green tree*: the green-baseline
+   refusal below proves only the selection, and a table run over a tree the whole
+   gate would refuse produces verdicts nothing should cite. First, before the
+   table is even read — the lock is about the tree, and every later refusal
+   presumes the tree is worth reasoning about. ``check`` is not behind it: it
+   writes nothing and runs nothing, and a table must be able to land before a
+   gate run is spent.
 1. **Table** — ``id`` unique, ``kills`` non-empty, ``new != old`` (the one no-op
    catchable without running anything), sentinel declared.
 2. **Containment** — the sentinel file carries the sentinel text, and every
@@ -117,10 +127,12 @@ it would be a second, weaker copy of the trust decision the suite already is.
 
 Restoration reads **only** from byte-for-byte backups taken before the first
 write, held in memory and copied under the work dir; the path is printed so a
-hard kill is recoverable by hand. The harness spawns no ``git`` at all — no
+hard kill is recoverable by hand. This module spawns no ``git`` of its own — no
 ``git checkout``, no ``git stash``. ``git checkout -- .`` is the revert that cost
 #163 forty minutes of finished work, and ``tests/unit/test_mutate.py`` pins that
-the only binary this module can spawn is its own interpreter.
+the only binary this module can spawn is its own interpreter. (#473's gate lock
+reaches git through :mod:`gate_marker`, whose tree computation is read-only over
+the working files — a temporary index, never a revert.)
 
 Every entry runs against the pristine tree (mutate → run → restore), so a table
 may carry two entries on one file without entry 2 matching against entry 1's
@@ -223,13 +235,21 @@ import sys
 import tempfile
 import time
 import tomllib
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import FrameType
 from typing import TextIO
 
+# The gate-marker convention (#473) — a sibling module in scripts/, resolvable
+# because this file always runs with scripts/ on sys.path: as a script, that is
+# argv[0]'s own directory; under test, the suite inserts it. The one git this
+# module reaches is gate_marker's read-only tree computation (a temporary
+# index, never the working files) — the no-git restore rule below is untouched.
+import gate_marker
+
 __all__ = [
+    "check_gate_marker",
     "Baseline",
     "EntryResult",
     "Mutation",
@@ -283,9 +303,9 @@ OUTCOMES: tuple[Outcome, ...] = ("killed", "survived", "mispredicted", "errored"
 class RefusalError(Exception):
     """Refused before any file was written.
 
-    ``reason`` is one of ``table``, ``containment``, ``landing``, ``baseline`` or
-    ``prediction`` — a stable tag, so a caller (and a test) can assert *which*
-    rule refused rather than matching prose.
+    ``reason`` is one of ``gate``, ``table``, ``containment``, ``landing``,
+    ``baseline`` or ``prediction`` — a stable tag, so a caller (and a test) can
+    assert *which* rule refused rather than matching prose.
     """
 
     def __init__(self, reason: str, message: str) -> None:
@@ -658,6 +678,61 @@ def _check_landing(table: MutationTable, tree: Path) -> dict[str, Path]:
             )
         targets[mutation.id] = target
     return targets
+
+
+def check_gate_marker(
+    tree: Path,
+    *,
+    env: Mapping[str, str] | None = None,
+    now: float | None = None,
+) -> Path:
+    """The tree-keyed lockfile (#473): refuse to mutate a tree the gate has not passed.
+
+    Returns the covering marker's path. Reuses :mod:`gate_marker`'s convention
+    wholesale — the same tree computation the gate's own writer uses, the same
+    ``<git-common-dir>/harness/gate/<tree-oid>.json`` location the hooks read,
+    and the same freshness bound (:func:`gate_marker.max_age_seconds`) — so
+    there is no third implementation to drift.
+
+    Three refusals, all ``reason="gate"``, each naming its own cause: no
+    repository (the convention has nothing to answer for the tree), no marker
+    over the current oid (the gate has not run green over these exact bytes —
+    one edit after a green run lands here too, by construction of the oid), and
+    a stale marker (the hooks' rule: past the bound, a marker attests a
+    toolchain that has since moved). A refusal is a fact about the tree, never
+    infrastructure, so none of these is :class:`RunnerUnavailableError`.
+    """
+    environ: Mapping[str, str] = os.environ if env is None else env
+    moment = time.time() if now is None else now
+    try:
+        oid = gate_marker.current_tree(tree)
+        marker = gate_marker.marker_path(oid, tree)
+    except gate_marker.GitError as exc:
+        raise RefusalError(
+            "gate",
+            f"{tree} is not a git repository the marker convention can answer "
+            f"for — a mutation run is evidence about a gated tree, and there is "
+            f"no tree oid to look up ({exc})",
+        ) from exc
+    if not marker.exists():
+        raise RefusalError(
+            "gate",
+            f"no gate marker covers tree {oid} — the gate has not run green over "
+            f"these exact bytes (one edit after a green run is enough). Run "
+            f"`bash scripts/verify.sh` in {tree} first; a mutation report over "
+            f"an ungated tree is not evidence.",
+        )
+    age = moment - marker.stat().st_mtime
+    bound = gate_marker.max_age_seconds(environ)
+    if age > bound:
+        raise RefusalError(
+            "gate",
+            f"the gate marker for tree {oid} is stale ({int(age)}s old, bound "
+            f"{bound}s) — the tree is unchanged but the toolchain may not be. "
+            f"Re-run `bash scripts/verify.sh` in {tree} (the hooks apply the "
+            f"same bound).",
+        )
+    return marker
 
 
 def check_plan(table: MutationTable, tree: Path, *, only: Sequence[str] = ()) -> dict[str, Path]:
@@ -1330,6 +1405,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
+        if args.mode == "run":
+            # The first refusal (#473): the lock is about the tree, and every
+            # later refusal presumes the tree is worth reasoning about. `check`
+            # is deliberately not behind it — it writes nothing and runs
+            # nothing, and a table must be able to land before a gate run is
+            # spent.
+            check_gate_marker(args.tree)
         table = load_table(args.table)
         if args.mode == "check":
             check_plan(table, args.tree, only=args.only)
