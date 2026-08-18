@@ -1,4 +1,10 @@
-"""Contract guards for the deterministic nightly ``dev → staging`` promotion.
+"""Contract guards for the deterministic nightly ``dev → main`` promotion.
+
+v5 chunk 3 (ADR 0003 as amended, ADR 0017 D6): this repo retires its ``staging``
+role, so the nightly promotes ``dev → main`` directly — an unattended advance of
+``main`` on green, recorded as this repo's topology in
+``specs/infrastructure.md``. The discipline is unchanged: gate on the candidate,
+fast-forward or nothing, never a merge, force, or repair.
 
 The step's logic lives in ``scripts/promotion-step.sh``, and what that logic
 *does* is proven by executing it against a stubbed ``git`` in
@@ -32,7 +38,7 @@ import pytest
 
 from tests.unit._prose import REPO_ROOT
 
-WORKFLOW = REPO_ROOT / ".github" / "workflows" / "nightly-staging-promotion.yml"
+WORKFLOW = REPO_ROOT / ".github" / "workflows" / "nightly-promotion.yml"
 SCRIPT = REPO_ROOT / "scripts" / "promotion-step.sh"
 
 #: The step that runs the promotion. Located by name so a rename is a named
@@ -59,7 +65,7 @@ _PROMOTION_SOURCES = (WORKFLOW, SCRIPT)
 _SCRIPT_MUST_DRIVE = (
     "scripts/verify.sh",  # the gate decides
     "git push",           # and only a green gate advances the ref
-    "staging",            # to this branch
+    "main",               # to this branch
 )
 
 
@@ -111,12 +117,12 @@ def _uncommented(text: str) -> str:
 def test_the_workflow_is_a_bounded_deterministic_nightly() -> None:
     """The scheduler's own shape: when it fires, that it cannot race itself, and
     what it may write (#378). None of this is reachable by executing anything."""
-    assert WORKFLOW.is_file(), "the nightly dev-to-staging promotion workflow must exist (#378)"
+    assert WORKFLOW.is_file(), "the nightly dev-to-main promotion workflow must exist (#378)"
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
     assert 'cron: "0 14 * * *"' in workflow, "14:00 UTC is midnight in Australia/Brisbane"
     assert "workflow_dispatch:" in workflow
-    assert "nightly-dev-to-staging" in workflow
+    assert "nightly-dev-to-main" in workflow
     assert "cancel-in-progress: false" in workflow
     assert "contents: write" in workflow
     assert "ref: dev" in workflow, "the job must gate and promote `dev`, not the default branch"
@@ -215,5 +221,5 @@ def test_the_script_still_drives_the_promotion(token: str) -> None:
     assert SCRIPT.is_file(), f"{SCRIPT} must exist — the workflow invokes it"
     assert token in SCRIPT.read_text(encoding="utf-8"), (
         f"scripts/promotion-step.sh no longer names {token!r} — it must still run "
-        "the gate and, only on green, advance staging"
+        "the gate and, only on green, advance main"
     )

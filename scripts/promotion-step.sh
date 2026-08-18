@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The nightly `dev -> staging` promotion, as one shell.
+# The nightly `dev -> main` promotion, as one shell.
 #
 # It lives here rather than inside the workflow's `run:` block so a test can
 # *execute* it against stubbed git instead of reading its text
@@ -15,9 +15,11 @@
 # change here therefore reaches the next nightly as soon as it lands on `dev`,
 # rather than waiting to be promoted the rest of the way.
 #
-# ADR 0015 retires the `harness promote` verb, not the promotion. The topology
-# (`dev -> staging -> main`) and this nightly automation are kept by decision;
-# what the verb used to supply — a ledgered candidate, a `HARNESS_WORKSPACE_ROOTS`
+# ADR 0015 retires the `harness promote` verb, not the promotion; ADR 0003 as
+# amended (ADR 0017 D6) retires this repo's `staging` role, so the hop is now
+# `dev -> main` — the nightly advances the release branch directly on green,
+# recorded as this repo's topology in specs/infrastructure.md. What the verb
+# used to supply — a ledgered candidate, a `HARNESS_WORKSPACE_ROOTS`
 # allowlist, a five-state machine, a bounded repair — is gone, and the properties
 # that actually matter are re-expressed in plain git below:
 #
@@ -37,7 +39,7 @@ set -euo pipefail
 #: The hop. Named rather than inlined so the two branches appear once each and
 #: the ::error:: annotations can say which ref stalled.
 SOURCE_BRANCH="dev"
-TARGET_BRANCH="staging"
+TARGET_BRANCH="main"
 
 cd "$GITHUB_WORKSPACE"
 

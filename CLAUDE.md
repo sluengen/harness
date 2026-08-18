@@ -64,8 +64,7 @@ commands:
   verify: "bash scripts/verify.sh"
 branches:
   integration: dev
-  staging: staging   # retires in v5 chunk 3 — ADR 0003 as amended: this repo promotes dev -> main
-  release: main
+  release: main   # ADR 0003 as amended: two-branch topology, dev -> main
 loop:
   max_review_cycles: 5
   unconditional_review_cycles: 3

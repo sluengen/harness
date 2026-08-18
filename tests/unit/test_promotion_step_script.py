@@ -1,6 +1,6 @@
 """The nightly promotion step, **executed** rather than read (#396, #435).
 
-``scripts/promotion-step.sh`` is the shell the nightly ``dev → staging`` job
+``scripts/promotion-step.sh`` is the shell the nightly ``dev → main`` job
 runs. Until #396 its properties were asserted by deriving call sites out of the
 workflow's YAML with a regex. That instrument cost four tickets (#390, #391,
 #393, #394), each teaching it one more way shell writes the same call, and it
@@ -10,9 +10,12 @@ lives in a script, not in a `run:` block*.
 
 So this module runs the script. **#435 changed what it drives, not whether it is
 driven.** ADR 0015 retires the ``harness promote`` verb; the operator decision
-keeps the ``dev → staging → main`` topology and this nightly automation, so the
-script was rewritten to plain git and this guard was rewritten to stub ``git``
-instead of ``uv``/``harness``. The allowlist property it used to measure
+kept the topology and this nightly automation, so the script was rewritten to
+plain git and this guard was rewritten to stub ``git`` instead of
+``uv``/``harness``. **v5 chunk 3 changed the hop, not the discipline**: ADR
+0003 as amended (ADR 0017 D6) retires this repo's ``staging`` role, so the
+nightly promotes ``dev → main`` directly — same gate-on-candidate,
+fast-forward-only rules, now against ``main``. The allowlist property it used to measure
 (``HARNESS_WORKSPACE_ROOTS`` admitting each verb's ``--repo``) went with the verb
 — there is no allowlist in plain git — and is not replaced by a look-alike.
 
@@ -224,7 +227,7 @@ def _assert_nothing_was_pushed(run: StepRun, why: str) -> None:
     """
     assert _MUTATION not in run.calls, (
         f"{why}, but the script still ran `git {_MUTATION}` "
-        f"({run.argv_for(_MUTATION)}) — staging was advanced anyway"
+        f"({run.argv_for(_MUTATION)}) — main was advanced anyway"
     )
 
 
@@ -232,7 +235,7 @@ def _assert_nothing_was_pushed(run: StepRun, why: str) -> None:
 
 
 def test_the_real_script_promotes_a_green_candidate(tmp_path: Path) -> None:
-    """AC: on a green gate the tracked script fast-forwards ``staging`` and stops.
+    """AC: on a green gate the tracked script fast-forwards ``main`` and stops.
 
     The copy is asserted byte-identical to the tracked file, so every other test
     in this module — which run rewritten or re-environed copies through the same
@@ -249,11 +252,11 @@ def test_the_real_script_promotes_a_green_candidate(tmp_path: Path) -> None:
     argv = pushes[0]
     assert "origin" in argv, argv
     refspec = [token for token in argv if ":" in token]
-    assert refspec == [f"{_CANDIDATE}:refs/heads/staging"], (
-        f"the push must advance staging to the gated candidate; got {argv}"
+    assert refspec == [f"{_CANDIDATE}:refs/heads/main"], (
+        f"the push must advance main to the gated candidate; got {argv}"
     )
     assert "--force" not in argv and "-f" not in argv, (
-        f"the promotion must never force-update staging; got {argv}"
+        f"the promotion must never force-update main; got {argv}"
     )
 
 
@@ -278,7 +281,7 @@ def test_the_gate_runs_inside_the_checkout(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("gate_exit", [1, 2, 97])
-def test_a_red_gate_never_advances_staging(gate_exit: int, tmp_path: Path) -> None:
+def test_a_red_gate_never_advances_main(gate_exit: int, tmp_path: Path) -> None:
     """Behaviour identity: the step never repairs and never rounds a red gate.
 
     Three exit codes, because the retired verb classified them differently (97
@@ -296,7 +299,7 @@ def test_a_red_gate_never_advances_staging(gate_exit: int, tmp_path: Path) -> No
 
 
 def test_a_non_fast_forward_target_is_refused(tmp_path: Path) -> None:
-    """``staging`` holding commits ``dev`` lacks stops the job — no merge, no force.
+    """``main`` holding commits ``dev`` lacks stops the job — no merge, no force.
 
     The case with no textual signature: refusing and succeeding run the same
     lines, so only executing with ``merge-base --is-ancestor`` refusing can
@@ -307,14 +310,14 @@ def test_a_non_fast_forward_target_is_refused(tmp_path: Path) -> None:
     assert run.returncode != 0, "a non-fast-forward target left the step reporting success"
     assert "::error::" in run.stdout, run.stdout
     assert "fast-forward" in run.stdout, run.stdout
-    _assert_nothing_was_pushed(run, "staging is not an ancestor of the candidate")
+    _assert_nothing_was_pushed(run, "main is not an ancestor of the candidate")
     assert "merge" not in {inv.call for inv in run.invocations} or run.argv_for("merge") == [], (
         f"the script attempted a merge instead of stopping: {run.argv_for('merge')}"
     )
 
 
 def test_a_target_that_does_not_exist_yet_is_created(tmp_path: Path) -> None:
-    """A missing remote ``staging`` is created by the push, not treated as an error.
+    """A missing remote ``main`` is created by the push, not treated as an error.
 
     The discriminator for the ancestry check's guard clause: with no remote ref
     there is nothing to be an ancestor of, so skipping the check is correct and

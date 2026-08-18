@@ -2,10 +2,12 @@
 
 Usage: `/promote <src> to <dst>`
 
-Promotion moves completed work toward release — `dev → staging → main` on the
-universal three-tier topology (ADR 0003). This command is the versioned caller:
-it transcribes the loop once, so an agent runs `/promote` instead of re-deriving
-it from prose each time.
+Promotion moves completed work toward release along the role branches the
+repo's `CLAUDE.md` `branches:` block declares — topology is per-repo
+configuration (ADR 0003 as amended): `integration → release`, with a `staging`
+role between them only where something deploys to a staging environment. This
+command transcribes the loop once, so an agent runs `/promote` instead of
+re-deriving it from prose each time.
 
 There is **no no-arg form** — a release hop is deliberate, not inferred. Both
 `<src>` and `<dst>` are required.
@@ -27,20 +29,17 @@ falling back to a literal branch ref:
 2. Otherwise, use the word itself as a literal branch ref.
 
 This is why the same invocation shape works everywhere, whatever a repo calls
-its branches. Take this repo's own roles (`integration: dev`, `staging:
-staging`, `release: main`):
+its branches. Take this repo's own two-role topology (`integration: dev`,
+`release: main` — ADR 0003 as amended retired its `staging` role):
 
-- `/promote dev to staging` — the nightly stabilization hop. `dev` matches no
-  role key, so it is used literally; `staging` matches the `staging` role,
-  which also resolves to `staging` here. Either path lands on the same pair.
-- `/promote staging to main` — the deliberate release hop. `staging` resolves
-  via the role; `main` matches no role key and is used literally.
-- `/promote integration to release` resolves identically to the `dev to
-  staging` example above — the canonical role names always work too.
+- `/promote dev to main` — the release hop. `dev` matches no role key, so it is
+  used literally; `main` matches no role key and is used literally too.
+- `/promote integration to release` resolves identically — the canonical role
+  names always work.
 
 Now take a repo whose roles are `integration: develop`, `staging: staging`,
-`release: production` — a different repo, different branch names for the same
-three roles. **The identical invocation drives it unchanged:**
+`release: production` — a repo that deploys to a staging environment and so
+runs all three roles. **The identical invocation drives it unchanged:**
 `/promote develop to staging` — `develop` matches no role key so it is used
 literally (and happens to be that repo's actual integration branch); `staging`
 resolves via the role to `staging`. No per-repo command variant is needed; the
@@ -68,9 +67,13 @@ resolver is what changes, not the command.
 
 ## What this command must never do
 
-- **Push the release branch directly.** `main` (whatever the repo's `release`
-  role names) is never direct-pushed, by anyone. The release hop pushes a
-  promotion branch and opens a PR; that is the whole mechanism.
+- **Push the release branch directly.** This command never direct-pushes the
+  `release` role's branch. The release hop pushes a promotion branch and opens
+  a PR; that is this command's whole mechanism. The one path that may advance
+  release without a PR is a repo's own promotion automation where its recorded
+  topology decision says so (this repo's nightly `dev → main`, ADR 0003 as
+  amended — see its infrastructure asset), and that authority belongs to the
+  automation's script, never to this command.
 - **Auto-merge the release PR.** Opening it is this command's job; merging it
   is a human/CI act.
 - **Repair a conflict or a red gate.** Both are stop conditions. A promotion

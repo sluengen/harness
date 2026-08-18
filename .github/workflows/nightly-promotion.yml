@@ -1,4 +1,4 @@
-name: Nightly staging promotion
+name: Nightly promotion
 
 # GitHub Actions schedules are UTC. Australia/Brisbane is UTC+10 year-round, so
 # 14:00 UTC is midnight local time. Scheduled workflows are read from the default
@@ -12,11 +12,11 @@ on:
 
 concurrency:
   # Do not cancel an in-flight candidate: it may be running the verification
-  # gate, and a second candidate would race its guarded staging ref update.
-  group: nightly-dev-to-staging
+  # gate, and a second candidate would race its guarded main ref update.
+  group: nightly-dev-to-main
   cancel-in-progress: false
 
-# The step advances only the derived staging ref, as a fast-forward; it has no
+# The step advances only the release ref (`main`), as a fast-forward; it has no
 # pull-request, package, OIDC, or broader grant.
 permissions:
   contents: write

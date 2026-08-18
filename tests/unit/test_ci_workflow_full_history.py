@@ -121,14 +121,14 @@ def test_the_workflow_guard_finds_its_subjects() -> None:
     named workflows must be present, and every subject must yield a step.
     """
     subjects = {p.name for p in _gate_workflows()}
-    assert {"ci.yml", "nightly-staging-promotion.yml"} <= subjects, (
+    assert {"ci.yml", "nightly-promotion.yml"} <= subjects, (
         f"expected the gate-running workflows among the derived subjects, got "
         f"{sorted(subjects)} — the {_GATE_INVOCATION!r} derivation is wrong"
     )
     # The floor above discriminates the one-hop resolution from a plain text
     # scan: the nightly names the gate nowhere in its own text, so it can only
     # be a subject if the script it invokes was followed.
-    nightly = _WORKFLOW_DIR / "nightly-staging-promotion.yml"
+    nightly = _WORKFLOW_DIR / "nightly-promotion.yml"
     assert _GATE_INVOCATION not in nightly.read_text(encoding="utf-8"), (
         "the nightly now names the gate directly, so its presence above no "
         "longer proves the script hop is followed — pick another subject that "
