@@ -7,8 +7,10 @@ re-find it.
 
 ## The rule it enforces
 
-`engineering` Part C keeps a **500-line hard limit** as a *tripwire*, not a
-prohibition: a file over the limit must carry, near its top, a language-native
+`engineering` → *Structure* keeps a **500-line hard limit** as a *tripwire*, not
+a prohibition (the review-time rule is spelled out in
+[`specialized-verification.md`](specialized-verification.md) → *A file over the
+hard limit is an auditable choice, not silent drift*): a file over the limit must carry, near its top, a language-native
 `# size: <reason>` justification comment. The reviewer rejects an over-limit
 file with none. The tripwire's value is *when it fires* — it forces the cohesion
 argument to be written down; a justified file passes. Line count is a weak proxy
@@ -34,7 +36,8 @@ not pass. To justify via a tracking ticket, name it in the reason:
      fails a schema file spuriously.
    - `DECLARATIVE_GLOBS` / `DECLARATIVE_CEILING` — for a file that is long
      *because* it is declarative (schemas, type definitions, token maps —
-     `engineering` Part B) prefer this over `EXEMPTIONS`: a raised ceiling
+     `engineering` → *Structure*, declarative files) prefer this over
+     `EXEMPTIONS`: a raised ceiling
      still fires on runaway growth, where an exemption never fires again.
      `DECLARATIVE_GLOBS` names the globs; `DECLARATIVE_CEILING` is the ceiling
      they answer to instead of `HARD_LIMIT`, defaulting to 1.5x it. Leave
@@ -73,7 +76,7 @@ is green.
 Scope every tree that holds code, and give the test tree the raised
 **declarative ceiling** rather than the hard limit — a test module's length is
 substantially case enumeration against one surface's acceptance criteria, which
-is Part B's declarative argument, not accreted logic:
+is *Structure*'s declarative-file argument, not accreted logic:
 
 ```
 SOURCE_GLOBS: tuple[str, ...] = ("src/**/*.py", "scripts/**/*.py", "tests/**/*.py")
@@ -108,7 +111,7 @@ scatter); no test can score that, and this one does not try.
 ```python
 """Size-marker guard — copy into your repo's test suite and edit the config.
 
-Enforces the code-quality rule mechanically: a source file over the hard limit
+Enforces `engineering`'s size rule mechanically: a source file over the hard limit
 must carry a top-of-file ``size: <reason>`` justification, written in that
 language's own comment syntax (COMMENT_PREFIXES), or this test fails.
 The tripwire's job is to force the cohesion argument to be written down, not to
@@ -126,18 +129,18 @@ SOURCE_GLOBS: tuple[str, ...] = ("src/**/*.py",)
 # The hard line limit above which a file must justify its size.
 HARD_LIMIT: int = 500
 # Repo-relative POSIX paths exempt from the limit — files long by nature, not by
-# accreted logic (generated schemas, declarative data; code-quality Part B).
+# accreted logic (generated schemas, declarative data; `engineering` Structure).
 # Keep this empty unless a file genuinely qualifies.
 EXEMPTIONS: frozenset[str] = frozenset()
 # Globs (relative to the repo root, same dialect as SOURCE_GLOBS) whose files are
-# declarative by nature — schemas, type definitions, token maps (code-quality
-# Part B). These answer to DECLARATIVE_CEILING instead of HARD_LIMIT, still
+# declarative by nature — schemas, type definitions, token maps (`engineering`
+# Structure). These answer to DECLARATIVE_CEILING instead of HARD_LIMIT, still
 # subject to the marker rule. Prefer this over EXEMPTIONS for a file that is
 # long *because* it is declarative: the raised ceiling still fires on runaway
 # growth, an exemption never fires again.
 DECLARATIVE_GLOBS: tuple[str, ...] = ()
 # The raised ceiling declarative-glob files answer to. Defaults to 1.5x the
-# hard limit (code-quality Part B); a repo may set its own number.
+# hard limit (`engineering` Structure); a repo may set its own number.
 DECLARATIVE_CEILING: int = HARD_LIMIT * 3 // 2
 
 # The comment leader a ``size:`` marker takes in each language, keyed by file
@@ -147,7 +150,7 @@ DECLARATIVE_CEILING: int = HARD_LIMIT * 3 // 2
 # ``// size:`` from justifying a ``.py`` file — in neither is it a comment, so
 # neither records a decision. One leader per suffix: a language with two comment
 # forms is mapped to the one its markers take, so ``.js``/``.ts`` map to ``//``
-# (the form code-quality names for them) and a ``/* size: */`` block comment does
+# (the form `engineering` names for them) and a ``/* size: */`` block comment does
 # not justify a ``.js`` file. Change the entry if your repo writes them that way.
 COMMENT_PREFIXES: dict[str, str] = {
     ".py": "#",
