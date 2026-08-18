@@ -53,13 +53,47 @@ Per-file `guidance:` pins are gone. The plugin has one version; a repo that
 needs to diverge from a skill forks that skill locally (a repo-local skill
 shadows nothing — it is simply also present) rather than pinning a file.
 
+## Edges from performed migrations
+
+Learned from the first real consumer migration (nano-erp, 2026-08-18):
+
+- **The lock list is not the complete inventory of the old install.** Generated
+  droppings sit beside it unlisted — `.codex/` (compiled output of the old
+  skills) being the observed case. Delete generated artifacts of the old
+  install too: their inputs are leaving, so they can never regenerate, and a
+  stale copy reads as live guidance to the tool that consumes it.
+- **Delete before you hydrate.** The old `CLAUDE.md` is a *mirror copy* of the
+  retired process doc, and `/harness:init`'s merge rule would faithfully
+  preserve it as "repo-owned" content. Deleting the lock-listed mirrors first
+  gives `init` a clean slate. This ordering is safe because `CONTEXT.md` is not
+  lock-listed — it survives to seed the interview.
+- **Check `.gitignore` for `.claude/hooks`.** An ignore rule carried for the
+  old symlinked install will silently hide any real hook file the migration
+  relocates there.
+- **Enforcement regression until sluengen/harness#483 ships:** the plugin's
+  gate-evidence guard resolves the integration branch as a local ref only, so
+  it is silently inert in single-branch/cloud clones. A consumer that had
+  patched its own copy loses the patch by migrating. If your copy carries local
+  hook fixes, diff them against the plugin's hooks before deleting, and
+  upstream what the plugin lacks.
+- **Tests that executed the old copied hooks** need re-pointing at the plugin
+  cache (resolve via the plugin root, skip where absent) — and that skip costs
+  CI coverage on runners without the plugin installed. Install the plugin on
+  the runner to restore it.
+- **Two old hooks have no plugin replacement** — `context-monitor.js` and
+  `guidance-freshness.js` were retired, not moved. Their capabilities are
+  deliberately gone; nothing to re-wire.
+- **Snapshot directories are exempt from the reference sweep.** A vendored
+  or verbatim-snapshot tree (another repo's docs, a frozen export) keeps its
+  stale references; rewriting a snapshot corrupts it.
+- **`paths.decisions` may point at a file.** A repo that records decisions in
+  one document (e.g. its architecture-principles spec) points the path there
+  rather than scaffolding an empty competing directory.
+
 ## Honest limits — what is untested
 
-This path is written from the mechanisms, not from a performed migration:
-
-- **No real consumer repo has run this migration yet.** The source repo
-  dogfoods the plugin surface, but it was never a lock-file consumer of
-  itself. Expect edges, and report them as issues.
+- The path above has now run once end-to-end (nano-erp). The second and later
+  migrations should still expect repo-specific edges; report them as issues.
 - The `CONTEXT.md` fallback in the hooks is covered by tests
   (`tests/unit/test_context_branch_parsing_contract.py`); the *interview*
   reading an existing `CONTEXT.md` for its answers is prose instruction to the
