@@ -52,5 +52,5 @@ Uncommitted artifacts in a worktree are lost when it is removed. Commit (or deli
 
 ## Hygiene
 
-- A file appearing in `git status` that you did not touch is a signal to investigate (a parallel worktree, a stash side-effect), not to commit (`code-quality` Part A).
+- A file appearing in `git status` that you did not touch is a signal to investigate (a parallel worktree, a stash side-effect), not to commit (`engineering` Part A).
 - Do not assume another worktree's stash is stale. Confirm before dropping it.

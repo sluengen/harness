@@ -26,17 +26,17 @@ Do not proceed until you can complete this sentence: **"The failure occurs at [l
 
 ## Phase 2 — Fix, test-first
 
-Once the cause is known, the fix follows `test-driven-development`:
+Once the cause is known, the fix follows `engineering`:
 
 1. **Write a failing test that reproduces the bug.** This proves you understand the cause and becomes the regression guard.
 2. **Confirm it fails for the right reason** — the cause you identified, not a different one.
-3. **Fix with the minimal change** (`code-quality`: smallest working solution). Fix the cause, not the symptom.
+3. **Fix with the minimal change** (`engineering`: smallest working solution). Fix the cause, not the symptom.
 4. **Confirm the test passes and nothing else broke.**
 
 ## Anti-patterns
 
 - Changing code to see if it helps, without a hypothesis. That is not debugging; it is guessing.
-- "Fixing" by adding a catch that swallows the error (`engineering-principles`: errors surface).
+- "Fixing" by adding a catch that swallows the error (`engineering`: errors surface).
 - Patching the symptom at the call site when the cause is in the callee.
 - Declaring it fixed because it no longer reproduces *once*. Reproduce the fix as deliberately as you reproduced the bug.
 

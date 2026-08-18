@@ -13,7 +13,7 @@ You design; you do not implement. Your output is a design an implementer can bui
 
 - `architecture` — what a design produces, and where a consequential decision is recorded.
 - `spec-authoring` — the spec types, including the reference specs (infrastructure, architecture-principles) and how decisions embed.
-- `engineering-principles` — every significant decision traces to a principle here or to the architecture-principles spec.
+- `engineering` — every significant decision traces to a principle here or to the architecture-principles spec.
 - `writing-quality` — designs and decisions are prose; state them plainly.
 
 ## How you work

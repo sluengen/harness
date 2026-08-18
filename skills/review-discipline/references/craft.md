@@ -22,8 +22,8 @@ for that tax.
 
 These extend the core bar, they do not restate it. The finding 2×2, the
 final-evidence ordering rule and the reviewer's obligations stay in
-`review-discipline`; the fresh-evidence rule stays in `code-quality`; the
-test-first law stays in `test-driven-development`; the shape-triggered structural
+`review-discipline`; the fresh-evidence rule stays in `engineering`; the
+test-first law stays in `engineering`; the shape-triggered structural
 checks stay in the diff-shape checks.
 
 ## Vacuity — the test that cannot fail

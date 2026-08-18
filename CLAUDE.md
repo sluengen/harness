@@ -33,6 +33,7 @@ The vocabulary every agent and command shares. Nothing below is restated elsewhe
 - **Verdicts:** a review ends **PASS** (ship it), **FAIL** (blocking findings return to the builder; cycles are bounded by the `loop:` keys below, policy in `review-discipline`), or **DEFER** (cannot ship as scoped — needs the operator; hold the ticket).
 - **The binding:** a verdict binds to the git **tree oid** it reviewed. The tree that ships must equal the tree the verdict covered — an amend with an identical tree passes, one more edit does not. The gate marker (`<git-common-dir>/harness/gate/<tree>.json`) is the machine half of the same claim.
 - **Tracker dispatch:** the `tracker:` field in the config below names the backend; the matching provider skill (`github-issues` or `linear`) owns the API recipes. `none` degrades to specs and session reports. Never embed provider calls elsewhere.
+- **Filing:** before filing a ticket, search the open queue and extend an unstarted ticket on the same surface instead of creating a twin. A created ticket carries exactly one `assurance:` label and is placed in Todo explicitly — placement is a step, not a side effect; verify by re-reading the ticket, not by exit status.
 
 ## Enforcement
 

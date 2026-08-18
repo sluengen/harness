@@ -15,9 +15,9 @@ not change production code or fix findings.
 read `CLAUDE.md`, load `assessment-craft`, and load only the selected scope's
 domain standards:
 
-- `code`: `code-quality`, `test-driven-development`, `architecture`, and
-  `engineering-principles`; add `design-system` only when its layer is enabled;
-- `architecture`: `architecture` and `engineering-principles`.
+- `code`: `engineering`, `architecture`, and
+  `engineering`; add `design-system` only when its layer is enabled;
+- `architecture`: `architecture` and `engineering`.
 
 Follow those skills and `commands/assess.md` for the detailed lenses, read path,
 deep-mode additions, filing behaviour, and boundaries. A single instance in the

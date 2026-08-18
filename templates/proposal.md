@@ -22,7 +22,7 @@ The approaches considered. For each: what it is, and its trade-offs. Present rea
 
 ## Recommendation
 
-The proposed direction and why it wins over the others. Connect to `engineering-principles` and to repo principles where relevant.
+The proposed direction and why it wins over the others. Connect to `engineering` and to repo principles where relevant.
 
 ## Open decisions
 

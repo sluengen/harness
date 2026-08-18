@@ -23,7 +23,7 @@ Use named tokens, never raw values, wherever a token exists: colours, typography
 
 ## Primitives over bespoke markup
 
-If a primitive exists for what you are building (button, card, field, badge, empty state), use it. Reimplementing its markup inline forks the design: the two copies drift, and the bespoke one decays. Build a new primitive in the system only when a pattern appears three or more times with no primitive (`code-quality`: rule of three).
+If a primitive exists for what you are building (button, card, field, badge, empty state), use it. Reimplementing its markup inline forks the design: the two copies drift, and the bespoke one decays. Build a new primitive in the system only when a pattern appears three or more times with no primitive (`engineering`: rule of three).
 
 **Composition chrome a value scan can't see.** A sheet header, card shell, or list row is a *composition* of several token rules. Every value in it is already a token, so a raw-value scan sees nothing wrong even when the same composition is reimplemented inline across many files — the duplication lives at the composition layer, invisible to a value scan. Before adding chrome composed of three or more token rules, grep for an existing primitive; if that same composition already appears in three or more files, extract one. The rule of three applies to compositions, not just raw values.
 
@@ -42,6 +42,6 @@ Two distinct questions; keep them apart:
 A change to a primitive or a token ripples everywhere it is used. Before altering one:
 - Check the UX principle it serves — a change that violates the principle is a regression even if it looks fine on your screen.
 - Consider every consumer, not just the one in front of you.
-- A change that relaxes a stated principle needs an explicit principle update with a rationale, not a silent edit (mirrors `engineering-principles`: trade-offs are conscious).
+- A change that relaxes a stated principle needs an explicit principle update with a rationale, not a silent edit (mirrors `engineering`: trade-offs are conscious).
 
 The reviewer checks adoption and accessibility on frontend changes (`review-discipline`).

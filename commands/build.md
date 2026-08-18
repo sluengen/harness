@@ -11,10 +11,10 @@ independent review, and ships only the reviewed tree. `/start` → `/review` →
 rule in `review-discipline`; stop when that rule says to stop and put the ticket
 on operator hold rather than silently starting a fresh loop.
 
-This is a thin driver. Tracker operations go through the `tracker` skill
+This is a thin driver. Tracker operations go through the provider skill
 (`linear` or `github-issues` as selected by `CLAUDE.md`), isolation through
-`worktree-isolation`, implementation through `test-driven-development` and
-`code-quality`, design through `architecture`, UI work through `ux-design` and
+`worktree-isolation`, implementation through `engineering` and
+`engineering`, design through `architecture`, UI work through `ux-design` and
 the conditional `design-system`, and review standards through
 `review-discipline`. Do not embed provider API calls in this command.
 
@@ -88,7 +88,7 @@ contract mid-build.
 Launch an implementation sub-agent through the host sub-agent mechanism in
 `worktree_path`. It has normal edit and shell tools but must not commit. Supply
 the ticket, current change spec, design artifact when present, and prior findings. Require it to read
-`test-driven-development` and `code-quality`, work RED → GREEN → REFACTOR, and
+`engineering`, work RED → GREEN → REFACTOR, and
 run the lint command before handoff. It never edits the as-built record. When
 the change adds or edits a guard, a prose predicate, a mutation table, or a
 deletion pass, require it to read
@@ -255,7 +255,7 @@ the same refusal to integrate on mismatch.
   queue placement and exactly one assurance level, chosen per `spec-authoring` →
   *Choosing assurance*. An **improvement** is not filed at all; it goes in the
   run report's Proposals section and is appended to the repo's proposals ledger
-  — the `tracker` skill owns how that ledger is found or opened — where
+  — `review-discipline` → `references/proposals-ledger.md` owns how that ledger is found or opened — where
   `/digest` surfaces it and `/assess` decides it at the drain. Then integrate
   nothing and preserve the work exactly as *4. Abandon safely* below prescribes:
   a DEFER says the ticket cannot ship as scoped (`review-discipline` → *The

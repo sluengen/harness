@@ -77,7 +77,7 @@ If you do open a PR:
   Full rationale in the module docstring.
 
   Before you write the guard the table will prove, read
-  [`skills/code-quality/SKILL.md`](skills/code-quality/SKILL.md) Part C, *A guard
+  [`skills/engineering/SKILL.md`](skills/engineering/SKILL.md) Part C, *A guard
   over prose owns structure and negative space, never meaning*. Most of this
   repo's guards read documentation, and that section is what decides whether the
   thing you are about to assert is a test's job at all. A sentence pinned

@@ -1,13 +1,13 @@
 # Size-marker guard (reference implementation)
 
-A ready-to-adopt test that enforces `code-quality`'s size rule **mechanically**,
+A ready-to-adopt test that enforces `engineering`'s size rule **mechanically**,
 so an over-limit source file that carries no justification fails the suite
 instead of waiting for a reviewer to remember it or the steward's next pass to
 re-find it.
 
 ## The rule it enforces
 
-`code-quality` Part C keeps a **500-line hard limit** as a *tripwire*, not a
+`engineering` Part C keeps a **500-line hard limit** as a *tripwire*, not a
 prohibition: a file over the limit must carry, near its top, a language-native
 `# size: <reason>` justification comment. The reviewer rejects an over-limit
 file with none. The tripwire's value is *when it fires* — it forces the cohesion
@@ -34,7 +34,7 @@ not pass. To justify via a tracking ticket, name it in the reason:
      fails a schema file spuriously.
    - `DECLARATIVE_GLOBS` / `DECLARATIVE_CEILING` — for a file that is long
      *because* it is declarative (schemas, type definitions, token maps —
-     `code-quality` Part B) prefer this over `EXEMPTIONS`: a raised ceiling
+     `engineering` Part B) prefer this over `EXEMPTIONS`: a raised ceiling
      still fires on runaway growth, where an exemption never fires again.
      `DECLARATIVE_GLOBS` names the globs; `DECLARATIVE_CEILING` is the ceiling
      they answer to instead of `HARD_LIMIT`, defaulting to 1.5x it. Leave
@@ -47,7 +47,7 @@ not pass. To justify via a tracking ticket, name it in the reason:
      file — in neither is it a comment, so neither records a decision. One
      leader per suffix, so a language with two comment forms is mapped to the
      one its markers take: `.js`/`.ts` map to `//`, which is the form
-     `code-quality` names for them, so a `/* size: … */` block comment does not
+     `engineering` names for them, so a `/* size: … */` block comment does not
      justify a `.js` file — change that entry to `/*` if your repo writes its
      markers that way. Adding a language is one entry here (SQL `".sql": "--"`,
      Lisp `".el": ";"`) and nothing else: this is the one mapping you extend,

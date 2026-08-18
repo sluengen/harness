@@ -17,9 +17,8 @@ Load and follow:
 - `skills/review-discipline/SKILL.md` for the two-stage method, the
   blocking/size 2×2, finding format, as-built-record gate, final-evidence
   ordering, and bounded review→fix policy;
-- `skills/code-quality/SKILL.md` for the same scope, structure, and verification
-  standards used during implementation;
-- `skills/engineering-principles/SKILL.md` for principle-backed findings;
+- `skills/engineering/SKILL.md` for the same principles, scope, structure, and
+  verification standards used during implementation — findings cite them;
 - `ux-design` and, when enabled, `design-system` for user-facing evidence.
 
 Review requirements before the artifact. Stage 1 checks every current

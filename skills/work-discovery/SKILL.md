@@ -21,7 +21,7 @@ Work off the Build queue defined in `CLAUDE.md`. Its scope is set by the
 
 - **`repo.project` set** — scope to that one project: the named Build queue.
 - **`repo.project` unset** — the configured provider's natural full queue.
-  Resolve that scope through the `tracker` skill rather than naming a backend
+  Resolve that scope through the configured provider skill rather than naming a backend
   address here.
 
 Consider only tickets marked **Todo**: an **In Progress** ticket is somebody's
@@ -66,7 +66,7 @@ spec needs problem, approach, and acceptance criteria.
   semantics do not depend on which label was applied; only the return path
   (e.g. `/decision`) distinguishes between them, selecting `input` and nothing
   else.
-  Make all three — comment, label, assignment — through the `tracker` skill's
+  Make all three — comment, label, assignment — through the provider skill's
   provider-neutral hold operation. All three, not the label alone: assignment is
   what the skip rule below actually reads, and the comment is what `/decision`
   presents to the operator. The tracker issue *is* the audit trail; a deferral

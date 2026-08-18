@@ -4,7 +4,7 @@ description: Use when writing or revising any spec — a proposal, a change spec
 ---
 # Spec Authoring
 
-How to write a spec that is actionable, consistent, and complete — including the **design** and the **decisions** behind it. Specs come in two families: **lifecycle specs** that flow with a task, and **reference specs** that document a standing part of the system. `spec-driven-development` is the lifecycle; this is the craft.
+How to write a spec that is actionable, consistent, and complete — including the **design** and the **decisions** behind it. Specs come in two families: **lifecycle specs** that flow with a task, and **reference specs** that document a standing part of the system. the spine (`CLAUDE.md`) is the lifecycle; this is the craft.
 
 ## Lifecycle specs — three moments in a task's life
 
@@ -21,7 +21,7 @@ They flow: a **proposal** (when needed) is decided and broken into one or more *
 Some specs are not tied to a task. They document a stable part of the system and are updated when that part changes. A reference spec *is* a spec — held to the same bar (actionable, honest, current). Two recognised types (paths in `CLAUDE.md`):
 
 - **Infrastructure spec** (`templates/infrastructure.md`) — the operational reality: domains, hosting, services, deployment, accounts. The source of truth when making a deployment or configuration decision.
-- **Architecture-principles spec** (`templates/architecture.md`) — how the system is built: the technical principles that govern design *here*, extending the universal `engineering-principles` with this repo's specifics. A repo with rich architecture conventions keeps them in this spec; a small repo keeps a brief version in `CLAUDE.md` and skips the file.
+- **Architecture-principles spec** (`templates/architecture.md`) — how the system is built: the technical principles that govern design *here*, extending the universal `engineering` with this repo's specifics. A repo with rich architecture conventions keeps them in this spec; a small repo keeps a brief version in `CLAUDE.md` and skips the file.
 
 ## What every spec shares
 
@@ -77,9 +77,9 @@ A single, concrete piece of work. The tracker issue is its home (`tracker`). Sec
 
 **Instrument replacement measures reach (conditional).** When a change **replaces an information source** — a guard rewritten, a document migrated or distilled into a new form, one report replacing another — one acceptance criterion measures the new form against the **old one's reach**: what did the source hold that the replacement omits, and is each omission deliberate? Write it as a comparison against the prior source by name, so the answer is a list a reader can check rather than a confidence. Verifying that the new form says the right things is a different measurement and it passes over every omission by construction — reading the replacement can only find what the replacement contains, and what a replacement drops is exactly what nobody is looking at. A change that *adds* a source rather than replacing one has no reach to measure, and says so.
 
-**File size is never an acceptance criterion.** A change spec states the *structural outcome* a size target is a proxy for — "the engine-protocol layer lives in its own module; the verb file holds only glue; no test imports change" — which is checkable by import structure and tests, not by a raw line count. A quantity gets no size carve-out: if a spec author insists on one, the measuring-test rule applies with no exemption (`code-quality` Part C — *a measurable criterion needs a measuring test*): write the test that counts the lines and fails outside the bound, or it is not a criterion. Being forced to write that test is the tell that the number was never the requirement — a cohesive unit split to satisfy a line count moves reader-load up, not down.
+**File size is never an acceptance criterion.** A change spec states the *structural outcome* a size target is a proxy for — "the engine-protocol layer lives in its own module; the verb file holds only glue; no test imports change" — which is checkable by import structure and tests, not by a raw line count. A quantity gets no size carve-out: if a spec author insists on one, the measuring-test rule applies with no exemption (`engineering` Part C — *a measurable criterion needs a measuring test*): write the test that counts the lines and fails outside the bound, or it is not a criterion. Being forced to write that test is the tell that the number was never the requirement — a cohesive unit split to satisfy a line count moves reader-load up, not down.
 
-**Renegotiating a criterion mid-build.** A builder who discovers a criterion is wrong while building — a stale estimate, an impossible bound, the wrong target — does not descope it silently; `engineering-principles` forbids that, but nothing replaced it until now. The sanctioned move is: comment on the issue with the evidence, amend the acceptance criterion *there*, then build to the amended spec — all before any Done claim. The renegotiation lives on the ticket, where the canonical record can see it. A correct engineering call argued only in a commit body or PR description leaves the tracker's criterion wrong and the ticket falsely Done — the record everyone reads after the work says one thing while the diff did another.
+**Renegotiating a criterion mid-build.** A builder who discovers a criterion is wrong while building — a stale estimate, an impossible bound, the wrong target — does not descope it silently; `engineering` forbids that, but nothing replaced it until now. The sanctioned move is: comment on the issue with the evidence, amend the acceptance criterion *there*, then build to the amended spec — all before any Done claim. The renegotiation lives on the ticket, where the canonical record can see it. A correct engineering call argued only in a commit body or PR description leaves the tracker's criterion wrong and the ticket falsely Done — the record everyone reads after the work says one thing while the diff did another.
 
 ### Choosing assurance
 
@@ -99,7 +99,7 @@ Two rules carry the weight.
 
 ## Feature spec
 
-The canonical, as-built record of what the product does today, plus the decisions that shaped it (Decision blocks). Written by the **reviewer** on PASS, from the diff — never by the builder (`spec-driven-development`). See `templates/feature.md`. It answers "how does X work, and why is it that way?", grouped by user-visible behaviour, with the data model and interface surface that back it.
+The canonical, as-built record of what the product does today, plus the decisions that shaped it (Decision blocks). Written by the **reviewer** on PASS, from the diff — never by the builder (the spine (`CLAUDE.md`)). See `templates/feature.md`. It answers "how does X work, and why is it that way?", grouped by user-visible behaviour, with the data model and interface surface that back it.
 
 An as-built record must not enumerate a set the code owns — a class family, a command surface, or a reason vocabulary. Name the module that owns it and stop; or, where the list genuinely aids the reader, pair it with a guard that derives the set from the code and fails when the two disagree. A prose list with no derivation is a claim nothing measures, and it goes stale at the commit that adds the next member.
 

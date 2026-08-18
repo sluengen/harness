@@ -4,7 +4,7 @@ description: Use when making a cross-cutting design decision — data models, co
 ---
 # Architecture
 
-How to make and record design decisions. Loaded by the architect; consulted by anyone proposing a cross-cutting change. Built on `engineering-principles` — every significant decision should trace to a principle there, or to this repo's architecture-principles spec (see `spec-authoring` → reference specs).
+How to make and record design decisions. Loaded by the architect; consulted by anyone proposing a cross-cutting change. Built on `engineering` — every significant decision should trace to a principle there, or to this repo's architecture-principles spec (see `spec-authoring` → reference specs).
 
 ## What a design produces
 
@@ -16,7 +16,7 @@ A design is an artifact, not code. It answers *what* and *why* clearly enough th
 - **Security considerations** — validation rules at each boundary, the trust model, what data is exposed to whom.
 - **The decisions behind it**, recorded in place (see below).
 
-Prefer simple, proven patterns over clever ones. Design for the current scope; leave room to extend, but do not build the extension (`engineering-principles`: no speculation).
+Prefer simple, proven patterns over clever ones. Design for the current scope; leave room to extend, but do not build the extension (`engineering`: no speculation).
 
 ## When a choice is decision-worthy
 
@@ -46,7 +46,7 @@ The list is **repo-owned**: a repo opts in by naming its *own* gravity wells, an
 
 **The trigger.** When the files a change touches — *planned* (the builder, before writing the change spec) or *actual* (the reviewer, from the diff) — intersect `architecture_watchlist.files`, the change must carry a **`Watchlist trigger`** section (in the change spec, confirmed at review) with exactly one of two outcomes:
 
-1. **A small behavior-preserving seam extraction** — pull one cohesive seam (a sub-component, a pure helper, a branch) out of the gravity well, with tests or a smoke check proving behaviour is unchanged. Small and safe, not a rewrite (`engineering-principles`: smallest change — the larger refactor stays its own ticket).
+1. **A small behavior-preserving seam extraction** — pull one cohesive seam (a sub-component, a pure helper, a branch) out of the gravity well, with tests or a smoke check proving behaviour is unchanged. Small and safe, not a rewrite (`engineering`: smallest change — the larger refactor stays its own ticket).
 2. **An explicit deferral** — record *why* extraction is deferred this time (no safe seam in this diff, too risky without a redesign, blocked on a decision). A named reason, not silence.
 
 Either outcome is valid; an *unrecorded* one is not. Touching a gravity well is never invisible — the change either improves the seam or states on the record why it did not.
@@ -69,7 +69,7 @@ If the integration branch is unknown or unavailable — a detached checkout, or 
 
 The steward loads this section for `/assess architecture --deep` (`agents/steward.md`, the `architecture` scope). Where a design decision (above) shapes *one* change, an architecture assessment steps back and judges the *whole* system shape periodically: **is the shape still right for the product, and what should we preserve, change, or watch?** It is a holistic judgement, not a finding sweep — its output is a verdict and a narrative (`templates/assessment.md`, the architecture report shape), and only the *actionable* risks become tickets (`assessment-craft`: a report may carry non-ticket narrative; `commands/assess.md`: file only actionable architecture risks).
 
-Assess against these lenses — each grounded in `engineering-principles` and this repo's architecture-principles spec:
+Assess against these lenses — each grounded in `engineering` and this repo's architecture-principles spec:
 
 1. **Purpose fit** — are the major structural choices still serving the product, or has the product moved past them?
 2. **Boundary integrity** — are the API / client / domain / data boundaries holding, or has logic leaked across them?
