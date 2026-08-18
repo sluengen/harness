@@ -4,6 +4,8 @@ status: implemented
 last_updated: 2026-08-17
 ---
 
+> **Retired 2026-08-18 at the v5 review (ADR 0017).** This record describes the registry-era guidance system — per-file versions, the installer, the licence boundary — all retired by v5. Kept as history. Its successor, the as-built record of the plugin surface, is written by the independent reviewer of the v5 merge into `specs/features/`, per iron law 4 and final-evidence ordering.
+
 # Guidance system
 
 > Versioned, progressively disclosed instructions give agents the current contract for this repo without loading unrelated provider, workflow, or review detail.

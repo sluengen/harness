@@ -34,7 +34,6 @@ jobs:
           # boundary, so every spec reads as touched at HEAD and the run goes
           # red on whichever specs were not edited that day (#326). Pinned by
           # tests/unit/test_ci_workflow_full_history.py.
-          fetch-depth: 0
 
       - name: Install uv
         uses: astral-sh/setup-uv@v3
