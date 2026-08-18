@@ -1,6 +1,6 @@
 ---
 proposal: plugin-shaped-guidance
-status: accepted         # draft | under-decision | accepted | shipped | rejected | split
+status: shipped          # draft | under-decision | accepted | shipped | rejected | split
 date: 2026-08-17
 related: [0015-harness-v4-thin-verification-layer, guidance-system, harness-as-tool, rebase-stable-certification]
 ---
@@ -80,7 +80,7 @@ Restraint: three instances is a pattern; six is a reorganization. `ux-design`/`d
 
 **One plugin, `harness`, one semver, bumped at release** — the promotion of ADR 0003, whose version bump and changelog fold (ADR 0014) happen there. No file-level versions, no `guidance:` headers, no registry, no lock. Commands are runtime-namespaced (`/harness:build`); in practice only `init` needs the prefix spoken, to avoid the native `/init`.
 
-**Skills — 17 → 13 freestanding leaves** (the contract having moved to the spine):
+**Skills — 17 → 14 freestanding leaves** (the contract having moved to the spine):
 
 | Skill | What it is | Disposition |
 |---|---|---|
@@ -202,7 +202,7 @@ Everything asserting prose-about-prose — version parity, pointer targets, rest
 | **D1 — Distribution: plugin + marketplace, or keep the installer?** Rec: plugin. Registry, freshness hook, `/update-guidance`, `BOOTSTRAP.md`, and the lock all delete. | user | ADR 0017 |
 | **D2 — The contract lives in the always-on spine (absorbing `CONTEXT.md`), not a conditional skill — and it states the fast lane?** Rec: yes to both. The lifecycle is needed in every working session; only one-off Q&A pays unused context, and that price is right for a contract that cannot fail to load. The fast lane (small fixes ship with the same isolation and gate but no ticket) is a real contract change from "the issue is the front door" and is called out as such — the enforcement layer never required the ticket; the prose did. Accepts the spine-refresh drift surface (`init --refresh` is the remedy). | user | ADR 0017 |
 | **D3 — The how/what pattern, applied to the triad only.** `engineering`, `architecture`, `infrastructure` each split into a generic skill body, a plugin asset (the universal argument, where learning accretes), and a repo asset (the local reality, seeded by `init`). `ux-design`/`design-system` wait for the first `/assess` after the triad ships. | user | ADR 0017 |
-| **D4 — Inventory dispositions.** Approve the fold/delete columns: skills 17→13 (`engineering` absorbs `code-quality`, `engineering-principles`, and `test-driven-development`; `infrastructure` added; `worktree-isolation` kept as mechanics with its norm in the spine), commands 13→9 (`start`/`ship` into `build`; `bug`+`tweak`→`capture`; `decision` into `digest`; `update-guidance` deleted; `init` added), agents 5→4 (`researcher` deleted, `architect` kept), hooks 7→5, templates 12→9 (`adjustment` into `change`; `CONTEXT.template` retired). Contestable items are marked in the tables — `/review` kept vs folded, `researcher`, `architect`, the TDD merge. | user | ADR 0017 |
+| **D4 — Inventory dispositions.** Approve the fold/delete columns: skills 17→14 (`engineering` absorbs `code-quality`, `engineering-principles`, and `test-driven-development`; `infrastructure` added; `worktree-isolation` kept as mechanics with its norm in the spine), commands 13→9 (`start`/`ship` into `build`; `bug`+`tweak`→`capture`; `decision` into `digest`; `update-guidance` deleted; `init` added), agents 5→4 (`researcher` deleted, `architect` kept), hooks 7→5, templates 12→9 (`adjustment` into `change`; `CONTEXT.template` retired). Contestable items are marked in the tables — `/review` kept vs folded, `researcher`, `architect`, the TDD merge. | user | ADR 0017 |
 | **D5 — Guard admission rule (a–d) and the cull.** The payoff decision — without it D1–D4 relocate the overhead. | user | ADR 0017 |
 | **D6 — This repo skips staging** (`dev → main`), recorded as the first entry in the harness's own infrastructure asset; the three-role topology stays available as configuration for repos with staging environments. | user | ADR 0003 (amended in place) + the infra asset |
 | **D7 — In-flight work disposition.** Swept 2026-08-17 on the operator's direction: closed as superseded or folded into the v5 chunks — #479 (the plugin *is* the fix), #480 (its ordering fix lands in chunk 2's `/build`), #471/#475/#476 (guards whose subjects chunk 1 deletes), #473/#477/#478 (folded into chunk 4, named there), #474 (folded into the `infrastructure` skill, chunk 2). Kept: #450 (standing proposals ledger), #464 (release-chain health, operator-held — not v5 work), #468 (held retention edge; its surface survives), #472 (craft patterns — content for the surviving review-discipline asset, built post-v5 under the new process). | user | the tickets |
