@@ -1,0 +1,11 @@
+{
+  "name": "harness",
+  "owner": { "name": "sluengen" },
+  "plugins": [
+    {
+      "name": "harness",
+      "source": "./",
+      "description": "Spec-driven development for agent-driven repos: lifecycle commands, craft skills, agents, and gate-evidence enforcement hooks. Run /harness:init after installing to hydrate a repo."
+    }
+  ]
+}
