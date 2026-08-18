@@ -16,7 +16,7 @@ Group by area (data, schema, API, deployment, security — whatever fits). For e
 ### {Area, e.g. Data}
 
 **{Principle, stated as a claim.}**
-{Why it holds; what it rules out. *Derived from: {engineering-principles tenet / product principle}.*}
+{Why it holds; what it rules out. *Derived from: {engineering tenet / product principle}.*}
 
 ## Cross-cutting decisions
 

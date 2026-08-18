@@ -1,7 +1,8 @@
-**Tracker operations follow the spine's contract** (`CLAUDE.md` → *Tracker dispatch* and *Filing*): the `tracker:` field names the backend, the matching provider skill (`github-issues` or `linear`) owns the API recipes, and `none` degrades to specs and session reports. Do not embed provider API calls here.
 # /assess — run a periodic assessment
 
 Usage: `/assess <scope>` — `code` or `architecture`, optionally with `--deep` (e.g. `/assess code --deep`, `/assess architecture --deep`)
+
+**Tracker operations follow the spine's contract** (`CLAUDE.md` → *Tracker dispatch* and *Filing*): the `tracker:` field names the backend, the matching provider skill (`github-issues` or `linear`) owns the API recipes, and `none` degrades to specs and session reports. Do not embed provider API calls here.
 
 Runs the `steward` over the codebase, produces a dated report, files its findings as tickets, and drains the repo's proposals ledger. This is the periodic-review loop: it catches what accumulates across many changes, which no per-change review can see.
 
