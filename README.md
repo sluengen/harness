@@ -125,12 +125,7 @@ to disclose it privately.
 
 ## License
 
-Two licences, split along what gets installed where:
-
-- **This repo's own code** — the gate, the mutation instrument, and the test
-  suite — is **AGPL-3.0-only** ([`LICENSE`](./LICENSE)).
-- **The guidance** — the skills, commands, agents, hooks, templates, and
-  settings the plugin carries into *your* sessions — is **MIT**
-  ([`GUIDANCE-MIT.md`](./GUIDANCE-MIT.md), which lists the covered paths).
-  Use it in any repository, including a closed-source one; it encumbers
-  nothing.
+**MIT** ([`LICENSE`](./LICENSE)) — the whole repo: the guidance the plugin
+carries into your sessions and the repo's own gate, mutation instrument, and
+test suite alike. Use any of it in any repository, including a closed-source
+one; it encumbers nothing.

@@ -4,11 +4,11 @@ version = "0.2.1"
 description = "Evidence layer that keeps agent-driven development honest"
 readme = "README.md"
 requires-python = ">=3.11"
-# The engine is copyleft; the guidance the installer copies into other repos is
-# MIT (GUIDANCE-MIT.md). ADR 0015 retires the engine, so nothing is built or
-# distributed from here any more — this declares the licence of the repo's own
-# remaining code (`scripts/`), which the carve-out does not cover.
-license = "AGPL-3.0-only"
+# One licence for everything — the guidance the plugin ships and the repo's own
+# scripts and guards alike. The AGPL side existed for the retired runtime
+# (ADR 0015); the dated Decision block in specs/architecture-principles.md
+# records the move to MIT-throughout (2026-08-18).
+license = "MIT"
 authors = [{ name = "Scott Luengen" }]
 
 # No runtime dependencies. ADR 0015 replaces the runtime with deterministic

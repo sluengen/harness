@@ -105,17 +105,11 @@ If you do open a PR:
 
 ## Inbound licensing
 
-This repo is split: its own code — the gate, the mutation instrument and the
-guard suite — is **AGPL-3.0-only** ([`LICENSE`](./LICENSE)) and the guidance the
-installer copies into other repos is **MIT**
-([`GUIDANCE-MIT.md`](./GUIDANCE-MIT.md)). A contribution is licensed under
-whichever of the two already covers the file it touches.
-
-Beyond that, **by opening a pull request you grant the maintainer a perpetual,
-worldwide, irrevocable, royalty-free right to use, modify, relicense and
-sublicense your contribution, including under terms other than the two above.**
-You keep your copyright — this is a grant, not an assignment, and you can still
-do whatever you like with your own work.
+This repo is **MIT** ([`LICENSE`](./LICENSE)) — all of it, the guidance and the
+repo's own code alike. A contribution is licensed under the same terms: by
+opening a pull request you license your contribution under the MIT licence. You
+keep your copyright — MIT is a permissive grant, not an assignment, and you can
+still do whatever you like with your own work.
 
 **Patents.** You also grant the maintainer and anyone who receives software from
 this project a perpetual, worldwide, non-exclusive, no-charge, royalty-free,
@@ -133,7 +127,7 @@ original work, or that you otherwise have the right to submit it under the terms
 above; that you are legally entitled to grant these rights — in particular, if
 your employer has rights to work you produce, that you have their permission to
 contribute, or they have waived those rights; and that you are not knowingly
-including third-party material under terms incompatible with the licences above.
+including third-party material under terms incompatible with the licence above.
 If a contribution does contain third-party material, identify its source and
 licence in the pull request. Contributions are provided as-is, with no warranty
 of any kind — you are giving code away, not taking on an obligation.
@@ -141,15 +135,11 @@ of any kind — you are giving code away, not taking on an obligation.
 The patent and right-to-submit paragraphs are ordinary — they are what every
 contributor agreement says, and near enough Apache's words for a reason: standard
 text has been argued over for twenty years, and something drafted fresh here would
-only be worse.
-
-The **relicensing** grant is the unusual one, so here is why, plainly rather than
-buried. Copyright in this repo currently sits with one person, which is what makes
-it possible to offer someone a licence other than the AGPL later — a commercial
-exception, say, or a move to a different licence entirely if the AGPL turns out to
-be the wrong call. Absent that grant, contributions arrive AGPL-only, the
-copyright becomes shared, and that option closes permanently the first time an
-outside PR is merged, because no one can relicense code they do not own.
+only be worse. Nothing beyond them is asked: MIT itself already permits anyone,
+maintainer included, to sublicense and redistribute, so there is no separate
+relicensing grant to sign. (There used to be, when the repo was dual-licensed
+with an AGPL side; the move to MIT-throughout retired it — the dated Decision
+block in `specs/architecture-principles.md` is the record.)
 
 If you would rather not give any of this, say so in the PR — the change can still
 be discussed, and small fixes are easy to reimplement independently.
