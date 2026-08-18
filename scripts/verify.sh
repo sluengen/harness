@@ -29,6 +29,17 @@ if ! uv run --extra dev python -c "import xdist" >/dev/null 2>&1; then
   exit "$GATE_UNRUNNABLE_EXIT"
 fi
 
+# Node (#478). The gate itself runs no node — but the suite it runs executes
+# the enforcement and advisory hooks (hooks/*.js) under node, and *skips* those
+# tests when node is missing. Without this probe a broken or absent node reads
+# as a green gate whose marker claims the tree verified, while the hook guards
+# the marker exists to serve were never run. Same reserved code: this is the
+# toolchain, not the tree.
+if ! node --version >/dev/null 2>&1; then
+  echo "gate precondition failed: 'node' is not runnable — the suite executes the enforcement hooks under node and skips them without it, so a gate without node verifies a tree minus its hook guards (toolchain unavailable, not a code failure)" >&2
+  exit "$GATE_UNRUNNABLE_EXIT"
+fi
+
 echo "=== ruff ==="
 uv run --extra dev ruff check .
 
