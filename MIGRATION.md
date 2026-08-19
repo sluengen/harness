@@ -73,7 +73,7 @@ shadows nothing — it is simply also present) rather than pinning a file.
 
 ## Edges from performed migrations
 
-Learned from the first real consumer migration (nano-erp, 2026-08-18):
+### From the first migration (nano-erp, 2026-08-18)
 
 - **The lock list is not the complete inventory of the old install.** Generated
   droppings sit beside it unlisted — `.codex/` (compiled output of the old
@@ -109,10 +109,56 @@ Learned from the first real consumer migration (nano-erp, 2026-08-18):
   one document (e.g. its architecture-principles spec) points the path there
   rather than scaffolding an empty competing directory.
 
+### From the second migration (calibrate, 2026-08-19)
+
+- **A lock-listed tree can contain repo-owned files.** Before deleting a tree
+  the lock names, diff its contents against the lock's file list — anything
+  present that the lock does not list is the repo's own (custom commands, a
+  session hook) and moves to a real location first. Re-verify any relocated
+  hook's relative-path arithmetic and file-existence assumptions: a script
+  written for a symlinked location breaks quietly when it becomes a real file
+  two levels deep.
+- **Sweep retired *names*, not just retired paths.** Three residue classes
+  survive a path-based grep: free prose inside `.claude/settings.json`
+  (permission/autoMode rationale citing a retired command), citations of
+  retired *skill names* (`code-quality`, `test-driven-development`, … —
+  derive the sweep list from the old lock's `skills/` entries minus the
+  plugin's current roster), and a pathlib-style join
+  (`ROOT / "commands" / "x.md"`) that contains no literal slash-path —
+  search the moved *filenames* too.
+- **Frozen decision records need a third category.** Banner-or-frozen is not
+  enough: a bare "See CONTEXT.md" navigational pointer inside an otherwise
+  historical ADR reads as live routing. Re-aim bare pointers even in frozen
+  records, or banner the record.
+- **Make the reconcile commit auditable.** When its message claims a class was
+  fully re-aimed, put the grep command and residual count in the body — the
+  second migration's one overclaim would have been self-catching.
+- **End with an explicit CI decision.** Plugin-resolving tests skip on a
+  runner without the plugin; that is by design, but the migration ends with a
+  recorded choice — install the plugin on the runner, set the plugin-root
+  override, or accept and ticket the coverage gap — not just a known-limits
+  paragraph.
+- **An existing record under another name beats a fresh seed.** A repo whose
+  infrastructure reality already lives in a feature spec points at it rather
+  than seeding a second file — same judgment as `paths.decisions`-as-file.
+- **Capture the gate's exit code directly.** `verify.sh | tail` reports
+  *tail's* status and masked a red, marker-less gate on the second migration.
+  The idiom is `verify.sh > /tmp/gate.log 2>&1; echo EXIT=$?` then read the
+  log — never a pipe. And gate the final run on a quiet machine: a contended
+  run stacked a load-induced subprocess timeout on top of a genuine defect,
+  and separating them cost five full gate runs.
+- **The guards' fallback can mask an unreadable spine** in repos with
+  conventional branch names, and the branches parser cannot read YAML flow
+  mappings — upstream sluengen/harness#487; until it ships, write the
+  `branches:` block in plain block form and consider an executing test that
+  the guards read *this* repo's declaration (calibrate has the reference
+  implementation, mutation-proven).
+
 ## Honest limits — what is untested
 
-- The path above has now run once end-to-end (nano-erp). The second and later
-  migrations should still expect repo-specific edges; report them as issues.
+- The path above has run twice end-to-end (nano-erp, calibrate), each run
+  audited independently. Later migrations should still expect repo-specific
+  edges; report them as issues.
 - The `CONTEXT.md` fallback in the hooks is covered by tests
   (`tests/unit/test_context_branch_parsing_contract.py`); the *interview*
   reading an existing `CONTEXT.md` for its answers is prose instruction to the
