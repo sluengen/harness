@@ -318,10 +318,11 @@ def test_the_spine_repo_is_read_from_the_github_block() -> None:
 
 
 def test_a_trailing_comment_does_not_swallow_the_repo_line() -> None:
-    r"""A spelling the guarded block already uses on four sibling lines.
+    r"""A spelling the guarded block already uses on sibling lines of its own.
 
-    ``stack.language``, ``branches.release`` and both ``layers:`` members each
-    carry a trailing ``#`` comment in this repo's own spine. Under ``\S+`` and an
+    ``stack.language``, ``commands.bootstrap``, ``branches.release`` and both
+    ``layers:`` members each carry a trailing ``#`` comment in this repo's own
+    spine. Under ``\S+`` and an
     end anchor the same spelling on ``repo:`` matches nothing, :func:`_expected_repo`
     raises, and the gate goes red over a spine that is still correct — a red the
     reviewer reproduced by splicing exactly that comment into ``CLAUDE.md``. The

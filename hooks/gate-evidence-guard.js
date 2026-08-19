@@ -332,6 +332,24 @@ const BRANCHES_FLOW = /^branches:\s*\{([^{}]*)\}\s*(?:#.*)?$/;
 //: thing worth reporting, so the detector must not be the parser.
 const BRANCHES_KEY = /^branches\s*:/;
 
+//: One ``key: value`` pair inside a **flow mapping body**, scanned rather than
+//: split. The body used to be cut on every comma, which is wrong for a comma
+//: inside a quoted value: ``{release: "has,comma"}`` yielded the fragment
+//: ``"has`` — a name opening with a quote character, which no branch can be —
+//: and dropped the name actually declared (#488). Both hooks were wrong
+//: identically, so the two-parser equivalence could not see it and no notice
+//: fired.
+//:
+//: The value alternation tries both quoted forms before the bare one, so a
+//: quoted value is taken whole and only an unquoted value stops at a comma. The
+//: quote characters are written as ``\x22``/``\x27`` on purpose, for the same
+//: reason ``stripQuotes`` avoids them: the repo's hook source scanners blank
+//: string literals to count braces, and a lone quote inside a pattern throws
+//: their offsets off. Every match includes its key, so no match is zero-length
+//: and the global scan always advances.
+const FLOW_PAIR = /([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*(\x22[^\x22]*\x22|\x27[^\x27]*\x27|[^,]*)/g;
+
+
 //: Files already reported as unreadable, so a hook that resolves its declaration
 //: at more than one call site says it once. Process-scoped, and a hook process
 //: handles exactly one invocation.
@@ -398,7 +416,13 @@ function declaredBranches(contextFile) {
   let declares = false;
   let indent = -1;
   for (const raw of text.split("\n")) {
-    const line = raw.replace(/\t/g, "  ");
+    // ``\r`` first, then tabs. Splitting on ``\n`` leaves a CRLF file's lines
+    // ending in ``\r``, and ``PAIR``'s trailing ``(.*)$`` cannot cross one —
+    // JavaScript counts it as a line terminator, so ``PAIR.exec("  a: b\r")``
+    // was ``null`` and every block declaration in a CRLF spine parsed to nothing
+    // while the same declaration in the flow spelling parsed fine (#488). The
+    // flow arm never saw it because it runs against ``line.trim()``.
+    const line = raw.replace(/\r$/, "").replace(/\t/g, "  ");
     const lead = line.length - line.trimStart().length;
     if (indent === -1) {
       const trimmed = line.trim();
@@ -406,15 +430,26 @@ function declaredBranches(contextFile) {
       declares = true;
       const flow = BRANCHES_FLOW.exec(trimmed);
       if (flow) {
-        for (const pair of flow[1].split(",")) {
-          const match = PAIR.exec(pair);
-          if (!match) continue;
+        for (const match of flow[1].matchAll(FLOW_PAIR)) {
           const value = scalar(match[2]);
           if (value) found[match[1]] = value;
         }
         break; // a flow mapping is the whole declaration
       }
-      if (/^branches:\s*$/.test(trimmed)) indent = lead;
+      // A block opens when the key carries **no value** — asked through
+      // ``scalar``, so the one helper that already decides comments decides them
+      // in this position too. The old test was ``/^branches:\s*$/`` against the
+      // trimmed line, and yaml permits a comment after any key, so
+      // ``branches:   # the shared ones`` skipped the perfectly ordinary mapping
+      // beneath it and fell back (#488). This repo's own spine writes inline
+      // comments on sibling lines of this very block — ``branches.release``
+      // among them, inside the very mapping this arm is trying to read.
+      //
+      // Asking the value rather than widening the key pattern is what keeps the
+      // spellings that must stay unreadable unreadable: ``branches: lonely-lane``
+      // and ``branches: [main, staging]`` both yield a non-empty scalar and so
+      // are not blocks, and land on the notice as before.
+      if (scalar(trimmed.replace(BRANCHES_KEY, "")) === "") indent = lead;
       continue;
     }
     if (!line.trim()) continue;

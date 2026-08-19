@@ -133,6 +133,17 @@ branches: {integration: {name: deep-lane}}
 #: out of the arm's reach by construction, and named in the same comment as
 #: landing on the notice. Without it the "out of scope too" half of that comment
 #: is unmeasured in exactly the way #487 was filed for.
+#:
+#: **It is also the one fixture in this corpus that constrains how wide the block
+#: arm's key test may be**, which is worth stating because it is not what a reader
+#: would guess. #488 replaced that test with "the key's value, comment stripped,
+#: is empty"; mutating it to *always* open a block was measured against all five
+#: spellings here and only this one died. The other four survive because nothing
+#: inside them parses either way — a sequence body and a scalar body yield no
+#: pairs however the block was entered — whereas this fixture's indented
+#: ``integration: wrapped-lane,`` does match, so an over-wide key test half-parses
+#: it into ``wrapped-lane,`` (trailing comma and all) and the notice stops firing.
+#: Deleting this fixture would leave #488 AC-5 with no fixture measuring it.
 _UNREADABLE_MULTILINE_FLOW = """# spine
 
 ```yaml
@@ -156,15 +167,21 @@ branches: lonely-lane
 ```
 """
 
-#: The sixth, and a **limitation** rather than a shape nobody would write: a block
-#: declaration whose key line carries an inline comment. The block arm keys on a
-#: bare ``branches:`` line, so the perfectly readable mapping below it is skipped —
-#: and this repository's own spine writes inline comments on four sibling lines of
-#: the very block this parser reads, which is how close the spelling sits. The
-#: refusal predates #487 (the old scanner was silent about it); pinning it here is
-#: what makes the state observed rather than assumed, and is where a later change
-#: that teaches the arm to tolerate the comment reports itself.
-_UNREADABLE_KEY_COMMENT = """# spine
+#: **Formerly the sixth unreadable spelling; readable since #488.** A block
+#: declaration whose key line carries an inline comment. The block arm used to
+#: key on a bare ``branches:`` line, so the perfectly readable mapping below it
+#: was skipped — and this repository's own spine writes inline comments on
+#: sibling lines of the very block this parser reads, ``branches.release`` among
+#: them, which is how close the spelling sat. #488 asks whether the key's
+#: *value*, comment stripped, is empty,
+#: and this fixture moved with the behaviour: it now sits in
+#: :data:`_READABLE_FIXTURES` below, where the notice must **not** fire.
+#:
+#: The move is the point. The comment this fixture used to carry said it was
+#: "where a later change that teaches the arm to tolerate the comment reports
+#: itself" — so leaving it among the unreadable spellings after #488 would have
+#: turned a pinned limitation into a false one.
+_READABLE_KEY_COMMENT = """# spine
 
 ```yaml
 repo:
@@ -175,6 +192,39 @@ branches:   # the shared ones
 ```
 """
 
+#: #488 spelling 2, on the readable side: a comma inside a quoted flow value.
+#: Unlike the other two this one never fired the notice — both parsers cut the
+#: value in half *identically*, so the declaration looked readable and was not.
+#: It belongs in this corpus because the notice must stay silent here after the
+#: fix as well, and because a fix that made the arm bail on an unfamiliar value
+#: rather than parse it would show up as a new notice.
+_READABLE_QUOTED_COMMA = """# spine
+
+```yaml
+branches: {integration: 'also,comma', release: "has,comma", extra: plain-lane}
+```
+"""
+
+#: #488 spelling 3, on the readable side: CRLF with an ordinary indented block.
+#: Written as an explicit literal and asserted to reach disk with its endings
+#: intact by :func:`test_the_crlf_fixture_really_carries_crlf` — a CRLF fixture
+#: silently translated to LF would measure the ordinary block spelling and pass
+#: on a tree where the defect is untouched.
+_READABLE_CRLF = "\r\n".join(
+    [
+        "# spine",
+        "",
+        "```yaml",
+        "repo:",
+        "  name: sample",
+        "branches:",
+        "  integration: crlf-lane",
+        "  release: crlf-main",
+        "```",
+        "",
+    ]
+)
+
 #: Every spelling the parsers refuse, keyed by the shape that makes it
 #: unreadable. The notice is what the refusal costs, so each one is driven
 #: through the same assertions rather than trusted to the comment that names it.
@@ -184,8 +234,15 @@ _UNREADABLE_FIXTURES = {
     "nested-flow": _UNREADABLE_NESTED_FLOW,
     "multiline-flow": _UNREADABLE_MULTILINE_FLOW,
     "plain-scalar": _UNREADABLE_SCALAR,
-    "key-comment-block": _UNREADABLE_KEY_COMMENT,
 }
+
+#: The floor under the corpus above. #488 moved one spelling out of it, and a
+#: later change that emptied it — or narrowed it to a single shape — would leave
+#: every assertion parametrized over it constant-true while reading nothing
+#: (``craft.md`` → *a sweep over a corpus needs a floor on the corpus*). Five is
+#: the count after the move, and it is stated as a floor rather than an equality
+#: so adding a newly-discovered unreadable spelling is not a test edit.
+_MIN_UNREADABLE_SPELLINGS = 5
 
 #: A spine with no ``branches:`` key at all: the ordinary un-adopted repo. The
 #: control. A hook that chattered here would emit noise on every tool call in
@@ -270,9 +327,17 @@ def _repo(tmp_path: Path, *, spine: str | None = None, context: str | None = Non
     _git(root, "config", "user.email", "t@example.com")
     _git(root, "config", "user.name", "t")
     if spine is not None:
-        (root / "CLAUDE.md").write_text(spine)
+        # ``newline=""`` disables newline translation on write. Measured on a
+        # POSIX host it changes nothing — ``os.linesep`` is ``\n`` there, so a
+        # ``\r\n`` literal already survives the default — and a mutation removing
+        # it is correctly reported inert. It is here for the platform where the
+        # default *does* rewrite line endings, which is the same platform whose
+        # clones produce the CRLF spine in the first place (#488 spelling 3).
+        # What is actually measured, on every host, is the bytes that reached
+        # disk: :func:`test_the_crlf_fixture_really_carries_crlf`.
+        (root / "CLAUDE.md").write_text(spine, newline="")
     if context is not None:
-        (root / "CONTEXT.md").write_text(context)
+        (root / "CONTEXT.md").write_text(context, newline="")
     (root / "a.txt").write_text("one\n")
     _git(root, "add", "-A")
     _git(root, "commit", "-q", "-m", "first")
@@ -408,22 +473,98 @@ def test_a_spine_without_a_branches_key_is_silent(hook: str, tmp_path: Path) -> 
     )
 
 
-@pytest.mark.parametrize("hook", _HOOKS)
-def test_a_readable_declaration_is_silent(hook: str, tmp_path: Path) -> None:
-    """The second control, and the derivation pin on the predicate.
+#: Every spelling the parsers **do** read, and where the notice must therefore
+#: stay silent. ``flow-mapping`` is #487's; the other three are #488's, and the
+#: reason they are here rather than in :data:`_UNREADABLE_FIXTURES` is the
+#: behaviour change itself — AC-3 asks that the fix report itself where today's
+#: behaviour is recorded, and this map is that record.
+_READABLE_FIXTURES = {
+    "flow-mapping": _READABLE_FLOW,
+    "key-comment-block": _READABLE_KEY_COMMENT,
+    "quoted-comma-flow": _READABLE_QUOTED_COMMA,
+    "crlf-block": _READABLE_CRLF,
+}
 
-    The ``branches:`` key is present here and the scan succeeds, so a notice
-    keyed on *the key being there* rather than on *the scan producing nothing*
-    fires and fails. The fixture is the flow spelling on purpose: it is the one
-    this change teaches the scanners to read, so this also fails if the parser
-    arm regresses — the notice would then be correct and still unwanted.
+
+@pytest.mark.parametrize("spelling", sorted(_READABLE_FIXTURES))
+@pytest.mark.parametrize("hook", _HOOKS)
+def test_a_readable_declaration_is_silent(hook: str, spelling: str, tmp_path: Path) -> None:
+    """#488 AC-1/AC-3 — the second control, and the derivation pin on the predicate.
+
+    The ``branches:`` key is present in every fixture here and every scan
+    succeeds, so a notice keyed on *the key being there* rather than on *the scan
+    producing nothing* fires and fails.
+
+    The corpus is the four spellings the scanners were taught to read: #487's
+    flow mapping, and #488's key-line comment, quoted comma, and CRLF block. Each
+    also fails here if its parser arm regresses — the notice would then be
+    correct and still unwanted, which is the honest way round for a
+    silence assertion to break.
+
+    ``key-comment-block`` in particular used to live in
+    :data:`_UNREADABLE_FIXTURES`, where it pinned the fallback. Its presence here
+    is what makes #488 report itself at the place its behaviour was recorded.
     """
-    repo = _repo(tmp_path, spine=_READABLE_FLOW)
+    repo = _repo(tmp_path, spine=_READABLE_FIXTURES[spelling])
     proc = _run_parse(hook, repo)
 
     assert not proc.stderr.strip(), (
-        f"{hook} reported an unreadable declaration for a spine it parsed "
-        f"successfully: {proc.stderr!r}"
+        f"{hook} reported an unreadable declaration for the {spelling!r} spine, which it "
+        f"parses successfully: {proc.stderr!r}"
+    )
+
+
+def test_the_two_corpora_are_disjoint_and_populated() -> None:
+    """The floor under both sweeps, and the pin on #488's move.
+
+    Two parametrized families above read these maps, and an assertion
+    parametrized over an emptied map is constant-true while measuring nothing
+    (``craft.md`` → *a sweep over a corpus needs a floor on the corpus*). Both
+    directions are stated because a spelling that drifted into **both** maps
+    would assert the notice must fire and must not fire, and pytest would report
+    only whichever ran second.
+
+    ``key-comment-block`` is named explicitly on the readable side: it is the one
+    spelling #488 moved, and a revert that put it back among the unreadable
+    fixtures is exactly the regression this module exists to catch.
+    """
+    assert len(_UNREADABLE_FIXTURES) >= _MIN_UNREADABLE_SPELLINGS, (
+        f"the unreadable corpus holds {len(_UNREADABLE_FIXTURES)} spellings, below the "
+        f"floor of {_MIN_UNREADABLE_SPELLINGS}. Every assertion parametrized over it is "
+        "weaker than it was, and an empty corpus would make them all vacuous."
+    )
+    assert _READABLE_FIXTURES, "the readable corpus is empty, so the silence control is vacuous"
+    overlap = set(_UNREADABLE_FIXTURES) & set(_READABLE_FIXTURES)
+    assert not overlap, (
+        f"{sorted(overlap)} is listed as both unreadable and readable, so this module "
+        "asserts the notice must fire and must not fire for the same spine"
+    )
+    assert "key-comment-block" in _READABLE_FIXTURES, (
+        "the key-line-comment spelling is no longer recorded as readable. #488 moved it "
+        "out of the unreadable corpus because the block arm now tolerates the comment; "
+        "if that behaviour was reverted, revert this module's claim with it."
+    )
+
+
+def test_the_crlf_fixture_really_carries_crlf(tmp_path: Path) -> None:
+    """The floor under the CRLF fixture's own bytes.
+
+    A CRLF fixture whose ``\r`` was translated away on write measures the
+    ordinary block spelling, passes on a tree where the defect is untouched, and
+    reads as coverage — the #466 identically-passed-renders shape. Python's
+    default newline translation is exactly how that happens, so this measures the
+    bytes the hook will read rather than the literal in this file.
+    """
+    assert "\r\n" in _READABLE_CRLF, "the CRLF literal carries no CRLF"
+    repo = _repo(tmp_path, spine=_READABLE_CRLF)
+    written = (repo / "CLAUDE.md").read_bytes()
+    assert b"\r\n" in written, (
+        "the CRLF fixture reached disk with its line endings translated, so the CRLF "
+        "case is measuring the ordinary LF spelling"
+    )
+    assert b"\n" not in written.replace(b"\r\n", b""), (
+        "the CRLF fixture reached disk with mixed line endings, so a parser could "
+        "satisfy it by reading only the LF-terminated lines"
     )
 
 
