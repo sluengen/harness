@@ -94,6 +94,17 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/session-start-bootstrap.sh"
+          }
+        ]
+      }
     ]
   }
 }
