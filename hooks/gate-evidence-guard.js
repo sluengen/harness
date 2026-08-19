@@ -448,6 +448,35 @@ function claimsCompletion(text) {
   return typeof text === "string" && CLAIM_PATTERNS.some((pattern) => pattern.test(text));
 }
 
+/** The tip of the integration branch, local ref first, ``origin``'s second — or
+ * null when neither resolves.
+ *
+ * A local-only lookup made this hook silently inert in every checkout that
+ * carries the integration branch as ``refs/remotes/origin/<b>`` alone: a cloud
+ * or CI clone, a ``--single-branch`` clone, a worktree-only checkout of a task
+ * branch (#483). There the ``rev-parse`` answered null, ``hasWorkToClaim``
+ * reported *nothing to claim*, and the hook allowed with nothing on stderr — so
+ * an installation looked healthy while the Stop guard had no effect at all, in
+ * precisely the unattended environment it exists for.
+ *
+ * Local first, so behaviour is unchanged wherever a local ref exists. ``origin``
+ * is hardcoded to match ``protectedBranches``, which already reads
+ * ``refs/remotes/origin/HEAD``: one assumption about the remote's name, already
+ * shipped, rather than a second one introduced here.
+ *
+ * Neither resolving still yields null, and the caller still opens on it. That
+ * fall-open is deliberate — §8, a Stop hook that blocks on ambiguity wedges a
+ * session with no way out — and this only narrows the set of cases reaching it.
+ * A checkout holding the branch under neither spelling is genuinely ambiguous;
+ * one holding it under the remote spelling never was. */
+function integrationTip(cwd, integration) {
+  for (const ref of [`refs/heads/${integration}`, `refs/remotes/origin/${integration}`]) {
+    const tip = git(cwd, ["rev-parse", ref]);
+    if (tip !== null) return tip;
+  }
+  return null;
+}
+
 /** True iff this session has produced something a completion claim would cover:
  * uncommitted work, or commits ahead of the integration branch. */
 function hasWorkToClaim(cwd, tree, declared) {
@@ -456,7 +485,7 @@ function hasWorkToClaim(cwd, tree, declared) {
   const integration = declared.integration;
   if (!integration) return false;
   const head = git(cwd, ["rev-parse", "HEAD"]);
-  const tip = git(cwd, ["rev-parse", `refs/heads/${integration}`]);
+  const tip = integrationTip(cwd, integration);
   if (head === null || tip === null) return false;
   return head !== tip;
 }

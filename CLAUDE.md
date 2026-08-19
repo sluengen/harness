@@ -56,6 +56,7 @@ github:
 stack:
   language: Python 3.11+   # tooling only — no runtime dependencies
 commands:
+  bootstrap: "bash scripts/setup-cloud-env.sh"   # provisions uv/python/node/gh, then install
   install: "uv sync --extra dev"
   lint: "uv run --extra dev ruff check ."
   typecheck: "uv run --extra dev mypy scripts"
