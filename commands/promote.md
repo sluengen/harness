@@ -70,10 +70,10 @@ resolver is what changes, not the command.
 - **Push the release branch directly.** This command never direct-pushes the
   `release` role's branch. The release hop pushes a promotion branch and opens
   a PR; that is this command's whole mechanism. The one path that may advance
-  release without a PR is a repo's own promotion automation where its recorded
+  release **unattended** is a repo's own promotion automation where its recorded
   topology decision says so (this repo's nightly `dev → main`, ADR 0003 as
-  amended — see its infrastructure asset), and that authority belongs to the
-  automation's script, never to this command.
+  amended — see its infrastructure asset); how that automation lands the hop,
+  PR or otherwise, is its script's business and never this command's.
 - **Auto-merge the release PR.** Opening it is this command's job; merging it
   is a human/CI act.
 - **Repair a conflict or a red gate.** Both are stop conditions. A promotion

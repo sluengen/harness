@@ -16,10 +16,18 @@ concurrency:
   group: nightly-dev-to-main
   cancel-in-progress: false
 
-# The step advances only the release ref (`main`), as a fast-forward; it has no
-# pull-request, package, OIDC, or broader grant.
+# Exactly what the promotion needs and nothing else. `main` is protected and
+# requires a pull request, so the step opens (or reuses) one from `dev` and
+# merges it through the API: `contents` for the merge commit the merge writes
+# onto `main`, `pull-requests` to open and merge it, `checks` to read
+# lint-and-test's conclusion on the gated commit. Deliberately absent, and
+# pinned as a set by tests/unit/test_nightly_promotion_workflow.py so a fourth
+# grant cannot arrive unobserved: actions, pages, id-token, packages, issues,
+# deployments, statuses.
 permissions:
   contents: write
+  pull-requests: write
+  checks: read
 
 jobs:
   promote:
@@ -30,11 +38,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: dev
-          # Full history: scripts/promotion-step.sh checks the fast-forward
-          # ancestry (git merge-base --is-ancestor) before advancing main, and a
-          # shallow clone cannot answer that. Pinned by
-          # tests/unit/test_nightly_promotion_workflow.py.
+          # Full history: scripts/promotion-step.sh reads the merge base of main
+          # and the candidate, and diffs them, before promoting — and reads
+          # containment and tree identity after. A shallow clone answers none of
+          # that. Pinned by tests/unit/test_nightly_promotion_workflow.py.
           fetch-depth: 0
+          # The script never pushes: main is protected, so the promotion goes
+          # through the API. Remove the git layer's ability rather than leave it
+          # unused — fetch and ls-remote against a public repo need no credential.
+          persist-credentials: false
 
       - name: Install uv
         uses: astral-sh/setup-uv@v3
@@ -58,6 +70,10 @@ jobs:
 
       - name: Promote the gated candidate
         shell: bash
+        # The Actions-issued, job-scoped token — not a stored secret, not a PAT.
+        # It is what `gh` authenticates with, and the script never echoes it.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         # The step's logic lives in the script so a test can execute it rather
         # than read it (specs/architecture-principles.md -> CI logic lives in a
         # script, not in a `run:` block). Nothing may be appended here:

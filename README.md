@@ -102,7 +102,8 @@ bash scripts/verify.sh       # the canonical gate
 
 Work moves `dev → main`: feature branches merge to `dev` through the gate, and
 a nightly promotes `dev` to `main` only when the gate is green on the exact
-candidate, fast-forward only (`specs/infrastructure.md`).
+candidate — what lands is exactly the tree that was gated
+(`specs/infrastructure.md`).
 
 **Stack:** Python 3.11+ (stdlib only) · pytest · ruff · mypy · uv
 
