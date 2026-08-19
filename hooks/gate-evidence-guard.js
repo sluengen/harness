@@ -581,10 +581,23 @@ function claimsCompletion(text) {
  * fall-open is deliberate — §8, a Stop hook that blocks on ambiguity wedges a
  * session with no way out — and this only narrows the set of cases reaching it.
  * A checkout holding the branch under neither spelling is genuinely ambiguous;
- * one holding it under the remote spelling never was. */
+ * one holding it under the remote spelling never was.
+ *
+ * ``--verify --quiet`` rather than a bare ``rev-parse``, and the same verifying
+ * spelling is used at every ref probe in this file (#490). Bare ``rev-parse
+ * <name>`` falls back to reading ``<name>`` as a pathspec when it does not
+ * resolve as a revision, and answers by echoing the path with exit 0 — so in a
+ * repository that happens to track a file at ``refs/heads/<b>``, this loop took
+ * the *string* ``refs/heads/<b>`` for the tip, never reached the remote arm,
+ * and every comparison against it was against a path. A clean session sitting
+ * at the integration tip was blocked, demanding a gate run for work nobody did,
+ * on nothing but the repository's file layout. ``--verify`` refuses anything
+ * that is not a single revision; ``--quiet`` keeps the expected absence silent.
+ * ``git()`` maps the non-zero exit to null, which is the answer this loop
+ * already handles. */
 function integrationTip(cwd, integration) {
   for (const ref of [`refs/heads/${integration}`, `refs/remotes/origin/${integration}`]) {
-    const tip = git(cwd, ["rev-parse", ref]);
+    const tip = git(cwd, ["rev-parse", "--verify", "--quiet", ref]);
     if (tip !== null) return tip;
   }
   return null;
@@ -593,11 +606,11 @@ function integrationTip(cwd, integration) {
 /** True iff this session has produced something a completion claim would cover:
  * uncommitted work, or commits ahead of the integration branch. */
 function hasWorkToClaim(cwd, tree, declared) {
-  const headTree = git(cwd, ["rev-parse", "HEAD^{tree}"]);
+  const headTree = git(cwd, ["rev-parse", "--verify", "HEAD^{tree}"]);
   if (headTree === null || headTree !== tree) return true;
   const integration = declared.integration;
   if (!integration) return false;
-  const head = git(cwd, ["rev-parse", "HEAD"]);
+  const head = git(cwd, ["rev-parse", "--verify", "HEAD"]);
   const tip = integrationTip(cwd, integration);
   if (head === null || tip === null) return false;
   return head !== tip;
@@ -786,7 +799,7 @@ function verdictFor(dir) {
 
   const top = git(dir, ["rev-parse", "--show-toplevel"]);
   const declared = top === null ? {} : declaredConfig(top);
-  const branch = git(dir, ["rev-parse", "--abbrev-ref", "HEAD"]);
+  const branch = git(dir, ["rev-parse", "--verify", "--abbrev-ref", "HEAD"]);
   if (branch !== null && protectedBranches(declared, dir).has(branch)) return null;
 
   if (!hasWorkToClaim(dir, tree, declared)) return null;

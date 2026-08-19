@@ -743,6 +743,144 @@ def test_an_integration_branch_that_resolves_as_neither_ref_allows(tmp_path: Pat
     assert _run_real(root, tmp_path) == {"continue": True}
 
 
+# --- #490 AC-1 / AC-3: how the tip is *resolved*, not merely which ref carries it
+
+
+def _shadowed_by_a_tracked_path(tmp_path: Path) -> Path:
+    """A clone carrying ``dev`` only as ``refs/remotes/origin/dev``, whose working
+    tree also holds a **tracked file at the literal path** ``refs/heads/dev``.
+
+    That second property is the whole fixture. ``git rev-parse <name>`` falls back
+    to interpreting ``<name>`` as a pathspec when it does not resolve as a
+    revision, and answers by echoing the path — exit 0, no oid. Measured in a
+    scratch repo: with no ``dev`` branch and a tracked file at that path,
+    ``git rev-parse refs/heads/dev`` exits 0 printing ``refs/heads/dev`` while
+    ``git rev-parse --verify refs/heads/dev`` exits 128.
+
+    So the local arm of :func:`integrationTip`'s chain returns a *string* instead
+    of null, the chain stops there rather than falling through to the remote ref
+    that would have answered correctly, and every comparison against it is
+    against a path. HEAD sits on a task branch **at the integration tip** with a
+    clean tree — the state with genuinely nothing to claim — so the only thing
+    that can produce a block here is the pathspec answer.
+    """
+    origin = tmp_path / "shadow-origin"
+    origin.mkdir()
+    _git(origin, "init", "-q", "--initial-branch=dev")
+    _seed(origin)
+    decoy = origin / "refs" / "heads"
+    decoy.mkdir(parents=True)
+    (decoy / "dev").write_text("not a ref — a tracked file that happens to sit here\n")
+    _git(origin, "add", "refs/heads/dev")
+    _git(origin, "commit", "-q", "-m", "a file whose path spells a ref")
+
+    clone = tmp_path / "shadow-clone"
+    _git(tmp_path, "clone", "-q", str(origin), str(clone))
+    _git(clone, "config", "user.email", "t@example.com")
+    _git(clone, "config", "user.name", "t")
+    _git(clone, "checkout", "-q", "-b", "task/shadowed")
+    _git(clone, "branch", "-D", "dev")
+    return clone
+
+
+def test_a_tracked_path_spelling_a_ref_does_not_block_a_clean_session(tmp_path: Path) -> None:
+    """#490 AC-1 — the false refusal. Against the bare ``rev-parse`` spelling the
+    tip resolves to the string ``refs/heads/dev``, which equals no oid, so
+    ``hasWorkToClaim`` reports work, no marker covers it, and a session that has
+    done nothing at all is blocked behind a gate run it does not need.
+
+    A Stop hook that refuses on a repository's file layout is the worst shape
+    this guard can take: the session cannot tell a real missing gate from this,
+    and the only way out is to run a gate over work nobody did.
+    """
+    repo = _shadowed_by_a_tracked_path(tmp_path)
+
+    assert (repo / "refs" / "heads" / "dev").is_file(), "the fixture lost its decoy path"
+    assert "refs/heads/dev" in _git(repo, "ls-files"), (
+        "the decoy is untracked, so a fresh clone would not carry it and the "
+        "pathspec fallback this test exists for never fires"
+    )
+    assert not _resolves(repo, "refs/heads/dev"), (
+        "the fixture kept a local dev, so the local arm answers with a real oid "
+        "and the pathspec fallback is never reached"
+    )
+    assert _resolves(repo, "refs/remotes/origin/dev"), "the fixture lost its remote ref"
+    assert _git(repo, "status", "--porcelain") == "", "the fixture is dirty"
+    assert _git(repo, "rev-parse", "HEAD") == _git(repo, "rev-parse", "refs/remotes/origin/dev"), (
+        "HEAD is not at the integration tip, so this session really would have "
+        "work to claim and the test could not tell a false block from a true one"
+    )
+
+    assert _run_real(repo, tmp_path) == {"continue": True}, (
+        "a clean session sitting at the integration tip was blocked, because a "
+        "tracked file named refs/heads/dev answered the tip lookup"
+    )
+
+
+def _integration_at_divergent_tips(tmp_path: Path) -> Path:
+    """A clone holding ``dev`` under **both** spellings at **different** oids,
+    with HEAD on a task branch at the *local* tip and a clean tree.
+
+    Every other fixture in this file holds the branch under exactly one spelling,
+    which is what makes each arm of the chain independently killable — and is
+    also precisely why none of them can see the chain's *order*. With one ref
+    present the two arms cannot disagree, so swapping them is inert: the
+    reviewer's ``swap-the-chain-order`` mutation survived the whole suite and was
+    classified UNPROVEN rather than killed (#483, carried into #490 AC-3).
+
+    Here they disagree. Local-first answers the local tip, which equals HEAD, so
+    there is nothing to claim. Remote-first answers ``origin/dev``, which is one
+    commit ahead, so the hook would demand a gate run for work this session never
+    did — the same false refusal as AC-1, reached by a different route.
+    """
+    origin = tmp_path / "divergent-origin"
+    origin.mkdir()
+    _git(origin, "init", "-q", "--initial-branch=dev")
+    _seed(origin)
+
+    clone = tmp_path / "divergent-clone"
+    _git(tmp_path, "clone", "-q", str(origin), str(clone))
+    _git(clone, "config", "user.email", "t@example.com")
+    _git(clone, "config", "user.name", "t")
+
+    # origin moves on; the clone learns of it but its own dev stays put.
+    _commit(origin, "upstream.txt", "landed after the clone\n")
+    _git(clone, "fetch", "-q", "origin")
+
+    _git(clone, "checkout", "-q", "-b", "task/divergent", "dev")
+    return clone
+
+
+def test_the_tip_is_resolved_local_ref_first(tmp_path: Path) -> None:
+    """#490 AC-3 — the chain's order, pinned rather than assumed.
+
+    Born green: it records today's behaviour as a decision. Its evidence is the
+    mutation, not a red first observation — swap the two arms of
+    ``integrationTip`` and this is the test that dies, where before #490 nothing
+    did.
+
+    Local-first is the right order because a stale local ref is the *normal*
+    state of a working checkout, and a clean session sitting on its own local tip
+    has nothing to claim. Answering with ``origin``'s tip instead would block it
+    for commits that arrived upstream while it worked.
+    """
+    repo = _integration_at_divergent_tips(tmp_path)
+
+    local = _git(repo, "rev-parse", "refs/heads/dev")
+    remote = _git(repo, "rev-parse", "refs/remotes/origin/dev")
+    assert local != remote, (
+        "the fixture's two spellings agree, so the arms cannot disagree and "
+        "swapping them stays inert — the exact gap AC-3 exists to close"
+    )
+    assert _git(repo, "rev-parse", "HEAD") == local, "HEAD is not at the local tip"
+    assert _git(repo, "status", "--porcelain") == "", "the fixture is dirty"
+
+    assert _run_real(repo, tmp_path) == {"continue": True}, (
+        "a clean session at the local integration tip was blocked, so the tip "
+        "was resolved from origin rather than locally"
+    )
+
+
 # --- the one-block ceiling ----------------------------------------------------
 
 

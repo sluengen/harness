@@ -734,6 +734,12 @@ def _git_spawn_counter(tmp_path: Path, name: str) -> tuple[dict[str, str], Path]
     shim execs git by absolute path, which preserves the hook's behaviour exactly
     and makes recursion back into the shim impossible.
 
+    That premise is not this module's to hold, and #490 gave it a keeper:
+    ``test_gate_evidence_hook_spellings.py`` reads the hook out of the index and
+    fails when its one site is respelled with an absolute path or a second one
+    appears — the edit that leaves this counter reading 21 spawns against 251
+    real ones, measured at the #486 review.
+
     The Python-side fixture helpers (:func:`_git`, :func:`_project`,
     :func:`_worktree`) run git through their own ``subprocess.run`` without this
     env, so nothing but the hook is ever counted.

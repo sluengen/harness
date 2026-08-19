@@ -62,7 +62,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from tests._gitutil import tracked_files_under
+from tests._gitutil import indexed_text, tracked_files_under
 from tests.unit._prose import REPO_ROOT
 
 #: The page this guard reads, repo-relative.
@@ -150,32 +150,6 @@ def inventory_difference(
                 "in_tree_only": in_tree_only,
             }
     return differences
-
-
-def indexed_text(path: str, *, repo_root: Path = REPO_ROOT) -> str:
-    """The bytes git has **staged** for ``path``.
-
-    Not ``Path.read_text``. ``git write-tree`` certifies the index, the gate
-    marker is named after the tree that write-tree produces, and a review
-    verdict binds to that same oid — so the index is the only operand that
-    answers "what will ship". Reading the working file instead certifies bytes
-    that may never be committed: measured at review, a tree staging a page with
-    a skill deleted, with the correct page restored on disk unstaged, passed
-    this module 12/12 while `git write-tree` reported an oid whose page was
-    wrong.
-
-    This is the same choice :func:`tests._gitutil.tracked_files_under` makes for
-    the other operand, so both halves of the comparison now read the index and
-    the module docstring's claim about it is true of every derivation here.
-    """
-    completed = subprocess.run(
-        ["git", "show", f":{path}"],
-        cwd=repo_root,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return completed.stdout
 
 
 def _page_text() -> str:

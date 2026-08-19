@@ -1,6 +1,7 @@
 """Shared test git helpers.
 
-Two of them, both about deriving file sets from git instead of the filesystem.
+Three of them. Two derive file sets from git instead of the filesystem; the
+third reads one tracked file's staged bytes.
 
 :func:`tracked_files_under` enumerates the files git *tracks* under a path.
 
@@ -15,6 +16,14 @@ wraps it so every guard derives its file set from the same source instead of
 hand-rolling dotfile / ``__pycache__`` skips.
 
 :func:`tracked_py_sources` is that set projected onto Python sources.
+
+:func:`indexed_text` is the same choice made about the *other* operand of a
+comparison: the bytes git has staged for a path, never ``Path.read_text``.
+``git write-tree`` certifies the index and the gate marker is named after the
+tree it produces, so a guard reading the working file certifies bytes that may
+never be committed (#482). It moved here from
+``tests/unit/test_landing_page_inventory.py`` at #490, when the shipped Stop
+hook's source became a second subject needing it.
 
 Four tree-walking guards enumerated their own ``*.py`` set with ``rglob`` and no
 exclusion for a nested git worktree, so two abandoned worktrees made old copies
@@ -93,3 +102,31 @@ def tracked_py_sources(
     for base in bases:
         found |= tracked_files_under(base, repo_root=repo_root)
     return sorted(path for path in found if path.suffix == ".py")
+
+
+def indexed_text(path: str, *, repo_root: Path = _DEFAULT_REPO_ROOT) -> str:
+    """The bytes git has **staged** for ``path``.
+
+    Not ``Path.read_text``. ``git write-tree`` certifies the index, the gate
+    marker is named after the tree that write-tree produces, and a review
+    verdict binds to that same oid — so the index is the only operand that
+    answers "what will ship". Reading the working file instead certifies bytes
+    that may never be committed: measured at the #482 review, a tree staging a
+    page with a skill deleted, with the correct page restored on disk unstaged,
+    passed that module 12/12 while ``git write-tree`` reported an oid whose page
+    was wrong.
+
+    It sits here, beside :func:`tracked_files_under`, because the two are the
+    same choice made about the two halves of a comparison, and #490 needed the
+    index-reading half for a second subject (the shipped Stop hook's source).
+    A guard reading one operand from the index and the other from disk is the
+    #482 defect wearing a different hat.
+    """
+    completed = subprocess.run(
+        ["git", "show", f":{path}"],
+        cwd=repo_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return completed.stdout
