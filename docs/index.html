@@ -3,18 +3,18 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>The harness — operating model, the gate, and the guidance</title>
-<meta name="description" content="The harness: a thin verification layer for agent-driven development — one deterministic gate, and the versioned guidance that routes an agent through it. The operating model, the gate, and the guidance at a glance." />
+<title>harness — a spec-driven development process, shipped as a Claude Code plugin</title>
+<meta name="description" content="harness: a spec-driven development process for agent-driven repos, shipped as a Claude Code plugin. Nine lifecycle commands, fourteen craft skills, four agent roles, and hooks that make a green gate the only path to a shared branch." />
 <link rel="icon" type="image/png" sizes="32x32" href="favicon.png" />
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <meta property="og:type" content="website" />
 <meta property="og:url" content="https://sluengen.github.io/harness/" />
-<meta property="og:title" content="The harness — operating model, the gate, and the guidance" />
-<meta property="og:description" content="A thin verification layer for agent-driven development: one deterministic gate, and the versioned guidance that routes an agent through it." />
+<meta property="og:title" content="harness — a spec-driven development process, shipped as a Claude Code plugin" />
+<meta property="og:description" content="Let the agent do the judgement work; make the repo own the evidence. Nine lifecycle commands, the craft skills behind them, four agent roles, and hooks that refuse." />
 <meta property="og:image" content="https://sluengen.github.io/harness/og-card.png" />
 <meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="The harness — operating model, the gate, and the guidance" />
-<meta name="twitter:description" content="A thin verification layer for agent-driven development: one deterministic gate, and the versioned guidance that routes an agent through it." />
+<meta name="twitter:title" content="harness — a spec-driven development process, shipped as a Claude Code plugin" />
+<meta name="twitter:description" content="Let the agent do the judgement work; make the repo own the evidence. Nine lifecycle commands, the craft skills behind them, four agent roles, and hooks that refuse." />
 <meta name="twitter:image" content="https://sluengen.github.io/harness/og-card.png" />
 <style>
   :root{
@@ -40,11 +40,12 @@
     -webkit-font-smoothing:antialiased;
   }
   .wrap{max-width:1160px; margin:0 auto; padding:40px 24px 64px}
+  a{color:var(--product-ink)}
 
   /* ---------- HERO ---------- */
   .hero{
     background:linear-gradient(150deg,#0c1230 0%, #141c44 55%, #101736 100%);
-    border-radius:22px; padding:38px 38px 26px; color:#eaecf8;
+    border-radius:22px; padding:38px 38px 32px; color:#eaecf8;
     box-shadow:0 24px 60px rgba(12,18,48,.28); position:relative; overflow:hidden;
   }
   .hero::before{content:""; position:absolute; inset:0;
@@ -56,605 +57,386 @@
   .hero h1{position:relative; margin:0; font-size:40px; line-height:1.08; letter-spacing:-.02em; font-weight:800}
   .hero h1 .accent{background:linear-gradient(90deg,#34d399,#60a5fa,#a78bfa);
     -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent}
-  .thesis{position:relative; max-width:780px; margin:16px 0 4px; font-size:17px; color:#c9d0f2}
+  .thesis{position:relative; max-width:820px; margin:16px 0 0; font-size:17px; color:#c9d0f2}
   .thesis b{color:#fff; font-weight:650}
+  .creed{position:relative; margin:18px 0 0; padding:0 0 0 16px; border-left:3px solid #4d5aa8;
+    font-size:16px; font-style:italic; color:#dfe4fb}
 
-  .diagram{position:relative; margin:14px auto 6px; max-width:660px}
-  .diagram svg{width:100%; height:auto; display:block}
-
-  .hero-legend{position:relative; display:flex; flex-wrap:wrap; gap:8px 18px; justify-content:center;
-    margin-top:8px; font-size:12.5px; color:#aab2dd}
-  .hero-legend span{display:inline-flex; align-items:center; gap:7px}
-  .lg-solid,.lg-dash{width:26px; height:0; border-top:2.5px solid #8b93c4}
-  .lg-dash{border-top:2.5px dashed #8b93c4}
-  .lg-ring{width:13px;height:13px;border:2.5px solid #8b93c4;border-radius:50%;border-top-color:transparent;transform:rotate(20deg)}
-  .lg-rings{width:13px;height:13px;border-radius:50%;border:2px solid #8b93c4;box-shadow:0 0 0 3px rgba(139,147,196,.32)}
-  .lg-dring{width:14px;height:14px;border-radius:50%;border:2px dashed #cf8a2f}
+  .counts{position:relative; display:flex; flex-wrap:wrap; gap:10px; margin:22px 0 0; padding:0; list-style:none}
+  .counts li{background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.14);
+    border-radius:999px; padding:7px 14px; font-size:13px; font-weight:650; color:#dfe4fb}
+  .counts b{font-weight:800; color:#fff}
 
   /* ---------- SECTION ---------- */
   .section{margin-top:46px}
   .section h2{font-size:13px; text-transform:uppercase; letter-spacing:.14em; color:var(--muted);
-    margin:0 0 18px; font-weight:700}
+    margin:0 0 6px; font-weight:700}
+  .section .lede{margin:0 0 18px; max-width:860px; font-size:15px; color:var(--ink-2)}
 
-  /* ---------- LOOP CARDS ---------- */
-  .loops{display:grid; grid-template-columns:repeat(2,1fr); gap:20px}
-  .loop{
-    --accent:#888; --accent-soft:#eee; --accent-ink:#333;
+  /* ---------- GENERIC CARD ---------- */
+  .card{
+    --accent:var(--product); --accent-soft:var(--product-soft); --accent-ink:var(--product-ink);
     background:var(--card); border:1px solid var(--line); border-radius:18px;
-    padding:22px 22px 20px; box-shadow:var(--shadow); position:relative; overflow:hidden;
+    padding:22px; box-shadow:var(--shadow); position:relative; overflow:hidden;
   }
-  .loop::before{content:""; position:absolute; left:0; top:0; bottom:0; width:5px; background:var(--accent)}
-  .loop--build{--accent:var(--build); --accent-soft:var(--build-soft); --accent-ink:var(--build-ink)}
-  .loop--product{--accent:var(--product); --accent-soft:var(--product-soft); --accent-ink:var(--product-ink)}
-  .loop--quality{--accent:var(--quality); --accent-soft:var(--quality-soft); --accent-ink:var(--quality-ink)}
-  .loop--strategy{--accent:var(--strategy); --accent-soft:var(--strategy-soft); --accent-ink:var(--strategy-ink)}
+  .card::before{content:""; position:absolute; left:0; top:0; bottom:0; width:5px; background:var(--accent)}
+  .card h3{margin:0 0 6px; font-size:18px; letter-spacing:-.01em}
+  .card p{margin:0; font-size:14px; color:var(--ink-2)}
+  .card--build{--accent:var(--build); --accent-soft:var(--build-soft); --accent-ink:var(--build-ink)}
+  .card--product{--accent:var(--product); --accent-soft:var(--product-soft); --accent-ink:var(--product-ink)}
+  .card--quality{--accent:var(--quality); --accent-soft:var(--quality-soft); --accent-ink:var(--quality-ink)}
+  .card--strategy{--accent:var(--strategy); --accent-soft:var(--strategy-soft); --accent-ink:var(--strategy-ink)}
 
-  .loop__head{display:flex; align-items:flex-start; gap:14px}
-  .loop__num{flex:0 0 auto; width:40px; height:40px; border-radius:11px; background:var(--accent);
-    color:#fff; font-weight:800; font-size:18px; display:grid; place-items:center;
-    box-shadow:0 6px 16px color-mix(in srgb, var(--accent) 40%, transparent)}
-  .loop__title{flex:1 1 auto; min-width:0}
-  .loop__title h3{margin:0; font-size:19px; letter-spacing:-.01em}
-  .loop__title .role{margin:2px 0 0; font-size:13px; color:var(--muted); font-weight:600}
-  .cadence{flex:0 0 auto; display:inline-flex; align-items:center; gap:7px; font-size:12.5px; font-weight:700;
-    color:var(--accent-ink); background:var(--accent-soft); border-radius:999px; padding:6px 12px; white-space:nowrap}
-  .cadence .dot{width:8px;height:8px;border-radius:50%;background:var(--accent)}
+  .grid3{display:grid; grid-template-columns:repeat(3,1fr); gap:20px}
+  .grid2{display:grid; grid-template-columns:repeat(2,1fr); gap:20px}
 
-  .grid2{display:grid; grid-template-columns:auto 1fr; gap:6px 14px; margin:16px 0 2px}
-  .grid2 dt{font-size:11.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); font-weight:700; padding-top:2px}
-  .grid2 dd{margin:0; font-size:14px; color:var(--ink-2)}
+  /* ---------- INSTALL ---------- */
+  .install{display:grid; grid-template-columns:repeat(3,1fr); gap:20px}
+  .step{background:var(--card); border:1px solid var(--line); border-radius:18px; padding:20px 22px;
+    box-shadow:var(--shadow)}
+  .step__n{display:inline-grid; place-items:center; width:28px; height:28px; border-radius:9px;
+    background:var(--product); color:#fff; font-weight:800; font-size:14px; margin-bottom:12px}
+  .step h3{margin:0 0 8px; font-size:16px; letter-spacing:-.01em}
+  .step pre{margin:0 0 10px; overflow-x:auto; background:#f2f3fa; border:1px solid var(--line);
+    border-radius:10px; padding:10px 12px}
+  .step code, .step pre{font:600 12.5px/1.7 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; color:var(--ink)}
+  .step p{margin:0; font-size:13.5px; color:var(--ink-2)}
 
-  .steps{list-style:none; display:flex; flex-wrap:wrap; align-items:center; gap:8px 4px; padding:0; margin:14px 0 0}
+  /* ---------- LIFECYCLE ---------- */
+  .lane{background:var(--card); border:1px solid var(--line); border-radius:18px; padding:20px 22px;
+    box-shadow:var(--shadow); border-left:5px solid var(--accent, var(--build))}
+  .lane--fast{--accent:var(--build)} .lane--ticket{--accent:var(--product)} .lane--proposal{--accent:var(--strategy)}
+  .lane h3{margin:0 0 4px; font-size:17px; letter-spacing:-.01em}
+  .lane .role{margin:0 0 10px; font-size:12.5px; font-weight:700; color:var(--muted);
+    text-transform:uppercase; letter-spacing:.06em}
+  .lane p{margin:0 0 12px; font-size:14px; color:var(--ink-2)}
+  .steps{list-style:none; display:flex; flex-wrap:wrap; align-items:center; gap:8px 4px; padding:0; margin:0}
   .steps li{display:inline-flex; align-items:center}
-  .steps li>span{background:var(--accent-soft); color:var(--accent-ink); font-size:12.5px; font-weight:650;
-    padding:6px 11px; border-radius:9px}
-  .steps li:not(.repeat):not(:last-child)::after{content:"→"; color:var(--accent); opacity:.55; font-weight:800; margin-left:4px}
-  .steps li.repeat>span{background:transparent; color:var(--accent); font-weight:800; border:1px dashed color-mix(in srgb,var(--accent) 45%,transparent)}
+  .steps li>span{background:var(--accent-soft, var(--build-soft)); color:var(--accent-ink, var(--build-ink));
+    font-size:12.5px; font-weight:650; padding:6px 11px; border-radius:9px}
+  .steps li:not(:last-child)::after{content:"→"; color:var(--accent, var(--build)); opacity:.55;
+    font-weight:800; margin-left:4px}
+  .lane--fast{--accent-soft:var(--build-soft); --accent-ink:var(--build-ink)}
+  .lane--ticket{--accent-soft:var(--product-soft); --accent-ink:var(--product-ink)}
+  .lane--proposal{--accent-soft:var(--strategy-soft); --accent-ink:var(--strategy-ink)}
 
-  .loop__foot{display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-top:18px;
-    padding-top:16px; border-top:1px solid var(--line)}
-  .cmds{display:flex; flex-wrap:wrap; gap:6px}
-  .cmds code{font:600 12.5px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; color:var(--accent-ink);
-    background:var(--accent-soft); border-radius:7px; padding:6px 9px}
-  .status{margin-left:auto; display:inline-flex; align-items:center; gap:7px; font-size:12px; font-weight:650;
-    color:var(--ink-2); background:#f4f5fa; border:1px solid var(--line); border-radius:999px; padding:5px 11px}
-  .status .pip{width:8px;height:8px;border-radius:50%}
-  .pip--auto{background:var(--build)} .pip--part{background:var(--quality)} .pip--plan{background:#9aa3c7} .pip--human{background:var(--strategy)}
+  /* ---------- GATE ---------- */
+  .gate{background:var(--card); border:1px solid var(--line); border-radius:18px; box-shadow:var(--shadow);
+    padding:24px; display:grid; grid-template-columns:1.15fr 1fr; gap:26px}
+  .gate h3{margin:0 0 8px; font-size:19px; letter-spacing:-.01em}
+  .gate p{margin:0 0 12px; font-size:14.5px; color:var(--ink-2)}
+  .stages{display:flex; flex-wrap:wrap; gap:6px; padding:0; margin:0; list-style:none}
+  .stages li{background:var(--build-soft); color:var(--build-ink); border-radius:8px; padding:6px 10px;
+    font:650 12.5px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .marker{background:#f2f3fa; border:1px solid var(--line); border-radius:14px; padding:18px}
+  .marker h4{margin:0 0 8px; font-size:13px; text-transform:uppercase; letter-spacing:.1em; color:var(--muted)}
+  .marker code{display:block; overflow-x:auto; font:650 12.5px/1.7 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    color:var(--ink); margin-bottom:10px}
+  .marker p{margin:0; font-size:13.5px; color:var(--ink-2)}
 
-  /* ---------- TRIGGER / SCHEDULING ---------- */
-  .trigger{background:var(--card); border:1px solid var(--line); border-radius:18px; padding:26px 26px 24px; box-shadow:var(--shadow)}
-  .trigger h3{margin:0 0 4px; font-size:20px; letter-spacing:-.01em}
-  .trigger .lede{margin:0 0 20px; color:var(--ink-2); max-width:840px}
-  .tgrid{display:grid; grid-template-columns:repeat(2,1fr); gap:16px}
-  .tcard{border:1px solid var(--line); border-radius:13px; padding:16px 16px 14px; background:#fbfcff}
-  .tcard.is-now{border-color:#bfe6d6; background:#f3fbf8}
-  .tcard h4{margin:0 0 6px; font-size:14px; display:flex; align-items:center; gap:8px; flex-wrap:wrap}
-  .tcard h4 code{font:700 12.5px/1 ui-monospace,Menlo,monospace; background:#eef1fb; color:var(--product-ink); padding:4px 7px; border-radius:6px}
-  .tcard h4 small{font-weight:700; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em;
-    color:var(--build-ink); background:#d8f2e8; padding:3px 7px; border-radius:999px}
-  .tcard h4 small.later{color:var(--muted); background:#eef0f6}
-  .tcard p{margin:0; font-size:13.5px; color:var(--ink-2)}
-  .pill-row{display:flex;flex-wrap:wrap;gap:7px;margin-top:20px}
-  .pill{font-size:12px;font-weight:650;color:var(--ink-2);background:#f4f5fa;border:1px solid var(--line);border-radius:999px;padding:6px 12px}
-  .pill b{color:var(--ink)}
-  .callout{margin-top:20px; border-left:4px solid var(--build); background:var(--build-soft);
-    border-radius:0 12px 12px 0; padding:14px 18px; color:var(--build-ink); font-size:14px}
-  .callout b{color:var(--build-ink)}
-  .callout code{background:#d4efe4; padding:2px 6px; border-radius:5px; font-size:12.5px}
+  /* ---------- INVENTORY ---------- */
+  .units{list-style:none; padding:0; margin:14px 0 0; display:grid; gap:8px}
+  .units--two{grid-template-columns:repeat(2,1fr)}
+  .unit{display:grid; grid-template-columns:auto 1fr; gap:4px 12px; align-items:baseline;
+    padding:9px 12px; border:1px solid var(--line); border-radius:11px; background:var(--card)}
+  .unit code{font:700 12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    color:var(--accent-ink); background:var(--accent-soft); border-radius:7px; padding:3px 8px; white-space:nowrap}
+  .unit span{font-size:13.5px; color:var(--ink-2)}
+  .inv{--accent:var(--product); --accent-soft:var(--product-soft); --accent-ink:var(--product-ink)}
+  .inv--commands{--accent:var(--product); --accent-soft:var(--product-soft); --accent-ink:var(--product-ink)}
+  .inv--skills{--accent:var(--product); --accent-soft:var(--product-soft); --accent-ink:var(--product-ink)}
+  .inv--agents{--accent:var(--strategy); --accent-soft:var(--strategy-soft); --accent-ink:var(--strategy-ink)}
+  .inv--hooks{--accent:var(--quality); --accent-soft:var(--quality-soft); --accent-ink:var(--quality-ink)}
+  .inv h3{margin:0 0 2px; font-size:17px; letter-spacing:-.01em}
+  .inv h3 .n{color:var(--accent-ink); background:var(--accent-soft); border-radius:999px;
+    padding:2px 10px; font-size:12.5px; font-weight:800; margin-left:8px; vertical-align:2px}
+  .inv>p{margin:0; font-size:13.5px; color:var(--muted)}
+  .verdict{display:inline-block; margin-left:8px; font-size:11px; font-weight:800; letter-spacing:.06em;
+    text-transform:uppercase; border-radius:999px; padding:2px 8px; vertical-align:1px}
+  .verdict--refuses{background:var(--quality-soft); color:var(--quality-ink)}
+  .verdict--advises{background:#eef0f6; color:var(--ink-2)}
 
-  /* ---------- SPECS ---------- */
-  .section-intro{margin:-4px 0 18px; color:var(--ink-2); max-width:900px; font-size:15px}
-  .section-intro b{color:var(--ink)} .section-intro code{font-size:12.5px;background:#eef1fb;color:var(--product-ink);padding:2px 6px;border-radius:5px}
-  .spec-flow{display:flex; flex-wrap:wrap; align-items:stretch; gap:0; margin-bottom:18px}
-  .spec-stage{flex:1 1 250px; position:relative; background:var(--card); border:1px solid var(--line);
-    border-radius:16px; padding:18px 18px 16px; box-shadow:var(--shadow); overflow:hidden;
-    --accent:#888; --accent-soft:#eee; --accent-ink:#333}
-  .spec-stage::before{content:""; position:absolute; left:0; top:0; right:0; height:4px; background:var(--accent)}
-  .spec--proposal{--accent:var(--strategy); --accent-soft:var(--strategy-soft); --accent-ink:var(--strategy-ink)}
-  .spec--change{--accent:var(--product); --accent-soft:var(--product-soft); --accent-ink:var(--product-ink)}
-  .spec--design{--accent:var(--build); --accent-soft:var(--build-soft); --accent-ink:var(--build-ink)}
-  .spec-kicker{display:inline-block; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.07em;
-    color:var(--accent-ink); background:var(--accent-soft); padding:4px 9px; border-radius:999px}
-  .spec-stage h4{margin:12px 0 3px; font-size:17px; letter-spacing:-.01em}
-  .spec-stage h4 small{font-weight:600; font-size:11.5px; color:var(--muted)}
-  .spec-q{margin:0 0 13px; font-size:13.5px; font-style:italic; color:var(--muted)}
-  .spec-meta{margin:0 0 12px; display:grid; gap:7px}
-  .spec-meta>div{display:grid; grid-template-columns:76px 1fr; gap:4px 10px; align-items:baseline}
-  .spec-meta dt{font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); font-weight:700; margin:0}
-  .spec-meta dd{margin:0; font-size:13px; color:var(--ink-2)}
-  .spec-stage code, .spec-card code{font:600 11.5px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;
-    background:#f4f5fa; border:1px solid var(--line); border-radius:5px; padding:2px 6px; color:var(--ink-2)}
-  .states{display:flex; flex-wrap:wrap; align-items:center; gap:5px; margin:0 0 11px}
-  .states span{font-size:11px; font-weight:650; color:var(--accent-ink); background:var(--accent-soft); border-radius:6px; padding:4px 8px}
-  .states .arr{background:none; color:var(--muted); padding:4px 1px; font-weight:800}
-  .states .end{background:#fff; border:1px dashed color-mix(in srgb,var(--accent) 50%, transparent)}
-  .spec-note{margin:0; font-size:12.5px; color:var(--muted); line-height:1.55}
-  .spec-arrow{flex:0 0 72px; display:flex; align-items:center; justify-content:center; color:var(--ink-2);
-    font-size:10.5px; font-weight:650; text-align:center; padding:6px 5px}
-  .spec-arrow span{display:block; max-width:92px}
-  .spec-arrow span::before{content:"→"; display:block; font-size:20px; color:#c4cbe0; line-height:1; margin-bottom:2px}
-  .spec-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:16px}
-  .spec-card{position:relative; background:var(--card); border:1px solid var(--line); border-radius:16px;
-    padding:18px 18px 16px; box-shadow:var(--shadow); overflow:hidden; --accent:#64748b}
-  .spec-card::before{content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--accent)}
-  .spec--ref{--accent:var(--quality)}
-  .spec--decision{--accent:#64748b}
-  .spec-card h4{margin:0 0 8px; font-size:16px; display:flex; align-items:center; gap:8px; flex-wrap:wrap}
-  .spec-tag{font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--muted);
-    background:#f1f3f8; padding:3px 7px; border-radius:999px}
-  .spec-card p{margin:0 0 9px; font-size:13.5px; color:var(--ink-2)}
-  .spec-card .spec-note{margin-top:9px}
-
-  footer{margin-top:34px; color:var(--muted); font-size:12.5px; text-align:center}
-  footer code{font-family:ui-monospace,Menlo,monospace}
-
-  /* ---------- THE HARNESS (stages + invariants) ---------- */
-  .verbs{display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-bottom:18px}
-  .verb{position:relative; background:var(--card); border:1px solid var(--line); border-radius:16px;
-    padding:18px 18px 16px; box-shadow:var(--shadow); overflow:hidden; --accent:var(--build)}
-  .verb::before{content:""; position:absolute; left:0; top:0; right:0; height:4px; background:var(--accent)}
-  .verb--guidance{--accent:var(--product)} .verb--guards{--accent:var(--strategy)}
-  .verb h4{margin:0 0 3px; font:800 16px/1 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--accent-ink,var(--ink)); letter-spacing:-.01em}
-  .verb--verify h4{color:var(--build-ink)} .verb--guidance h4{color:var(--product-ink)} .verb--guards h4{color:var(--strategy-ink)}
-  .verb .role{margin:0 0 10px; font-size:12px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.05em}
-  .verb p{margin:0 0 10px; font-size:13.5px; color:var(--ink-2)}
-  .verb .out{display:inline-block; font:600 11.5px/1 ui-monospace,Menlo,monospace; color:var(--ink-2);
-    background:#f4f5fa; border:1px solid var(--line); border-radius:6px; padding:5px 8px}
-  .aux{display:flex; flex-wrap:wrap; gap:7px; margin-bottom:18px}
-  .aux code{font:600 12px/1 ui-monospace,Menlo,monospace; color:var(--ink-2); background:#f4f5fa;
-    border:1px solid var(--line); border-radius:7px; padding:6px 9px}
-  .invariants{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:18px}
-  .inv{border:1px solid var(--line); border-left:4px solid var(--build); border-radius:0 12px 12px 0;
-    background:var(--build-soft); padding:14px 16px}
-  .inv h5{margin:0 0 5px; font-size:13.5px; color:var(--build-ink)}
-  .inv p{margin:0; font-size:13px; color:var(--ink-2)}
-  .inv code{font-size:11.5px; background:#d4efe4; color:var(--build-ink); padding:2px 5px; border-radius:5px}
-  .drive{border:1px solid var(--line); background:#fbfcff; border-radius:13px; padding:16px 18px; font-size:14px; color:var(--ink-2)}
-  .drive b{color:var(--ink)} .drive code{font-size:12.5px; background:#eef1fb; color:var(--product-ink); padding:2px 6px; border-radius:5px}
-
-  /* ---------- THE GUIDANCE (catalog) ---------- */
-  .catalog{display:grid; grid-template-columns:repeat(3,1fr); gap:16px}
-  .cat-group{background:var(--card); border:1px solid var(--line); border-radius:16px; box-shadow:var(--shadow);
-    padding:18px 18px 8px; overflow:hidden; position:relative; --accent:var(--product)}
-  .cat-group::before{content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--accent)}
-  .cat--agents{--accent:var(--quality)} .cat--commands{--accent:var(--build)}
-  .cat-group h4{margin:0 0 2px; font-size:16px; letter-spacing:-.01em}
-  .cat-group .cat-sub{margin:0 0 12px; font-size:12px; color:var(--muted)}
-  .cat-item{display:block; padding:9px 0; border-top:1px solid var(--line)}
-  .cat-item .cat-name{font:700 12.5px/1.3 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--ink);
-    background:none; border:0; padding:0}
-  .cat-item .cat-line{display:block; margin-top:2px; font-size:12.5px; color:var(--ink-2)}
+  /* ---------- FOOT ---------- */
+  .foot{margin-top:46px; padding-top:20px; border-top:1px solid var(--line);
+    font-size:13.5px; color:var(--muted)}
+  .foot a{color:var(--product-ink)}
 
   @media (max-width:780px){
     .wrap{padding:24px 16px 48px}
-    .hero{padding:26px 20px 18px}
+    .hero{padding:26px 22px 24px; border-radius:18px}
     .hero h1{font-size:30px}
-    .loops,.tgrid{grid-template-columns:1fr}
-    .verbs,.invariants,.catalog,.spec-grid{grid-template-columns:1fr}
-    .cadence{order:3}
+    .grid3,.grid2,.install,.units--two,.gate{grid-template-columns:1fr}
   }
 </style>
 </head>
 <body>
 <div class="wrap">
 
-  <!-- ===================== HERO ===================== -->
-  <section class="hero" data-section="loops">
-    <p class="eyebrow">How we build · operating model</p>
-    <h1>The <span class="accent">Four Loops</span></h1>
+  <!-- ============ HERO ============ -->
+  <header class="hero">
+    <p class="eyebrow">Claude Code plugin</p>
+    <h1>A spec-driven development process<br /><span class="accent">for agent-driven repos.</span></h1>
     <p class="thesis">
-      Four <b>nested</b> loops, one inside the next. The innermost — <b>Build</b> — spins fastest and does the work;
-      each loop that encloses it runs on a <b>longer cycle</b> and steers the ones within. <b>Intent flows inward</b>
-      (strategy becomes specs becomes tasks becomes code); <b>feedback flows back outward</b>. Ring size = cycle length.
+      <b>harness</b> is a development process shipped as a Claude Code plugin: nine lifecycle commands,
+      the craft skills behind them, four agent roles, and enforcement hooks that make a green gate the
+      only path to a shared branch. Install it, run <b>/harness:init</b>, and the repo owns its own
+      contract from then on.
+    </p>
+    <p class="creed">Let the agent do the judgement work; make the repo own the evidence.</p>
+    <ul class="counts">
+      <li><b>9</b> commands</li>
+      <li><b>14</b> skills</li>
+      <li><b>4</b> agents</li>
+      <li><b>5</b> hooks</li>
+      <li><b>1</b> gate</li>
+    </ul>
+  </header>
+
+  <!-- ============ WHAT THE REPO OWNS ============ -->
+  <section class="section" id="owns">
+    <h2>What the harness owns</h2>
+    <p class="lede">
+      An AI agent does everything that needs judgement — the design, the code, the fixes, the answer to a
+      review finding. The harness owns only the parts that must not depend on an agent remembering them.
+    </p>
+    <div class="grid3">
+      <article class="card card--build">
+        <h3>One verification gate</h3>
+        <p>
+          The repo's verify command decides green and writes a marker named after the exact git tree it
+          verified. Green over those exact bytes is the only evidence a completion claim may cite; one
+          more edit invalidates it.
+        </p>
+      </article>
+      <article class="card card--product">
+        <h3>The spine</h3>
+        <p>
+          A repo-owned <code>CLAUDE.md</code> carries the iron laws, the lifecycle contract, and the
+          repo's own config block — always loaded, never optional. Skills carry the depth and load by task.
+        </p>
+      </article>
+      <article class="card card--strategy">
+        <h3>Builder ≠ recorder</h3>
+        <p>
+          The agent that promises delivery is never the one that records it. The reviewer writes the
+          as-built record from the diff, which is what keeps that record honest.
+        </p>
+      </article>
+    </div>
+  </section>
+
+  <!-- ============ INSTALL ============ -->
+  <section class="section" id="install">
+    <h2>How a repo adopts it</h2>
+    <p class="lede">
+      The guidance ships as a plugin from this repo, which is also its marketplace. Three steps, then the
+      process is live in every session.
+    </p>
+    <div class="install">
+      <div class="step">
+        <span class="step__n">1</span>
+        <h3>Add the marketplace</h3>
+        <pre>/plugin marketplace add sluengen/harness</pre>
+        <p>Points Claude Code at this repository as a plugin source.</p>
+      </div>
+      <div class="step">
+        <span class="step__n">2</span>
+        <h3>Install the plugin</h3>
+        <pre>/plugin install harness@harness</pre>
+        <p>Brings the commands, skills, agents, and hooks into your sessions.</p>
+      </div>
+      <div class="step">
+        <span class="step__n">3</span>
+        <h3>Hydrate the repo</h3>
+        <pre>/harness:init</pre>
+        <p>
+          Interviews for the repo's values and writes the files that must be repo-owned: the spine, the
+          specs scaffold, the infrastructure record, and — where there is no gate yet — a
+          <code>scripts/verify.sh</code> skeleton with the marker write. After a plugin update,
+          <code>/harness:init --refresh</code> regenerates the spine's generated block and nothing else.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ LIFECYCLE ============ -->
+  <section class="section" id="lifecycle">
+    <h2>How work arrives</h2>
+    <p class="lede">
+      Three routes, by weight. All three take the same isolation and the same gate — what differs is how
+      much is decided before the first line of code.
+    </p>
+    <div class="grid3">
+      <article class="lane lane--fast">
+        <h3>Fast lane</h3>
+        <p class="role">No ticket · ask and it ships</p>
+        <p>
+          A small fix needs no command and no ticket. It still runs on its own branch, in its own
+          worktree, through the same gate. Anything that changes documented behaviour, spans commits,
+          or needs independent review becomes a ticket instead.
+        </p>
+        <ol class="steps"><li><span>branch</span></li><li><span>build</span></li><li><span>gate</span></li><li><span>ship</span></li></ol>
+      </article>
+      <article class="lane lane--ticket">
+        <h3>A ticket</h3>
+        <p class="role">The unit of tracked work</p>
+        <p>
+          A change spec lives on the tracker issue and is built end to end by one command. The reviewer
+          is a separate agent in a fresh context, and its verdict binds to the exact git tree it read —
+          the tree that ships must be that tree.
+        </p>
+        <ol class="steps"><li><span>spec</span></li><li><span>build</span></li><li><span>gate</span></li><li><span>review</span></li><li><span>ship</span></li></ol>
+      </article>
+      <article class="lane lane--proposal">
+        <h3>A proposal</h3>
+        <p class="role">Decide before spending build time</p>
+        <p>
+          For work that is unconfirmed, risky, or too big for one change. It ends in one explicit state —
+          never half-decided — and an accepted proposal spawns the tickets that build it.
+        </p>
+        <ol class="steps"><li><span>draft</span></li><li><span>decide</span></li><li><span>spawn tickets</span></li></ol>
+      </article>
+    </div>
+  </section>
+
+  <!-- ============ THE GATE ============ -->
+  <section class="section" id="gate">
+    <h2>The gate, and what a green means</h2>
+    <div class="gate">
+      <div>
+        <h3>Green is a claim about bytes, not about a session</h3>
+        <p>
+          Every repo names its own verify command; here it is <code>bash scripts/verify.sh</code>, and it
+          runs the same way in a checkout, in CI, and in the nightly promotion. The last thing it does on
+          green is write a marker named after the git <b>tree object</b> it just verified.
+        </p>
+        <p>
+          That is what makes the evidence checkable by something other than the agent's memory. A review
+          verdict binds to a tree oid; the gate marker names a tree oid; the push guard reads the tree
+          being pushed. An amend that rewrites no bytes voids nothing, and one more edit voids everything.
+        </p>
+        <ul class="stages">
+          <li>ruff</li><li>mypy</li><li>pytest + coverage floor</li><li>design-token drift</li>
+          <li>codex drift</li><li>marker write</li>
+        </ul>
+      </div>
+      <div class="marker">
+        <h4>The marker</h4>
+        <code>&lt;git-common-dir&gt;/harness/gate/&lt;tree-oid&gt;.json</code>
+        <p>
+          Written last, so a failing stage means no marker. The claim it licenses is narrow and exact:
+          <b>green over these exact bytes</b>. Hooks are evidence plumbing, not authority — the controls
+          of record stay server-side, in branch protection and gate output in CI.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ INVENTORY ============ -->
+  <section class="section" id="surface">
+    <h2>What the plugin installs</h2>
+    <p class="lede">
+      The whole surface, as the repository carries it. Commands are the entry points; skills are the
+      depth they load by task; agents are the roles a run dispatches; hooks are the enforcement.
     </p>
 
-    <div class="diagram">
-      <svg viewBox="0 0 920 812" role="img" aria-label="Four concentric loops: Build at the core, enclosed by Product, Quality and Strategy, sized by cycle length">
-        <defs>
-          <marker id="arw2" markerWidth="10" markerHeight="10" refX="7.5" refY="4" orient="auto">
-            <path d="M0,0 L9,4 L0,8 Z" fill="#46507a"/>
-          </marker>
-          <marker id="rot" markerWidth="9" markerHeight="9" refX="4.5" refY="4" orient="auto">
-            <path d="M0,0 L9,4 L0,8 Z" fill="context-stroke"/>
-          </marker>
-        </defs>
+    <div class="grid2">
+      <article class="card inv inv--commands">
+        <h3>Commands <span class="n">9</span></h3>
+        <p>The entry points. Only <code>/harness:init</code> needs its prefix spoken.</p>
+        <ul class="units">
+          <li class="unit" data-unit="command:build"><code>/build</code><span>Implement, verify, review, and ship a ticket — the one lifecycle driver.</span></li>
+          <li class="unit" data-unit="command:capture"><code>/capture</code><span>File an already-decided change straight to Todo.</span></li>
+          <li class="unit" data-unit="command:propose"><code>/propose</code><span>Work an idea before it becomes work; accepted proposals spawn tickets.</span></li>
+          <li class="unit" data-unit="command:review"><code>/review</code><span>Review the current branch, when a branch needs only that.</span></li>
+          <li class="unit" data-unit="command:routine"><code>/routine</code><span>One unattended cycle: discover the next ticket, build it, ship it.</span></li>
+          <li class="unit" data-unit="command:promote"><code>/promote</code><span>Move completed work toward release along the repo's role branches.</span></li>
+          <li class="unit" data-unit="command:digest"><code>/digest</code><span>The operator's console: report, then drain held decisions.</span></li>
+          <li class="unit" data-unit="command:assess"><code>/assess</code><span>Run a periodic whole-system health assessment.</span></li>
+          <li class="unit" data-unit="command:init"><code>/harness:init</code><span>Hydrate a repo — the one command that needs its prefix.</span></li>
+        </ul>
+      </article>
 
-        <!-- concentric bands (largest first so inner overlays) -->
-        <circle cx="460" cy="400" r="304" style="fill:var(--strategy-soft); stroke:var(--strategy)" stroke-width="2.5"/>
-        <circle cx="460" cy="400" r="230" style="fill:var(--quality-soft); stroke:var(--quality)" stroke-width="2.5" stroke-dasharray="9 7"/>
-        <circle cx="460" cy="400" r="156" style="fill:var(--product-soft); stroke:var(--product)" stroke-width="2.5"/>
-        <circle cx="460" cy="400" r="82"  fill="#d6f2e8" style="stroke:var(--build)" stroke-width="3"/>
+      <article class="card inv inv--agents">
+        <h3>Agents <span class="n">4</span></h3>
+        <p>The roles a run dispatches, each in its own fresh context.</p>
+        <ul class="units">
+          <li class="unit" data-unit="agent:dev"><code>dev</code><span>Implementation — test-first, strictly in scope, verified before handoff.</span></li>
+          <li class="unit" data-unit="agent:reviewer"><code>reviewer</code><span>The final gate before merge; records what actually shipped on PASS.</span></li>
+          <li class="unit" data-unit="agent:architect"><code>architect</code><span>Data models, contracts, decisions — design artifacts, never code.</span></li>
+          <li class="unit" data-unit="agent:steward"><code>steward</code><span>Periodic health assessment: the cross-file patterns no per-change review sees.</span></li>
+        </ul>
 
-        <!-- per-ring rotation motif (upper-right, away from labels) -->
-        <g fill="none" stroke-width="2.6">
-          <path d="M 514.9,339.1 A 82 82 0 0 1 537.1,372.0"   style="stroke:var(--build)" marker-end="url(#rot)"/>
-          <path d="M 564.4,284.1 A 156 156 0 0 1 606.6,346.6" style="stroke:var(--product)" marker-end="url(#rot)"/>
-          <path d="M 613.9,229.1 A 230 230 0 0 1 676.2,321.3" style="stroke:var(--quality)" marker-end="url(#rot)"/>
-          <path d="M 663.4,174.1 A 304 304 0 0 1 745.8,296.0" style="stroke:var(--strategy)" marker-end="url(#rot)"/>
-        </g>
-
-        <!-- intent inward (left) / feedback outward (right) -->
-        <g stroke="#46507a" stroke-width="2.6" fill="none">
-          <path d="M 170,400 L 372,400" marker-end="url(#arw2)"/>
-          <path d="M 548,400 L 756,400" stroke-dasharray="7 5" marker-end="url(#arw2)"/>
-        </g>
-        <g font-size="12.5" font-weight="650" text-anchor="middle">
-          <g><rect x="197" y="367" width="146" height="22" rx="7" fill="#11183a"/><text x="270" y="382" fill="#dfe4fb">intent flows inward</text></g>
-          <g><rect x="571" y="367" width="164" height="22" rx="7" fill="#11183a"/><text x="653" y="382" fill="#dfe4fb">feedback flows outward</text></g>
-        </g>
-
-        <!-- Quality feeds Build's queue directly — a maintenance band, not a steering layer -->
-        <path d="M 300,560 L 401,459" style="stroke:var(--quality)" stroke-width="2.2" stroke-dasharray="6 5" fill="none" marker-end="url(#rot)"/>
-        <g><rect x="299" y="511" width="120" height="20" rx="6" style="fill:var(--card)" stroke="#f0c890"/><text x="359" y="525" font-size="11" font-weight="700" fill="#a9701f" text-anchor="middle">findings → Build</text></g>
-
-        <!-- ring labels, stacked at 12 o'clock down into the core -->
-        <g text-anchor="middle">
-          <text x="460" y="131" font-size="16" font-weight="800" style="fill:var(--strategy-ink)" letter-spacing=".04em">STRATEGY</text>
-          <text x="460" y="148" font-size="11" font-weight="600" fill="#6d4bb0">Periodic · human-led</text>
-
-          <text x="460" y="205" font-size="16" font-weight="800" style="fill:var(--quality-ink)" letter-spacing=".04em">QUALITY</text>
-          <text x="460" y="222" font-size="11" font-weight="600" fill="#a9701f">Weekly / on idle · maintenance band</text>
-
-          <text x="460" y="279" font-size="16" font-weight="800" style="fill:var(--product-ink)" letter-spacing=".04em">PRODUCT</text>
-          <text x="460" y="296" font-size="11" font-weight="600" fill="#4d63c8">Daily · human + Claude</text>
-
-          <text x="460" y="390" font-size="19" font-weight="800" style="fill:var(--build-ink)" letter-spacing=".03em">BUILD</text>
-          <text x="460" y="408" font-size="11.5" font-weight="700" fill="#0f7d59">Hourly · autonomous</text>
-          <text x="460" y="424" font-size="10" font-weight="600" fill="#3a8f72">agent-led · pulls from the tracker</text>
-        </g>
-      </svg>
+        <h3 style="margin-top:22px">Hooks <span class="n">5</span></h3>
+        <p>Three refuse, two advise. What a refusal rests on is evidence — a gate marker over the
+          tree being pushed, or the shape of the command itself — never a branch name granting an
+          exemption.</p>
+        <ul class="units">
+          <li class="unit" data-unit="hook:gate-evidence-guard"><code>gate-evidence-guard</code><span>Refuses ending a turn that claims completion with no fresh marker over the worked tree.<span class="verdict verdict--refuses">refuses</span></span></li>
+          <li class="unit" data-unit="hook:push-target-guard"><code>push-target-guard</code><span>Refuses a push to a protected branch unless a fresh marker covers the pushed tree.<span class="verdict verdict--refuses">refuses</span></span></li>
+          <li class="unit" data-unit="hook:git-push-guard"><code>git-push-guard</code><span>Refuses a history rewrite — <code>--force</code> in any spelling.<span class="verdict verdict--refuses">refuses</span></span></li>
+          <li class="unit" data-unit="hook:prompt-guard"><code>prompt-guard</code><span>Flags injection-shaped content on write.<span class="verdict verdict--advises">advises</span></span></li>
+          <li class="unit" data-unit="hook:workflow-guard"><code>workflow-guard</code><span>Flags a source edit made on the default branch or outside a worktree.<span class="verdict verdict--advises">advises</span></span></li>
+        </ul>
+      </article>
     </div>
 
-    <div class="hero-legend">
-      <span><i class="lg-rings"></i> ring size = cycle length (Build hourly → Strategy periodic)</span>
-      <span><i class="lg-solid"></i> intent flows inward</span>
-      <span><i class="lg-dash"></i> feedback flows outward</span>
-      <span><i class="lg-dring"></i> dashed = Quality maintenance band (feeds Build, doesn't steer)</span>
+    <article class="card inv inv--skills" style="margin-top:20px">
+      <h3>Skills <span class="n">14</span></h3>
+      <p>Loaded by task, not all at once. The builder and the reviewer read the same files, so the bar is identical on both sides.</p>
+      <ul class="units units--two">
+        <li class="unit" data-unit="skill:engineering"><code>engineering</code><span>The build leg of the triad: durable principles, test-first method, scope, the gate.</span></li>
+        <li class="unit" data-unit="skill:architecture"><code>architecture</code><span>The design leg: cross-cutting decisions, recorded in the spec they govern.</span></li>
+        <li class="unit" data-unit="skill:infrastructure"><code>infrastructure</code><span>The operate leg: promotion, release, CI/CD, what a gate means at each boundary.</span></li>
+        <li class="unit" data-unit="skill:spec-authoring"><code>spec-authoring</code><span>The craft of writing any spec — proposal, change, or as-built.</span></li>
+        <li class="unit" data-unit="skill:review-discipline"><code>review-discipline</code><span>Spec compliance then quality, and the defect classes that read as green.</span></li>
+        <li class="unit" data-unit="skill:systematic-debugging"><code>systematic-debugging</code><span>Reproduce, isolate the root cause, fix minimally, prove it fixed.</span></li>
+        <li class="unit" data-unit="skill:worktree-isolation"><code>worktree-isolation</code><span>Every multi-commit task on its own branch in its own worktree.</span></li>
+        <li class="unit" data-unit="skill:work-discovery"><code>work-discovery</code><span>How an unattended routine picks its own next ticket, and what it must skip.</span></li>
+        <li class="unit" data-unit="skill:assessment-craft"><code>assessment-craft</code><span>The finding bar for a periodic audit, and the insight-versus-finding test.</span></li>
+        <li class="unit" data-unit="skill:ux-design"><code>ux-design</code><span>Designing a user-facing surface — flow, information architecture, every state.</span></li>
+        <li class="unit" data-unit="skill:design-system"><code>design-system</code><span>Building UI with a repo's own tokens and primitives rather than degrading them.</span></li>
+        <li class="unit" data-unit="skill:writing-quality"><code>writing-quality</code><span>Plain prose; kill the predictable AI-writing patterns.</span></li>
+        <li class="unit" data-unit="skill:github-issues"><code>github-issues</code><span>The GitHub provider recipes for reading and updating the queue.</span></li>
+        <li class="unit" data-unit="skill:linear"><code>linear</code><span>The Linear provider recipes for the same backend-neutral contract.</span></li>
+      </ul>
+    </article>
+  </section>
+
+  <!-- ============ DOGFOOD ============ -->
+  <section class="section" id="repo">
+    <h2>This repository</h2>
+    <div class="grid2">
+      <article class="card card--quality">
+        <h3>The plugin's source, dogfooding itself</h3>
+        <p>
+          Every change here ships through the process the plugin publishes, against the same gate. Three
+          parts: the guidance surface above, the gate (<code>scripts/verify.sh</code>), and the guards —
+          admitted by a written rule rather than by momentum, so a guard exists because a class of defect
+          exists, not because someone once had a hunch.
+        </p>
+      </article>
+      <article class="card card--build">
+        <h3>No runtime, nothing to install</h3>
+        <p>
+          There is no CLI and no service behind any of this. Python here is tooling only — the gate, the
+          token generator, the Codex compile step, the mutation instrument. Work moves
+          <code>dev → main</code>, and what lands on release is exactly the tree that was gated.
+        </p>
+      </article>
     </div>
   </section>
 
-  <!-- ===================== LOOP DETAIL ===================== -->
-  <section class="section">
-    <h2>The four loops, in detail</h2>
-    <div class="loops">
-
-      <!-- BUILD -->
-      <article class="loop loop--build">
-        <div class="loop__head">
-          <div class="loop__num">1</div>
-          <div class="loop__title"><h3>The Build Loop</h3><p class="role">Execution engine · the core</p></div>
-          <span class="cadence"><i class="dot"></i> Hourly</span>
-        </div>
-        <dl class="grid2">
-          <dt>Trigger</dt><dd>A scheduled Claude routine that <b>autonomously picks</b> which task to work on.</dd>
-          <dt>Driver</dt><dd>Autonomous — Claude, unattended.</dd>
-        </dl>
-        <ul class="steps">
-          <li><span>Pick a wholly-defined task from the tracker</span></li>
-          <li><span>Build it test-first (TDD)</span></li>
-          <li><span>Review the implementation independently</span></li>
-          <li><span>Verify, then ship</span></li>
-          <li class="repeat"><span>↻</span></li>
-        </ul>
-        <div class="loop__foot">
-          <div class="cmds"><code data-guidance="build">/build</code><code data-guidance="routine">/routine</code><code data-guidance="start">/start</code></div>
-          <span class="status"><i class="pip pip--auto"></i> Automated · the agent drives this loop end to end</span>
-        </div>
-      </article>
-
-      <!-- PRODUCT -->
-      <article class="loop loop--product">
-        <div class="loop__head">
-          <div class="loop__num">2</div>
-          <div class="loop__title"><h3>The Product Loop</h3><p class="role">Defines what to build · encloses Build</p></div>
-          <span class="cadence"><i class="dot"></i> Daily</span>
-        </div>
-        <dl class="grid2">
-          <dt>Trigger</dt><dd>The product owner (human) working with Claude.</dd>
-          <dt>Driver</dt><dd>Human + Claude.</dd>
-        </dl>
-        <ul class="steps">
-          <li><span>Define detailed specs &amp; designs</span></li>
-          <li><span>Decompose into tasks → Build queue</span></li>
-          <li><span>When a spec's tasks are all done</span></li>
-          <li><span>Original author reviews the as-built code</span></li>
-          <li class="repeat"><span>↻</span></li>
-        </ul>
-        <div class="loop__foot">
-          <div class="cmds"><code data-guidance="propose">/propose</code></div>
-          <span class="status"><i class="pip pip--auto"></i> As-built spec recorded by the reviewer on PASS, before the change ships</span>
-        </div>
-      </article>
-
-      <!-- QUALITY -->
-      <article class="loop loop--quality">
-        <div class="loop__head">
-          <div class="loop__num">3</div>
-          <div class="loop__title"><h3>The Quality Loop</h3><p class="role">Keeps the system healthy</p></div>
-          <span class="cadence"><i class="dot"></i> Weekly / on idle</span>
-        </div>
-        <dl class="grid2">
-          <dt>Trigger</dt><dd>A weekly Claude routine with fixed scope — <b>or</b> the hourly Build routine when it has nothing to do.</dd>
-          <dt>Driver</dt><dd>Autonomous — Claude.</dd>
-        </dl>
-        <ul class="steps">
-          <li><span>Build idle → assess code</span></li>
-          <li><span>Weekly → assess code --deep (broader)</span></li>
-          <li><span>File findings as tracker issues</span></li>
-          <li><span>→ back to Build queue</span></li>
-          <li class="repeat"><span>↻</span></li>
-        </ul>
-        <div class="loop__foot">
-          <div class="cmds"><code data-guidance="assess">/assess code</code><code data-guidance="assess">/assess architecture</code></div>
-          <span class="status"><i class="pip pip--auto"></i> Weekly <code style="background:none;padding:0;color:inherit">--deep</code> adds coverage, design-system &amp; doc-coherence lenses</span>
-        </div>
-      </article>
-
-      <!-- STRATEGY -->
-      <article class="loop loop--strategy">
-        <div class="loop__head">
-          <div class="loop__num">4</div>
-          <div class="loop__title"><h3>The Strategy Loop</h3><p class="role">Sets direction · the outer ring</p></div>
-          <span class="cadence"><i class="dot"></i> Periodic</span>
-        </div>
-        <dl class="grid2">
-          <dt>Trigger</dt><dd>Human-run, on no fixed period — assisted by agent research.</dd>
-          <dt>Driver</dt><dd>Human, with agent research.</dd>
-        </dl>
-        <ul class="steps">
-          <li><span>Review product strategy &amp; approach</span></li>
-          <li><span>Review technical design</span></li>
-          <li><span>Spawn entirely new Product loops</span></li>
-          <li class="repeat"><span>↻</span></li>
-        </ul>
-        <div class="loop__foot">
-          <div class="cmds"><code data-guidance="researcher">researcher</code><code>(human-led)</code></div>
-          <span class="status"><i class="pip pip--human"></i> Human-driven — the rudder for everything inside</span>
-        </div>
-      </article>
-
-    </div>
-  </section>
-
-  <!-- ===================== TRIGGERING ===================== -->
-  <section class="section">
-    <h2>How the loops are triggered</h2>
-    <div class="trigger">
-      <h3>Scheduled locally — by choice</h3>
-      <p class="lede">
-        Claude Code can schedule these routines itself; the only question is <i>where</i> they run. A run needs the host's own
-        agent credentials and a checkout it can push from, so the autonomous loops run <b>on this machine</b>.
-        That's a deliberate choice — and local scheduling is actually finer-grained than the cloud.
-      </p>
-      <div class="tgrid">
-        <div class="tcard is-now">
-          <h4>Local routines <small>today</small></h4>
-          <p>A local trigger (launchd / cron, a desktop scheduled task, or a kept-open <code>/loop</code> session) fires each run on your Mac with full local credentials. Granularity down to 1 minute, so Hourly Build and Weekly Quality are trivial. Trade-off: the machine has to be awake.</p>
-        </div>
-        <div class="tcard">
-          <h4><code>/schedule</code> Cloud routines <small class="later">if ever needed</small></h4>
-          <p>Cloud Routines run on Anthropic's infrastructure even with the laptop closed — but each run is a fresh clone with no host credentials and nothing to push with. The escape hatch for laptop-off operation is to give that clone its own token; the lifecycle itself is identical either way.</p>
-        </div>
-      </div>
-
-      <div class="callout">
-        <b>Version the logic, not the schedule.</b> Each loop's prompt lives in the repo as a slash command
-        (<code>/build</code>, <code>/assess</code>, <code>/propose</code>); the scheduled routine is a thin trigger that just calls it.
-        That gives you the <b>consistent, versioned, shareable repo of routines</b> you're after — the command logic is
-        git-controlled and reviewable, whether the trigger fires locally or in the cloud.
-      </div>
-
-      <div class="pill-row">
-        <span class="pill"><b>Machine must be awake</b> for a local routine to fire</span>
-        <span class="pill"><b>Runs as you</b> — local Keychain + <code style="font-size:11px">~/.codex</code> creds</span>
-        <span class="pill"><b>State lives in the tracker</b> → survives between runs</span>
-        <span class="pill"><b>Sub-hourly possible</b> locally (cloud is 1-hour min)</span>
-      </div>
-    </div>
-  </section>
-
-  <!-- ===================== SPECS ===================== -->
-  <section class="section">
-    <h2>The specs — types &amp; lifecycles</h2>
-    <p class="section-intro">
-      Specs come in two families. <b>Lifecycle specs</b> flow with a task — an idea becomes confirmed work becomes the
-      permanent record. <b>Reference specs</b> document standing parts of the system. And <b>decisions</b> are recorded
-      where they carry weight: a consequential cross-cutting one becomes a numbered <b>ADR</b> in <code>specs/decisions/</code>
-      (<code>0001</code>+), while a local one lives inside the spec it governs.
+  <footer class="foot">
+    <p>
+      <b>harness</b> · MIT licensed · the source, the issues, and the specs live at
+      <a href="https://github.com/sluengen/harness">github.com/sluengen/harness</a>.
+      The README is the canonical text; this page is its visual companion.
     </p>
-
-    <div class="spec-flow">
-      <!-- proposal -->
-      <div class="spec-stage spec--proposal">
-        <span class="spec-kicker">Lifecycle · before work</span>
-        <h4>Proposal spec</h4>
-        <p class="spec-q">"Should we do this — and how big is it?"</p>
-        <dl class="spec-meta">
-          <div><dt>Lives in</dt><dd><code>specs/proposals/&lt;slug&gt;.md</code></dd></div>
-          <div><dt>Raised</dt><dd>via <code>/propose</code>, by whoever sees the need</dd></div>
-          <div><dt>Holds</dt><dd>Problem · Options · Recommendation · Open decisions · Breakdown · Risks</dd></div>
-        </dl>
-        <div class="states">
-          <span>draft</span><span class="arr">→</span><span>under-decision</span><span class="arr">→</span>
-          <span class="end">accepted</span><span class="end">rejected</span><span class="end">split</span>
-        </div>
-        <p class="spec-note">Only when work is unconfirmed, risky, or too big for one change. Ends in one explicit state — never half-decided.</p>
-      </div>
-
-      <div class="spec-arrow"><span>accepted: spawns change specs</span></div>
-
-      <!-- change -->
-      <div class="spec-stage spec--change">
-        <span class="spec-kicker">Lifecycle · in flight</span>
-        <h4>Change spec</h4>
-        <p class="spec-q">"What exactly will this one piece of work do?"</p>
-        <dl class="spec-meta">
-          <div><dt>Lives in</dt><dd>the <b>tracker issue</b> — no separate file</dd></div>
-          <div><dt>Written by</dt><dd>the builder</dd></div>
-          <div><dt>Holds</dt><dd>Problem · Approach · Design (data / interface / scenarios) · Acceptance criteria · Out of scope</dd></div>
-        </dl>
-        <div class="states">
-          <span>In Progress</span><span class="arr">→</span><span>In Review</span><span class="arr">→</span><span>Done</span>
-        </div>
-        <p class="spec-note">Edited in place the moment scope shifts — silent divergence is a process violation. Stays on the issue as history after ship.</p>
-      </div>
-
-      <div class="spec-arrow"><span>on PASS: reviewer records it</span></div>
-
-      <!-- feature -->
-      <div class="spec-stage spec--design">
-        <span class="spec-kicker">Lifecycle · the record</span>
-        <h4>Feature spec <small>· the as-built source of truth</small></h4>
-        <p class="spec-q">"What does the product do today?"</p>
-        <dl class="spec-meta">
-          <div><dt>Lives in</dt><dd><code>specs/features/&lt;feature&gt;.md</code></dd></div>
-          <div><dt>Written by</dt><dd>the <b>reviewer</b>, on PASS, from the diff — never the builder</dd></div>
-          <div><dt>Holds</dt><dd>Behaviour (by surface) · Data model · Interface surface · Known limitations · embedded Decisions</dd></div>
-        </dl>
-        <div class="states">
-          <span class="end">permanent · as-built record</span>
-        </div>
-        <p class="spec-note">The central source of truth, grouped by user-visible behaviour. The reviewer records reality as the last commit before merge — the agent that promises is not the one that records delivery.</p>
-      </div>
-    </div>
-
-    <div class="spec-grid">
-      <div class="spec-card spec--ref">
-        <h4>Architecture-principles <span class="spec-tag">Reference · standing</span></h4>
-        <p>How the system is built — the technical principles governing design here, extending the universal engineering-principles. Also the home for <b>cross-cutting decisions</b>.</p>
-        <code>specs/architecture-principles.md</code>
-        <p class="spec-note">Updated when the architecture changes, not per task.</p>
-      </div>
-      <div class="spec-card spec--ref">
-        <h4>Infrastructure <span class="spec-tag">Reference · standing</span></h4>
-        <p>The operational reality — repo, CI, packaging, accounts, secrets. The source of truth for a deployment or configuration decision.</p>
-        <code>specs/infrastructure.md</code>
-        <p class="spec-note">Now instantiated for the harness — repo, GitHub Actions CI, the documentation page, and where each credential lives. Updated when infra changes, not per task.</p>
-      </div>
-      <div class="spec-card spec--decision">
-        <h4>Decisions <span class="spec-tag">ADRs + inline</span></h4>
-        <p>A consequential cross-cutting decision is a numbered <b>ADR</b> in <code>specs/decisions/</code> (<code>0001</code>+); a local one is recorded <b>inside the spec it governs</b>.</p>
-        <code>Context · Decision · Alternatives · Consequences</code>
-        <p class="spec-note">Superseding updates it in place with a dated note — the record carries its history inline.</p>
-      </div>
-    </div>
-  </section>
-
-  <!-- ===================== THE HARNESS ===================== -->
-  <section class="section" data-section="harness">
-    <h2>The harness — one gate, and the guidance around it</h2>
-    <p class="section-intro">
-      Inside the Build loop sits the <b>harness</b>: a single deterministic gate, and the versioned guidance that
-      routes an agent into it. The agent writes the code and the tests and decides how to answer a finding; the repo
-      owns only what must not depend on the agent remembering it. There is no runtime here — nothing runs unless
-      someone asks it to.
+    <p>
+      Every command, skill, agent, and hook named above is checked against the repository's own tracked
+      tree by the gate — a name that stops resolving turns this page red before it reaches a reader.
     </p>
-
-    <div class="verbs">
-      <article class="verb verb--verify">
-        <h4>verify</h4>
-        <p class="role">the whole contract</p>
-        <p><code>bash scripts/verify.sh</code> runs lint, types, the suite under a coverage floor, and the drift guards. The same command in CI, in a checkout, and in the nightly promotion — green is the only evidence a completion claim may cite.</p>
-        <span class="out">→ pass · or a named failure</span>
-      </article>
-      <article class="verb verb--guidance">
-        <h4>guidance</h4>
-        <p class="role">how work happens here</p>
-        <p>Skills, agents and commands, each version-stamped and distributed from this repo by <code>registry.yaml</code>. A consuming repo pulls them with <code data-guidance="update-guidance">/update-guidance</code>, and a semver bump is the compatibility promise.</p>
-        <span class="out">→ one process, every repo</span>
-      </article>
-      <article class="verb verb--guards">
-        <h4>guards</h4>
-        <p class="role">rules with teeth</p>
-        <p>Roughly 1,300 tests, most of which read the tracked tree: a version stamp that drifted, a mirror that stopped matching its source, a document citing a path that no longer resolves. A rule with a test is a bound.</p>
-        <span class="out">→ the gate goes red</span>
-      </article>
-    </div>
-
-    <div class="aux">
-      <code>ruff</code><code>mypy</code><code>pytest</code><code>coverage&nbsp;floor</code><code>landing-page&nbsp;drift</code><code>design-token&nbsp;drift</code><code>mutate.py</code>
-    </div>
-
-    <div class="invariants">
-      <div class="inv">
-        <h5>Fresh evidence, or no claim</h5>
-        <p>A completion claim names the gate run that backs it, read in the session that makes it. A structural change is not evidence that anything worked.</p>
-      </div>
-      <div class="inv">
-        <h5>Mutation-proved guards</h5>
-        <p>A test that was green the moment it was born has not been shown to measure anything. <code>scripts/mutate.py</code> breaks the thing on purpose and checks the guard notices.</p>
-      </div>
-      <div class="inv">
-        <h5>Builder ≠ recorder</h5>
-        <p>The session that implements and promises is not the one that records delivery — the <b>reviewer</b> writes the as-built spec on&nbsp;PASS.</p>
-      </div>
-    </div>
-
-    <div class="drive">
-      <b>How an agent drives it.</b> One session runs the loop —
-      <code data-guidance="build">/build&nbsp;&lt;TICKET&gt;</code> takes it from
-      the ticket through implement → verify → review → (fix → review)* → ship. It writes the code inline, and every
-      claim it makes is backed by the repo's own verify gate run and read in that session.
-    </div>
-  </section>
-
-  <!-- ===================== THE GUIDANCE ===================== -->
-  <section class="section" data-section="guidance">
-    <h2>The guidance it distributes</h2>
-    <p class="section-intro">
-      The harness is also the <b>source of guidance</b> that other repos self-host. This is the catalog it distributes —
-      every entry below is a real unit in <code>registry.yaml</code>, the single source of truth for the surface.
-    </p>
-
-    <div class="catalog">
-      <div class="cat-group cat--skills">
-        <h4>Skills</h4>
-        <p class="cat-sub">the durable rules</p>
-        <span class="cat-item"><code class="cat-name" data-guidance="spec-driven-development">spec-driven-development</code><span class="cat-line">The idea → shipped → recorded lifecycle the other skills hang off.</span></span>
-        <span class="cat-item"><code class="cat-name" data-guidance="spec-authoring">spec-authoring</code><span class="cat-line">The craft of writing any spec — proposal, change, or as-built.</span></span>
-        <span class="cat-item"><code class="cat-name" data-guidance="engineering-principles">engineering-principles</code><span class="cat-line">What every design and change is measured against.</span></span>
-        <span class="cat-item"><code class="cat-name" data-guidance="architecture">architecture</code><span class="cat-line">Cross-cutting design decisions, recorded in the spec they govern.</span></span>
-        <span class="cat-item"><code class="cat-name" data-guidance="test-driven-development">test-driven-development</code><span class="cat-line">The test-first iron law — the failing test before the code.</span></span>
-        <span class="cat-item"><code class="cat-name" data-guidance="code-quality">code-quality</code><span class="cat-line">Scope discipline, structure, and the verification gate.</span></span>
-        <span class="cat-item"><code class="cat-name" data-guidance="review-discipline">review-discipline</code><span class="cat-line">Spec-compliance then quality; the self-check before handoff.</span></span>
-        <span class="cat-item"><code class="cat-name" data-guidance="systematic-debugging">systematic-debugging</code><span class="cat-line">Reproduce, isolate the root cause, fix minimally, prove it.</span></span>
-        <span class="cat-item"><code class="cat-name" data-guidance="worktree-isolation">worktree-isolation</code><span class="cat-line">Every multi-commit task on its own branch in its own worktree.</span></span>
-        <span class="cat-item"><code class="cat-name" data-guidance="writing-quality">writing-quality</code><span class="cat-line">Plain prose; kill the predictable AI-writing patterns.</span></span>
-        <span class="cat-item"><code class="cat-name" data-guidance="linear">linear</code><span class="cat-line">The single home for reading and updating the Linear queue.</span></span>
-        <span class="cat-item"><code class="cat-name" data-guidance="work-discovery">work-discovery</code><span class="cat-line">How an unattended routine picks its own next ticket.</span></span>
-        <span class="cat-item"><code class="cat-name" data-guidance="assessment-craft">assessment-craft</code><span class="cat-line">The methodology for a periodic <code>/assess</code> health pass.</span></span>
-        <span class="cat-item"><code class="cat-name" data-guidance="ux-design">ux-design</code><span class="cat-line">Designing a user-facing surface — flow, states, architecture.</span></span>
-        <span class="cat-item"><code class="cat-name" data-guidance="design-system">design-system</code><span class="cat-line">Building UI with the repo's tokens and primitives (layer-gated).</span></span>
-      </div>
-
-      <div class="cat-group cat--agents">
-        <h4>Agents</h4>
-        <p class="cat-sub">who does the work</p>
-        <span class="cat-item"><code class="cat-name" data-guidance="dev">dev</code><span class="cat-line">Implementation — test-first, in scope.</span></span>
-        <span class="cat-item"><code class="cat-name" data-guidance="reviewer">reviewer</code><span class="cat-line">The final gate; records what shipped on PASS.</span></span>
-        <span class="cat-item"><code class="cat-name" data-guidance="architect">architect</code><span class="cat-line">Data models, contracts, decisions — designs, not code.</span></span>
-        <span class="cat-item"><code class="cat-name" data-guidance="steward">steward</code><span class="cat-line">Periodic health assessment via <code>/assess</code>.</span></span>
-        <span class="cat-item"><code class="cat-name" data-guidance="researcher">researcher</code><span class="cat-line">Focused research to inform a design or decision.</span></span>
-      </div>
-
-      <div class="cat-group cat--commands">
-        <h4>Commands</h4>
-        <p class="cat-sub">the entry points</p>
-        <span class="cat-item"><code class="cat-name" data-guidance="propose">/propose</code><span class="cat-line">Work an unconfirmed or large idea into a decided proposal.</span></span>
-        <span class="cat-item"><code class="cat-name" data-guidance="start">/start</code><span class="cat-line">Set up the workspace and build through to review-ready.</span></span>
-        <span class="cat-item"><code class="cat-name" data-guidance="review">/review</code><span class="cat-line">Run the final gate on the current branch.</span></span>
-        <span class="cat-item"><code class="cat-name" data-guidance="ship">/ship</code><span class="cat-line">Integrate and close, per the repo's branch model.</span></span>
-        <span class="cat-item"><code class="cat-name" data-guidance="build">/build</code><span class="cat-line">Autonomous agent-led driver: implement → verify → review → ship.</span></span>
-        <span class="cat-item"><code class="cat-name" data-guidance="routine">/routine</code><span class="cat-line">One unattended tick: discover the next ticket, build it, ship it.</span></span>
-        <span class="cat-item"><code class="cat-name" data-guidance="assess">/assess</code><span class="cat-line">Run the steward over the codebase — code or architecture.</span></span>
-        <span class="cat-item"><code class="cat-name" data-guidance="update-guidance">/update-guidance</code><span class="cat-line">Pull upstream guidance changes into this repo.</span></span>
-      </div>
-    </div>
-  </section>
-
-  <footer>
-    The harness · a spec-driven agent build loop. This page is the visual companion to the <code>README</code> — the canonical reference lives in the repo.<br>
-    Every skill, agent, and command named above resolves in <code>registry.yaml</code>, the single source of truth for the distributed surface.
   </footer>
 
 </div>
