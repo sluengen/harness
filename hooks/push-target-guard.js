@@ -241,6 +241,57 @@ function scalar(raw) {
   return stripQuotes((hash === -1 ? raw : raw.slice(0, hash)).trim());
 }
 
+//: One ``key: value`` pair, in either spelling of the block.
+const PAIR = /^\s*([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*(.*)$/;
+
+//: ``branches:`` written as a yaml **flow mapping** on one line — valid yaml a
+//: real loader reads identically to the block form, which the line scanner below
+//: read as nothing until #487. The body excludes braces, so only a flat mapping
+//: is accepted: a nested one (``{a: {b: c}}``) is left to the unreadable notice
+//: rather than half-parsed, and a flow *sequence* (``[a, b]``) declares no
+//: branch names to begin with. The trailing group is the comment yaml allows
+//: after the closing brace. A flow mapping wrapped across several lines is out
+//: of scope too — every spelling left out lands on the unreadable notice below
+//: rather than on a silent empty parse, which is the whole point of having it.
+const BRANCHES_FLOW = /^branches:\s*\{([^{}]*)\}\s*(?:#.*)?$/;
+
+//: Any line that opens a ``branches:`` key, whatever follows it. Wider than
+//: either arm above on purpose: a declaration this parser cannot read is the
+//: thing worth reporting, so the detector must not be the parser.
+const BRANCHES_KEY = /^branches\s*:/;
+
+//: Files already reported as unreadable, so a hook that resolves its declaration
+//: at more than one call site says it once. Process-scoped, and a hook process
+//: handles exactly one invocation.
+const reportedUnreadable = new Set();
+
+/**
+ * Say once, on stderr, that ``file`` declares branches this parser could not
+ * read. Same posture and the same ``TAG`` as ``failOpen``: the caller carries on
+ * with whatever it can read instead, stdout and the exit status are untouched,
+ * and nothing from the payload is echoed. Without it, an unreadable declaration
+ * is indistinguishable from a readable one in every repo whose branch names
+ * happen to match the fallback (#487).
+ *
+ * What the notice may claim is bounded by what the caller then does, and the
+ * caller has two things left to try: ``CONTEXT.md`` behind an unreadable spine,
+ * then ``FALLBACK_PROTECTED``. A repository part-way through the v5 migration
+ * reaches the first, so a line asserting the conservative set is in force would
+ * be false exactly where an operator acts on it. It reports the one thing true
+ * in every case — this file's declaration is not what is being protected — and
+ * ``test_hooks_unreadable_declaration_is_loud.py`` measures the bound.
+ */
+function noticeUnreadableDeclaration(file) {
+  const name = String(file);
+  if (reportedUnreadable.has(name)) return;
+  reportedUnreadable.add(name);
+  process.stderr.write(
+    `${TAG} unreadable-declaration: ${name.replace(/\s+/g, " ").slice(0, 200)}: ` +
+      "declares branches: but no names could be read from it; " +
+      "the branches it names are not the ones being protected\n"
+  );
+}
+
 /** The branch names declared under ``branches:`` in a repo's spine.
  *
  * The spine is ``CLAUDE.md`` (v5); ``CONTEXT.md`` is read as the fallback for a
@@ -251,7 +302,19 @@ function scalar(raw) {
  * yaml load would need a dependency this surface does not have. Every value
  * under the block counts — ``integration``, ``staging``, ``release`` and any key
  * a repo invents — because the question is which branches the repo treats as
- * shared, not which role it assigned them. */
+ * shared, not which role it assigned them.
+ *
+ * Two spellings of the same declaration are read: the indented block, and the
+ * one-line flow mapping (#487). The first ``branches:`` key wins; a second one
+ * later in the file is not merged, matching how the block arm already stops at
+ * the end of the first block it finds.
+ *
+ * A ``branches:`` key that yields no names — a hand-edited sequence, a spelling
+ * nobody anticipated, or a declaration that really is empty — is reported once on
+ * stderr and then falls through to the caller's fallback. Reporting an
+ * explicitly empty declaration is deliberate: the fallback protects a set the
+ * repo did not ask for either way, and that divergence is the thing worth
+ * seeing. */
 function declaredBranches(contextFile) {
   let text;
   try {
@@ -263,21 +326,36 @@ function declaredBranches(contextFile) {
     return [];
   }
   const found = [];
+  let declares = false;
   let indent = -1;
   for (const raw of text.split("\n")) {
     const line = raw.replace(/\t/g, "  ");
     const lead = line.length - line.trimStart().length;
     if (indent === -1) {
-      if (/^branches:\s*$/.test(line.trim())) indent = lead;
+      const trimmed = line.trim();
+      if (!BRANCHES_KEY.test(trimmed)) continue;
+      declares = true;
+      const flow = BRANCHES_FLOW.exec(trimmed);
+      if (flow) {
+        for (const pair of flow[1].split(",")) {
+          const match = PAIR.exec(pair);
+          if (!match) continue;
+          const value = scalar(match[2]);
+          if (value) found.push(value);
+        }
+        break; // a flow mapping is the whole declaration
+      }
+      if (/^branches:\s*$/.test(trimmed)) indent = lead;
       continue;
     }
     if (!line.trim()) continue;
     if (lead <= indent) break; // the block ended
-    const match = /^\s*([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*(.*)$/.exec(line);
+    const match = PAIR.exec(line);
     if (!match) continue;
     const value = scalar(match[2]);
     if (value) found.push(value);
   }
+  if (declares && found.length === 0) noticeUnreadableDeclaration(contextFile);
   return found;
 }
 

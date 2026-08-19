@@ -120,12 +120,54 @@ branches:
 ```
 """
 
+#: The flow-mapping spelling of a declaration (#487). Byte-for-byte valid yaml
+#: that ``yaml.safe_load`` reads exactly as it reads :data:`_DECLARED`'s block,
+#: and that a line scanner keyed on a bare ``branches:`` line reads as *nothing*
+#: — the whole defect.
+#:
+#: The declaration appears here in **exactly one** form. There is no block-form
+#: ``branches:`` anywhere in this fixture, so a scanner without the flow arm has
+#: nothing else it could have found; ``repo:`` is a block mapping on purpose, to
+#: keep the fixture a realistic spine without giving the old scanner a second
+#: chance. Every value is a name no ``FALLBACK_PROTECTED`` entry carries (floored
+#: in :func:`test_a_flow_mapping_declaration_is_actually_read`), so "parsed
+#: correctly" can never be confused with "fell back". The three spellings the arm
+#: has to survive are all present at once: several pairs, a quoted value, and a
+#: comment after the closing brace.
+_FLOW_MAPPING = """# CONTEXT.md
+
+```yaml
+repo:
+  name: sample
+branches: {integration: flow-lane, staging: "quoted-lane", release: brace-lane}  # still yaml
+```
+"""
+
+#: The values :data:`_FLOW_MAPPING` declares, named once so the fixture and the
+#: assertion cannot drift apart.
+_FLOW_VALUES = {"flow-lane", "quoted-lane", "brace-lane"}
+
+#: An empty flow mapping. Legal yaml, and a genuinely empty declaration rather
+#: than an unreadable one, so the conservative fallback is the right answer —
+#: the same answer the ``empty-block`` variant gets by the other spelling. This
+#: variant is a regression guard on the flow arm *not over-reaching*: an arm that
+#: threw, or that produced a stray value, on ``{}`` fails here.
+_EMPTY_FLOW = """# CONTEXT.md
+
+```yaml
+branches: {}
+tracker: github
+```
+"""
+
 _VARIANTS = {
     "declared": _DECLARED,
     "missing": None,
     "malformed": _MALFORMED,
     "empty-block": _EMPTY_BLOCK,
     "full-refs": _FULL_REFS,
+    "flow-mapping": _FLOW_MAPPING,
+    "empty-flow": _EMPTY_FLOW,
 }
 
 
@@ -266,6 +308,51 @@ def test_a_declared_block_is_actually_read(tmp_path: Path) -> None:
         )
 
 
+def test_a_flow_mapping_declaration_is_actually_read(tmp_path: Path) -> None:
+    """#487 AC-1 — the flow spelling is *parsed*, not merely tolerated.
+
+    The parametrized equivalence above only asks the two parsers to **agree**,
+    and two parsers that both ignored the flow form would agree perfectly by both
+    returning the fallback (``craft.md`` → *Exercise the production path, not
+    merely a production constant*). This is the assertion that separates
+    agreeing from agreeing-because-neither-of-them-looks, and it sits outside the
+    parametrization so an empty variant map cannot delete it.
+
+    Both operands of the inequality are floored. An empty derived set satisfies
+    ``!= fallback`` while measuring nothing, and an empty fallback satisfies it
+    for the opposite wrong reason (``craft.md`` → *The empty comparison set*).
+    The disjointness floor is the third: it pins the fixture property the
+    inequality rests on, so a later edit that moved one of these names into
+    ``FALLBACK_PROTECTED`` reports itself here instead of quietly weakening the
+    test.
+    """
+    fallback = _fallback()
+    assert fallback, "the fallback set derived to nothing, so every comparison below is vacuous"
+    assert _FLOW_VALUES.isdisjoint(fallback), (
+        f"the flow fixture's values {sorted(_FLOW_VALUES)} now overlap the fallback set "
+        f"{sorted(fallback)}, so a parser that ignored the fixture entirely could still "
+        "produce them and this test would stop measuring the parse"
+    )
+
+    repo = _repo_with(tmp_path, _FLOW_MAPPING)
+    for hook in (_PUSH_HOOK, _STOP_HOOK):
+        derived = _protected(hook, repo)
+        assert derived, (
+            f"{hook} derived an empty protected set from the flow-mapping fixture, so the "
+            "assertions below compare nothing"
+        )
+        assert derived >= _FLOW_VALUES, (
+            f"{hook} did not read the flow-mapping declaration: {sorted(derived)}. "
+            "`branches: {integration: …}` is byte-for-byte valid yaml that a real loader "
+            "reads identically to the block form, so a scanner that sees nothing in it "
+            "protects branches the repo never declared and misses the ones it did (#487)."
+        )
+        assert derived != fallback, (
+            f"{hook} returned the fallback set for a repo that declares its branches as a "
+            "flow mapping, so the declaration is not being read at all"
+        )
+
+
 def test_an_unreadable_declaration_falls_back_rather_than_protecting_nothing(
     tmp_path: Path,
 ) -> None:
@@ -278,7 +365,7 @@ def test_an_unreadable_declaration_falls_back_rather_than_protecting_nothing(
     """
     fallback = _fallback()
 
-    for variant in ("missing", "malformed", "empty-block"):
+    for variant in ("missing", "malformed", "empty-block", "empty-flow"):
         repo = _repo_with(tmp_path / variant, _VARIANTS[variant])
         for hook in (_PUSH_HOOK, _STOP_HOOK):
             assert _protected(hook, repo) == fallback, (
