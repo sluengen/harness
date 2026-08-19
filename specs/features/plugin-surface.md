@@ -53,7 +53,7 @@ Both branch-reading hooks parse the spine's `branches:` block first and fall bac
 
 ### The guards
 
-`tests/unit/` holds 25 test modules (~12.1k lines, both derived from the tracked tree at this record's date, its three helper modules excluded from the count) admitted under ADR 0017 D5's rule: (a) behaviour of executable code, (b) a property of the spine, (c) integrity of shipped assets, (d) frontmatter compliance, (e) tree-consistency — existence and correspondence of two things both in the tree, never prose meaning. The prose-guard corpus (118 modules on `dev` at 2026-08-17) is deleted; what survives executes the hooks under node, the gate scripts, the mutation instrument, and the workflows' contract modules. New guards are admitted against the rule, not by momentum.
+`tests/unit/` holds 25 test modules (~12.2k lines, both derived from the tracked tree at this record's date, its three helper modules excluded from the count) admitted under ADR 0017 D5's rule: (a) behaviour of executable code, (b) a property of the spine, (c) integrity of shipped assets, (d) frontmatter compliance, (e) tree-consistency — existence and correspondence of two things both in the tree, never prose meaning. The prose-guard corpus (118 modules on `dev` at 2026-08-17) is deleted; what survives executes the hooks under node, the gate scripts, the mutation instrument, and the workflows' contract modules. New guards are admitted against the rule, not by momentum.
 
 ### The assessment layer
 
