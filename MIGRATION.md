@@ -26,7 +26,25 @@ source repo moves.
    generated block is inserted above your content, which becomes the repo-owned
    section. Hydration is working-tree only — you review and commit the result.
 
-3. **Delete the old install, at your pace.** The copied guidance trees
+3. **Declare where the plugin comes from.** Installing it wrote the
+   enablement into whichever settings scope you chose — the repo's own
+   `.claude/settings.json` at project scope. The marketplace that
+   `harness@harness` resolves through is registered per machine either way, so a
+   colleague's fresh clone gets no commands and no enforcement hooks and is told
+   nothing.
+   `/harness:init` writes the declaration for you — check it landed, and add it
+   by hand in a repo hydrated before that step existed:
+
+   ```json
+   "extraKnownMarketplaces": {
+     "harness": { "source": { "source": "github", "repo": "sluengen/harness" } }
+   }
+   ```
+
+   Commit it with the rest of the hydration. The spine's repo section carries the
+   same fact in prose, for a host too old to read the key.
+
+4. **Delete the old install, at your pace.** The copied guidance trees
    (`commands/`, `skills/`, `agents/`, `hooks/`, `templates/`, `process/`,
    `settings/` — whatever subset `.guidance-lock.yaml` lists as installed) and
    the lock file itself are dead weight once the plugin serves the same
@@ -35,7 +53,7 @@ source repo moves.
    Delete `.guidance-lock.yaml` last if you want the record of what was
    installed while you sweep.
 
-4. **`CONTEXT.md` keeps working until you retire it.** The enforcement hooks
+5. **`CONTEXT.md` keeps working until you retire it.** The enforcement hooks
    read the spine's (`CLAUDE.md`) `branches:` block first and fall back to
    `CONTEXT.md` for a repo hydrated before the spine absorbed it — so branch
    protection does not lapse mid-migration. Once `/harness:init` has written a
@@ -43,7 +61,7 @@ source repo moves.
    anything repo-specific you still want into the spine's repo section and
    delete it.
 
-5. **After future plugin updates:** `/harness:init --refresh` regenerates the
+6. **After future plugin updates:** `/harness:init --refresh` regenerates the
    spine's generated block between its markers and touches nothing else. There
    is no `/update-guidance` any more; the plugin manager owns updates.
 

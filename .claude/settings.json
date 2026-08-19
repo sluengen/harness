@@ -1,4 +1,9 @@
 {
+  "extraKnownMarketplaces": {
+    "harness": {
+      "source": { "source": "github", "repo": "sluengen/harness" }
+    }
+  },
   "permissions": {
     "allow": [
       "Read",
