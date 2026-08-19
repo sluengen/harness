@@ -1,10 +1,17 @@
 """Contract guards for the deterministic nightly ``dev → main`` promotion.
 
+Admission (ADR 0017 D5): class (a) — the contract of a workflow file, asserted
+on its text because no execution reaches it.
+
 v5 chunk 3 (ADR 0003 as amended, ADR 0017 D6): this repo retires its ``staging``
 role, so the nightly promotes ``dev → main`` directly — an unattended advance of
 ``main`` on green, recorded as this repo's topology in
-``specs/infrastructure.md``. The discipline is unchanged: gate on the candidate,
-fast-forward or nothing, never a merge, force, or repair.
+``specs/infrastructure.md``. **#485 changed how that advance lands.** ``main`` is
+protected and requires a pull request, so the job opens or reuses one from
+``dev`` and merges it through the API; fast-forward-only publishing is retired
+in favour of tree identity (ADR 0003 as amended 2026-08-19). The discipline is
+otherwise unchanged: gate on the exact candidate, never force, never repair,
+never resolve a conflict.
 
 The step's logic lives in ``scripts/promotion-step.sh``, and what that logic
 *does* is proven by executing it against a stubbed ``git`` in
@@ -21,17 +28,20 @@ and carries nothing else; and the ban on the workflow mutating a ref or licensin
 a repair from any *other* step, which is the one thing the deleted derivation
 covered that a step-scoped pin does not.
 
-**#435 narrowed the ban rather than dropping it.** ADR 0015 retires the ``harness
-promote`` verb and keeps the promotion, so ``git push`` moved from *forbidden
-everywhere* to *the script's job, and only the script's*. That is a weaker ban
-than the one it replaces, so it is stated as a location rather than an absence:
-the workflow may not push, because a push added to a ``run:`` block is a mutation
-no executed guard can see, while the script's push is asserted on recorded argv
-by the module above.
+**#435 narrowed the ban rather than dropping it, and #485 widened it again.** ADR
+0015 retires the ``harness promote`` verb and keeps the promotion, so ``git
+push`` moved from *forbidden everywhere* to *the script's job, and only the
+script's*. That is a weaker ban than the one it replaces, so it is stated as a
+location rather than an absence: the workflow may not mutate, because a mutation
+added to a ``run:`` block is one no executed guard can see, while the script's
+own calls are asserted on recorded argv by the module above. Since the promotion
+became a pull-request merge, the mutations the workflow may not make include the
+API ones — ``gh pr create``, ``gh pr merge``, ``gh api`` — not only the git ones.
 """
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -39,7 +49,19 @@ import pytest
 from tests.unit._prose import REPO_ROOT
 
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "nightly-promotion.yml"
+CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 SCRIPT = REPO_ROOT / "scripts" / "promotion-step.sh"
+
+#: Exactly the grants the promotion needs (#485): the merge writes onto `main`,
+#: the job opens and merges its own pull request, and it reads the required
+#: check's conclusion. Asserted as a **set**, not as substrings — a presence
+#: check cannot see a widening, which is the whole risk a permissions block
+#: carries.
+_PERMISSIONS = {
+    "contents": "write",
+    "pull-requests": "write",
+    "checks": "read",
+}
 
 #: The step that runs the promotion. Located by name so a rename is a named
 #: failure rather than a guard that quietly stops checking anything.
@@ -64,8 +86,12 @@ _PROMOTION_SOURCES = (WORKFLOW, SCRIPT)
 #: over an empty invocation list.
 _SCRIPT_MUST_DRIVE = (
     "scripts/verify.sh",  # the gate decides
-    "git push",           # and only a green gate advances the ref
-    "main",               # to this branch
+    "gh api",             # the script reaches the API at all
+    # ...and one of those calls is the merge. `gh api` alone cannot witness it:
+    # the check-run poll spells `gh api` too, so deleting only the merge leaves
+    # a `gh api` presence check green. `--method PUT` is the merge's alone.
+    "--method PUT",
+    "main",               # onto this branch
 )
 
 
@@ -103,6 +129,46 @@ def _step_run_value(step: list[str]) -> str:
     return runs[0][len("run:") :].strip()
 
 
+def _permissions_block() -> dict[str, str]:
+    """The workflow's top-level ``permissions:`` mapping, parsed whole.
+
+    Parsed rather than substring-matched so the comparison can be an equality:
+    what a permissions block must not do is *grow*, and no presence check can
+    see that.
+    """
+    lines = WORKFLOW.read_text(encoding="utf-8").splitlines()
+    starts = [i for i, line in enumerate(lines) if line.rstrip() == "permissions:"]
+    assert len(starts) == 1, (
+        f"the workflow must declare exactly one top-level `permissions:` block; "
+        f"found {len(starts)}"
+    )
+    granted: dict[str, str] = {}
+    for line in lines[starts[0] + 1 :]:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if not line.startswith(" "):
+            break
+        match = re.match(r"^\s+([a-z-]+):\s*([a-z-]+)\s*(?:#.*)?$", line)
+        assert match is not None, f"unreadable line in the permissions block: {line!r}"
+        granted[match.group(1)] = match.group(2)
+    return granted
+
+
+def _ci_trigger_branches(event: str) -> list[str]:
+    """The branch filter ``ci.yml`` declares for ``event``.
+
+    Derived from the file rather than restated here, so the guard measures what
+    the workflow says and not what this module remembers it said.
+    """
+    match = re.search(
+        rf"^ {{2}}{re.escape(event)}:\s*\n\s+branches:\s*\[([^\]]*)\]",
+        CI_WORKFLOW.read_text(encoding="utf-8"),
+        re.MULTILINE,
+    )
+    assert match is not None, f"ci.yml declares no `{event}:` trigger with a branch filter"
+    return [branch.strip() for branch in match.group(1).split(",") if branch.strip()]
+
+
 def _uncommented(text: str) -> str:
     """``text`` without whole comment lines.
 
@@ -124,10 +190,85 @@ def test_the_workflow_is_a_bounded_deterministic_nightly() -> None:
     assert "workflow_dispatch:" in workflow
     assert "nightly-dev-to-main" in workflow
     assert "cancel-in-progress: false" in workflow
-    assert "contents: write" in workflow
     assert "ref: dev" in workflow, "the job must gate and promote `dev`, not the default branch"
     assert "fetch-depth: 0" in workflow
-    assert "git config user.name" in workflow and "git config user.email" in workflow
+    # No commit author is pinned. Nothing in this job creates a commit: the
+    # merge commit is written server-side by the API, and `fetch`/`ls-remote`
+    # need no author. Pinning one would defend configuration the job no longer
+    # reads (#485). Read over `_uncommented`, as the repair ban below already
+    # is: over the raw text a comment *explaining* that no author is configured
+    # — the natural next edit to a step this change deleted — turns the gate red
+    # (mutation-proved). A ban belongs over what the job runs, not over what it
+    # says about itself.
+    assert "git config user." not in _uncommented(workflow), (
+        "the promotion writes no local commit, so a configured author is dead "
+        "configuration the suite must not defend"
+    )
+
+
+def test_the_workflow_grants_exactly_the_promotion_permissions() -> None:
+    """The permissions block is pinned as a **set**, not by presence (#485).
+
+    ``assert "contents: write" in workflow`` is satisfied by any block that also
+    grants ``id-token: write`` or ``packages: write``: a substring check can see
+    an absence but never a widening, and widening is the only direction a
+    permissions block fails in. The mapping is parsed and compared whole, so a
+    fourth grant fails here rather than shipping unobserved.
+    """
+    granted = _permissions_block()
+
+    assert granted == _PERMISSIONS, (
+        f"the nightly grants {granted}, not exactly {_PERMISSIONS}; the job merges "
+        "its own promotion pull request and reads one check, and needs nothing else"
+    )
+
+
+def test_the_promotion_step_is_given_the_token_and_the_checkout_is_not() -> None:
+    """The credential reaches ``gh`` through the step's env, and only there (#485).
+
+    ``GH_TOKEN`` is the Actions-issued, job-scoped ``GITHUB_TOKEN`` — not a
+    stored secret and not a PAT — forwarded to the one step that talks to the
+    API. ``persist-credentials: false`` is the other half: the script never
+    pushes, so the git layer loses the ability to. Together they are a real
+    narrowing, and both are invisible to any test that executes the script,
+    because both are properties of the workflow that invokes it.
+    """
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    step = _promotion_step_lines(workflow.splitlines())
+
+    assert any(line.strip() == "env:" for line in step), (
+        f"the promotion step declares no `env:`, so `gh` has no token: {step}"
+    )
+    assert any(line.strip() == "GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}" for line in step), (
+        f"the promotion step must forward the job-scoped GITHUB_TOKEN as GH_TOKEN: {step}"
+    )
+    assert "persist-credentials: false" in workflow, (
+        "the checkout keeps its push credential; the promotion goes through the "
+        "API and the git layer needs no write authority"
+    )
+
+
+def test_ci_runs_pull_request_checks_only_for_the_integration_branch() -> None:
+    """``ci.yml``'s ``pull_request`` trigger is narrowed to base ``dev`` (#485).
+
+    A pull request opened by a workflow using ``GITHUB_TOKEN`` produces runs in
+    an approval-required state, which nothing unattended can approve. The
+    promotion PR's base is ``main``, so a ``pull_request: [main, ...]`` trigger
+    raises a second, permanently unapproved run of the required check's name on
+    the gated commit. Whether such a run blocks a required status check is
+    unevidenced — this narrowing removes the question rather than answering it,
+    and a later widening silently restores the deadlock risk.
+    """
+    assert _ci_trigger_branches("pull_request") == ["dev"], (
+        f"ci.yml raises pull-request runs for "
+        f"{_ci_trigger_branches('pull_request')}; only `dev` may raise them, or a "
+        "bot-opened promotion PR gets an approval-gated duplicate of the check "
+        "`main` requires"
+    )
+    assert "main" in _ci_trigger_branches("push"), (
+        "ci.yml no longer runs the gate on pushes to main, so the narrowing above "
+        "removed coverage rather than a duplicate"
+    )
 
 
 def test_the_promotion_step_carries_no_logic_of_its_own() -> None:
@@ -180,11 +321,11 @@ def test_no_workflow_step_mutates_a_ref_outside_the_extracted_script() -> None:
         "the comment strip removed the promotion step's own `run:` line, so the "
         "ban below would be reading text that cannot run anything"
     )
-    for forbidden in ("git push", "git merge", "git tag"):
+    for forbidden in ("git push", "git merge", "git tag", "gh pr create", "gh pr merge", "gh api"):
         assert forbidden not in shell, (
-            f"the workflow runs `{forbidden}` directly; every ref mutation belongs in "
-            f"{SCRIPT.relative_to(REPO_ROOT)}, where the executed guard covers what "
-            "it does"
+            f"the workflow runs `{forbidden}` directly; every mutation of a ref or a "
+            f"pull request belongs in {SCRIPT.relative_to(REPO_ROOT)}, where the "
+            "executed guard covers what it does"
         )
 
 
@@ -201,7 +342,13 @@ def test_no_promotion_source_licenses_an_automated_repair(source: Path) -> None:
     text = _uncommented(source.read_text(encoding="utf-8"))
     assert text.strip(), f"{source} is empty, so the ban below checks nothing"
 
-    for forbidden in ("--force", "-f ", "agent_may_fix"):
+    # `-f ` used to stand in for `--force`'s short spelling. It is also `gh
+    # api`'s short flag for a field, so once the promotion went through the API
+    # (#485) the ban would have fired on a call that forces nothing. Both halves
+    # were fixed rather than either alone: the ban now names what it means, and
+    # the script writes `--raw-field`, so neither a false red nor an over-broad
+    # guard is left behind.
+    for forbidden in ("--force", "--force-with-lease", "push -f", "agent_may_fix"):
         assert forbidden not in text, (
             f"{source.name} licenses an automated repair or a forced ref update "
             f"({forbidden!r}); the nightly stops and reports instead (#378)"

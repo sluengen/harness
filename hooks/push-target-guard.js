@@ -241,6 +241,75 @@ function scalar(raw) {
   return stripQuotes((hash === -1 ? raw : raw.slice(0, hash)).trim());
 }
 
+//: One ``key: value`` pair, in either spelling of the block.
+const PAIR = /^\s*([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*(.*)$/;
+
+//: ``branches:`` written as a yaml **flow mapping** on one line — valid yaml a
+//: real loader reads identically to the block form, which the line scanner below
+//: read as nothing until #487. The body excludes braces, so only a flat mapping
+//: is accepted: a nested one (``{a: {b: c}}``) is left to the unreadable notice
+//: rather than half-parsed, and a flow *sequence* (``[a, b]``) declares no
+//: branch names to begin with. The trailing group is the comment yaml allows
+//: after the closing brace. A flow mapping wrapped across several lines is out
+//: of scope too — every spelling left out lands on the unreadable notice below
+//: rather than on a silent empty parse, which is the whole point of having it.
+const BRANCHES_FLOW = /^branches:\s*\{([^{}]*)\}\s*(?:#.*)?$/;
+
+//: Any line that opens a ``branches:`` key, whatever follows it. Wider than
+//: either arm above on purpose: a declaration this parser cannot read is the
+//: thing worth reporting, so the detector must not be the parser.
+const BRANCHES_KEY = /^branches\s*:/;
+
+//: One ``key: value`` pair inside a **flow mapping body**, scanned rather than
+//: split. The body used to be cut on every comma, which is wrong for a comma
+//: inside a quoted value: ``{release: "has,comma"}`` yielded the fragment
+//: ``"has`` — a name opening with a quote character, which no branch can be —
+//: and dropped the name actually declared (#488). Both hooks were wrong
+//: identically, so the two-parser equivalence could not see it and no notice
+//: fired.
+//:
+//: The value alternation tries both quoted forms before the bare one, so a
+//: quoted value is taken whole and only an unquoted value stops at a comma. The
+//: quote characters are written as ``\x22``/``\x27`` on purpose, for the same
+//: reason ``stripQuotes`` avoids them: the repo's hook source scanners blank
+//: string literals to count braces, and a lone quote inside a pattern throws
+//: their offsets off. Every match includes its key, so no match is zero-length
+//: and the global scan always advances.
+const FLOW_PAIR = /([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*(\x22[^\x22]*\x22|\x27[^\x27]*\x27|[^,]*)/g;
+
+
+//: Files already reported as unreadable, so a hook that resolves its declaration
+//: at more than one call site says it once. Process-scoped, and a hook process
+//: handles exactly one invocation.
+const reportedUnreadable = new Set();
+
+/**
+ * Say once, on stderr, that ``file`` declares branches this parser could not
+ * read. Same posture and the same ``TAG`` as ``failOpen``: the caller carries on
+ * with whatever it can read instead, stdout and the exit status are untouched,
+ * and nothing from the payload is echoed. Without it, an unreadable declaration
+ * is indistinguishable from a readable one in every repo whose branch names
+ * happen to match the fallback (#487).
+ *
+ * What the notice may claim is bounded by what the caller then does, and the
+ * caller has two things left to try: ``CONTEXT.md`` behind an unreadable spine,
+ * then ``FALLBACK_PROTECTED``. A repository part-way through the v5 migration
+ * reaches the first, so a line asserting the conservative set is in force would
+ * be false exactly where an operator acts on it. It reports the one thing true
+ * in every case — this file's declaration is not what is being protected — and
+ * ``test_hooks_unreadable_declaration_is_loud.py`` measures the bound.
+ */
+function noticeUnreadableDeclaration(file) {
+  const name = String(file);
+  if (reportedUnreadable.has(name)) return;
+  reportedUnreadable.add(name);
+  process.stderr.write(
+    `${TAG} unreadable-declaration: ${name.replace(/\s+/g, " ").slice(0, 200)}: ` +
+      "declares branches: but no names could be read from it; " +
+      "the branches it names are not the ones being protected\n"
+  );
+}
+
 /** The branch names declared under ``branches:`` in a repo's spine.
  *
  * The spine is ``CLAUDE.md`` (v5); ``CONTEXT.md`` is read as the fallback for a
@@ -251,7 +320,19 @@ function scalar(raw) {
  * yaml load would need a dependency this surface does not have. Every value
  * under the block counts — ``integration``, ``staging``, ``release`` and any key
  * a repo invents — because the question is which branches the repo treats as
- * shared, not which role it assigned them. */
+ * shared, not which role it assigned them.
+ *
+ * Two spellings of the same declaration are read: the indented block, and the
+ * one-line flow mapping (#487). The first ``branches:`` key wins; a second one
+ * later in the file is not merged, matching how the block arm already stops at
+ * the end of the first block it finds.
+ *
+ * A ``branches:`` key that yields no names — a hand-edited sequence, a spelling
+ * nobody anticipated, or a declaration that really is empty — is reported once on
+ * stderr and then falls through to the caller's fallback. Reporting an
+ * explicitly empty declaration is deliberate: the fallback protects a set the
+ * repo did not ask for either way, and that divergence is the thing worth
+ * seeing. */
 function declaredBranches(contextFile) {
   let text;
   try {
@@ -263,21 +344,53 @@ function declaredBranches(contextFile) {
     return [];
   }
   const found = [];
+  let declares = false;
   let indent = -1;
   for (const raw of text.split("\n")) {
-    const line = raw.replace(/\t/g, "  ");
+    // ``\r`` first, then tabs. Splitting on ``\n`` leaves a CRLF file's lines
+    // ending in ``\r``, and ``PAIR``'s trailing ``(.*)$`` cannot cross one —
+    // JavaScript counts it as a line terminator, so ``PAIR.exec("  a: b\r")``
+    // was ``null`` and every block declaration in a CRLF spine parsed to nothing
+    // while the same declaration in the flow spelling parsed fine (#488). The
+    // flow arm never saw it because it runs against ``line.trim()``.
+    const line = raw.replace(/\r$/, "").replace(/\t/g, "  ");
     const lead = line.length - line.trimStart().length;
     if (indent === -1) {
-      if (/^branches:\s*$/.test(line.trim())) indent = lead;
+      const trimmed = line.trim();
+      if (!BRANCHES_KEY.test(trimmed)) continue;
+      declares = true;
+      const flow = BRANCHES_FLOW.exec(trimmed);
+      if (flow) {
+        for (const match of flow[1].matchAll(FLOW_PAIR)) {
+          const value = scalar(match[2]);
+          if (value) found.push(value);
+        }
+        break; // a flow mapping is the whole declaration
+      }
+      // A block opens when the key carries **no value** — asked through
+      // ``scalar``, so the one helper that already decides comments decides them
+      // in this position too. The old test was ``/^branches:\s*$/`` against the
+      // trimmed line, and yaml permits a comment after any key, so
+      // ``branches:   # the shared ones`` skipped the perfectly ordinary mapping
+      // beneath it and fell back (#488). This repo's own spine writes inline
+      // comments on sibling lines of this very block — ``branches.release``
+      // among them, inside the very mapping this arm is trying to read.
+      //
+      // Asking the value rather than widening the key pattern is what keeps the
+      // spellings that must stay unreadable unreadable: ``branches: lonely-lane``
+      // and ``branches: [main, staging]`` both yield a non-empty scalar and so
+      // are not blocks, and land on the notice as before.
+      if (scalar(trimmed.replace(BRANCHES_KEY, "")) === "") indent = lead;
       continue;
     }
     if (!line.trim()) continue;
     if (lead <= indent) break; // the block ended
-    const match = /^\s*([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*(.*)$/.exec(line);
+    const match = PAIR.exec(line);
     if (!match) continue;
     const value = scalar(match[2]);
     if (value) found.push(value);
   }
+  if (declares && found.length === 0) noticeUnreadableDeclaration(contextFile);
   return found;
 }
 

@@ -218,6 +218,43 @@ Its sibling above is *`all()` over a possibly-empty iterable is constant-true*,
 where the constancy comes from an empty subject instead, and where the remedy is
 a non-emptiness assertion rather than a common root.
 
+### A question answered over a simplified graph measures the topology
+
+A predicate resolved against a graph the environment shapes — git history under
+default simplification, a scoped query, a filtered view — is a fact about the
+graph it was asked over, not about its subject. The topology the suite runs on
+need not be the one that ships.
+
+**Falsifying example.** An absence assertion — no tracked file under any retired
+path — is satisfied by a path that was never real, so a companion proved each
+pathspec had existed by asking for the last commit touching it. That question
+runs under git's **default history simplification**: at a merge TREESAME to one
+parent, git walks only that parent, so a path created *and* deleted entirely on
+the other side is pruned out of the answer and git reports no commit at all. The
+integration branch never has that shape, and the guard read green there for its
+whole life; a release candidate is exactly that shape, and the guard went red on
+the first one it met — the single topology no run had ever asked the question
+over.
+
+The direction that fired is the survivable one. There the pruned answer was
+falsy and the guard failed loudly on a candidate. Invert the polarity and a
+simplified query answering truthy satisfies an absence guard vacuously, on the
+topology that ships, with nothing in any run to notice. Ask which graph the
+question resolves against, then ask whether the suite ever builds every topology
+the answer has to hold on.
+
+The remedy is not to widen the shared query. Two questions that share a query
+shape are not the same question: the same call also answered *currency* for
+paths present in the tree, where the full-history answer is the merge that
+landed a file rather than the write, so widening would have made every record's
+currency read as promotion day. Splitting the question — existence over the full
+graph, currency left simplified — fixed one without breaking the other.
+
+Its sibling above is *A comparison whose operands live in different frames is
+constant*, where both operands are real and are measured against each other in
+incommensurable units. Here the operands are fine and the **question** was put
+to a pruned graph.
+
 ## Prose predicates and text guards
 
 ### A blacklist inversion sweep fails open on an appended grant
@@ -245,6 +282,39 @@ polarity of the clause while both the presence predicate and the inversion sweep
 read green in the same direction at once. Bound the window, pin the bound in a
 test, and write a control for each blocking verb; an unbounded window lets one
 `not` silence every claim after it.
+
+### A containment window whose subject carries its own negation has no polarity
+
+Co-occurrence within a clause proves direction only while the clause is
+otherwise free of negation. When the sentence being guarded legitimately carries
+its own *never*, that negation is spent on a neighbouring verb and the window
+measures nothing.
+
+**Falsifying example.** A term co-occurrence guard that passed on the inverted
+rule was converted to anchor a verdict token to the phrase it governs, asserting
+that the verdict and its subject appear in one clause. The conversion was
+mutated, the mutation killed, and the fix was believed. But the guarded sentence
+already read *never amended on the ticket*: the clause's one negation belongs to
+a different verb, so containment had no direction left to measure. Inserting a
+single word — *is **not** a Stage 1 FAIL* — inverted the rule with both anchors
+intact and the suite green. It survived in the very module the governing decision
+had named as its worked example of the inversion-passes class, which is how
+thoroughly a killed mutation can certify the wrong assertion.
+
+Widening the window makes this worse, not better: more text means more legitimate
+negations to be spent elsewhere. The fix is a second assertion carrying its own
+exclusive killer — no negation within N words *before* the verdict token — so the
+polarity claim is made where polarity is decided instead of inferred from
+proximity, and a benign reword is kept as a control that survives, buying
+direction without buying back brittleness. Its neighbour above,
+*The negation window assumes a false converse*, is the guard that asserts a
+negation and misattributes the one it finds; this one asserts no negation at all,
+over a clause whose own negation correctly governs a neighbouring verb.
+
+The same defect reaches a sentence naming two verbs, where a bare negation
+alternation attaches to whichever is convenient: *hardcode it here, and never
+resolve it at runtime* keeps every anchored term and every negation while stating
+the exact drift the rule forbids. Bind the negation to the verb it must govern.
 
 ### The text unit is part of the predicate
 

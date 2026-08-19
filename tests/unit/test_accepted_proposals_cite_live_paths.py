@@ -184,6 +184,45 @@ def test_the_tracked_sets_are_live() -> None:
     )
 
 
+def test_the_directory_derivation_is_computed_not_constant() -> None:
+    """Synthetic operands whose correct answer differs from this repo's (#489 AC-4).
+
+    ``craft.md`` → *PIN THE DERIVATION, NOT THE DERIVED ANSWER* (#458, re-proven
+    #466): fed only production data, :func:`_tracked_dirs` and a hardcoded set of
+    this repo's directories are indistinguishable — the floor above is satisfied by
+    ``lambda tracked: {"specs/proposals"}``. These three inputs have answers the
+    production tree does not have, so a derivation that stopped deriving fails
+    here.
+
+    Each case isolates one property of the walk, so a mutation to any of them has
+    an exclusive killer:
+
+    * a nested path yields **every** ancestor, not only the immediate parent —
+      ``specs/proposals`` and ``specs`` both have to be reachable, and a
+      ``parent``-only rule satisfies the floor above while dropping the outer one;
+    * a root-level file yields **nothing**, because ``Path("top.md").parent`` is
+      ``.`` and a walk that emitted it would make every bare filename resolve as a
+      directory cite;
+    * two paths union without duplication, and a shared ancestor is not counted
+      twice — the result is a set derived from all of the input, not from its
+      first element.
+    """
+    assert _tracked_dirs({"a/b/c.py"}) == {"a", "a/b"}
+    assert _tracked_dirs({"top.md"}) == set()
+    assert _tracked_dirs({"a/b/c.py", "a/d.py", "x/y.py"}) == {"a", "a/b", "x"}
+
+
+def test_the_directory_derivation_over_an_empty_input_is_empty() -> None:
+    """The other direction: nothing in, nothing out.
+
+    Without this, a derivation seeded with a constant would satisfy every case
+    above by adding its seed to a computed set — the additions would be invisible
+    where the expected answer already contains them, and this is the input where
+    the seed has nowhere to hide.
+    """
+    assert _tracked_dirs(set()) == set()
+
+
 # ---------------------------------------------------------------------------
 # The paired samples — the guard's teeth
 # ---------------------------------------------------------------------------

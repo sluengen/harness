@@ -3,8 +3,17 @@ name: CI
 on:
   push:
     branches: [main, dev]
+  # Pull-request runs are raised for `dev` only (#485). The nightly promotion
+  # opens a `dev -> main` pull request using GITHUB_TOKEN, and a PR opened by a
+  # workflow with that token produces runs in an approval-required state — which
+  # nothing unattended can approve. Including `main` here would put a second,
+  # permanently unapproved `lint-and-test` run on the very commit whose green
+  # run `main`'s protection reads. Pushes to `main` still run the gate, so this
+  # removes a duplicate rather than coverage; a human PR into `main` from any
+  # other branch gets no run and therefore cannot merge, which is fail-closed
+  # and deliberate. Pinned by tests/unit/test_nightly_promotion_workflow.py.
   pull_request:
-    branches: [main, dev]
+    branches: [dev]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -28,7 +37,7 @@ jobs:
     steps:
       # The default shallow checkout: no gate stage reads git history since
       # the feature-spec currency stage was retired (ADR 0017; the nightly
-      # keeps its own full fetch for the fast-forward ancestry check).
+      # keeps its own full fetch for the merge-base reads its promotion makes).
       - uses: actions/checkout@v4
 
       - name: Install uv

@@ -29,16 +29,37 @@ if ! uv run --extra dev python -c "import xdist" >/dev/null 2>&1; then
   exit "$GATE_UNRUNNABLE_EXIT"
 fi
 
-# Node (#478). The gate itself runs no node — but the suite it runs executes
-# the enforcement and advisory hooks (hooks/*.js) under node, and *skips* those
-# tests when node is missing. Without this probe a broken or absent node reads
-# as a green gate whose marker claims the tree verified, while the hook guards
-# the marker exists to serve were never run. Same reserved code: this is the
-# toolchain, not the tree.
-if ! node --version >/dev/null 2>&1; then
-  echo "gate precondition failed: 'node' is not runnable — the suite executes the enforcement hooks under node and skips them without it, so a gate without node verifies a tree minus its hook guards (toolchain unavailable, not a code failure)" >&2
-  exit "$GATE_UNRUNNABLE_EXIT"
-fi
+# The host binaries the suite resolves off PATH (#478 for node; #491 for the
+# rule and the rest). The membership rule is recorded in
+# specs/architecture-principles.md -> "The gate's toolchain preflight probes
+# what the suite resolves off PATH": a binary belongs here exactly when a test
+# resolves it with shutil.which at run time. That set is *derived* from the
+# tracked test sources by tests/unit/_toolchain.py and held against this list in
+# both directions by tests/unit/test_verify_toolchain_preflight.py, which
+# executes this script under a stubbed PATH rather than reading its text — so
+# adding a resolution to the suite without a probe here fails, and a probe here
+# for a binary no test resolves fails too.
+#
+# Why resolution and not spawning: a binary the suite spawns by name is absent
+# *loudly* (FileNotFoundError, a red test), while a binary it resolves and skips
+# on is absent *invisibly* — the gate then writes a marker claiming a tree
+# verified while the guards the marker exists to serve never ran. Same reserved
+# code as the probes above: this is the toolchain, not the tree.
+#
+#   node — the suite executes the enforcement and advisory hooks (hooks/*.js)
+#          under it and skips those tests without it (#478: a node linked
+#          against a moved soname turned a green tree into 51 failures plus a
+#          collection error, mid-review).
+#   git  — the Stop-hook scope guard resolves it to build a spawn-counting shim.
+#   jq   — the promotion guards evaluate scripts/promotion-step.sh's three
+#          `--jq` programs with a real engine, instead of asserting pre-filtered
+#          fixture text past them (#491).
+for _tool in node git jq; do
+  if ! "$_tool" --version >/dev/null 2>&1; then
+    echo "gate precondition failed: '$_tool' is not runnable — the suite resolves it off PATH and skips or degrades without it, so a gate without $_tool verifies a tree minus the guards that need it (toolchain unavailable, not a code failure)" >&2
+    exit "$GATE_UNRUNNABLE_EXIT"
+  fi
+done
 
 echo "=== ruff ==="
 uv run --extra dev ruff check .

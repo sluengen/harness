@@ -10,14 +10,24 @@ Turns a repository into one this process can run in. The plugin carries the skil
 2. **Write the spine** — `CLAUDE.md` from `templates/spine.md`: the generated block verbatim, the repo section filled from the interview. If a `CLAUDE.md` already exists, merge: the generated block is inserted above the existing content, which becomes the repo-owned section — nothing the repo already wrote is discarded.
 3. **Scaffold the memory** — `specs/proposals/`, `specs/features/`, `specs/decisions/` (per the `paths:` just written), each with a `.gitkeep` where empty.
 4. **Seed the infrastructure record** — `specs/infrastructure.md` from `templates/infrastructure.md`, with the branch topology from the interview as its first entry (`infrastructure` skill: this is the repo-owned *what*; the skill is the *how*).
-5. **Gate plumbing** — append `.evidence/` to `.gitignore` if absent; if the repo has no verify command yet, write a minimal `scripts/verify.sh` skeleton that runs the interview's lint/typecheck/test commands in order and calls `gate_marker.py write` on green, and copy the plugin's `scripts/gate_marker.py` beside it. A repo with its own gate keeps it — the only requirement is that green ends with a marker write.
-6. **Report** what was written, what was skipped because it existed, and the one next step: file or pick a ticket and `/build` it.
+5. **Declare where the plugin comes from.** Installing the plugin writes the *enablement* — `enabledPlugins: {"harness@harness": true}` — into whichever settings scope the install chose; at project scope that is the repo's own `.claude/settings.json`, the file shared with the team. The marketplace that name resolves through is registered per machine either way, so a fresh clone resolves the enablement to nothing: no commands, no skills, and no enforcement hooks, with no error naming what is missing. Merge the provenance into the same file, next to the enablement:
+
+   ```json
+   "extraKnownMarketplaces": {
+     "harness": { "source": { "source": "github", "repo": "sluengen/harness" } }
+   }
+   ```
+
+   Merge the key into an existing settings file rather than rewriting it, and leave the rest of the file byte-for-byte alone. Write the same fact in prose into the spine's repo section — the marketplace and the two install commands, `/plugin marketplace add sluengen/harness` then `/plugin install harness@harness` — so a host too old to read the key still tells a reader what to run.
+
+6. **Gate plumbing** — append `.evidence/` to `.gitignore` if absent; if the repo has no verify command yet, write a minimal `scripts/verify.sh` skeleton that runs the interview's lint/typecheck/test commands in order and calls `gate_marker.py write` on green, and copy the plugin's `scripts/gate_marker.py` beside it. A repo with its own gate keeps it — the only requirement is that green ends with a marker write.
+7. **Report** what was written, what was skipped because it existed, and the one next step: file or pick a ticket and `/build` it.
 
 Hooks need no per-repo wiring — the plugin's `hooks/hooks.json` registers them at install. The spine's `branches:` block is what the push and stop guards read; that is why step 1's answers land there.
 
 ## `--refresh` — after a plugin update
 
-Replace the content between `<!-- spine:generated:begin … -->` and `<!-- spine:generated:end -->` in `CLAUDE.md` with the current template's generated block, touching nothing outside the markers. Report the version stamped in the new marker. If the markers are missing (a hand-edited spine), do not guess: show the current generated block and ask the operator where it should go.
+Replace the content between `<!-- spine:generated:begin … -->` and `<!-- spine:generated:end -->` in `CLAUDE.md` with the current template's generated block, touching nothing outside the markers. Report the version stamped in the new marker. The provenance declaration survives untouched — it lives in `.claude/settings.json`, which `--refresh` never writes; where it is *absent*, because the repo was hydrated before step 5 existed, report that and offer to write it. If the markers are missing (a hand-edited spine), do not guess: show the current generated block and ask the operator where it should go.
 
 ## What this never does
 

@@ -34,8 +34,8 @@ finding that prompted this measured 21 such copies of 12 distinct token values.
 So the drift stage sweeps the consumer as well, and names the literal, the line
 it sits on, and the ``var(--…)`` that replaces it.
 
-Stdlib only (mirrors ``scripts/check_landing_page_guidance.py``): no
-Style Dictionary, no npm build.
+Stdlib only, like every script in this repo: no Style Dictionary, no npm
+build.
 """
 
 from __future__ import annotations
