@@ -61,13 +61,6 @@ jobs:
       - name: Install the gate toolchain
         run: uv sync --extra dev --frozen
 
-      # Actions runners do not provide a repository-local author by default, and
-      # a git operation that needs one fails obscurely when it is missing.
-      - name: Configure promotion commit author
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
       - name: Promote the gated candidate
         shell: bash
         # The Actions-issued, job-scoped token — not a stored secret, not a PAT.

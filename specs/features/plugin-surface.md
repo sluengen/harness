@@ -1,7 +1,7 @@
 ---
 feature: plugin-surface
 status: implemented
-last_updated: 2026-08-18
+last_updated: 2026-08-19
 ---
 
 # The plugin surface
@@ -69,7 +69,17 @@ Both branch-reading hooks parse the spine's `branches:` block first and fall bac
 
 ### Two-branch topology
 
-This repo runs `dev` (integration) → `main` (release) — ADR 0003 as amended by ADR 0017 D6, recorded in `specs/infrastructure.md` → *Branch topology*. `.github/workflows/nightly-promotion.yml` checks out `dev`, runs `scripts/promotion-step.sh` (gate on the exact candidate; fast-forward or nothing; never merge, force, or repair), and advances `main` directly on green. `.github/workflows/ci.yml` runs the gate on push/PR to `main` and `dev`. Three-role topologies remain available to repos that deploy to staging — the roles are per-repo configuration in the spine's `branches:` block.
+This repo runs `dev` (integration) → `main` (release) — ADR 0003 as amended by ADR 0017 D6 and again on 2026-08-19, recorded in `specs/infrastructure.md` → *Branch topology*. `main` carries branch protection requiring a pull request, so no direct ref update advances it; `github-actions[bot]` has no bypass, which is why the promotion cannot push.
+
+`.github/workflows/nightly-promotion.yml` checks out `dev` with full history and no persisted git credential, and runs `scripts/promotion-step.sh`. The script gates the exact candidate, then **opens or reuses a pull request whose head is the `dev` branch itself and merges it through the API**, binding the merge to the gated SHA with a server-side `sha=` head match. Head-is-`dev` is what lets it run unattended: that commit already carries the `lint-and-test` check raised by the ordinary `push: dev` trigger, so the check `main` requires is satisfied with no new run, no approval, and no stored credential — the token is the job-scoped `GITHUB_TOKEN`, forwarded to that one step. The workflow grants `contents: write`, `pull-requests: write` and `checks: read`, pinned as a set equality so a fourth grant fails rather than arriving unobserved.
+
+**The published invariant is tree identity, not fast-forward.** A pull-request merge necessarily puts a commit on `main` that `dev` does not contain, so ancestry can no longer be the rule; what is asserted is that the tree landing on `main` equals the tree the gate certified. Two instruments carry it rather than one predicate: a **pre-condition** that, relative to the merge base, `main` contributes no content — the condition under which the merge is content-trivial — and **post-conditions** on the SHA the merge API returned, that the candidate is contained in it and that its tree equals the candidate's. The post-conditions *detect rather than prevent*: `main` has already moved when they run, and the prevention that survives is the pre-condition plus the head match. The property is self-sustaining — each promotion leaves `tree(main) == tree(candidate)`, so the next night's pre-condition holds with no back-merge, and this repo therefore does not back-merge.
+
+Nothing is forced, repaired, or conflict-resolved. The night stops and reports when the gate is red, when the target branch is absent, when `main` carries content `dev`'s history does not, when `dev` moved past the gated commit, when the required check failed or never completed within the poll deadline, when the one open pull request is a draft or has a different head, when the pull-request number GitHub returned is not numeric, or when the merge's containment or tree identity fails. A refused night leaves its pull request open for the next run to reuse, and a night with nothing to promote exits clean without spending the gate.
+
+`.github/workflows/ci.yml` runs the gate on pushes to `main` and `dev`, and on pull requests based on `dev` only. Pull requests into `main` deliberately raise no run: a pull request opened by a workflow using `GITHUB_TOKEN` produces runs in an approval-required state that nothing unattended can approve, and a second, permanently unapproved run carrying the required check's name on the gated commit is a deadlock this removes rather than reasons about. The cost is stated rather than discovered later — a human pull request into `main` from any branch other than `dev` gets no `lint-and-test` and therefore cannot merge, which is fail-closed and deliberate.
+
+Three-role topologies remain available to repos that deploy to staging — the roles are per-repo configuration in the spine's `branches:` block. The generic `infrastructure` skill still carries fast-forward-only publishing as its default; this repo is the recorded exception to it, not a rewrite of it.
 
 ## Data model
 
@@ -81,7 +91,7 @@ No persistent state beyond the tree itself and the gate marker: one JSON file pe
 - `scripts/gate_marker.py write` — marker writer; called by `verify.sh`, read by the hooks and `mutate.py`.
 - `scripts/generate_codex_artifacts.py [--check] [--root]` — Codex compile / drift guard; called by `verify.sh` and at release.
 - `scripts/mutate.py check|run` — mutation instrument; usage in `CONTRIBUTING.md`.
-- `scripts/promotion-step.sh` — the nightly's whole logic; called by `nightly-promotion.yml`, executed by `tests/unit/test_promotion_step_script.py`.
+- `scripts/promotion-step.sh` — the nightly's whole logic: the gate, the content-divergence pre-condition, pull-request open-or-reuse, the required-check poll, the API merge bound to the gated SHA, and the two post-conditions. Four inputs, all asserted before any work and none of them echoed: `GITHUB_WORKSPACE`, `RUNNER_TEMP`, `GITHUB_REPOSITORY`, `GH_TOKEN`. Called by `nightly-promotion.yml`; **executed**, not read, by `tests/unit/test_promotion_step_script.py` against a stubbed `git` and `gh` that record every invocation to one shared file, so ordering is assertable.
 - The plugin surface itself (skills/commands/agents/hooks) — consumed by Claude Code via `.claude-plugin/` and, in this repo's dogfood, via `.claude/` symlinks into the source directories.
 
 ## Known limitations
@@ -92,6 +102,9 @@ No persistent state beyond the tree itself and the gate marker: one JSON file pe
 - **No lock-file consumer has performed the migration yet** — `MIGRATION.md` is written from the mechanisms and says so.
 - **`hooks/hooks.json` has no integrity guard** (class (c) would admit one); the manifest is exercised only by installation.
 - **No guard enforces the assessment retention convention.** Deriving a report filename from an `assessments/LOG.md` line means parsing that line's prose into a path, which ADR 0017 D5 class (e) excludes — it admits a *cited* path and the file it names, not a constructed one. The retired `test_assessments_retention.py` went in the v5 cull on that ground and was not revived; the state is checked by a reviewer against `git ls-files`.
+- **Whether `main`'s protection actually *requires* the `lint-and-test` check is off-tree, and no green suite here implies it.** The promotion's safety argument has two halves. The first is in this tree and is tested: the script refuses to merge unless it observes that check completed-successful on the gated commit, and the check's name is derived from the names `ci.yml` will actually publish — each job's `name:` where it declares one, its key otherwise — rather than restated, so a rename on either side fails. The second half is the *server* refusing a merge that lacks the check — GitHub branch-protection configuration that nothing in this repo can read, and that an operator can change at any time with no signal here. Read on 2026-08-19 it was in force (`lint-and-test`, `strict: false`, zero required approvals, `enforce_admins: false`). One related blind spot, stated so it is not rediscovered as a bug: the script's `--jq` expression — the one place server data becomes a merge-or-refuse decision — is not exercised by the suite, because the `gh` stub emits post-`jq` text.
+- **The promotion path has never completed a run**, and two of this record's claims are therefore reasoning rather than observation: that the merge is content-trivial, and that the next night's pre-condition still holds after one. The workflow's only run to date failed at the direct ref update this design retires. Because a scheduled workflow is read from the default branch, the new `permissions:` block and token forwarding do not take effect until this change reaches `main`, and reaching `main` requires a promotion — so the first one is an operator act (`workflow_dispatch` on ref `dev`), which is also what makes the path observable under human eyes.
+- **Whether a merge performed by the Actions token triggers the Pages `pages-build-deployment` build is unverified.** `specs/infrastructure.md` promises `docs/index.html` publishes when `dev` reaches `main`; if that build does not fire, the page stops updating until one is requested explicitly. Nothing else about the promotion depends on the answer.
 - The proposals-ledger and tracker behaviours (D7's sweep, holds, boards) are tracker-side and leave no footprint in this tree beyond the provider skills.
 
 ## Decisions

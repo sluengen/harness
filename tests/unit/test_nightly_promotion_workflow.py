@@ -86,7 +86,11 @@ _PROMOTION_SOURCES = (WORKFLOW, SCRIPT)
 #: over an empty invocation list.
 _SCRIPT_MUST_DRIVE = (
     "scripts/verify.sh",  # the gate decides
-    "gh api",             # and only a green gate merges the promotion PR
+    "gh api",             # the script reaches the API at all
+    # ...and one of those calls is the merge. `gh api` alone cannot witness it:
+    # the check-run poll spells `gh api` too, so deleting only the merge leaves
+    # a `gh api` presence check green. `--method PUT` is the merge's alone.
+    "--method PUT",
     "main",               # onto this branch
 )
 
@@ -188,7 +192,14 @@ def test_the_workflow_is_a_bounded_deterministic_nightly() -> None:
     assert "cancel-in-progress: false" in workflow
     assert "ref: dev" in workflow, "the job must gate and promote `dev`, not the default branch"
     assert "fetch-depth: 0" in workflow
-    assert "git config user.name" in workflow and "git config user.email" in workflow
+    # No commit author is pinned. Nothing in this job creates a commit: the
+    # merge commit is written server-side by the API, and `fetch`/`ls-remote`
+    # need no author. Pinning one would defend configuration the job no longer
+    # reads (#485).
+    assert "git config user." not in workflow, (
+        "the promotion writes no local commit, so a configured author is dead "
+        "configuration the suite must not defend"
+    )
 
 
 def test_the_workflow_grants_exactly_the_promotion_permissions() -> None:

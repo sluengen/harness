@@ -149,6 +149,7 @@ case "$1" in
   ls-remote)
     branch=""
     for arg in "$@"; do branch="$arg"; done
+    branch="${branch#refs/heads/}"
     if [ -f "$STUB_STATE/ls-remote.$branch.out" ]; then cat "$STUB_STATE/ls-remote.$branch.out"; fi
     code="$(_mapped ls-remote.map "$branch")"
     exit "${code:-0}"
@@ -484,20 +485,39 @@ def _script_constant(pattern: str) -> str:
 
 
 def _ci_job_keys() -> set[str]:
-    """The job names ``ci.yml`` declares, derived from its ``jobs:`` mapping."""
-    keys: set[str] = set()
+    """The check-run names ``ci.yml`` produces, derived from its ``jobs:`` mapping.
+
+    A check run is named after the job's ``name:`` when it declares one, and
+    after its **key** otherwise — so a key is only the right answer while no
+    ``name:`` shadows it. Deriving keys alone would let someone add
+    ``name: Build & test`` to the ``lint-and-test`` job and leave this
+    correspondence green while the poll waited forever for a check that no
+    longer exists under that name (#485). The effective name is derived here
+    instead, so the guard measures what GitHub will actually publish.
+    """
+    names: set[str] = set()
+    current: str | None = None
     in_jobs = False
     for line in CI_WORKFLOW.read_text(encoding="utf-8").splitlines():
         if line.rstrip() == "jobs:":
             in_jobs = True
             continue
-        if in_jobs:
-            if line.strip() and not line.startswith(" "):
-                break
-            match = re.match(r"^ {2}([A-Za-z0-9_-]+):\s*$", line)
-            if match:
-                keys.add(match.group(1))
-    return keys
+        if not in_jobs:
+            continue
+        if line.strip() and not line.startswith(" "):
+            break
+        match = re.match(r"^ {2}([A-Za-z0-9_-]+):\s*$", line)
+        if match:
+            current = match.group(1)
+            names.add(current)
+            continue
+        # A job-level `name:` (exactly four spaces) replaces the key it shadows.
+        shadow = re.match(r"^ {4}name:\s*(\S.*?)\s*$", line)
+        if shadow and current is not None:
+            names.discard(current)
+            names.add(shadow.group(1).strip("'\""))
+            current = None
+    return names
 
 
 def _pr_number() -> str:

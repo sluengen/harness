@@ -77,7 +77,7 @@ candidate="$(git rev-parse HEAD)"
 
 # A pull request cannot create its base branch, so a missing target is a loud
 # refusal rather than the silent first promotion a push used to perform.
-if ! git ls-remote --exit-code --heads origin "$TARGET_BRANCH" >/dev/null 2>&1; then
+if ! git ls-remote --exit-code --heads origin "refs/heads/$TARGET_BRANCH" >/dev/null 2>&1; then
   echo "::error::origin has no $TARGET_BRANCH branch, so there is nothing to open a pull request against; $SOURCE_BRANCH@$candidate was not promoted. Create $TARGET_BRANCH by hand."
   exit 1
 fi
@@ -124,7 +124,11 @@ fi
 # the early, named refusal for a push that landed while the gate ran; the
 # residual window between here and the merge is closed server-side by the
 # merge's own head-SHA match. Nothing is repaired — tonight does not promote.
-remote_head="$(git ls-remote --heads origin "$SOURCE_BRANCH" | awk 'NR == 1 { print $1 }')"
+#
+# Fully qualified, because `ls-remote <pattern>` matches on the ref name's
+# *tail*: a bare `dev` also selects `refs/heads/anything/dev`, and `awk NR == 1`
+# would then read whichever the remote happened to list first.
+remote_head="$(git ls-remote --heads origin "refs/heads/$SOURCE_BRANCH" | awk 'NR == 1 { print $1 }')"
 if [ "$remote_head" != "$candidate" ]; then
   echo "::error::$SOURCE_BRANCH now points at $remote_head, not the gated $candidate, so a pull request from it would carry ungated commits; $TARGET_BRANCH was not advanced."
   exit 1
