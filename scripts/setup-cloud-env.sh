@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Cloud environment bootstrap — provisions a bare checkout so it can run
 # /build and /routine immediately: uv, a 3.11 interpreter, the dev toolchain,
-# node, and gh. Version-controlled, so a change here reaches every
+# node, jq, and gh. Version-controlled, so a change here reaches every
 # environment the next time it provisions, with no out-of-band configuration
 # to keep in sync. Idempotent — safe to re-run against an already-provisioned
 # host, including this one.
@@ -41,6 +41,21 @@ install_node() {
     $SUDO apk add --no-cache nodejs
   elif command -v brew >/dev/null 2>&1; then
     brew install node
+  else
+    echo "no supported package manager found (apt-get/dnf/apk/brew)" >&2
+    return 1
+  fi
+}
+
+install_jq() {
+  if command -v apt-get >/dev/null 2>&1; then
+    $SUDO apt-get update -y && $SUDO apt-get install -y jq
+  elif command -v dnf >/dev/null 2>&1; then
+    $SUDO dnf install -y jq
+  elif command -v apk >/dev/null 2>&1; then
+    $SUDO apk add --no-cache jq
+  elif command -v brew >/dev/null 2>&1; then
+    brew install jq
   else
     echo "no supported package manager found (apt-get/dnf/apk/brew)" >&2
     return 1
@@ -129,6 +144,20 @@ if command -v node >/dev/null 2>&1; then
   ok "node $(node --version)"
 else
   fail "node is not installed — scripts/verify.sh's preflight refuses to run without it"
+fi
+
+# --- jq — the promotion guards evaluate scripts/promotion-step.sh's `--jq`
+# programs with a real engine, so jq is a gate dependency under the same rule
+# node is (#491: a binary belongs in the preflight exactly when a test resolves
+# it off PATH). verify.sh's preflight refuses to run (exit 97) without it. -----
+if ! command -v jq >/dev/null 2>&1; then
+  echo "--- installing jq ---"
+  install_jq || warn "automatic jq install failed — install manually: https://jqlang.github.io/jq/"
+fi
+if command -v jq >/dev/null 2>&1; then
+  ok "jq $(jq --version)"
+else
+  fail "jq is not installed — scripts/verify.sh's preflight refuses to run without it"
 fi
 
 # --- gh — CLAUDE.md declares tracker: github; /build and /routine read and

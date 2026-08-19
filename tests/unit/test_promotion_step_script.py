@@ -46,6 +46,24 @@ What executing buys, and what a text guard could not have shown:
 * **Fail-closed inputs.** Each required environment variable is removed in turn
   and the script must abort *before* the gate and *before* any ``gh`` call.
 
+**#491 changed what the stub emits.** ``gh`` turns server responses into
+merge-or-refuse decisions inside three ``--jq`` programs, and the stub used to
+emit **post-jq** text at every call site — so no test evaluated any of them, and
+``test_an_empty_check_set_is_never_success`` passed because the fixture was told
+to print an empty string rather than because the expression yielded one.
+Swapping the check-run slice ``.[-1:][]`` for ``last`` kept the whole suite
+green while making a named arm dead code. The stub now holds **raw JSON** and
+runs each call's own program over it with a real engine, so the expressions
+decide. ``jq`` is resolved through :func:`_jq`, and that is load-bearing: the
+resolution is what puts jq in the set the gate's toolchain preflight is derived
+from (``tests/unit/_toolchain.py``), so the engine these tests need cannot go
+missing from a gate that reports green.
+
+The gap that leaves, stated so it does not read as closed: ``gh --jq`` is
+evaluated by the engine embedded in ``gh``, **not** by the ``jq`` binary. What
+is measured here is these programs under ``jq``; a divergence between the two
+engines is live and nothing here claims gh's answer.
+
 Nothing here can touch the real repository, the real gate, or the real GitHub.
 Every ``git`` and ``gh`` invocation goes to a stub on ``PATH``, the subprocess
 runs with ``cwd`` under ``tmp_path``, and the only ``scripts/verify.sh`` the
@@ -56,8 +74,10 @@ test that passed because the real slug leaked in could not hide.
 
 from __future__ import annotations
 
+import json
 import os
 import re
+import shutil
 import subprocess
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -106,6 +126,61 @@ _GATE_TOKEN = "fake-gate-output-marker"
 
 #: The recorded call the fake gate appends. Ordering assertions read it.
 _GATE_CALL = "gate"
+
+#: The check-run poll's slice, mutated by the AC-5 differential below. Written
+#: once, so the landing assert and the replacement cannot drift apart.
+_CHECK_RUN_SLICE = ".[-1:][]"
+
+
+def _jq() -> str:
+    """The engine this module evaluates the script's ``--jq`` programs with.
+
+    Resolved through ``shutil.which``, and that is **load-bearing rather than
+    stylistic**: resolving it here is what puts ``jq`` in the set
+    ``tests/unit/_toolchain.py`` derives, which is what obliges
+    ``scripts/verify.sh`` to probe it (#491). Invoking jq by literal name
+    instead would leave it out of that set, the probe would fail the preflight's
+    stale direction, and the two halves of #491 would contradict each other.
+    """
+    jq = shutil.which("jq")
+    if jq is None:
+        pytest.skip("jq not available")
+    return jq
+
+
+def _check_run(status: str, conclusion: str | None, started_at: str) -> dict[str, object]:
+    """One entry of GitHub's ``check_runs`` array, as the API returns it."""
+    return {"status": status, "conclusion": conclusion, "started_at": started_at}
+
+
+def _check_runs(*runs: Mapping[str, object]) -> str:
+    """A raw ``/check-runs`` response document."""
+    return json.dumps({"check_runs": list(runs)})
+
+
+def _pull_request(number: int, *, draft: bool = False, head: str = _CANDIDATE) -> dict[str, object]:
+    """One entry of ``gh pr list --json number,isDraft,headRefOid``."""
+    return {"number": number, "isDraft": draft, "headRefOid": head}
+
+
+def _pr_list(*entries: Mapping[str, object]) -> str:
+    """A raw ``gh pr list`` response document."""
+    return json.dumps(list(entries))
+
+
+#: No run of the required check exists on the candidate. The document the AC-5
+#: differential turns on: the shipped slice yields nothing from it, ``last``
+#: yields ``null``.
+_NO_CHECK_RUNS = _check_runs()
+
+#: The promotable default — one completed, successful run.
+_GREEN_CHECK = _check_runs(_check_run("completed", "success", "2026-08-19T02:00:00Z"))
+
+#: What ``gh api --method PUT .../merge`` returns. More than the one field the
+#: script reads, so ``--jq .sha`` is doing work rather than echoing the document.
+_MERGE_RESPONSE = json.dumps(
+    {"sha": _MERGE_SHA, "merged": True, "message": "Pull Request successfully merged"}
+)
 
 #: The opening of the script's own fail-closed message. ``set -u`` aborts on an
 #: unset variable too, so an assertion satisfied by either could not tell a
@@ -171,9 +246,49 @@ exit 0
 #: **sequenced** — each call takes the next scripted observation — so a test can
 #: script "in_progress, in_progress, success" and assert the script actually
 #: looped rather than reading once.
+#:
+#: Until #491 every scenario field was **post-jq** text: the stub never saw a
+#: ``--jq`` program, so none of the script's three expressions was evaluated by
+#: anything and ``test_an_empty_check_set_is_never_success`` passed because the
+#: fixture said to print an empty string. The stub now holds **raw JSON** and
+#: runs the call's own program over it with a real engine, so the expressions
+#: decide the outcome the way they do in production.
+#:
+#: Three properties this shape needs, each of which is a defect if missed:
+#:
+#: * both spellings are accepted (``--jq PROG`` and ``--jq=PROG``). The script
+#:   uses the two-token form at all three sites; a stub that fell through
+#:   silently on the other is #490's exact defect.
+#: * a call the fixture hands a document to and which carries **no** ``--jq``
+#:   fails loudly. Otherwise a script that stopped filtering would push raw JSON
+#:   into ``$pr_line`` and the module would go on passing about the wrong thing.
+#: * jq is invoked by the absolute path the module resolved (``STUB_JQ``),
+#:   mirroring ``_node()``, rather than trusting the stub to inherit a usable
+#:   ``PATH``. The document arrives on **stdin from a file** and the program is
+#:   one argument, so a program containing shell metacharacters is data.
 _GH_STUB = r"""#!/bin/sh
 set -eu
 { printf '%s\0' "$PWD" gh "$@"; printf '\n'; } >> "$STUB_RECORD"
+
+jq_prog=""
+have_jq=0
+prev=""
+for arg in "$@"; do
+  case "$arg" in
+    --jq=*) jq_prog="${arg#--jq=}"; have_jq=1; break ;;
+  esac
+  if [ "$prev" = "--jq" ]; then jq_prog="$arg"; have_jq=1; break; fi
+  prev="$arg"
+done
+
+_filter() {
+  if [ ! -f "$STUB_STATE/$1" ]; then return 0; fi
+  if [ "$have_jq" -eq 0 ]; then
+    echo "gh stub: handed the raw document $1 with no --jq program to filter it" >&2
+    exit 3
+  fi
+  "$STUB_JQ" -r "$jq_prog" < "$STUB_STATE/$1"
+}
 
 _emit() {
   if [ -f "$STUB_STATE/$1" ]; then cat "$STUB_STATE/$1"; fi
@@ -186,7 +301,7 @@ _code() {
 case "$1" in
   pr)
     case "${2:-}" in
-      list) _emit pr-list.out ;;
+      list) _filter pr-list.json ;;
       create)
         code="$(_code pr-create.exit)"
         if [ "$code" -eq 0 ]; then _emit pr-create.out; else echo "gh: refused (stub)" >&2; fi
@@ -202,15 +317,15 @@ case "$1" in
         if [ -f "$STUB_STATE/check-runs.n" ]; then n="$(cat "$STUB_STATE/check-runs.n")"; fi
         n=$((n + 1))
         echo "$n" > "$STUB_STATE/check-runs.n"
-        if [ -f "$STUB_STATE/check-runs.$n.out" ]; then
-          cat "$STUB_STATE/check-runs.$n.out"
+        if [ -f "$STUB_STATE/check-runs.$n.json" ]; then
+          _filter "check-runs.$n.json"
         else
-          _emit check-runs.last.out
+          _filter check-runs.last.json
         fi
         ;;
       *"/merge"*)
         code="$(_code merge.exit)"
-        if [ "$code" -eq 0 ]; then _emit merge.out; else echo "gh: merge refused (stub)" >&2; fi
+        if [ "$code" -eq 0 ]; then _filter merge.json; else echo "gh: merge refused (stub)" >&2; fi
         exit "$code"
         ;;
       *) : ;;
@@ -242,14 +357,17 @@ class Scenario:
     rev_parse: Mapping[str, str] = field(default_factory=dict)
     #: What ``git ls-remote --heads origin dev`` reports.
     dev_head: str = _CANDIDATE
-    #: What ``gh pr list`` prints — one ``<number> <isDraft> <headRefOid>`` line.
-    pr_list: str = ""
+    #: The **raw** ``gh pr list`` document. The script's own ``--jq`` projection
+    #: turns it into the ``<number> <isDraft> <headRefOid>`` line it reads.
+    pr_list_json: str = "[]"
     pr_create_out: str = _PR_URL
     pr_create_exit: int = 0
-    #: The scripted check-run observations, one per poll, the last one repeating.
-    check_runs: Sequence[str] = ("completed success",)
+    #: The scripted **raw** check-run documents, one per poll, the last one
+    #: repeating. The poll's own ``sort_by``/slice decides what it observes.
+    check_runs_json: Sequence[str] = (_GREEN_CHECK,)
     merge_exit: int = 0
-    merge_sha: str = _MERGE_SHA
+    #: The **raw** merge response. ``--jq .sha`` is what reads the SHA out of it.
+    merge_json: str = _MERGE_RESPONSE
     #: Poll tunables, overridden so a timeout costs seconds rather than minutes.
     check_wait_seconds: int = 2
     check_poll_seconds: int = 1
@@ -348,15 +466,20 @@ def _write_stubs(bin_dir: Path, state: Path, scenario: Scenario) -> None:
     (state / "ls-remote.dev.out").write_text(
         f"{scenario.dev_head}\trefs/heads/dev\n", encoding="utf-8"
     )
-    (state / "pr-list.out").write_text(scenario.pr_list, encoding="utf-8")
+    (state / "pr-list.json").write_text(scenario.pr_list_json, encoding="utf-8")
     (state / "pr-create.out").write_text(f"{scenario.pr_create_out}\n", encoding="utf-8")
     (state / "pr-create.exit").write_text(str(scenario.pr_create_exit), encoding="utf-8")
-    for number, observation in enumerate(scenario.check_runs, start=1):
-        (state / f"check-runs.{number}.out").write_text(observation, encoding="utf-8")
-    (state / "check-runs.last.out").write_text(
-        scenario.check_runs[-1] if scenario.check_runs else "", encoding="utf-8"
+    assert scenario.check_runs_json, (
+        "a scenario with no check-run document at all would leave the poll "
+        "filtering nothing; the absent-check case is the empty *document* "
+        f"{_NO_CHECK_RUNS!r}, which is what the slice has to answer about"
     )
-    (state / "merge.out").write_text(f"{scenario.merge_sha}\n", encoding="utf-8")
+    for number, document in enumerate(scenario.check_runs_json, start=1):
+        (state / f"check-runs.{number}.json").write_text(document, encoding="utf-8")
+    (state / "check-runs.last.json").write_text(
+        scenario.check_runs_json[-1], encoding="utf-8"
+    )
+    (state / "merge.json").write_text(scenario.merge_json, encoding="utf-8")
     (state / "merge.exit").write_text(str(scenario.merge_exit), encoding="utf-8")
 
 
@@ -414,6 +537,7 @@ def _run_promotion_step(
         "GH_TOKEN": "stub-token-never-echoed",
         "STUB_RECORD": str(record),
         "STUB_STATE": str(state),
+        "STUB_JQ": _jq(),
         "STUB_CANDIDATE": _CANDIDATE,
         "STUB_MERGE_BASE": _MERGE_BASE,
         "PROMOTION_CHECK_WAIT_SECONDS": str(scenario.check_wait_seconds),
@@ -609,6 +733,13 @@ def test_the_real_script_promotes_by_merging_a_pull_request(tmp_path: Path) -> N
     )
     assert "merge_method=merge" in argv, (
         f"only a merge commit keeps tree(merge) == tree(candidate); got {argv}"
+    )
+    # E3 (AC-4). The merge response carries three fields and the script reads one
+    # of them with `--jq .sha`. Reporting the SHA the expression pulled out is
+    # what makes that filter load-bearing: `.commit.sha`, or no filter at all,
+    # yields `null`, which this assertion refuses.
+    assert _MERGE_SHA in run.stdout, (
+        f"the promotion did not report the SHA the merge API returned: {run.stdout!r}"
     )
 
 
@@ -897,7 +1028,8 @@ def test_a_failed_required_check_is_refused_immediately(tmp_path: Path) -> None:
     was not green". The pull request is deliberately **left open** — the next
     run reuses it — so a refusal here must not close anything either.
     """
-    run = _run_promotion_step(tmp_path, Scenario(check_runs=("completed failure",)))
+    failed = _check_runs(_check_run("completed", "failure", "2026-08-19T02:00:00Z"))
+    run = _run_promotion_step(tmp_path, Scenario(check_runs_json=(failed,)))
 
     assert run.returncode != 0, "a failed required check left the step reporting success"
     assert "::error::" in run.stdout, run.stdout
@@ -922,7 +1054,11 @@ def test_a_check_that_never_concludes_times_out_after_polling(tmp_path: Path) ->
     """
     run = _run_promotion_step(
         tmp_path,
-        Scenario(check_runs=("in_progress null",), check_wait_seconds=2, check_poll_seconds=1),
+        Scenario(
+            check_runs_json=(_check_runs(_check_run("in_progress", None, "2026-08-19T02:00:00Z")),),
+            check_wait_seconds=2,
+            check_poll_seconds=1,
+        ),
     )
 
     assert run.returncode != 0, "an unfinished required check left the step reporting success"
@@ -945,8 +1081,17 @@ def test_an_empty_check_set_is_never_success(tmp_path: Path) -> None:
     CI job, or a typo in ``REQUIRED_CHECK``, yields an empty set forever and
     would merge every night without a single check having run. It must produce a
     red night instead.
+
+    **Which arm** it takes is asserted too, and that half only became a
+    measurement at #491. Until then the stub was *told* to print an empty
+    string, so the assertion held whatever the poll's expression did; now the
+    empty document goes through a real engine and the emptiness is the
+    expression's own answer. The arm matters because both arms exit non-zero:
+    the mutation from ``.[-1:][]`` to ``last`` reports a state
+    (``null null``) the API never returned, which is a night an operator
+    debugs in the wrong place.
     """
-    run = _run_promotion_step(tmp_path, Scenario(check_runs=()))
+    run = _run_promotion_step(tmp_path, Scenario(check_runs_json=(_NO_CHECK_RUNS,)))
 
     assert run.returncode != 0, (
         "an empty check-run set left the step reporting success — an absent "
@@ -954,6 +1099,14 @@ def test_an_empty_check_set_is_never_success(tmp_path: Path) -> None:
     )
     assert "::error::" in run.stdout, run.stdout
     assert run.check_reads, "the required check was never read"
+    assert "no run of" in run.stdout, (
+        "the poll reported something other than its named empty-set arm for a "
+        f"check-run set that is genuinely empty: {run.stdout!r}"
+    )
+    assert "null null" not in run.stdout, (
+        "the poll reported an observed state of `null null`, which GitHub never "
+        f"returned — the expression read past the end of an empty array: {run.stdout!r}"
+    )
     _assert_nothing_was_merged(run, "no run of the required check exists on the candidate")
 
 
@@ -1034,26 +1187,46 @@ def test_a_merge_that_does_not_contain_the_candidate_is_an_alarm(tmp_path: Path)
     assert run.merges, "the merge never happened, so the post-condition proves nothing"
 
 
+#: A head that is emphatically not the gated candidate.
+_MOVED_HEAD = "2222222222222222222222222222222222222222"
+
+
 @pytest.mark.parametrize(
-    ("pr_list", "why"),
+    ("pr_list_json", "why", "named"),
     [
-        ("23 false 2222222222222222222222222222222222222222\n", "its head is not the candidate"),
-        (f"23 true {_CANDIDATE}\n", "it is a draft"),
+        (
+            _pr_list(_pull_request(23, head=_MOVED_HEAD)),
+            "its head is not the candidate",
+            _MOVED_HEAD,
+        ),
+        (_pr_list(_pull_request(23, draft=True)), "it is a draft", "draft=true"),
     ],
     ids=["head-moved", "draft"],
 )
-def test_an_unusable_open_pull_request_is_refused(pr_list: str, why: str, tmp_path: Path) -> None:
+def test_an_unusable_open_pull_request_is_refused(
+    pr_list_json: str, why: str, named: str, tmp_path: Path
+) -> None:
     """R13. A reusable pull request must be exactly the one this run would open.
 
     Head ``dev`` into base ``main`` *is* the promotion by definition, so reusing
     a human's is benign — but only when its head is the gated candidate and it
     is not a draft. Anything else is refused rather than merged or amended.
+
+    AC-4: both cases are decided by ``gh pr list``'s own ``--jq`` projection.
+    The fixture is the raw array GitHub returns; the refusal names the field the
+    expression pulled out of it, so a projection that dropped ``isDraft`` or
+    ``headRefOid`` — or reordered them — reports the wrong thing here rather
+    than passing on pre-filtered text that could not have been wrong.
     """
-    run = _run_promotion_step(tmp_path, Scenario(pr_list=pr_list))
+    run = _run_promotion_step(tmp_path, Scenario(pr_list_json=pr_list_json))
 
     assert run.returncode != 0, f"an open pull request was merged although {why}"
     assert "::error::" in run.stdout, run.stdout
     assert "gh pr list" in run.calls, "the open pull requests were never listed"
+    assert named in run.stdout, (
+        f"the refusal must name what the projection actually observed ({named}): "
+        f"{run.stdout!r}"
+    )
     _assert_nothing_was_merged(run, f"the open pull request is unusable — {why}")
 
 
@@ -1074,6 +1247,185 @@ def test_an_unparseable_pull_request_url_is_refused(tmp_path: Path) -> None:
     _assert_nothing_was_merged(run, "the pull request URL could not be parsed")
     carriers = [inv.argv for inv in run.invocations if any(garbage in t for t in inv.argv)]
     assert not carriers, f"a request was built out of the unparseable URL: {carriers}"
+
+
+# --- The `--jq` expressions, under a real engine -------------------------------
+#
+# AC-4. `scripts/promotion-step.sh` turns server responses into merge-or-refuse
+# decisions inside three `--jq` programs, and until #491 no test evaluated any
+# of them: the stub emitted post-jq text at every call site, so the expressions
+# were asserted *past* rather than measured. The cases below feed raw documents
+# and let each expression's own output decide.
+#
+# What is measured, and what is not. These programs are evaluated here by the
+# **jq binary** this module resolves; in production they are evaluated by the
+# engine embedded in `gh`. A divergence between the two is a live gap this
+# change does not close, and nothing below claims gh's answer. Two facts were
+# measured out of gate rather than assumed (gh 2.93.0, 2026-08-19), because the
+# script's `awk` parsing depends on them and this repo has shipped a platform
+# mechanism asserted from memory before:
+#
+#   gh api repos/sluengen/harness --jq .name              -> `harness\n`
+#   gh api repos/sluengen/harness --jq '"\(.name) \(.private)"' -> `harness false\n`
+#
+# i.e. gh prints a string result raw, without quotes, and renders a boolean as a
+# bare word — which is what makes `awk '{ print $2 }'` read `false` rather than
+# `"false"`. The expressions here stay inside the core subset both engines
+# share, and every `started_at` is distinct so nothing depends on sort stability.
+
+
+def _run_gh_stub(
+    tmp_path: Path, argv: Sequence[str], documents: Mapping[str, str]
+) -> subprocess.CompletedProcess[str]:
+    """Drive the ``gh`` stub directly, with no script in the way."""
+    bin_dir, state = tmp_path / "bin", tmp_path / "state"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    state.mkdir(parents=True, exist_ok=True)
+    stub = bin_dir / "gh"
+    stub.write_text(_GH_STUB, encoding="utf-8")
+    stub.chmod(0o755)
+    for name, text in documents.items():
+        (state / name).write_text(text, encoding="utf-8")
+    record = tmp_path / "invocations"
+    record.write_bytes(b"")
+    return subprocess.run(
+        [str(stub), *argv],
+        env={
+            "PATH": "/usr/bin:/bin",
+            "STUB_RECORD": str(record),
+            "STUB_STATE": str(state),
+            "STUB_JQ": _jq(),
+        },
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+
+@pytest.mark.parametrize(
+    "flag",
+    [["--jq", ".[] | .number"], ["--jq=.[] | .number"]],
+    ids=["two-token", "equals"],
+)
+def test_the_gh_stub_evaluates_the_program_the_call_carries(
+    flag: list[str], tmp_path: Path
+) -> None:
+    """The instrument's own test — a defect here is a silent green module-wide.
+
+    The stub is now the thing that decides what every promotion test observes,
+    so it is exercised directly: a known program over a known document, with an
+    answer that is neither the document nor any substring of the fixture. Both
+    ``--jq`` spellings are covered because a stub that fell through silently on
+    the one the script does not currently use would be a hole that opens the day
+    someone respells a call site (#490).
+    """
+    proc = _run_gh_stub(
+        tmp_path,
+        ["pr", "list", "--repo", _REPO, *flag],
+        {"pr-list.json": _pr_list(_pull_request(7), _pull_request(9))},
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout == "7\n9\n", (
+        f"the stub did not evaluate the program it was handed: {proc.stdout!r}"
+    )
+
+
+def test_the_gh_stub_refuses_a_call_that_filters_nothing(tmp_path: Path) -> None:
+    """A document handed to a call with no ``--jq`` is a loud failure.
+
+    Without this, a script that stopped filtering would push a raw JSON document
+    into ``$pr_line``, and every assertion in this module would go on passing
+    about text that production never produces.
+    """
+    proc = _run_gh_stub(
+        tmp_path,
+        ["pr", "list", "--repo", _REPO],
+        {"pr-list.json": _pr_list(_pull_request(7))},
+    )
+
+    assert proc.returncode != 0, (
+        f"the stub filtered nothing and reported success anyway: {proc.stdout!r}"
+    )
+    assert "--jq" in proc.stderr, f"the refusal must say what was missing: {proc.stderr!r}"
+
+
+def test_an_open_pull_request_this_run_would_have_opened_is_reused(tmp_path: Path) -> None:
+    """E1, the accepting direction: a usable open pull request is merged, not re-created.
+
+    Last night's refused promotion leaves its pull request open, and a second one
+    from the same head would be refused by GitHub anyway. Two entries, so the
+    ``.[]`` in the projection yields two lines and ``awk 'NR == 1'`` has
+    something to choose: the decoy second entry is a draft on a moved head, and
+    reading it instead would turn this run into a refusal.
+    """
+    listing = _pr_list(
+        _pull_request(23),
+        _pull_request(99, draft=True, head=_MOVED_HEAD),
+    )
+
+    run = _run_promotion_step(tmp_path, Scenario(pr_list_json=listing))
+
+    assert run.returncode == 0, f"a reusable pull request was refused: {run.stdout}\n{run.stderr}"
+    assert "gh pr create" not in run.calls, (
+        f"a pull request was opened although one was reusable: {run.argv_for('gh pr create')}"
+    )
+    assert len(run.merges) == 1, f"expected exactly one merge; recorded {run.merges}"
+    assert f"repos/{_REPO}/pulls/23/merge" in run.merges[0][1], (
+        f"the merge did not name the pull request the listing's first entry gave: "
+        f"{run.merges[0][1]}"
+    )
+
+
+@pytest.mark.parametrize(
+    ("latest", "earliest", "promotes"),
+    [
+        (
+            _check_run("completed", "success", "2026-08-19T02:00:00Z"),
+            _check_run("completed", "failure", "2026-08-19T01:00:00Z"),
+            True,
+        ),
+        (
+            _check_run("completed", "failure", "2026-08-19T02:00:00Z"),
+            _check_run("completed", "success", "2026-08-19T01:00:00Z"),
+            False,
+        ),
+    ],
+    ids=["latest-is-green", "latest-is-red"],
+)
+def test_the_poll_scores_the_latest_run_by_started_at_not_by_array_order(
+    latest: Mapping[str, object],
+    earliest: Mapping[str, object],
+    promotes: bool,
+    tmp_path: Path,
+) -> None:
+    """E2, the case that makes ``sort_by(.started_at)`` real.
+
+    "Latest by ``started_at``" matches how branch protection scores a name with
+    several runs, so a re-run after a flake does not strand the candidate. In
+    both documents the array's **last** element is the *earlier* run, so an
+    expression that dropped the sort would read the wrong one — and both
+    directions are here, because a single case would be satisfied by an
+    expression that always answers the same way. Distinct timestamps throughout:
+    nothing may depend on sort stability.
+    """
+    document = _check_runs(latest, earliest)
+
+    run = _run_promotion_step(tmp_path, Scenario(check_runs_json=(document,)))
+
+    if promotes:
+        assert run.returncode == 0, (
+            f"the latest run concluded success and the night still refused: {run.stdout}"
+        )
+        assert run.merges, "nothing was merged although the latest run was green"
+    else:
+        assert run.returncode != 0, (
+            f"the latest run concluded failure and the night promoted anyway: {run.stdout}"
+        )
+        assert "failure" in run.stdout, (
+            f"the annotation must name the conclusion it observed: {run.stdout!r}"
+        )
+        _assert_nothing_was_merged(run, "the latest required-check run concluded failure")
 
 
 # --- Floors -------------------------------------------------------------------
@@ -1287,6 +1639,51 @@ def test_the_check_wait_fits_inside_the_job_it_runs_in() -> None:
     assert wait < int(minutes[0]) * 60, (
         f"the check poll waits up to {wait}s inside a job Actions cancels after "
         f"{minutes[0]} minutes; the timeout refusal would never be reached"
+    )
+
+
+def test_the_check_run_slice_decides_which_arm_the_poll_takes(tmp_path: Path) -> None:
+    """AC-5. ``.[-1:][]`` and ``last`` disagree on an empty check set.
+
+    The differential, run twice: the tracked script, and a copy with the slice
+    replaced. On ``{"check_runs": []}`` the shipped slice yields **nothing**, so
+    the poll takes its *named* "no run yet" arm; ``last`` yields ``null``, whose
+    interpolation is the string ``null null``, so the poll takes the catch-all
+    arm and reports a state that was never observed. Both time out and both exit
+    non-zero, so an exit-code assertion cannot see this mutation at all — the
+    discriminator is which arm the diagnostic names.
+
+    What this measures is **jq**, not ``gh``: ``gh --jq`` is evaluated by the
+    engine embedded in ``gh``, and these programs are evaluated here by the
+    ``jq`` binary this module resolves. A divergence between the two engines is
+    a live gap this does not close, and no assertion here claims gh's answer.
+    """
+    shipped = _script()
+    mutated = shipped.replace(_CHECK_RUN_SLICE, "last")
+    assert shipped.count(_CHECK_RUN_SLICE) == 1, (
+        f"expected exactly one {_CHECK_RUN_SLICE!r} in {SCRIPT.name}; the "
+        "differential below would otherwise mutate nothing, or mutate twice"
+    )
+    assert mutated != shipped, "the mutation landed nowhere, so this proves nothing"
+
+    scenario = Scenario(check_runs_json=(_NO_CHECK_RUNS,))
+    shipped_dir, mutated_dir = tmp_path / "shipped", tmp_path / "mutated"
+    shipped_dir.mkdir()
+    mutated_dir.mkdir()
+    baseline = _run_promotion_step(shipped_dir, scenario)
+    variant = _run_promotion_step(mutated_dir, scenario, script_text=mutated)
+
+    assert "no run of" in baseline.stdout, (
+        f"the shipped slice did not reach the named empty-set arm: {baseline.stdout!r}"
+    )
+    assert "no run of" not in variant.stdout, (
+        "replacing the check-run slice with `last` changed nothing the suite can "
+        "see, so the empty-set arm is dead code no test defends: "
+        f"{variant.stdout!r}"
+    )
+    assert "null null" in variant.stdout, (
+        "…and the state `last` actually produces is not what the annotation "
+        f"reported, so this differential is measuring something else: {variant.stdout!r}"
     )
 
 
