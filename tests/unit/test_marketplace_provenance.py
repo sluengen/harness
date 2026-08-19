@@ -85,7 +85,7 @@ DECLARATION_KEY = "extraKnownMarketplaces"
 #: against an end anchor swallows the quotes into the repo name and matches
 #: nothing at all past a comment, so either spelling reddens the gate over a
 #: spine that is still correct; ``tests/unit/_prose.py``'s ``PROPOSAL_STATUS``
-#: carries the same comment tolerance for the same reason.
+#: carries the same ``(?:#.*)?$`` tolerance on the same shape.
 _SPINE_GITHUB_REPO = re.compile(
     r"^github:\s*$\n(?:^[ \t]+.*$\n)*?"
     r"^[ \t]+repo:[ \t]*['\"]?(?P<repo>[^\s'\"#]+)['\"]?[ \t]*(?:#.*)?$",

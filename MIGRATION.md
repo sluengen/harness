@@ -88,11 +88,12 @@ Learned from the first real consumer migration (nano-erp, 2026-08-18):
 - **Check `.gitignore` for `.claude/hooks`.** An ignore rule carried for the
   old symlinked install will silently hide any real hook file the migration
   relocates there.
-- **Enforcement regression until sluengen/harness#483 ships:** the plugin's
-  gate-evidence guard resolves the integration branch as a local ref only, so
-  it is silently inert in single-branch/cloud clones. A consumer that had
-  patched its own copy loses the patch by migrating. If your copy carries local
-  hook fixes, diff them against the plugin's hooks before deleting, and
+- **Diff your local hook fixes before deleting them.** A consumer that had
+  patched its own copy loses the patch by migrating. The one gap this migration
+  surfaced — the gate-evidence guard resolving the integration branch as a local
+  ref only, so it was silently inert in single-branch/cloud clones — shipped as
+  sluengen/harness#483 and is fixed in the plugin. Anything else your copy
+  carries is not: diff it against the plugin's hooks before deleting, and
   upstream what the plugin lacks.
 - **Tests that executed the old copied hooks** need re-pointing at the plugin
   cache (resolve via the plugin root, skip where absent) — and that skip costs
