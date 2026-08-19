@@ -484,21 +484,51 @@ def _script_constant(pattern: str) -> str:
     return str(matches[0])
 
 
-def _ci_job_keys() -> set[str]:
-    """The check-run names ``ci.yml`` produces, derived from its ``jobs:`` mapping.
+def _inline_scalar(raw: str) -> str:
+    """A YAML **inline** scalar's value, or ``""`` when there is none to read.
 
-    A check run is named after the job's ``name:`` when it declares one, and
-    after its **key** otherwise — so a key is only the right answer while no
-    ``name:`` shadows it. Deriving keys alone would let someone add
-    ``name: Build & test`` to the ``lint-and-test`` job and leave this
-    correspondence green while the poll waited forever for a check that no
-    longer exists under that name (#485). The effective name is derived here
-    instead, so the guard measures what GitHub will actually publish.
+    Empty for every spelling whose value is not on this line: nothing at all
+    (``name:``), and a block or folded indicator (``name: >-``) whose scalar
+    begins on the next one. The caller turns that into a refusal — reading it as
+    "no name declared" is the silent mis-derivation this exists to make loud.
+    """
+    value = raw.strip()
+    if value[:1] in {"'", '"'}:
+        end = value.find(value[0], 1)
+        return value[1:end] if end != -1 else ""
+    value = re.split(r"\s+#", value, maxsplit=1)[0].strip()
+    return "" if value in {"", "|", ">", "|-", ">-", "|+", ">+"} else value
+
+
+def _check_run_names(workflow: str) -> set[str]:
+    """The check-run names ``workflow``'s ``jobs:`` mapping will publish.
+
+    GitHub names a check run after the job's ``name:`` where it declares one and
+    after its **key** otherwise, so a key is the right answer only while no
+    ``name:`` shadows it: adding ``name: Build and test`` to ``lint-and-test``
+    would leave a key-derived correspondence green while the poll waited forever
+    for a check that no longer exists under that name (#485).
+
+    Two rules keep this from becoming the same defect one spelling over — the
+    hole a second review found live in the first fix, which read an *inline*
+    ``name:`` and silently kept the key for every other spelling:
+
+    * a ``name:`` whose value is not on its own line is a **refusal**, not a
+      fall back to the key (``ADR 0016`` — an unresolvable anchor must fail
+      rather than go quiet);
+    * the value is read as a YAML inline scalar, so a trailing comment or
+      surrounding quotes do not become part of the published name.
+
+    Takes the text rather than reading the one file, because a derivation fed
+    only production data is indistinguishable from a hardcoded constant: the
+    cases below feed it input whose answer differs from this repo's.
     """
     names: set[str] = set()
     current: str | None = None
+    declared: str | None = None
     in_jobs = False
-    for line in CI_WORKFLOW.read_text(encoding="utf-8").splitlines():
+
+    for line in workflow.splitlines():
         if line.rstrip() == "jobs:":
             in_jobs = True
             continue
@@ -506,18 +536,39 @@ def _ci_job_keys() -> set[str]:
             continue
         if line.strip() and not line.startswith(" "):
             break
-        match = re.match(r"^ {2}([A-Za-z0-9_-]+):\s*$", line)
-        if match:
-            current = match.group(1)
-            names.add(current)
+        key = re.match(r"^ {2}([A-Za-z0-9_-]+):\s*$", line)
+        if key is not None:
+            if current is not None:
+                names.add(current if declared is None else declared)
+            current, declared = key.group(1), None
             continue
-        # A job-level `name:` (exactly four spaces) replaces the key it shadows.
-        shadow = re.match(r"^ {4}name:\s*(\S.*?)\s*$", line)
-        if shadow and current is not None:
-            names.discard(current)
-            names.add(shadow.group(1).strip("'\""))
-            current = None
+        # A job-level `name:` — exactly four spaces — shadows the key.
+        shadow = re.match(r"^ {4}name:(.*)$", line)
+        if shadow is None or current is None:
+            continue
+        value = _inline_scalar(shadow.group(1))
+        assert value, (
+            f"job {current!r} declares a `name:` whose value this derivation "
+            f"cannot read ({line!r}). GitHub will publish that name, not "
+            f"{current!r}, and guessing the key here is exactly the silent "
+            "mis-derivation this refusal exists to stop — put the value on the "
+            "`name:` line, or teach this function the spelling"
+        )
+        assert declared is None, (
+            f"job {current!r} declares `name:` twice ({declared!r}, then "
+            f"{value!r}); which one GitHub publishes is not this guard's guess "
+            "to make"
+        )
+        declared = value
+
+    if current is not None:
+        names.add(current if declared is None else declared)
     return names
+
+
+def _ci_check_run_names() -> set[str]:
+    """:func:`_check_run_names` over the tracked ``ci.yml``."""
+    return _check_run_names(CI_WORKFLOW.read_text(encoding="utf-8"))
 
 
 def _pr_number() -> str:
@@ -1059,6 +1110,50 @@ def test_the_stubs_are_the_only_git_and_gh_the_script_can_reach(tmp_path: Path) 
     )
 
 
+def test_every_ls_remote_names_a_fully_qualified_ref() -> None:
+    """F5. Every ``ls-remote`` pattern is a full ``refs/heads/`` ref (#485).
+
+    ``git ls-remote --heads origin dev`` matches on the ref name's **tail**, so
+    it also selects ``refs/heads/anything/dev`` — measured on this repo, where
+    ``git ls-remote --heads . 485`` answers ``refs/heads/work/485``. The source
+    call site then reads ``awk 'NR == 1'``, i.e. whichever the remote listed
+    first, and would compare the gated candidate against a stranger's tip.
+
+    This is a **text** guard over an executed script, which needs its reason
+    stated: nothing the executed suite runs can see the difference. The ``git``
+    stub takes the call's last argument and strips a leading ``refs/heads/``, so
+    a qualified and a bare pattern arrive at the same fixture key by
+    construction — reverting either call site leaves the whole module green
+    (mutation-proved). The stub still distinguishes a *wrong* branch; it cannot
+    distinguish a *wrongly-scoped* one, and this is where that half lives.
+
+    Both floors are here rather than assumed: the call sites are counted, and
+    the count of sites this guard actually read is compared with the count of
+    ``git ls-remote`` occurrences in the script, so a third call site written in
+    a spelling the pattern below misses fails instead of going unmeasured.
+    """
+    script = _script()
+    occurrences = len(re.findall(r"git ls-remote\b", script))
+    patterns = re.findall(r"git ls-remote\s[^\n]*?\sorigin\s+(\S+)", script)
+
+    assert occurrences == 2, (
+        f"{SCRIPT.name} makes {occurrences} `git ls-remote` calls, not the two "
+        "this guard was written over (the target's existence, and the source's "
+        "tip against the gated candidate) — re-derive it rather than widening it"
+    )
+    assert len(patterns) == occurrences, (
+        f"this guard read {len(patterns)} of {occurrences} `git ls-remote` call "
+        "sites; one is written in a spelling it cannot see, which would leave "
+        "that site unmeasured while the suite stayed green"
+    )
+    for pattern in patterns:
+        assert pattern.startswith('"refs/heads/'), (
+            f"`git ls-remote ... origin {pattern}` is an unqualified pattern: "
+            "ls-remote matches on the ref name's tail, so it also selects "
+            f"`refs/heads/*/{pattern.strip(chr(34))}`. Name the full ref."
+        )
+
+
 def test_the_required_check_names_a_job_that_exists() -> None:
     """F3. Structural correspondence: ``REQUIRED_CHECK`` is a job key in ``ci.yml``.
 
@@ -1071,14 +1166,109 @@ def test_the_required_check_names_a_job_that_exists() -> None:
     *requires* that check is GitHub configuration, which no test in this tree can
     read. That gap is recorded rather than implied by a green suite.
     """
-    keys = _ci_job_keys()
+    published = _ci_check_run_names()
     required = _script_constant(r'REQUIRED_CHECK="([^"]+)"')
-    assert keys, "no job keys were derived from ci.yml, so the check below compares nothing"
-    assert required in keys, (
+    assert published, "no check names were derived from ci.yml, so the check below compares nothing"
+    assert required in published, (
         f"scripts/promotion-step.sh waits for a check named {required!r}, which is "
-        f"not one of ci.yml's jobs ({sorted(keys)}) — the poll would never see it "
-        "complete"
+        f"not one ci.yml publishes ({sorted(published)}) — the poll would never "
+        "see it complete"
     )
+
+
+#: ``(id, jobs-block, expected published names)``. Every case answers something
+#: this repo's own ``ci.yml`` cannot: it declares no job-level ``name:`` at all,
+#: so before these the shadowing branch ran zero times and a green suite said
+#: nothing about it.
+_PUBLISHED_NAME_CASES = (
+    ("a bare key publishes itself", "jobs:\n  lint-and-test:\n    runs-on: x\n", {"lint-and-test"}),
+    (
+        "an inline name shadows the key",
+        "jobs:\n  lint-and-test:\n    name: Build and test\n    runs-on: x\n",
+        {"Build and test"},
+    ),
+    (
+        "quotes are not part of the published name",
+        'jobs:\n  lint-and-test:\n    name: "Build and test"\n    runs-on: x\n',
+        {"Build and test"},
+    ),
+    (
+        "a trailing comment is not part of the published name",
+        "jobs:\n  lint-and-test:\n    name: Build  # what GitHub shows\n    runs-on: x\n",
+        {"Build"},
+    ),
+    (
+        "a step-level name is not the job's",
+        "jobs:\n  lint-and-test:\n    steps:\n      - name: Run the gate\n        run: x\n",
+        {"lint-and-test"},
+    ),
+    (
+        "each job resolves on its own",
+        "jobs:\n  one:\n    name: First\n    runs-on: x\n  two:\n    runs-on: x\n",
+        {"First", "two"},
+    ),
+    (
+        "nothing outside the jobs mapping is read",
+        "name: CI\non:\n  push:\n    branches: [dev]\njobs:\n  lint-and-test:\n    runs-on: x\n",
+        {"lint-and-test"},
+    ),
+)
+
+
+@pytest.mark.parametrize(
+    ("jobs", "expected"),
+    [pytest.param(block, expected, id=name) for name, block, expected in _PUBLISHED_NAME_CASES],
+)
+def test_the_published_check_names_are_derived_from_the_workflow(
+    jobs: str, expected: set[str]
+) -> None:
+    """F6. The derivation answers about its input, not about this repo.
+
+    Fed only ``ci.yml``, :func:`_check_run_names` and a hardcoded
+    ``{"lint-and-test"}`` are indistinguishable — every case here has an answer
+    that differs from this repo's, which is the only way to tell them apart
+    (``review-discipline/references/craft.md``).
+    """
+    assert _check_run_names(jobs) == expected
+
+
+@pytest.mark.parametrize(
+    "declaration",
+    ["    name:", "    name: >-", "    name: |", "    name:   "],
+    ids=["empty", "folded", "literal", "whitespace"],
+)
+def test_a_name_this_derivation_cannot_read_is_a_refusal(declaration: str) -> None:
+    """F6's other direction, and the one that was live (#485, second review).
+
+    Each spelling here publishes a check name that is **not** the key — the
+    scalar simply starts on the next line. The first fix read an inline value
+    only and fell back to the key for all of them, so a mutation adding
+
+    .. code-block:: yaml
+
+        lint-and-test:
+          name:
+            Build and test
+
+    to ``ci.yml`` left the correspondence green while the poll waited forever
+    for a check named ``lint-and-test`` that GitHub no longer publishes
+    (mutation-proved SURVIVED (LIVE)). An anchor this cannot resolve must fail
+    loudly rather than answer confidently (ADR 0016).
+    """
+    workflow = f"jobs:\n  lint-and-test:\n{declaration}\n      Build and test\n    runs-on: x\n"
+
+    with pytest.raises(AssertionError, match="cannot read"):
+        _check_run_names(workflow)
+
+
+def test_the_live_ci_workflow_still_resolves() -> None:
+    """The floor under both cases above: the real corpus is read and answers.
+
+    Synthetic input proves the derivation; it cannot prove the file exists, is
+    reachable, or parses. Without this, deleting ``ci.yml`` would leave the
+    parametrized cases above green — a sweep with no floor on its corpus.
+    """
+    assert _ci_check_run_names() == {"lint-and-test"}
 
 
 def test_the_check_wait_fits_inside_the_job_it_runs_in() -> None:

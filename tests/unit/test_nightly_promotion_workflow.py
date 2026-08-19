@@ -195,8 +195,12 @@ def test_the_workflow_is_a_bounded_deterministic_nightly() -> None:
     # No commit author is pinned. Nothing in this job creates a commit: the
     # merge commit is written server-side by the API, and `fetch`/`ls-remote`
     # need no author. Pinning one would defend configuration the job no longer
-    # reads (#485).
-    assert "git config user." not in workflow, (
+    # reads (#485). Read over `_uncommented`, as the repair ban below already
+    # is: over the raw text a comment *explaining* that no author is configured
+    # — the natural next edit to a step this change deleted — turns the gate red
+    # (mutation-proved). A ban belongs over what the job runs, not over what it
+    # says about itself.
+    assert "git config user." not in _uncommented(workflow), (
         "the promotion writes no local commit, so a configured author is dead "
         "configuration the suite must not defend"
     )
