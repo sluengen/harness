@@ -350,6 +350,13 @@ def test_the_preflight_probes_nothing_the_suite_does_not_resolve(tmp_path: Path)
     assert PRECONDITION_FAILED not in proc.stderr, (
         f"the preflight reported a failed precondition anyway: {proc.stderr!r}"
     )
+    assert proc.returncode == 0, (
+        "the gate did not run to completion under a fully stubbed toolchain, so "
+        "this direction observed nothing about the preflight — a script that "
+        "exits before the preflight is even reached satisfies both assertions "
+        f"above (measured at review). It exited {proc.returncode}. "
+        f"stdout: {proc.stdout!r} stderr: {proc.stderr!r}"
+    )
 
 
 # --- Direction 3: the completion condition -------------------------------------
@@ -374,8 +381,16 @@ def test_the_suite_reaches_the_host_only_where_it_declares_the_dependency() -> N
     function resolves a binary, because that resolution is what puts the binary
     in the preflight. Every other conditional-execution mechanism — an
     ``importorskip``, a platform ``skipif``, a bare ``pytest.skip("slow")`` —
-    fails here, so the change introducing one answers the membership question in
-    place rather than opening a hole nothing measures.
+    fails here **wherever it sits outside such a function**, so the change
+    introducing one answers the membership question in place rather than opening
+    a hole nothing measures.
+
+    **The rule is positional, not semantic**, and the difference is measured
+    rather than left to the reader: it asks *where* a skip sits, never what its
+    condition tests. A platform ``skipif`` decorating a function whose own body
+    resolves a binary is therefore admitted — pinned below rather than asserted,
+    because a residual nothing exercises is indistinguishable from a claim that
+    it cannot happen.
     """
     sites = skip_sites_from_tree()
     offenders = _offenders(sites)
@@ -471,6 +486,36 @@ _HYGIENE_CASES = (
         "def skip(reason):\n    return reason\n\ndef test_x():\n    skip('a helper')\n",
         [],
     ),
+    (
+        # The residual of a positional rule, pinned rather than described: this
+        # skip is conditional on the platform and not on the binary beside it,
+        # and it is admitted anyway. Narrowing it would mean classifying what a
+        # condition *tests*, which no AST predicate does reliably.
+        "a platform skipif on a function that itself resolves is admitted",
+        "import shutil\nimport sys\nimport pytest\n"
+        "\n"
+        "@pytest.mark.skipif(sys.platform == 'win32', reason='posix only')\n"
+        "def test_posix():\n"
+        '    return shutil.which("node")\n',
+        [],
+    ),
+    (
+        # The fallback that bounds :mod:`tests.unit._toolchain`'s stated
+        # derivation residual, pinned catching it (#487 — an excluded case whose
+        # fallback is only asserted in a comment was never run). The resolution
+        # here is invisible to `declared_binaries`, so the skip beside it
+        # declares nothing and the completion condition refuses it.
+        "a resolution the derivation cannot see leaves its skip an offender",
+        "import shutil\nimport pytest\n"
+        "\n"
+        "def _tool():\n"
+        "    resolve = shutil.which\n"
+        '    found = resolve("shellcheck")\n'
+        "    if found is None:\n"
+        "        pytest.skip('shellcheck not available')\n"
+        "    return found\n",
+        ["pytest.skip"],
+    ),
 )
 
 
@@ -481,7 +526,7 @@ _HYGIENE_CASES = (
 def test_the_completion_condition_answers_about_its_input(
     source: str, expected: list[str]
 ) -> None:
-    """The sweep above is born green — all 14 skips in this tree already comply.
+    """The sweep above is born green — every skip in this tree already complies.
 
     Born green is the test-first law's quietest failure mode (craft.md → *Born
     green*), so the predicate is exercised here on sources whose answer differs

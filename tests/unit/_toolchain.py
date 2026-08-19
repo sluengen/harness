@@ -39,6 +39,20 @@ construct must sit in a function that also resolves a binary. Anything else is
 an offender, and the change introducing a new conditional-execution mechanism
 answers the membership question in place.
 
+**Residual, stated rather than left implicit.** A resolution is recognised only
+where the ``shutil.which`` spelling is the *callee of the call itself*. Binding
+it first and calling the binding — ``resolve = shutil.which`` then
+``resolve("x")`` — aliasing the module by assignment rather than by ``import
+… as``, or handing the function to ``map``/``functools.partial``, is **not
+seen**, and is silent rather than refused; so is every read in a module that
+binds the name ``shutil`` or ``which`` locally anywhere, since the shadowing
+check in :func:`_locally_bound` is module-wide. Nothing in the tracked corpus
+spells any of those, measured at the tree this shipped on. What bounds the cost
+is :func:`skip_sites`, and it is pinned rather than assumed: a skip in a
+function whose resolution was missed that way declares nothing, so it is an
+**offender** — the silent-degradation class this rule exists for still fails
+even where the derivation cannot see the call.
+
 Both read the **git index** (:func:`tests._gitutil.indexed_text`) rather than
 the working file: ``git write-tree`` certifies the index, the gate marker is
 named after the tree it produces, and a verdict binds to that oid — so the
