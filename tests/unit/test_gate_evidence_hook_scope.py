@@ -86,6 +86,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -99,7 +100,6 @@ from tests.unit._prose import REPO_ROOT
 
 HOOK = REPO_ROOT / "hooks" / "gate-evidence-guard.js"
 WRITER = REPO_ROOT / "scripts" / "gate_marker.py"
-SETTINGS = REPO_ROOT / "settings" / "harness.json"
 
 #: A phrasing from the hook's claim-pattern set, and deliberately ordinary.
 CLAIM = "All acceptance criteria are met and the tests pass. This is done."
@@ -724,17 +724,113 @@ def test_a_transcript_with_no_cwd_fields_leaves_the_hook_where_436_left_it(
     assert _blocked(_run(wt, bare))
 
 
-def test_the_hook_answers_a_large_transcript_well_inside_its_configured_timeout(
+def _git_spawn_counter(tmp_path: Path, name: str) -> tuple[dict[str, str], Path]:
+    """A ``PATH`` entry whose ``git`` records one line per spawn, then execs git.
+
+    The hook has exactly one subprocess site — ``spawnSync("git", ...)`` in
+    ``hooks/gate-evidence-guard.js`` — and it spawns the **bare** program name
+    against an env derived from ``process.env``, so a directory prepended to the
+    ``PATH`` this test hands the hook intercepts every git the hook runs. The
+    shim execs git by absolute path, which preserves the hook's behaviour exactly
+    and makes recursion back into the shim impossible.
+
+    The Python-side fixture helpers (:func:`_git`, :func:`_project`,
+    :func:`_worktree`) run git through their own ``subprocess.run`` without this
+    env, so nothing but the hook is ever counted.
+    """
+    real = shutil.which("git")
+    assert real is not None, "git must be on PATH for the hook's spawns to be countable"
+    shim = tmp_path / f"shim-{name}"
+    shim.mkdir()
+    log = tmp_path / f"git-spawns-{name}.log"
+    counter = shim / "git"
+    counter.write_text(
+        "#!/bin/sh\n"
+        f"printf 'spawn\\n' >> {shlex.quote(str(log))}\n"
+        f'exec {shlex.quote(real)} "$@"\n'
+    )
+    counter.chmod(0o755)
+    return {"PATH": f"{shim}{os.pathsep}{os.environ['PATH']}"}, log
+
+
+def _spawns_reading(root: Path, transcript: Path, tmp_path: Path, name: str) -> int:
+    """How many gits the hook spawns reading ``transcript``, and it must block."""
+    env, log = _git_spawn_counter(tmp_path, name)
+    assert _blocked(_run(root, transcript, env=env)), f"the {name} fixture never blocked"
+    return len(log.read_text().splitlines()) if log.exists() else 0
+
+
+def _seconds_reading(root: Path, transcript: Path, name: str) -> float:
+    """How long the hook takes reading ``transcript``, and it must block.
+
+    Deliberately **without** the counting shim: an extra ``sh`` per git spawn
+    would land in the constant overhead both sides of the ratio carry, and every
+    second of constant overhead raises the super-linear cost this can see.
+    """
+    started = time.monotonic()
+    out = _run(root, transcript)
+    elapsed = time.monotonic() - started
+    assert _blocked(out), f"the {name} fixture never blocked while being timed"
+    return elapsed
+
+
+def test_the_hook_reads_a_large_transcript_without_a_per_line_spawn_or_a_quadratic_scan(
     tmp_path: Path,
 ) -> None:
-    """A smoke ceiling, not a benchmark: it catches an accidental O(n²) or a
-    per-line spawn, and nothing finer. The bound is read from the wired
-    ``timeout`` in ``settings/harness.json`` rather than hardcoded, so lowering
-    the wired budget tightens this test instead of silently outrunning it.
+    """Two load-invariant measures, one per defect this test exists to catch: a
+    per-line process spawn, and a super-linear scan of the transcript.
 
-    Forty distinct cwds against a ``MAX_DISTINCT_CWDS`` ceiling of 32, all but
-    one of them outside the repository — the shape where a per-candidate probe
-    would show up."""
+    *Spawns are counted, never timed.* The hook's only subprocess site is a bare
+    ``git`` resolved through ``PATH`` (see :func:`_git_spawn_counter`), so a shim
+    on the ``PATH`` handed to the hook counts every git it runs. The same hook is
+    run over a small transcript and a large one built to the same shape, and the
+    count must not grow with length — a per-line probe grows with it. No clock is
+    involved in this half at all. **Both** counts carry a ``> 0`` floor, not just
+    the baseline's: a shim that is never reached counts nothing, and ``0 <= n``
+    holds for the wrong reason. That is measured, not hypothetical — dropping the
+    shim from the large run alone leaves the comparison green.
+
+    *Time is compared only against a same-run baseline.* The large transcript
+    must be read in less than ``size_ratio`` times the small one's wall clock,
+    where ``size_ratio`` is derived from the two fixtures' own byte sizes and
+    never written down. Host load multiplies both measurements by roughly the
+    same factor, so it cancels in the ratio; fixed per-invocation overhead — node
+    start-up, the hook's constant handful of git calls — sits on both sides, so a
+    linear reader scores well under ``size_ratio`` while a quadratic one does
+    about ``size_ratio`` squared of marginal work and blows through it. The counted
+    pair runs first so that the first invocation's cold start is not charged to
+    the timed baseline, where it would inflate the bound rather than the measure.
+
+    **What this test no longer claims (#486).** It asserts no absolute
+    wall-clock bound, and no relationship whatever to the wired Stop-hook
+    ``timeout`` in ``settings/harness.json``. The previous form asserted
+    ``elapsed < timeout / 3``, i.e. 5s, while the gate runs this module under
+    ``pytest-xdist`` beside every other node-spawning hook module: it reddened
+    repeated full-gate runs over a tree that other runs of the same tree
+    certified green, though it finished in 2.55s run alone — the measurements
+    are tabled on the ticket. An absolute
+    wall-clock assertion measures the host rather than the code, so it was
+    dropped rather than widened — widening it to the full wired budget leaves the
+    verdict load-dependent, just less often. Do not re-tighten this into a
+    benchmark.
+
+    **What it still cannot see.** A count and a ratio are both blind to a cost
+    that grows merely *linearly* with transcript length — including a
+    length-proportional spawn spelled with anything but the bare ``git`` the shim
+    intercepts — and to a quadratic small enough to finish inside ``size_ratio``
+    times the baseline. Both were confirmed live against mutations of the hook at
+    review. Neither is an argument for an absolute clock, which #486 removed
+    because it could not tell a slow host from a slow reader at all.
+
+    **Why the fixture is shaped this way.** Forty distinct cwds sit ahead of the
+    body, so the reader's ``MAX_DISTINCT_CWDS`` ceiling of 32 is only reached at
+    the front of the file and its backwards walk therefore crosses every line of
+    the body — which is what makes transcript *length* observable at all. The
+    body repeats four cwds already recorded, and the worktree is last, so the two
+    fixtures present the hook with an identical candidate set and differ only in
+    bytes. Every measured run must still block: a fixture that allowed early
+    would skip the work being measured.
+    """
     root = _project(tmp_path)
     wt = _worktree(root, "439")
     strangers = []
@@ -743,22 +839,42 @@ def test_the_hook_answers_a_large_transcript_well_inside_its_configured_timeout(
         elsewhere.mkdir(parents=True)
         strangers.append(elsewhere)
 
-    filler = {"role": "user", "content": "x" * 600}
-    lines = []
-    while len(lines) < 4999:
-        for elsewhere in strangers:
-            lines.append(_entry(str(elsewhere), message=filler))
-            if len(lines) >= 4999:
-                break
-    lines.append(_entry(str(wt)))
-    transcript = tmp_path / "big.jsonl"
-    transcript.write_text("\n".join(lines) + "\n")
-    assert transcript.stat().st_size > 3_000_000, "the fixture must be a large transcript"
+    def filler(serial: int) -> dict[str, str]:
+        # Every line distinct, and measured: a transcript of repeated bytes lets
+        # a reader that searches the whole file for each line find its answer in
+        # the first few hundred bytes, so a genuinely quadratic scan measures
+        # linear over it. That degeneracy left a quadratic mutation inert while
+        # this test was being built.
+        return {"role": "user", "content": f"{serial:07d}" + "x" * 600}
 
-    wired = json.loads(SETTINGS.read_text())["hooks"]["Stop"][0]["hooks"][0]["timeout"]
-    started = time.monotonic()
-    out = _run(root, transcript)
-    elapsed = time.monotonic() - started
+    def fixture(name: str, body: int) -> Path:
+        lines = [_entry(str(e), message=filler(n)) for n, e in enumerate(strangers)]
+        lines.extend(_entry(str(strangers[i % 4]), message=filler(1000 + i)) for i in range(body))
+        lines.append(_entry(str(wt)))
+        path = tmp_path / name
+        path.write_text("\n".join(lines) + "\n")
+        return path
 
-    assert _blocked(out), "the fixture never blocked"
-    assert elapsed < wired / 3, f"{elapsed:.1f}s against a wired timeout of {wired}s"
+    small = fixture("small.jsonl", 1000)
+    large = fixture("large.jsonl", 10000)
+    assert large.stat().st_size > 6_000_000, "the fixture must be a large transcript"
+    size_ratio = large.stat().st_size / small.stat().st_size
+    assert size_ratio > 5, f"the fixtures must differ enough to compare: {size_ratio:.1f}x"
+
+    base_spawns = _spawns_reading(root, small, tmp_path, "small")
+    big_spawns = _spawns_reading(root, large, tmp_path, "large")
+    assert base_spawns > 0 and big_spawns > 0, (
+        f"the counting shim was never reached, so it counted nothing: "
+        f"{base_spawns} and {big_spawns}"
+    )
+    assert big_spawns <= base_spawns, (
+        f"git spawns grew with transcript length: {base_spawns} -> {big_spawns} "
+        f"over {size_ratio:.1f}x the bytes"
+    )
+
+    base_elapsed = _seconds_reading(root, small, "small")
+    big_elapsed = _seconds_reading(root, large, "large")
+    assert big_elapsed < base_elapsed * size_ratio, (
+        f"{big_elapsed:.2f}s for {size_ratio:.1f}x the bytes of a baseline that "
+        f"took {base_elapsed:.2f}s: a ratio of {big_elapsed / base_elapsed:.1f}x"
+    )
