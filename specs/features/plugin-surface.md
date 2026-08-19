@@ -28,7 +28,7 @@ The build/design/operate triad follows the how/what pattern (ADR 0017 D3): the s
 
 ### The spine
 
-`CLAUDE.md` is the one always-loaded file: the six iron laws, the lifecycle (fast lane / ticket / proposal), the shared contract (ticket states, holds, assurance levels, the PASS/FAIL/DEFER verdict vocabulary, the tree-oid binding, tracker dispatch, filing rules), an enforcement summary, and the repo's machine-readable config block (`commands:`, `branches:`, `loop:`, `layers:`, `paths:`). Skills are conditional depth behind it and may assume it is loaded; nothing restates the contract elsewhere. The generated block sits between `<!-- spine:generated:begin … -->` / `<!-- spine:generated:end -->` markers and is byte-identical to `templates/spine.md`'s block; everything after the end marker is repo-owned. The whole file is 97 lines at this record's date, under the ≤250-line target ADR 0017 set.
+`CLAUDE.md` is the one always-loaded file: the six iron laws, the lifecycle (fast lane / ticket / proposal), the shared contract (ticket states, holds, assurance levels, the PASS/FAIL/DEFER verdict vocabulary, the tree-oid binding, tracker dispatch, filing rules), an enforcement summary, and the repo's machine-readable config block (`commands:`, `branches:`, `loop:`, `layers:`, `paths:`). Skills are conditional depth behind it and may assume it is loaded; nothing restates the contract elsewhere. The generated block sits between `<!-- spine:generated:begin … -->` / `<!-- spine:generated:end -->` markers and is byte-identical to `templates/spine.md`'s block; everything after the end marker is repo-owned. The whole file is 98 lines at this record's date, under the ≤250-line target ADR 0017 set.
 
 #### Scenario: the fast lane
 
