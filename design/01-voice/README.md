@@ -34,10 +34,7 @@ across all four loops — no loop gets an adjective the others don't.
   eyebrow style already established (`How we build · operating model`, `How
   the loops are triggered`) — never a slogan.
 - **Command names and syntax are never paraphrased.** `/build`, `/propose`,
-  `--refresh` appear verbatim, in `<code>`, exactly as a user would type them —
-  this is also what lets
-  `tests/unit/test_landing_page_inventory.py::test_the_page_inventory_matches_the_tree`
-  hold the page to the surface the tree actually carries.
+  `--refresh` appear verbatim, in `<code>`, exactly as a user would type them.
 - **Status is stated at the cadence and mechanism level**, e.g. "Automated ·
   the verify gate is the tool inside this loop", "Human-driven — the rudder
   for everything inside" — one line, no elaboration, always ending on who or
