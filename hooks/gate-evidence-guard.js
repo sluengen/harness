@@ -613,7 +613,31 @@ function hasWorkToClaim(cwd, tree, declared) {
   const head = git(cwd, ["rev-parse", "--verify", "HEAD"]);
   const tip = integrationTip(cwd, integration);
   if (head === null || tip === null) return false;
-  return head !== tip;
+  if (head === tip) return false;
+  return git(cwd, ["merge-base", "--is-ancestor", tip, head]) !== null;
+}
+
+/** True only for the repository primary checkout, never a linked worktree. */
+function isPrimaryCheckout(cwd) {
+  const gitDir = git(cwd, ["rev-parse", "--path-format=absolute", "--git-dir"]);
+  const commonDir = git(cwd, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+  if (gitDir === null || commonDir === null) return false;
+  const realGitDir = resolved(gitDir) || path.resolve(gitDir);
+  const realCommonDir = resolved(commonDir) || path.resolve(commonDir);
+  return realGitDir === realCommonDir;
+}
+
+/** True iff HEAD is exactly a configured protected branch tip. */
+function atConfiguredProtectedTip(cwd, declared) {
+  const head = git(cwd, ["rev-parse", "--verify", "HEAD"]);
+  if (head === null) return false;
+  for (const branch of Object.values(declared)) {
+    for (const ref of [`refs/heads/${branch}`, `refs/remotes/origin/${branch}`]) {
+      const tip = git(cwd, ["rev-parse", "--verify", "--quiet", ref]);
+      if (tip !== null && tip === head) return true;
+    }
+  }
+  return false;
 }
 
 /** ``dir`` resolved through symlinks, or null when it does not resolve.
@@ -788,19 +812,16 @@ function* candidates(input, sessionCwd) {
   }
 }
 
-/** The tree and marker path a block would be about, or null for *no opinion*.
- *
- * A behaviour-preserving extraction of v1's sequence — ``currentTree`` →
- * protected-branch skip → ``hasWorkToClaim`` → ``hasFreshMarker`` — so that one
- * question can be asked of more than one directory. */
+/** The tree and marker path a block would be about, or null for *no opinion*. */
 function verdictFor(dir) {
-  const tree = currentTree(dir);
-  if (tree === null) return null; // not a worktree, or git had no answer
-
   const top = git(dir, ["rev-parse", "--show-toplevel"]);
   const declared = top === null ? {} : declaredConfig(top);
   const branch = git(dir, ["rev-parse", "--verify", "--abbrev-ref", "HEAD"]);
   if (branch !== null && protectedBranches(declared, dir).has(branch)) return null;
+  if (isPrimaryCheckout(dir) && atConfiguredProtectedTip(dir, declared)) return null;
+
+  const tree = currentTree(dir);
+  if (tree === null) return null; // not a worktree, or git had no answer
 
   if (!hasWorkToClaim(dir, tree, declared)) return null;
   if (hasFreshMarker(tree, dir)) return null;

@@ -422,3 +422,79 @@ def test_the_page_inventory_matches_the_tree() -> None:
         f"`in_tree_only` names units the tree carries that the page never "
         f"mentions. Both are wrong: {difference}"
     )
+
+
+# ---------------------------------------------------------------------------
+# The printed counts — the second axis, the one the sweep above cannot see
+# ---------------------------------------------------------------------------
+#
+# The sweep reads ``data-unit`` tags and has no opinion about the number printed
+# beside each heading, so a page whose list is right and whose count is wrong is
+# green over a live falsehood. `specs/features/plugin-surface.md` recorded that
+# hole as a known limitation when the sweep was built; it then fired for real —
+# the change that added the fifteenth skill left ``Skills 14`` standing over a
+# fifteen-entry list, and the gate was green over it until review caught the
+# number by hand (2026-08-20). Two occurrences, so it earns its guard
+# (`engineering` -> *Verification*).
+#
+# Admitted under ADR 0017 D5 class (e) on the same terms as the sweep: both
+# operands are in the tracked page, and the assertion is correspondence between
+# a printed integer and a countable list — never what any sentence means.
+
+#: The count a card prints beside its heading: ``<span class="n">15</span>``.
+_COUNT_TAG = re.compile(r'<span class="n">(?P<printed>\d+)</span>')
+
+#: A floor on the comparison's subject set. Four cards carry counts today; a
+#: page edit that renames the span class would otherwise empty the set, and a
+#: sweep over nothing passes while reporting a property nothing holds.
+_MINIMUM_COUNTED_CARDS = 4
+
+
+def printed_against_listed(html: str) -> list[tuple[int, int]]:
+    """Each printed count paired with the number of units listed beneath it.
+
+    A heading owns every ``data-unit`` tag between its own count and the next
+    card's, which is how the page is laid out: the count, then the list it
+    counts. Returns ``(printed, listed)`` pairs in page order, so a caller can
+    report *which* card disagrees rather than only that one does.
+    """
+    marks = list(_COUNT_TAG.finditer(html))
+    pairs: list[tuple[int, int]] = []
+    for index, mark in enumerate(marks):
+        end = marks[index + 1].start() if index + 1 < len(marks) else len(html)
+        listed = len(_UNIT_TAG.findall(html[mark.end() : end]))
+        pairs.append((int(mark.group("printed")), listed))
+    return pairs
+
+
+def test_a_printed_count_that_disagrees_with_its_list_is_reported() -> None:
+    """The failing direction, spliced from the real page rather than invented.
+
+    Paired with the agreeing case below, so neither is a constant.
+    """
+    spliced = _page_text().replace(
+        '<h3>Skills <span class="n">15</span></h3>',
+        '<h3>Skills <span class="n">14</span></h3>',
+        1,
+    )
+    assert spliced != _page_text(), (
+        "the splice matched nothing — this test would pass without reading the "
+        "page, which is the vacuity it exists to avoid"
+    )
+    assert any(printed != listed for printed, listed in printed_against_listed(spliced))
+
+
+def test_the_real_page_counts_agree_with_their_lists() -> None:
+    """AC-3: every number the page prints is the length of the list under it."""
+    pairs = printed_against_listed(_page_text())
+    assert len(pairs) >= _MINIMUM_COUNTED_CARDS, (
+        f"{PAGE_PATH} declares {len(pairs)} counted cards, fewer than the "
+        f"{_MINIMUM_COUNTED_CARDS} it is known to carry — the parser has gone "
+        f"blind rather than the page having shrunk"
+    )
+    wrong = [(printed, listed) for printed, listed in pairs if printed != listed]
+    assert not wrong, (
+        f"{PAGE_PATH} prints a count that its own list contradicts, as "
+        f"(printed, listed): {wrong}. The inventory sweep does not read these "
+        f"numbers, so a wrong one ships green."
+    )

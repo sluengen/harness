@@ -39,8 +39,11 @@ htmlcov/
 # .claude/worktrees/ is the Claude Code CLI's agent-dispatch root — different
 # owner, same hazard. Keep comments on their own lines: git does not treat a
 # trailing '#' on a pattern line as a comment.
+# harness:gate-ignore:begin
+.evidence/
 .worktrees/
 .claude/worktrees/
+# harness:gate-ignore:end
 
 # OS
 .DS_Store
@@ -72,8 +75,5 @@ gate.log
 # capture reads as a dirty worktree to any gate that counts untracked files;
 # swept up, `/build`'s `git add -A` in *Independent review* and in *Ship*
 # publishes binary captures of seeded state into permanent history of a public
-# repo. Unanchored, like `gate.log` and unlike `/design.md`: `.evidence` is a
-# distinctive dot-directory nothing tracks at any depth, so anchoring it to the
-# root would narrow the protection and buy nothing. Keep comments on their own
-# lines: git does not treat a trailing '#' on a pattern line as a comment.
-.evidence/
+# repo. The pattern lives in the gate-ignore block above with the worktree
+# paths that carry the same temp-index hazard.

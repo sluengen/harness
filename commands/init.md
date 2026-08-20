@@ -20,14 +20,24 @@ Turns a repository into one this process can run in. The plugin carries the skil
 
    Merge the key into an existing settings file rather than rewriting it, and leave the rest of the file byte-for-byte alone. Write the same fact in prose into the spine's repo section — the marketplace and the two install commands, `/plugin marketplace add sluengen/harness` then `/plugin install harness@harness` — so a host too old to read the key still tells a reader what to run.
 
-6. **Gate plumbing** — append `.evidence/` to `.gitignore` if absent; if the repo has no verify command yet, write a minimal `scripts/verify.sh` skeleton that runs the interview's lint/typecheck/test commands in order and calls `gate_marker.py write` on green, and copy the plugin's `scripts/gate_marker.py` beside it. A repo with its own gate keeps it — the only requirement is that green ends with a marker write.
+6. **Gate plumbing** — merge every pattern in this machine-identifiable block into `.gitignore`, appending only those absent so the operation is idempotent:
+
+   <!-- harness:gate-ignore:begin -->
+   ```gitignore
+   .evidence/
+   .worktrees/
+   .claude/worktrees/
+   ```
+   <!-- harness:gate-ignore:end -->
+
+   If the repo has no verify command yet, write a minimal `scripts/verify.sh` skeleton that runs the interview's lint/typecheck/test commands in order, runs `gate_marker.py preflight` before those commands, and calls `gate_marker.py write` on green. Copy the plugin's `scripts/gate_marker.py` beside it. A repo with its own gate keeps its commands, but add the preflight before its expensive stages and preserve the marker write at the end.
 7. **Report** what was written, what was skipped because it existed, and the one next step: file or pick a ticket and `/build` it.
 
 Hooks need no per-repo wiring — the plugin's `hooks/hooks.json` registers them at install. The spine's `branches:` block is what the push and stop guards read; that is why step 1's answers land there.
 
 ## `--refresh` — after a plugin update
 
-Replace the content between `<!-- spine:generated:begin … -->` and `<!-- spine:generated:end -->` in `CLAUDE.md` with the current template's generated block, touching nothing outside the markers. Report the version stamped in the new marker. The provenance declaration survives untouched — it lives in `.claude/settings.json`, which `--refresh` never writes; where it is *absent*, because the repo was hydrated before step 5 existed, report that and offer to write it. If the markers are missing (a hand-edited spine), do not guess: show the current generated block and ask the operator where it should go.
+Replace the content between `<!-- spine:generated:begin … -->` and `<!-- spine:generated:end -->` in `CLAUDE.md` with the current template's generated block, touching nothing outside the markers. Report the version stamped in the new marker. Merge the gate-ignore block from step 6 into `.gitignore` and add the gate preflight when the repo's verify command lacks it. The provenance declaration survives untouched — it lives in `.claude/settings.json`, which `--refresh` never writes; where it is *absent*, because the repo was hydrated before step 5 existed, report that and offer to write it. If the markers are missing (a hand-edited spine), do not guess: show the current generated block and ask the operator where it should go.
 
 ## What this never does
 

@@ -34,10 +34,7 @@ across all four loops — no loop gets an adjective the others don't.
   eyebrow style already established (`How we build · operating model`, `How
   the loops are triggered`) — never a slogan.
 - **Command names and syntax are never paraphrased.** `/build`, `/propose`,
-  `--deep` appear verbatim, in `<code>`, exactly as a user would type them —
-  this is also what lets
-  `tests/unit/test_landing_page.py::test_named_guidance_resolves_in_registry`
-  hold the page to the real registry.
+  `--refresh` appear verbatim, in `<code>`, exactly as a user would type them.
 - **Status is stated at the cadence and mechanism level**, e.g. "Automated ·
   the verify gate is the tool inside this loop", "Human-driven — the rudder
   for everything inside" — one line, no elaboration, always ending on who or
