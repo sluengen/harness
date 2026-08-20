@@ -53,14 +53,36 @@ function recentlyWarned() {
 function markWarned() { try { fs.writeFileSync(DEBOUNCE, String(Date.now())); } catch { /* best-effort: advisory debounce marker, ignore write failures */ } }
 function git(cmd) { try { return execSync(`git ${cmd}`, { stdio: ["ignore", "pipe", "ignore"] }).toString().trim(); } catch { return ""; } }
 
-function main() {
-  const input = JSON.parse(fs.readFileSync(0, "utf8"));
+function editedPaths(input) {
   const tool = input.tool_name || "";
-  if (tool !== "Write" && tool !== "Edit") return done();
+  const ti = input.tool_input || {};
+  if (tool === "Write" || tool === "Edit") return ti.file_path ? [ti.file_path] : [];
+  if (tool !== "apply_patch" || typeof ti.command !== "string") return [];
+  return Array.from(
+    ti.command.matchAll(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm),
+    (match) => match[1]
+  );
+}
 
-  const file = (input.tool_input && input.tool_input.file_path) || "";
-  if (!file || NON_SOURCE.some((p) => p.test(file))) return done();
-  if (recentlyWarned()) return done();
+let codexRuntime = false;
+
+function readStdin() {
+  const input = JSON.parse(fs.readFileSync(0, "utf8"));
+  codexRuntime = Object.prototype.hasOwnProperty.call(input, "turn_id");
+  return input;
+}
+
+function main() {
+  const input = readStdin();
+  const tool = input.tool_name || "";
+  const codex = codexRuntime;
+  if (tool !== "Write" && tool !== "Edit" && tool !== "apply_patch") return done(null, codex);
+
+  const files = editedPaths(input);
+  if (!files.length || files.every((file) => NON_SOURCE.some((p) => p.test(file)))) {
+    return done(null, codex);
+  }
+  if (recentlyWarned()) return done(null, codex);
 
   const branch = git("rev-parse --abbrev-ref HEAD");
   const isWorktree = git("rev-parse --is-inside-work-tree") === "true" &&
@@ -73,13 +95,24 @@ function main() {
     return done(
       `[WORKFLOW-GUARD] Editing source while ${why}. Per 'worktree-isolation', task work belongs ` +
       `on a feature branch in its own worktree, not on the default branch. If this is a deliberate ` +
-      `quick fix, carry on; otherwise branch first.`
+      `quick fix, carry on; otherwise branch first.`,
+      codex
     );
   }
-  done();
+  done(null, codex);
 }
 
-function done(additionalContext) {
+function done(additionalContext, codex) {
+  if (codex) {
+    if (!additionalContext) return;
+    process.stdout.write(JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        additionalContext,
+      },
+    }));
+    return;
+  }
   const out = { continue: true };
   if (additionalContext) out.additionalContext = additionalContext;
   process.stdout.write(JSON.stringify(out));
@@ -102,5 +135,5 @@ function failOpen(reason, err) {
 
 try { main(); } catch (err) {
   failOpen("crashed before it could decide", err);
-  process.stdout.write(JSON.stringify({ continue: true }));
+  if (!codexRuntime) process.stdout.write(JSON.stringify({ continue: true }));
 }

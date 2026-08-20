@@ -602,9 +602,13 @@ function failOpen(reason, err) {
   );
 }
 
+let codexRuntime = false;
+
 function readStdin() {
   try {
-    return JSON.parse(require("fs").readFileSync(0, "utf8"));
+    const input = JSON.parse(require("fs").readFileSync(0, "utf8"));
+    codexRuntime = Object.prototype.hasOwnProperty.call(input, "turn_id");
+    return input;
   } catch (err) {
     failOpen("could not parse the hook payload on stdin", err);
     return {};
@@ -630,16 +634,17 @@ function deny(command) {
 }
 
 /** Defer to the normal permission flow — do NOT pre-approve. */
-function passThrough() {
+function passThrough(input) {
+  if (input && Object.prototype.hasOwnProperty.call(input, "turn_id")) return;
   process.stdout.write(JSON.stringify({ continue: true }));
 }
 
 function main() {
   const input = readStdin();
-  if ((input.tool_name || "") !== "Bash") return passThrough();
+  if ((input.tool_name || "") !== "Bash") return passThrough(input);
   const command = (input.tool_input && input.tool_input.command) || "";
   if (forcePushAnywhere(command)) return deny(command);
-  passThrough();
+  passThrough(input);
 }
 
 if (require.main === module) {
@@ -649,7 +654,7 @@ if (require.main === module) {
     // Fail open: the deny globs remain the backstop; never wedge every Bash call.
     // Loudly, since #303 — a disarmed force-push guard must not look like a pass.
     failOpen("crashed before it could decide", err);
-    process.stdout.write(JSON.stringify({ continue: true }));
+    if (!codexRuntime) process.stdout.write(JSON.stringify({ continue: true }));
   }
 }
 

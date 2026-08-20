@@ -45,7 +45,7 @@ Three hooks refuse; two advise. A Stop hook refuses ending a turn that claims co
 
 {One paragraph: what this repo is, its parts, and what it is not. The executive summary a session needs before touching anything.}
 
-**Guidance provenance.** This repo runs the `harness` plugin from the `sluengen/harness` marketplace, declared machine-readably as `extraKnownMarketplaces` in `.claude/settings.json`. A clone whose host cannot read that key installs it by hand — `/plugin marketplace add sluengen/harness`, then `/plugin install harness@harness` — because without the plugin there are no commands, no skills, and no enforcement hooks.
+**Guidance provenance.** This repo runs the `harness` plugin from the `sluengen/harness` marketplace. Claude Code declares it as `extraKnownMarketplaces` in `.claude/settings.json` and installs it with `/plugin marketplace add sluengen/harness`, then `/plugin install harness@harness`. Codex installs the same release with `codex plugin marketplace add sluengen/harness`, then `codex plugin add harness@harness`. Marketplace registration is machine-local, so a fresh clone uses these commands when the plugin is absent.
 
 ```yaml
 repo:

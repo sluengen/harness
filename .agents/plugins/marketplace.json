@@ -1,0 +1,20 @@
+{
+  "name": "harness",
+  "interface": {
+    "displayName": "Harness"
+  },
+  "plugins": [
+    {
+      "name": "harness",
+      "source": {
+        "source": "local",
+        "path": "./"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}
