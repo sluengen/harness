@@ -10,7 +10,7 @@ The shape of a `/assess` report. The steward writes one dated file per pass; `as
 
 # {Scope} assessment — {YYYY-MM-DD}
 
-**Steward:** steward (`{scope}` scope{, `--deep` if run}) · **Base:** `{branch}` @ `{sha}` · **Gate:** {not run — read-only assessment / the verify result if anything changed}.
+**Steward:** steward (`{scope}` scope) · **Base:** `{branch}` @ `{sha}` · **Gate:** {not run — read-only assessment / the verify result if anything changed}.
 
 ## Why this pass
 
@@ -45,7 +45,7 @@ The class it prevents, the exact edit (file + change), and the finding(s) it gen
 
 ## Architecture report shape (the `architecture` scope)
 
-An `/assess architecture --deep` pass writes the *same* dated file (`assessments/<YYYY-MM-DD>-architecture.md`) in a **holistic** shape, not a finding list. Its value is the narrative; only the actionable risks leave as tickets (`commands/assess.md`). Use these sections — drop any a pass does not need, never pad to fill them:
+An `/assess architecture` pass writes the *same* dated file (`assessments/<YYYY-MM-DD>-architecture.md`) in a **holistic** shape, not a finding list. Its value is the narrative; only the actionable risks leave as tickets (`commands/assess.md`). Use these sections — drop any a pass does not need, never pad to fill them:
 
 - **Verdict** — the one- or two-paragraph headline: is the system shape still right for the product, and where does the risk concentrate?
 - **System map / current shape** — the boundaries and major components as they actually stand, so a reader can place everything that follows.
@@ -62,7 +62,7 @@ An `/assess architecture --deep` pass writes the *same* dated file (`assessments
 
 ## Process report shape (the `process` scope)
 
-An `/assess process --deep` pass writes the same dated file (`assessments/<YYYY-MM-DD>-process.md`) in a **subtractive** shape. Most of its content is candidates for removal, which go to the ledger rather than the queue (`commands/assess.md`), so the report — not the tracker — is where they are read. Sections:
+An `/assess process` pass writes the same dated file (`assessments/<YYYY-MM-DD>-process.md`) in a **subtractive** shape. Most of its content is candidates for removal, which go to the ledger rather than the queue (`commands/assess.md`), so the report — not the tracker — is where they are read. Sections:
 
 - **Verdict** — what the assurance machinery costs and whether that is buying anything, in a paragraph.
 - **Baseline** — the three numbers and the delta against the previous process report (`process-economy` → *The baseline*). Put this near the top; it is what a reader compares first.
