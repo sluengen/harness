@@ -1,6 +1,6 @@
 ---
 spec: architecture-principles
-last_updated: 2026-08-19  # #491: the gate's toolchain preflight probes what the suite resolves off PATH
+last_updated: 2026-08-20  # the /assess process scope and its process-economy domain standard
 ---
 
 # Architecture Principles
