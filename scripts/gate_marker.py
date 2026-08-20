@@ -51,6 +51,7 @@ deliberate, transcript-visible act rather than a silent omission.
 
 Subcommands::
 
+    gate_marker.py preflight          # reject Git-visible nested worktrees
     gate_marker.py write              # the gate's success path
     gate_marker.py tree               # the tree oid of the current worktree
     gate_marker.py path --tree <oid>  # where that tree's marker would live
@@ -184,6 +185,53 @@ def current_tree(cwd: Path) -> str:
         Path(index).unlink(missing_ok=True)
 
 
+def _git_status(args: Sequence[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+    """Run a Git predicate whose non-zero status can be an ordinary answer."""
+    return subprocess.run(  # noqa: S603 - shell-free argument vector
+        ["git", *args],  # noqa: S607 - same PATH contract as :func:`git`
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        env=os.environ,
+    )
+
+
+def preflight(cwd: Path) -> None:
+    """Refuse registered nested worktrees that Git can sweep into the root.
+
+    The check is deliberately before :func:`current_tree`: materializing the
+    tree is the operation whose ``git add -A`` would absorb a visible nested
+    worktree. Only other registered worktrees strictly beneath this checkout
+    are relevant; siblings and parents cannot be descendants of its index.
+    """
+    root = Path(git(["rev-parse", "--show-toplevel"], cwd)).resolve()
+    listing = git(["worktree", "list", "--porcelain", "-z"], cwd)
+    for field in listing.split("\0"):
+        if not field.startswith("worktree "):
+            continue
+        candidate = Path(field.removeprefix("worktree ")).resolve()
+        try:
+            candidate.relative_to(root)
+        except ValueError:
+            continue
+        if candidate == root:
+            continue
+        if not candidate.exists():
+            continue
+        ignored = _git_status(["check-ignore", "--quiet", "--", str(candidate)], root)
+        if ignored.returncode == 0:
+            continue
+        if ignored.returncode != 1:
+            raise GitError(
+                f"git check-ignore failed for registered nested worktree {candidate} "
+                f"(exit {ignored.returncode}): {ignored.stderr.strip()}"
+            )
+        raise GitError(
+            f"registered nested worktree is visible to git: {candidate}; ignore its "
+            "parent (normally .worktrees/ or .claude/worktrees/) before running the gate"
+        )
+
+
 def max_age_seconds(env: Mapping[str, str]) -> int:
     """The freshness bound ``env`` asks for, or the default.
 
@@ -262,6 +310,7 @@ def _branch(cwd: Path) -> str:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__ and __doc__.splitlines()[0])
     subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers.add_parser("preflight", help="reject Git-visible registered nested worktrees")
     subparsers.add_parser("write", help="record a green gate run over the current tree")
     subparsers.add_parser("tree", help="print the tree oid of the current worktree")
     path_parser = subparsers.add_parser("path", help="print where a tree's marker lives")
@@ -273,7 +322,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     cwd = Path.cwd()
     try:
-        if args.command == "write":
+        if args.command == "preflight":
+            preflight(cwd)
+        elif args.command == "write":
             path = write_marker(cwd)
             # The filename is the claim, so the announcement reads it back off
             # the path rather than recomputing the tree — two computations here

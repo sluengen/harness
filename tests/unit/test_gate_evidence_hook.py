@@ -94,10 +94,13 @@ group — its assertions still hold, for the same mechanical reason, but what it
 covers is the fallback and not the path a real session takes.
 """
 
+# size: one executable Stop-hook AC matrix; splits obscure shared real-Git fixture/mutation links
+
 from __future__ import annotations
 
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -594,6 +597,129 @@ def test_committed_work_ahead_of_the_integration_branch_still_counts(tmp_path: P
     _commit(root, "b.txt", "committed but ungated\n")
 
     assert _blocked(_run(root, _transcript(tmp_path, CLAIM)))
+
+
+def _diverged_task(tmp_path: Path, *, dirty: bool) -> Path:
+    """A task branch and ``dev`` with one exclusive commit each."""
+    root = tmp_path / ("dirty-diverged" if dirty else "clean-diverged")
+    root.mkdir()
+    _git(root, "init", "-q", "--initial-branch=dev")
+    _git(root, "config", "user.email", "t@example.com")
+    _git(root, "config", "user.name", "t")
+    _commit(root, "a.txt", "base\n")
+    (root / "CONTEXT.md").write_text(_DECLARES_DEV)
+    _git(root, "add", "CONTEXT.md")
+    _git(root, "commit", "-q", "-m", "context")
+    _git(root, "checkout", "-q", "-b", "task/diverged")
+    _commit(root, "task.txt", "task side\n")
+    _git(root, "checkout", "-q", "dev")
+    _commit(root, "integration.txt", "integration side\n")
+    _git(root, "checkout", "-q", "task/diverged")
+    if dirty:
+        (root / "task.txt").write_text("dirty task side\n")
+    return root
+
+
+def test_clean_diverged_work_is_not_claimed_by_the_advisory_stop_guard(tmp_path: Path) -> None:
+    """#494 / ERP-324: divergence is not evidence that this session made work."""
+    root = _diverged_task(tmp_path, dirty=False)
+
+    assert _run_real(root, tmp_path) == {"continue": True}
+
+
+def test_dirty_diverged_work_still_counts(tmp_path: Path) -> None:
+    """Dirty bytes are session work regardless of the commit graph shape."""
+    root = _diverged_task(tmp_path, dirty=True)
+
+    assert _blocked(_run_real(root, tmp_path))
+
+
+def test_clean_branch_behind_integration_is_not_claimed(tmp_path: Path) -> None:
+    """A clean checkout behind ``dev`` carries no task work to certify."""
+    root = tmp_path / "behind"
+    root.mkdir()
+    _git(root, "init", "-q", "--initial-branch=dev")
+    _git(root, "config", "user.email", "t@example.com")
+    _git(root, "config", "user.name", "t")
+    _commit(root, "a.txt", "base\n")
+    (root / "CONTEXT.md").write_text(_DECLARES_DEV)
+    _git(root, "add", "CONTEXT.md")
+    _git(root, "commit", "-q", "-m", "context")
+    _git(root, "branch", "task/behind")
+    _commit(root, "later.txt", "integration moved\n")
+    _git(root, "checkout", "-q", "task/behind")
+
+    assert _run_real(root, tmp_path) == {"continue": True}
+
+
+def _git_argv_log(tmp_path: Path) -> tuple[dict[str, str], Path]:
+    """Intercept the hook's bare ``git`` spawn and record its argument vectors."""
+    real = shutil.which("git")
+    assert real is not None
+    shim = tmp_path / "git-shim"
+    shim.mkdir()
+    log = tmp_path / "git-argv.log"
+    executable = shim / "git"
+    executable.write_text(
+        "#!/bin/sh\n"
+        f"printf '%s\\n' \"$*\" >> {shlex.quote(str(log))}\n"
+        f'exec {shlex.quote(real)} "$@"\n'
+    )
+    executable.chmod(0o755)
+    return {"PATH": f"{shim}{os.pathsep}{os.environ['PATH']}"}, log
+
+
+def test_primary_checkout_at_a_diverged_release_tip_skips_tree_materialization(
+    tmp_path: Path,
+) -> None:
+    """#494 / ERP-349: the live clean, divergent release-tip topology is exempt."""
+    root = tmp_path / "primary-release-tip"
+    root.mkdir()
+    _git(root, "init", "-q", "--initial-branch=dev")
+    _git(root, "config", "user.email", "t@example.com")
+    _git(root, "config", "user.name", "t")
+    (root / "CONTEXT.md").write_text(
+        "```yaml\nbranches:\n  integration: dev\n  release: main\n```\n"
+    )
+    _git(root, "add", "CONTEXT.md")
+    _git(root, "commit", "-q", "-m", "base")
+    _git(root, "checkout", "-q", "-b", "main")
+    _commit(root, "release.txt", "release side\n")
+    _git(root, "checkout", "-q", "dev")
+    _commit(root, "integration.txt", "integration side\n")
+    _git(root, "checkout", "-q", "-b", "claude/session", "main")
+    env, log = _git_argv_log(tmp_path)
+
+    head = _git(root, "rev-parse", "HEAD")
+    release = _git(root, "rev-parse", "main")
+    integration = _git(root, "rev-parse", "dev")
+    merge_base = _git(root, "merge-base", "main", "dev")
+    assert _git(root, "status", "--porcelain") == ""
+    assert head == release
+    assert merge_base not in {release, integration}
+    assert _run_real(root, tmp_path, env=env) == {"continue": True}
+    assert not any(line == "add -A" for line in log.read_text().splitlines())
+
+
+def test_linked_worktree_at_a_protected_tip_gets_no_primary_shortcut(tmp_path: Path) -> None:
+    """The protected-tip shortcut belongs only to the repository's primary checkout."""
+    root = tmp_path / "linked-release-tip"
+    root.mkdir()
+    _git(root, "init", "-q", "--initial-branch=dev")
+    _git(root, "config", "user.email", "t@example.com")
+    _git(root, "config", "user.name", "t")
+    (root / "CONTEXT.md").write_text(
+        "```yaml\nbranches:\n  integration: dev\n  release: main\n```\n"
+    )
+    (root / ".gitignore").write_text(".worktrees/\n")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "base")
+    _git(root, "branch", "main")
+    linked = root / ".worktrees" / "session"
+    _git(root, "worktree", "add", "-q", "-b", "claude/session", str(linked), "main")
+    (linked / "untracked.txt").write_text("real task work\n")
+
+    assert _blocked(_run_real(linked, tmp_path))
 
 
 # --- AC-4, continued: resolving the integration branch ------------------------

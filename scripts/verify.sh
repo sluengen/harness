@@ -11,6 +11,16 @@ set -euo pipefail
 # ran and the tree is red". A red tree still exits the tool's own non-zero
 # code (1).
 GATE_UNRUNNABLE_EXIT=97
+
+# A registered worktree nested below this checkout is safe only when Git
+# ignores it. Otherwise every temp-index `git add -A` can absorb the agent's
+# whole checkout and certify a tree nobody intended to ship (#494 / ERP-349).
+# This is an infrastructure precondition and runs before every expensive stage.
+if ! uv run --extra dev python scripts/gate_marker.py preflight; then
+  echo "gate precondition failed: a registered nested worktree is visible to git — ignore .worktrees/ and .claude/worktrees/ before verification (infrastructure, not a code failure)" >&2
+  exit "$GATE_UNRUNNABLE_EXIT"
+fi
+
 for _tool in ruff mypy pytest; do
   if ! uv run --extra dev "$_tool" --version >/dev/null 2>&1; then
     echo "gate precondition failed: '$_tool' is not runnable under 'uv run --extra dev' — toolchain unavailable (infrastructure, not a code failure)" >&2

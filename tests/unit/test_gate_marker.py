@@ -49,6 +49,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -205,6 +206,79 @@ def test_linked_worktrees_agree_on_the_marker_path(repo: Path, tmp_path: Path) -
     _git(repo, "worktree", "add", "-q", "--detach", str(linked))
 
     assert gm.marker_path("0" * 40, linked) == gm.marker_path("0" * 40, repo)
+
+
+# --- nested-worktree preflight ------------------------------------------------
+
+
+def test_preflight_refuses_a_registered_nested_worktree_visible_to_git(
+    repo: Path,
+) -> None:
+    """#494 / ERP-349: ``git add -A`` must not sweep in an agent worktree."""
+    nested = repo / ".worktrees" / "task"
+    _git(repo, "worktree", "add", "-q", "-b", "task/nested", str(nested))
+    assert "?? .worktrees/" in _git(repo, "status", "--porcelain")
+
+    with pytest.raises(gm.GitError, match=r"registered nested worktree.*\.worktrees/task"):
+        gm.preflight(repo)
+
+    assert not gm.marker_dir(repo).exists(), "a refused preflight must write no marker"
+
+
+def test_preflight_treats_a_newline_in_a_registered_path_as_path_data(repo: Path) -> None:
+    """Porcelain framing, not line splitting, owns untrusted worktree paths."""
+    nested = repo / ".worktrees" / "agent\ncontinued"
+    _git(repo, "worktree", "add", "-q", "-b", "task/newline", str(nested))
+
+    with pytest.raises(gm.GitError, match="registered nested worktree is visible") as caught:
+        gm.preflight(repo)
+    assert str(nested) in str(caught.value)
+
+
+def test_preflight_allows_an_ignored_registered_nested_worktree(repo: Path) -> None:
+    """The same registered layout is safe once Git excludes its parent."""
+    (repo / ".gitignore").write_text(".worktrees/\n")
+    _git(repo, "add", ".gitignore")
+    _git(repo, "commit", "-q", "-m", "ignore worktrees")
+    nested = repo / ".worktrees" / "task"
+    _git(repo, "worktree", "add", "-q", "-b", "task/nested", str(nested))
+
+    gm.preflight(repo)
+
+
+def test_preflight_allows_an_absent_prunable_registered_nested_worktree(repo: Path) -> None:
+    """A stale registration cannot be swept into the candidate tree."""
+    nested = repo / ".worktrees" / "gone"
+    _git(repo, "worktree", "add", "-q", "-b", "task/gone", str(nested))
+    shutil.rmtree(nested)
+    listing = _git(repo, "worktree", "list", "--porcelain")
+    assert f"worktree {nested}" in listing
+    assert "prunable " in listing
+
+    gm.preflight(repo)
+
+
+def test_preflight_fails_closed_when_git_cannot_decide_ignore_status(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An infrastructure query error is not evidence that the descendant is safe."""
+    nested = repo / ".worktrees" / "task"
+    _git(repo, "worktree", "add", "-q", "-b", "task/nested", str(nested))
+    failed = subprocess.CompletedProcess(["git", "check-ignore"], 128, "", "bad index")
+    monkeypatch.setattr(gm, "_git_status", lambda _args, _cwd: failed)
+
+    with pytest.raises(gm.GitError, match="git check-ignore failed"):
+        gm.preflight(repo)
+
+
+def test_the_preflight_subcommand_reports_the_visible_nested_path(repo: Path) -> None:
+    nested = repo / ".claude" / "worktrees" / "agent"
+    _git(repo, "worktree", "add", "-q", "-b", "task/agent", str(nested))
+
+    proc = _cli(repo, "preflight")
+
+    assert proc.returncode != 0
+    assert str(nested) in proc.stderr
 
 
 # --- the payload --------------------------------------------------------------

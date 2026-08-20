@@ -59,13 +59,48 @@ For a user-facing change, also require `ux-design`; when `layers.design_system` 
 
 **Judge.** Compare each capture against the reference or applicable archetype and `ux-design` principles; inspect the implementation too — screenshots do not replace code review. Fix, re-render, retain only the final evidence. Revert seeded data and capture-only code before verification.
 
-### Verify
+### Implementation evidence
 
-Run the repo's verify command in the worktree and read its output. A non-zero result becomes a finding and returns to implementation. Every stated measurable criterion needs its own measuring test; the gate alone is not evidence for it.
+Run focused tests for every criterion and the repo's lint command, and read their output. A non-zero result becomes a finding and returns to implementation. Every stated measurable criterion needs its own measuring test; a later full gate alone is not evidence for it. Do not spend the certifying full gate yet: the reviewer-owned as-built record and a possible reconciliation still change the candidate tree.
 
-### Reconcile with the integration branch — before certification, not after
+### The reviewed lifecycle
 
-Fetch the integration branch and merge it into the candidate **now**, before any certifying gate or verdict, so the tree that is verified and reviewed is already the tree that will ship. Certifying first and reconciling after leaves a review-round-wide window in which the base moves and the whole round is repaid; reconciling first narrows that window to the push (measured before the reordering: one in five shipped commits paid a reconcile, and four tickets in fourteen days paid twice).
+For `simple` and `complex`, the structured sequence below is normative. The `authority` field names the system allowed to act at that stage; do not insert an unlisted tracker action into a Git-only interval.
+
+<!-- harness:build-lifecycle:begin -->
+- stage: in_review
+  authority: tracker
+- stage: substantive_review
+  authority: reviewer
+- stage: reconcile
+  authority: git
+- stage: delta_review
+  authority: reviewer
+- stage: full_gate
+  authority: gate
+- stage: pass
+  authority: reviewer
+- stage: tree_compare
+  authority: git
+- stage: push
+  authority: git
+- stage: tracker_done
+  authority: tracker
+<!-- harness:build-lifecycle:end -->
+
+### Begin independent review
+
+Transition the ticket to In Review through the provider skill **before** launching the reviewer. Stage all changes and capture the tree for substantive review: `git add -A && git write-tree` → `reviewed_tree`.
+
+For `simple` and `complex`, launch a reviewer sub-agent in a **fresh context**. Give it the ticket and current change spec, design artifact when present, staged diff, focused-test and lint output, visual evidence when present, and `reviewed_tree` — never the implementer's conversation. The reviewer follows `review-discipline`: Stage 1 checks criteria, design, scope, and tests; Stage 2 checks correctness, security, structure, and principles. For a diff carrying a guard, a prose predicate, a mutation table, or a deletion pass, the reviewer also applies `skills/review-discipline/references/craft.md`.
+
+FAIL and DEFER keep their spine meanings and follow the review-cycle rules below. When substantive review has no findings, the reviewer — never the implementer or orchestrator — writes the as-built spec in the candidate, stages it, and reports **Ready for final binding**. That phrase is an intermediate state, not a fourth verdict and not permission to ship.
+
+With `--engine codex`: run the independent Codex reviewer from the worktree in a read-only sandbox on the same review packet. A usage-limit message triggers the Claude fallback once; another malformed invocation is a review finding. The final result still must be one of PASS, FAIL, or DEFER; readiness is not parsed as a verdict.
+
+### Reconcile with the integration branch — immediately before final binding
+
+After the reviewer reports readiness, fetch the integration branch and merge it into the candidate. This placement removes the review-wide base-movement window: reconciliation happens after substantive review and the reviewer-owned record, adjacent to the full gate and verdict that bind the result.
 
 The rules, and this is their only home:
 
@@ -75,26 +110,25 @@ The rules, and this is their only home:
 - **The monotonic-field trap.** A field both sides advanced independently — a version number, a migration ordinal, a sequence id — converges on identical text, so the merge raises no conflict marker and the merged tree is a third state shipping under a value each side already claimed. Identical text is not agreement: treat a same-valued monotonic field as a collision to detect, and advance past both sides.
 - **The only escalation is a genuine functional conflict** — both changes individually correct but wanting incompatible behaviour, a design call. Hold the ticket (`input` label, assigned) with a comment naming the two behaviours in tension. A textual overlap with an evident resolution is not that case.
 
+If reconciliation changes the tree, return the reconciliation delta to the reviewer. The reviewer examines both the delta and its implications for the whole change, resolves any findings through the normal cycle, and updates the as-built record when the integrated behaviour changed. No tree identity, marker, readiness report, or verdict is inherited across this change.
+
 ### Certify trivial work
 
-For `trivial`, stage the complete candidate and capture its identity: `git add -A && git write-tree` → `certified_tree`. Run `assurance.trivial_certify` against the staged diff and bind its certificate to `certified_tree`. If the command is absent, fails, or the diff is ineligible, upgrade to `simple` and continue with independent review. Any change after `certified_tree` invalidates the certificate and upgrades the run. No one writes an as-built record on a `trivial` run, and none is missing — the certifier rejects any as-built-record surface, so a certified diff carries no shipped behaviour to record.
+For `trivial`, there is no substantive or delta review and no as-built record. Reconcile first under the same two-attempt rules, run the complete gate, then stage the complete candidate and capture its identity: `git add -A && git write-tree` → `certified_tree`. Run `assurance.trivial_certify` against the staged diff and bind its certificate to `certified_tree`. If the command is absent, fails, or the diff is ineligible, upgrade to `simple` and enter the reviewed lifecycle at In Review. Any change after `certified_tree` invalidates the certificate and upgrades the run.
 
-### Independent review
+### Full gate and final verdict
 
-Stage all changes and capture the tree to review: `git add -A && git write-tree` → `reviewed_tree`.
+For reviewed work, stage after reconciliation and any delta-review edits, capture `reviewed_tree`, and run the repo's complete verify command over that exact tree. Read the full output. A non-zero result returns to implementation as a finding; any edit then re-enters substantive review as required and repeats reconciliation. The marker from a different tree is never evidence for this one.
 
-For `simple` and `complex`, launch a reviewer sub-agent in a **fresh context**. Give it the ticket and current change spec, design artifact when present, staged diff, verify output, visual evidence when present, and `reviewed_tree` — never the implementer's conversation. The reviewer follows `review-discipline`: Stage 1 checks criteria, design, scope, and tests; Stage 2 checks correctness, security, structure, and principles. For a diff carrying a guard, a prose predicate, a mutation table, or a deletion pass, the reviewer also applies `skills/review-discipline/references/craft.md`.
-
-The reviewer — never the implementer or orchestrator — records the as-built spec in the candidate when heading for PASS (`review-discipline`'s final-evidence ordering), re-stages, re-captures `reviewed_tree`, and re-runs the certifying gate over that tree. Its verdict binds the resulting tree; a PASS over any other tree is a FAIL. A UI reviewer inspects the visual evidence and reports missing, misleading, or inconsistent captures as a finding.
-
-With `--engine codex`: run the independent Codex reviewer from the worktree in a read-only sandbox on the same review packet; parse its `SUBMIT:` result as PASS, FAIL, or DEFER — the three verdicts the spine defines, and the only three. A usage-limit message triggers the Claude fallback once; another malformed invocation is a review finding, not a PASS.
+Give the reviewer the final `reviewed_tree`, fresh full-gate output, and reconciliation delta when one exists. The reviewer issues PASS only over that tree; PASS over any other tree is FAIL. A UI reviewer also checks the visual evidence. This is the terminal verdict — **Ready for final binding** earlier was not one.
 
 ## 3. Ship
 
 A `trivial` run ships `certified_tree` where a reviewed run ships `reviewed_tree` — the same identity comparison, the same refusal on mismatch.
 
-- **PASS:** commit the candidate, then compare identity: `git rev-parse HEAD^{tree}` must equal the tree the assurance stage bound. The comparison is tree to tree — the same object the gate marker is named after, so a commit that rewrites no bytes voids nothing. On mismatch, never integrate: content landed after the verdict, so return to the stage that produced the tree. On equality: transition to In Review, integrate per the branch model — read `branches:` in the spine; fast-forward or PR as the repo declares, never a force-push, never a direct push to a release branch unless declared — push, post the merge link, transition to Done through the provider skill (`tracker: none` skips tracker steps and reports them skipped; it never suppresses the rest). Then remove the worktree and prune.
-- **Post-verdict drift:** if the integration branch moved again between verdict and push, the certified tree is stale — re-run the reconcile step above (its bound counts these attempts too), then re-gate and re-review to bind a fresh pass. Reconciliation does not bypass the preconditions; it re-enters them.
+- **PASS:** commit the candidate, compare `git rev-parse HEAD^{tree}` with the tree the assurance stage bound, and push immediately as one uninterrupted sequence. The comparison is tree to tree — the same object the gate marker is named after, so a commit that rewrites no bytes voids nothing. On mismatch, never integrate: content landed after the verdict, so return to the stage that produced the tree. On equality, integrate per the branch model — read `branches:` in the spine; fast-forward or PR as the repo declares, never a force-push, never a direct push to a release branch unless declared. Make no status transition, comment, or other external write between PASS and the push.
+- **After a successful push:** post the merge link and transition to Done through the provider skill (`tracker: none` skips these steps and reports them skipped; it never suppresses the rest). Then close the ticket where the provider requires it, remove the worktree, and prune.
+- **Post-verdict drift:** if the integration branch moves again and the push loses the race, re-enter reconciliation (its bound counts the attempt), delta review, the complete gate, and the final verdict before trying again. No evidence or verdict follows the old tree into that cycle.
 - **FAIL:** pass the cold, actionable findings to a new implementation sub-agent. Re-run the required assurance stages; a changed diff invalidates old evidence.
 - **DEFER:** sort the deferred findings by class (`review-discipline` — *bugs are filed; improvements are proposed*). A **bug** is filed through the provider skill with explicit Todo placement and exactly one assurance level per `spec-authoring` → *Choosing assurance*. An **improvement** goes in the run report's Proposals section and is appended to the proposals ledger (`review-discipline` → `references/proposals-ledger.md`), where `/digest` surfaces it and `/assess` decides it. Then integrate nothing and preserve the work exactly as section 4 prescribes: a DEFER says the ticket cannot ship as scoped, and an unshipped tree left uncommitted in a worktree is lost to the operator the run is holding it for.
 
