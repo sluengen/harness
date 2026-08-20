@@ -11,6 +11,11 @@ Entries are chronological (oldest first); each new fold appends below. Format:
 
 `- <YYYY-MM-DD> · <scope> · <one-clause verdict> · findings: <resolved / ticketed>`
 
+A `process` entry carries a fourth field — `· baseline: <assurance:product ratio> /
+<gate wall-clock> / <unjustified checks>` — so that scope's tracked quantities
+survive the fold (`templates/assessment.md`). No `process` pass has run yet, so no
+entry below carries one.
+
 **Each entry preserves the scope vocabulary in force when that pass ran**, so
 `system`, `code-deep`, and the same-day `-am` / `-pm` / `-eve` stems appear below
 even though ADR 0015 narrowed `/assess` to `code | architecture`. They are

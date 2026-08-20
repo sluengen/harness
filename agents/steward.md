@@ -18,7 +18,8 @@ domain standards:
 - `code`: `engineering` and `architecture`; add `design-system` only when its
   layer is enabled;
 - `architecture`: `architecture` and `engineering`;
-- `process`: `process-economy` and `engineering`.
+- `process`: `process-economy`, `engineering`, and `review-discipline` — the last for
+  `references/craft.md`, which holds the vacuity catalogue the sweep works from.
 
 Follow those skills and `commands/assess.md` for the detailed lenses, read path,
 filing behaviour, and boundaries. A single instance in the

@@ -16,7 +16,9 @@ The inverse is the pass's most valuable output and the one nobody goes looking f
 
 ## Ground 1 — vacuous checks
 
-A check that cannot fail for the reason it claims. One detection method governs all of them: **name the edit that should fail it, make that edit, and watch.** The shapes worth sweeping for:
+A check that cannot fail for the reason it claims. One detection method governs all of them: **name the edit that should fail it, make that edit, and watch.**
+
+**The catalogue of these shapes lives in `review-discipline` → `references/craft.md`**, which carries each one with the falsifying example that makes it recognisable, and admits a new entry only by operator call at the drain. Read it before sweeping, and propose additions there rather than re-homing an entry here. The split between the two files is *audience*, not subject: `craft.md` is written to recognise a shape in the diff in front of you, one at a time; the list below is the sweep order for a whole suite, where the question is coverage of the shapes rather than depth on any one. Same defects, arranged for a pass that reads everything.
 
 - **Green from birth** — asserts behaviour it never saw absent; no RED was ever observed for it.
 - **Synthesized inputs** — driven by events no production path emits, so it exercises a branch the live system never reaches.
@@ -54,11 +56,13 @@ Rank every candidate by **cost per run × runs per week**, so the report is orde
 
 ## The baseline — what makes this ongoing
 
-Close every pass with three numbers, and with the delta against the previous process report (retention keeps the latest report per scope, so it is always findable):
+Close every pass with three numbers and the delta against the previous one. **A number is comparable only if its derivation is fixed, so the derivation is part of the number**: record the command beside the value, and reuse that command next pass. Where a repo's layout makes a different command right, record *that* one and hold it stable — a delta between two hand-rolled measurements measures the measuring, not the suite. This repo has already produced the failure: ADR 0017 and `specs/features/plugin-surface.md` state the same assurance-lines figure computed two ways, one including the suite's helper modules and one excluding them.
 
-1. **Assurance lines per product line**, by area.
-2. **Gate wall-clock**, from this pass's own runs.
-3. **Checks whose failure-reason nobody could name** — the ground-1 and burden-of-proof count.
+1. **Assurance lines per product line**, by area — e.g. `git ls-files 'tests/**/*.py' | xargs wc -l` against the equivalent over the product globs. State the treatment of shared helper modules explicitly and keep it constant.
+2. **Gate wall-clock**, from this pass's own runs on an otherwise idle host: the total, plus the slowest stage. Record the host and worker count, because Ground 3 is precisely about the contention that moves this number on its own.
+3. **Checks whose failure-reason nobody could name** — the ground-1 and burden-of-proof count, over the same subject set each pass.
+
+The series outlives the reports: retention folds a superseded report into `assessments/LOG.md`, whose entry shape carries these three numbers for a `process` pass (`templates/assessment.md`) so the trend survives past the one prior report the directory keeps.
 
 A pass whose numbers have not moved since the last one is reporting on the drain, not on the suite: the candidates were raised and never decided. Say that plainly rather than re-raising them.
 
@@ -81,10 +85,10 @@ The split carries more weight here than in any other scope: a pass that filed ea
 
 ## Proving a candidate
 
-Before proposing a deletion, perform the mutation: name the edit that should fail the check, make it in a scratch tree, and record what happened. "I could not see what this covers" is not evidence; "deleting the condition it guards leaves the suite green" is. `scripts/mutate.py` mechanises this where a repo has it (usage in `CONTRIBUTING.md`). A candidate you could not disprove stays, and the report says so.
+Before proposing a deletion, perform the mutation: name the edit that should fail the check, make it in a scratch tree, and record what happened. "I could not see what this covers" is not evidence; "deleting the condition it guards leaves the suite green" is. `scripts/mutate.py` mechanises this where a repo has it (usage in `CONTRIBUTING.md`). The discipline itself — what counts as a killing mutation, and why mutating a rule into its opposite beats deleting it out of existence — is `craft.md` → *Mutation discipline*, and is not restated here. A candidate you could not disprove stays, and the report says so.
 
 ## Boundaries
 
-- Plugin-owned skills, commands, agents, and hooks are upstream and out of scope — except to note where a repo-local check duplicates one, which is a finding for this repo.
+- Plugin-owned skills, commands, agents, and hooks are upstream and out of scope — except to note where a repo-local check duplicates one, which is a finding for this repo. **This binds a *consuming* repo.** In the repo that **sources** the plugin those directories are the product, not upstream — `hooks/` in particular is the largest block of executable assurance machinery it owns — and they are swept like anything else.
 - Read-only. Do not delete, fix, or tidy anything; the report and its filings are the deliverable.
 - Work already in flight — open tickets, an active migration — is not re-found.
