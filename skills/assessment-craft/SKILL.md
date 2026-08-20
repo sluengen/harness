@@ -4,7 +4,7 @@ description: Use when running a periodic codebase audit as the steward (via /ass
 ---
 # Assessment Craft
 
-Shared knowledge for the `steward` whenever it periodically audits a codebase. Defines the finding bar, how a finding is placed on the blocking×size 2×2, and the insight-vs-finding test. The methodology for every `/assess` scope; the per-scope domain standards live in their own skills — the code-domain skills for `code`, `architecture` and `engineering` for `architecture`.
+Shared knowledge for the `steward` whenever it periodically audits a codebase. Defines the finding bar, how a finding is placed on the blocking×size 2×2, and the insight-vs-finding test. The methodology for every `/assess` scope; the per-scope domain standards live in their own skills — the code-domain skills for `code`, `architecture` and `engineering` for `architecture`, `process-economy` for `process`.
 
 ## Posture — signal, not noise
 
@@ -47,9 +47,11 @@ Rules:
 - **Zero insights is legitimate.** Say "no insights this cycle" rather than inventing one.
 - **An insight is proposed, not filed.** It is an improvement — an edit that would make the guidance better, not a place the tree contradicts itself today — so it goes to the proposals ledger and is decided when `/assess` drains it (`review-discipline` → *bugs are filed; improvements are proposed*). The cap above still binds what you write; the ledger decides what is built.
 
-## Narrative scopes — when a report is more than findings
+## When a report is not just a finding list
 
 Most scopes are finding engines: the report *is* the list of findings, and a clean pass files nothing. The `architecture` scope (`/assess architecture --deep`) is different — it is a **holistic judgement**, and its report carries narrative sections that are **not** findings and are **not** filed as tickets: the verdict, what is working, the positive bets and trade-offs to preserve (`templates/assessment.md`, the architecture report shape). Recording them is the point of the pass. The finding bar above still governs the *actionable* part: every architecture **risk** you do file still needs the **four parts** — evidence first, a concrete fix, an honest blocking call. A narrative section is exempt from the four-part bar; a filed risk is not. A useful architecture pass can file **zero** tickets while still delivering a verdict and a watchlist.
+
+The `process` scope (`/assess process --deep`) departs in the opposite direction: it is **subtractive**, and most of what it produces is a deletion or simplification candidate. Those are improvements, not contradictions, so they are **ledger entries rather than tickets** — and the *three-insight cap above does not bind them*. The cap exists so a pass prioritises its guidance edits; a deletion candidate is not a guidance edit but the pass's ordinary output, and capping it would hide the accumulation the scope exists to measure. Its finding tail — a check asserting something false, an unowned hole over a live risk — is filed and still needs the four parts. `process-economy` owns the lens; `commands/assess.md` owns which door each result goes through.
 
 ## What you are not looking for
 
@@ -59,4 +61,4 @@ When unjustified complexity *is* a finding, the `code` scope names it with the `
 
 ## Output
 
-Write a dated report in the `templates/assessment.md` format. The `assess` command files the **findings** and nothing else — an insight is an improvement, so it is appended to the proposals ledger instead of being filed (above). For each finding use an ID prefixed by the steward's domain (`CODE-`, `ARCH-`, `SYSTEM-`); insights append `-INSIGHT`. Zero findings is a legitimate, stated outcome — do not invent findings to fill the report.
+Write a dated report in the `templates/assessment.md` format. The `assess` command files the **findings** and nothing else — an insight is an improvement, so it is appended to the proposals ledger instead of being filed (above). For each finding use an ID prefixed by the steward's domain (`CODE-`, `ARCH-`, `PROC-`); insights append `-INSIGHT`. Zero findings is a legitimate, stated outcome — do not invent findings to fill the report.

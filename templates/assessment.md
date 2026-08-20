@@ -22,7 +22,7 @@ The one- or two-paragraph headline — the state of the scope and where the risk
 
 ## Findings
 
-Each finding is a level-3 heading carrying its ID, a one-line title, and (when decided) a disposition. The ID is prefixed by scope — `CODE-` / `ARCH-` — and numbered within the pass.
+Each finding is a level-3 heading carrying its ID, a one-line title, and (when decided) a disposition. The ID is prefixed by scope — `CODE-` / `ARCH-` / `PROC-` — and numbered within the pass.
 
 ### {SCOPE}-{n} — {one-line title}
 
@@ -60,4 +60,28 @@ An `/assess architecture --deep` pass writes the *same* dated file (`assessments
 
 ---
 
-After the report is written, the `/assess` command files each finding as a tracker issue, appends each insight to the proposals ledger, and commits the dated report (`commands/assess.md`). For the `architecture` scope it files **only** the actionable risks and recommendations — never the narrative sections.
+## Process report shape (the `process` scope)
+
+An `/assess process --deep` pass writes the same dated file (`assessments/<YYYY-MM-DD>-process.md`) in a **subtractive** shape. Most of its content is candidates for removal, which go to the ledger rather than the queue (`commands/assess.md`), so the report — not the tracker — is where they are read. Sections:
+
+- **Verdict** — what the assurance machinery costs and whether that is buying anything, in a paragraph.
+- **Baseline** — the three numbers and the delta against the previous process report (`process-economy` → *The baseline*). Put this near the top; it is what a reader compares first.
+
+  | Measure | This pass | Previous | Δ |
+  |---|---|---|---|
+  | Assurance lines per product line | | | |
+  | Gate wall-clock | | | |
+  | Checks with no nameable failure-reason | | | |
+
+- **Findings** — the contradictions only, four parts each, IDs prefixed `PROC-`. These *are* filed.
+- **Deletion candidates** — a table: what, where, the mutation performed and what it showed, and what would be lost. **Ledger entries, not tickets.**
+- **Efficiency candidates** — a table ranked by **minutes recoverable per week** (cost per run × runs per week). **Ledger entries, not tickets.**
+- **Undefended incidents** — reverts, hotfixes, and post-merge bugs from the repo's history that no current check would catch. Each is either a finding or a ledger entry; say which.
+- **Held** — candidates the pass could not disprove, and why they stay. Recording these stops the next pass re-raising them.
+- **Not assessed** — what this pass deliberately did not cover.
+
+**A pass whose baseline has not moved reports on the drain, not the suite** — say so plainly rather than re-raising undecided candidates as though they were new.
+
+---
+
+After the report is written, the `/assess` command files each finding as a tracker issue, appends each insight to the proposals ledger, and commits the dated report (`commands/assess.md`). For the `architecture` scope it files **only** the actionable risks and recommendations — never the narrative sections. For the `process` scope it files **only** the findings; every deletion and efficiency candidate is a ledger entry decided at the drain.
