@@ -1,7 +1,7 @@
 ---
 feature: plugin-surface
 status: implemented
-last_updated: 2026-08-20
+last_updated: 2026-08-21
 ---
 
 # The plugin surface
@@ -12,7 +12,7 @@ last_updated: 2026-08-20
 
 ### One plugin, one version
 
-The repository root **is** the plugin: `.claude-plugin/plugin.json` names it `harness` at one semver (`5.0.0` at this record's date), and `.claude-plugin/marketplace.json` makes the repo its own marketplace (`source: "./"`). There are no per-file versions, no `guidance:` headers, no `registry.yaml`, and no consumer lock file — the whole distribution channel ADR 0017 retired. Commands arrive runtime-namespaced (`/harness:build`); in practice only `/harness:init` needs the prefix spoken, to avoid the host's native `/init`.
+The repository root **is** the plugin: `.claude-plugin/plugin.json` names it `harness` at one semver (`5.1.0` at this record's date), and `.claude-plugin/marketplace.json` makes the repo its own marketplace (`source: "./"`). The manifest is the updater-facing selector; the generated markers in `templates/spine.md`, `CLAUDE.md`, and compiled `AGENTS.md` carry the same version. `tests/unit/test_spine_template_parity.py` reads the indexed manifest and canonical spines, so a release with mismatched markers fails before it ships. There are no per-file versions, no `guidance:` headers, no `registry.yaml`, and no consumer lock file — the whole distribution channel ADR 0017 retired. Commands arrive runtime-namespaced (`/harness:build`); in practice only `/harness:init` needs the prefix spoken, to avoid the host's native `/init`.
 
 The shipped inventory, counted from the tree (all counts derived, at this record's date):
 
