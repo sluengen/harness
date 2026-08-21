@@ -68,6 +68,7 @@ to prove the restore was exact.
 from __future__ import annotations
 
 import difflib
+import json
 import re
 import subprocess
 import tempfile
@@ -82,6 +83,12 @@ TEMPLATE_PATH = "templates/spine.md"
 
 #: This repo's own spine.
 SPINE_PATH = "CLAUDE.md"
+
+#: The updater-facing source of the one plugin release version.
+PLUGIN_MANIFEST_PATH = ".claude-plugin/plugin.json"
+
+#: This ticket's deliberately published release version.
+RELEASE_VERSION = "5.1.0"
 
 #: The block's delimiters. Both are matched at line start with indent and
 #: trailing-whitespace tolerance, and with flexible spacing inside the comment,
@@ -642,3 +649,20 @@ def test_the_spine_and_its_template_carry_the_same_generated_block() -> None:
         f"back, so a consuming repo would receive different iron laws from the "
         f"ones this repo runs on. Both are wrong: {difference}"
     )
+
+
+def test_the_manifest_and_both_spines_name_the_current_release() -> None:
+    """#496: the updater selector and both shipped spine markers agree.
+
+    The plugin manager selects releases from ``plugin.json`` while hydration
+    writes the version embedded in ``templates/spine.md``. A release that moves
+    only one of those values makes consumers disagree about which guidance they
+    have, even when the generated bodies compare byte-for-byte. All operands are
+    read from the index: this is a release contract over the tree that ships.
+    """
+    manifest = json.loads(indexed_text(PLUGIN_MANIFEST_PATH))
+    assert manifest.get("version") == RELEASE_VERSION, manifest
+    template = _block(TEMPLATE_PATH)
+    spine = _block(SPINE_PATH)
+    assert template.version == RELEASE_VERSION, template
+    assert spine.version == RELEASE_VERSION, spine
