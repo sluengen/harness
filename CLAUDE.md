@@ -6,7 +6,7 @@ Iron laws, the shared contract, and this repo's summary. Skills carry the depth 
 
 ## Iron laws
 
-1. **Test-first.** Write the failing test, watch it fail for the right reason, then write the code. A test added afterward proves nothing.
+1. **Test behavioural and invariant changes first.** Write the failing test, watch it fail for the right reason, then write the code. A test added afterward proves nothing. For configuration, generated-artifact, and operational migrations, use the smallest durable verification that proves the affected contract; do not duplicate a producer-level regression test in every consumer.
 2. **A measurable criterion needs a measuring test.** Any acceptance criterion stated as a quantity — count, latency, size, rate — has a test that measures that quantity and asserts the bound. A structural change is not evidence it worked.
 3. **No completion claim without fresh gate evidence.** Run the repo's verify command, read its output this session, and name the test that proves each criterion. The gate writes a marker named after the git tree it verified; the claim it licenses is *green over these exact bytes*, which one more edit invalidates.
 4. **The builder does not write the as-built record.** The reviewer records what actually shipped. The agent that promises is never the agent that records delivery.
