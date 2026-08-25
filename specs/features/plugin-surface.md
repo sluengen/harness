@@ -18,7 +18,7 @@ The shipped inventory, counted from the tree (all counts derived, at this record
 
 | Surface | Count | Where |
 |---|---|---|
-| Skills | 14 directories | `skills/*/SKILL.md` (`architecture`, `assessment-craft`, `design-system`, `engineering`, `github-issues`, `infrastructure`, `linear`, `review-discipline`, `spec-authoring`, `systematic-debugging`, `ux-design`, `work-discovery`, `worktree-isolation`, `writing-quality`) |
+| Skills | 15 directories | `skills/*/SKILL.md` (`architecture`, `assessment-craft`, `design-system`, `engineering`, `github-issues`, `infrastructure`, `linear`, `process-economy`, `review-discipline`, `spec-authoring`, `systematic-debugging`, `ux-design`, `work-discovery`, `worktree-isolation`, `writing-quality`) |
 | Commands | 9 files | `commands/*.md` (`assess`, `build`, `capture`, `digest`, `init`, `promote`, `propose`, `review`, `routine`) |
 | Agents | 4 files | `agents/*.md` (`architect`, `dev`, `reviewer`, `steward`) |
 | Hooks | 5 scripts | `hooks/*.js`, wired by `hooks/hooks.json` via `${CLAUDE_PLUGIN_ROOT}`; `hooks/package.json` pins CommonJS |
