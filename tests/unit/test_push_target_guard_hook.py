@@ -23,7 +23,7 @@ two worktrees at *divergent* HEADs, which is the only shape where that bug is
 visible at all.
 
 **The allow path is produced by production code.** Every test here that expects
-a pass runs ``scripts/gate_marker.py write`` — the writer ``verify.sh`` runs — and
+a pass runs ``node scripts/gate-marker.js write`` — the writer ``verify.sh`` runs — and
 never hand-authors a marker file. A test that wrote its own marker would be
 validating the hook against the *test's* idea of the contract, which is the
 "fixture agreeing with itself" the acceptance criteria rule out. The path
@@ -88,7 +88,6 @@ import json
 import os
 import shutil
 import subprocess
-import sys
 import time
 from pathlib import Path
 
@@ -104,7 +103,7 @@ from tests.unit._prose import REPO_ROOT
 # floor that proves it is not universal, which is the pairing a reviewer reads.
 
 HOOK = REPO_ROOT / "hooks" / "push-target-guard.js"
-WRITER = REPO_ROOT / "scripts" / "gate_marker.py"
+WRITER = REPO_ROOT / "scripts" / "gate-marker.js"
 
 #: Both settings surfaces that must wire the hook: the repo's own live config
 #: and the installed-surface template copied into target repos.
@@ -156,7 +155,7 @@ def _write_marker(cwd: Path) -> str:
     the hook did.
     """
     proc = subprocess.run(
-        [sys.executable, str(WRITER), "write"],
+        [_node(), str(WRITER), "write"],
         cwd=cwd,
         capture_output=True,
         text=True,

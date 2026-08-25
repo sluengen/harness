@@ -97,9 +97,11 @@ const { spawnSync } = require("child_process");
 
 const TAG = "[PUSH-TARGET-GUARD]";
 
-//: The freshness bound, mirrored from ``scripts/gate_marker.py``. Its purpose is
+//: The freshness bound, mirrored from ``scripts/gate-marker.js``. Its purpose is
 //: toolchain drift under an unchanged tree, not session scope. The equivalence
-//: with the Python parser is measured by ``test_gate_marker_contract.py``.
+//: with the writer's parser and the Stop hook's is measured by
+//: ``test_gate_marker_contract.py``, against a hand-written table of the
+//: degenerate spellings so all three cannot be wrong together.
 const MAX_AGE_ENV = "HARNESS_GATE_MARKER_MAX_AGE_SECONDS";
 const DEFAULT_MAX_AGE_SECONDS = 86400;
 
@@ -853,11 +855,13 @@ if (require.main === module) {
 }
 
 // Exported so ``test_gate_marker_contract.py`` can execute this hook's copy of
-// the contract against the Python writer's. The path is computed in three
-// languages and the freshness bound parsed in three, which is exactly the shape
-// that drifts silently; an equivalence test that runs all three is what catches
-// it. The ``require.main === module`` guard above means importing for that
-// introspection never runs the hook.
+// the contract beside the writer's and the Stop hook's. The path is computed in
+// three separate copies and the freshness bound parsed in three, which is
+// exactly the shape that drifts silently; an equivalence test that runs all
+// three is what catches it. Since ADR 0018 those three are one language, so that
+// test also holds them textually independent — a shared module would make the
+// equivalence true by construction. The ``require.main === module`` guard above
+// means importing for that introspection never runs the hook.
 // ``declaredBranches`` and ``protectedBranches`` are exported for the same
 // reason and by the same argument, one duplication further along:
 // the spine's ``branches:`` block is parsed here **and** in

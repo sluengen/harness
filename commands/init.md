@@ -30,7 +30,7 @@ Turns a repository into one this process can run in. The plugin carries the skil
    ```
    <!-- harness:gate-ignore:end -->
 
-   If the repo has no verify command yet, write a minimal `scripts/verify.sh` skeleton that runs the interview's lint/typecheck/test commands in order, runs `gate_marker.py preflight` before those commands, and calls `gate_marker.py write` on green. Copy the plugin's `scripts/gate_marker.py` beside it. A repo with its own gate keeps its commands, but add the preflight before its expensive stages and preserve the marker write at the end.
+   If the repo has no verify command yet, write a minimal `scripts/verify.sh` skeleton that runs the interview's lint/typecheck/test commands in order, runs `node scripts/gate-marker.js preflight` before those commands, and calls `node scripts/gate-marker.js write` on green. Copy the plugin's `scripts/gate-marker.js` **and `scripts/package.json`** beside it — the manifest pins the helper to CommonJS, and without it a repo whose root declares `"type": "module"` cannot run its own gate. A repo with its own gate keeps its commands, but add the preflight before its expensive stages and preserve the marker write at the end.
 7. **Report** what was written, what was skipped because it existed, and the one next step: file or pick a ticket and `/build` it.
 
 Hooks need no per-repo wiring — the plugin's `hooks/hooks.json` registers them at install. The spine's `branches:` block is what the push and stop guards read; that is why step 1's answers land there.

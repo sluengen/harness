@@ -9,11 +9,13 @@ guards at once, and a shared module's own load failure would disarm both
 enforcement hooks together).
 
 The **marker** half of that duplication has been pinned by execution since #436
-(``test_gate_marker_contract.py``). The **branches** half never was, and it had
-already drifted in shape by the time #457 measured it: an array from one parser,
-a map from the other. Shape is not the risk — the two consume their own return
-value correctly. The risk is the *set that falls out*, which is what each hook
-actually decides on, and where drift is silent in both directions:
+(``test_gate_marker_contract.py``, which since #500 holds three copies in one
+language rather than two in JavaScript and one in Python). The **branches** half
+never was, and it had already drifted in shape by the time #457 measured it: an
+array from one parser, a map from the other. Shape is not the risk — the two
+consume their own return value correctly. The risk is the *set that falls out*,
+which is what each hook actually decides on, and where drift is silent in both
+directions:
 
 * the push guard stops refusing a push to a branch the Stop hook still treats as
   shared, so unverified work lands; or

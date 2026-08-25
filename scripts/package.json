@@ -1,0 +1,4 @@
+{
+  "//": "Pins the module type for gate-marker.js in this directory. Node resolves a .js file's module type from the NEAREST package.json walking up; in a consuming repo whose root declares \"type\": \"module\" this CommonJS helper would be parsed as ESM and its require() calls would fail. Keep this file next to the helper. Same mechanism and same reasoning as hooks/package.json (#302).",
+  "type": "commonjs"
+}

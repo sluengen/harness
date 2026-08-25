@@ -99,9 +99,11 @@ const { spawnSync } = require("child_process");
 
 const TAG = "[GATE-EVIDENCE-GUARD]";
 
-//: The freshness bound, mirrored from ``scripts/gate_marker.py``. Its purpose is
+//: The freshness bound, mirrored from ``scripts/gate-marker.js``. Its purpose is
 //: toolchain drift under an unchanged tree, not session scope. The equivalence
-//: with the Python parser is measured by ``test_gate_marker_contract.py``.
+//: with the writer's parser and the push guard's is measured by
+//: ``test_gate_marker_contract.py``, against a hand-written table of the
+//: degenerate spellings so all three cannot be wrong together.
 const MAX_AGE_ENV = "HARNESS_GATE_MARKER_MAX_AGE_SECONDS";
 const DEFAULT_MAX_AGE_SECONDS = 86400;
 
@@ -255,7 +257,7 @@ function hasFreshMarker(tree, cwd) {
  * markers rather than in TMPDIR: the git directory is guaranteed to exist
  * wherever this can run at all, and the location cannot affect the oid.
  *
- * Mirrors ``scripts/gate_marker.py``; the equivalence is measured by
+ * Mirrors ``scripts/gate-marker.js``; the equivalence is measured by
  * ``test_gate_marker_contract.py``, because drift between the writer tree and
  * the reader tree would be silent and total. */
 let scratchIndexSerial = 0;
@@ -288,8 +290,10 @@ function currentTree(cwd) {
     try {
       fs.unlinkSync(index);
     } catch (err) {
-      // Best-effort cleanup of a scratch index; a leftover is pruned with the
-      // markers and is never read by anything.
+      // Best-effort cleanup of a scratch index, and nothing else sweeps one: the
+      // prune in the writer globs ``*.json`` and this file is named ``.index-…``,
+      // so a leftover stays until the clone goes. It is never read by anything.
+      // (Measured at #500; the comment previously claimed the prune caught it.)
       void err;
     }
   }
@@ -905,11 +909,13 @@ if (require.main === module) {
 }
 
 // Exported so ``test_gate_marker_contract.py`` can execute this hook copy of the
-// contract against the Python writer. The tree is computed in two languages and
-// the path in three, which is exactly the shape that drifts silently; an
-// equivalence test that runs all of them is what catches it. The
-// ``require.main === module`` guard above means importing for that introspection
-// never runs the hook.
+// contract beside the writer's and the push guard's. The tree is computed in two
+// separate copies and the path in three, which is exactly the shape that drifts
+// silently; an equivalence test that runs all of them is what catches it. Since
+// ADR 0018 they are one language, so that test also holds the three textually
+// independent — a shared module would make the equivalence true by construction.
+// The ``require.main === module`` guard above means importing for that
+// introspection never runs the hook.
 //
 // ``declaredBranches`` and ``protectedBranches`` join them for the same reason,
 // one duplication further along: the spine's ``branches:`` block is parsed
