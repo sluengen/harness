@@ -36,7 +36,12 @@ VERIFY = REPO_ROOT / "scripts" / "verify.sh"
 #: The floor the gate enforces, set just under the coverage measured at the
 #: time it was last raised. A ratchet, not a target: raise it when coverage
 #: rises. 79 at the #435 teardown; 82 since #436 added ``scripts/gate_marker.py``
-#: with tests that actually exercise it (measured 82.12%).
+#: with tests that actually exercise it (measured 82.12%). #500 deleted that
+#: module — ADR 0018 rewrote the gate marker's writer in Node — taking its
+#: statements out of ``--cov=scripts`` entirely. The floor does **not** move: a
+#: ratchet only rises, and a fall inside it is permitted by construction. What
+#: replaces the line-coverage signal for those statements is stated in ADR 0018's
+#: consequences rather than assumed away here.
 COVERAGE_FLOOR = 82
 
 #: The tree coverage is measured over — the only executable code the repo owns

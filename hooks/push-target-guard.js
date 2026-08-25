@@ -97,9 +97,11 @@ const { spawnSync } = require("child_process");
 
 const TAG = "[PUSH-TARGET-GUARD]";
 
-//: The freshness bound, mirrored from ``scripts/gate_marker.py``. Its purpose is
+//: The freshness bound, mirrored from ``scripts/gate-marker.js``. Its purpose is
 //: toolchain drift under an unchanged tree, not session scope. The equivalence
-//: with the Python parser is measured by ``test_gate_marker_contract.py``.
+//: with the writer's parser and the Stop hook's is measured by
+//: ``test_gate_marker_contract.py``, against a hand-written table of the
+//: degenerate spellings so all three cannot be wrong together.
 const MAX_AGE_ENV = "HARNESS_GATE_MARKER_MAX_AGE_SECONDS";
 const DEFAULT_MAX_AGE_SECONDS = 86400;
 
@@ -151,9 +153,13 @@ function failOpen(reason, err) {
   process.stderr.write(`${TAG} fail-open: ${reason}: ${cause.replace(/\s+/g, " ").slice(0, 200)}\n`);
 }
 
+let codexRuntime = false;
+
 function readStdin() {
   try {
-    return JSON.parse(fs.readFileSync(0, "utf8"));
+    const input = JSON.parse(fs.readFileSync(0, "utf8"));
+    codexRuntime = Object.prototype.hasOwnProperty.call(input, "turn_id");
+    return input;
   } catch (err) {
     failOpen("could not parse the hook payload on stdin", err);
     return {};
@@ -275,7 +281,7 @@ const BRANCHES_KEY = /^branches\s*:/;
 //: string literals to count braces, and a lone quote inside a pattern throws
 //: their offsets off. Every match includes its key, so no match is zero-length
 //: and the global scan always advances.
-const FLOW_PAIR = /([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*(\x22[^\x22]*\x22|\x27[^\x27]*\x27|[^,]*)/g;
+const FLOW_PAIR = /\s*([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*(\x22[^\x22]*\x22|\x27[^\x27]*\x27|[^,]*)\s*/y;
 
 
 //: Files already reported as unreadable, so a hook that resolves its declaration
@@ -344,8 +350,11 @@ function declaredBranches(contextFile) {
     return [];
   }
   const found = [];
+  const keys = new Set();
   let declares = false;
   let indent = -1;
+  let entryIndent = -1;
+  let invalid = false;
   for (const raw of text.split("\n")) {
     // ``\r`` first, then tabs. Splitting on ``\n`` leaves a CRLF file's lines
     // ending in ``\r``, and ``PAIR``'s trailing ``(.*)$`` cannot cross one —
@@ -361,10 +370,36 @@ function declaredBranches(contextFile) {
       declares = true;
       const flow = BRANCHES_FLOW.exec(trimmed);
       if (flow) {
-        for (const match of flow[1].matchAll(FLOW_PAIR)) {
+        const candidate = [];
+        const keys = new Set();
+        let cursor = 0;
+        while (cursor < flow[1].length) {
+          FLOW_PAIR.lastIndex = cursor;
+          const match = FLOW_PAIR.exec(flow[1]);
+          if (match === null || match.index !== cursor) {
+            invalid = true;
+            break;
+          }
           const value = scalar(match[2]);
-          if (value) found.push(value);
+          if (!value || keys.has(match[1])) {
+            invalid = true;
+            break;
+          }
+          keys.add(match[1]);
+          candidate.push(value);
+          cursor = FLOW_PAIR.lastIndex;
+          if (cursor === flow[1].length) break;
+          if (flow[1][cursor] !== ",") {
+            invalid = true;
+            break;
+          }
+          cursor += 1;
+          if (cursor === flow[1].length) {
+            invalid = true;
+            break;
+          }
         }
+        if (!invalid) found.push(...candidate);
         break; // a flow mapping is the whole declaration
       }
       // A block opens when the key carries **no value** — asked through
@@ -383,13 +418,29 @@ function declaredBranches(contextFile) {
       if (scalar(trimmed.replace(BRANCHES_KEY, "")) === "") indent = lead;
       continue;
     }
-    if (!line.trim()) continue;
+    const content = line.trim();
+    if (!content) continue;
     if (lead <= indent) break; // the block ended
+    if (content.startsWith("#")) continue;
+    if (entryIndent === -1) entryIndent = lead;
+    if (lead !== entryIndent) {
+      invalid = true;
+      break;
+    }
     const match = PAIR.exec(line);
-    if (!match) continue;
+    if (!match) {
+      invalid = true;
+      break;
+    }
     const value = scalar(match[2]);
-    if (value) found.push(value);
+    if (!value || keys.has(match[1])) {
+      invalid = true;
+      break;
+    }
+    keys.add(match[1]);
+    found.push(value);
   }
+  if (invalid) found.length = 0;
   if (declares && found.length === 0) noticeUnreadableDeclaration(contextFile);
   return found;
 }
@@ -715,7 +766,8 @@ function deny(reason) {
 }
 
 /** Defer to the normal permission flow — do NOT pre-approve. */
-function passThrough() {
+function passThrough(input) {
+  if (input && Object.prototype.hasOwnProperty.call(input, "turn_id")) return;
   process.stdout.write(JSON.stringify({ continue: true }));
 }
 
@@ -812,9 +864,9 @@ function verdict(push, parser) {
 
 function main() {
   const input = readStdin();
-  if ((input.tool_name || "") !== "Bash") return passThrough();
+  if ((input.tool_name || "") !== "Bash") return passThrough(input);
   const command = (input.tool_input && input.tool_input.command) || "";
-  if (!command) return passThrough();
+  if (!command) return passThrough(input);
 
   // Lazy, inside main()'s try: a top-level sibling require sits outside the
   // fail-open path, turning an ESM-root load failure into a crash before stdout.
@@ -829,7 +881,7 @@ function main() {
         `nothing until ${SIBLING_PARSER} is restored`,
       { message: `looked for ${sibling}` }
     );
-    return passThrough();
+    return passThrough(input);
   }
   const parser = require("./git-push-guard.js");
 
@@ -838,7 +890,7 @@ function main() {
     const reason = verdict(push, parser);
     if (reason) return deny(reason);
   }
-  passThrough();
+  passThrough(input);
 }
 
 if (require.main === module) {
@@ -848,16 +900,18 @@ if (require.main === module) {
     // State 1: the hook could not run, so it has no opinion. Pass through, but
     // loudly — a disarmed enforcement hook must not look like a clean pass.
     failOpen("crashed before it could decide", err);
-    process.stdout.write(JSON.stringify({ continue: true }));
+    if (!codexRuntime) process.stdout.write(JSON.stringify({ continue: true }));
   }
 }
 
 // Exported so ``test_gate_marker_contract.py`` can execute this hook's copy of
-// the contract against the Python writer's. The path is computed in three
-// languages and the freshness bound parsed in three, which is exactly the shape
-// that drifts silently; an equivalence test that runs all three is what catches
-// it. The ``require.main === module`` guard above means importing for that
-// introspection never runs the hook.
+// the contract beside the writer's and the Stop hook's. The path is computed in
+// three separate copies and the freshness bound parsed in three, which is
+// exactly the shape that drifts silently; an equivalence test that runs all
+// three is what catches it. Since ADR 0018 those three are one language, so that
+// test also holds them textually independent — a shared module would make the
+// equivalence true by construction. The ``require.main === module`` guard above
+// means importing for that introspection never runs the hook.
 // ``declaredBranches`` and ``protectedBranches`` are exported for the same
 // reason and by the same argument, one duplication further along:
 // the spine's ``branches:`` block is parsed here **and** in

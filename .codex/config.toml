@@ -1,0 +1,11 @@
+# Shared Codex posture for trusted Harness checkouts.
+#
+# Keep routine work inside the workspace sandbox. Escalations are reviewed by
+# Codex's automatic reviewer, while .codex/rules/ names the few Git and gate
+# actions that deliberately need to run outside it.
+approval_policy = "on-request"
+approvals_reviewer = "auto_review"
+sandbox_mode = "workspace-write"
+
+[sandbox_workspace_write]
+network_access = true

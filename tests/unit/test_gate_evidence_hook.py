@@ -35,7 +35,7 @@ silent omission becomes a recorded refusal.
 Acceptance criteria:
 
 * **AC-1** — refusal and allow, both for real, with the allow produced by the
-  **production** writer (``scripts/gate_marker.py write``) rather than a
+  **production** writer (``node scripts/gate-marker.js write``) rather than a
   hand-authored marker.
   :func:`test_a_completion_claim_over_an_ungated_tree_is_blocked` and
   :func:`test_a_completion_claim_over_a_gated_tree_is_allowed`.
@@ -103,7 +103,6 @@ import os
 import shlex
 import shutil
 import subprocess
-import sys
 import time
 from pathlib import Path
 
@@ -113,7 +112,7 @@ from tests.unit._hooks import REAL_STOP_PAYLOAD
 from tests.unit._prose import REPO_ROOT
 
 HOOK = REPO_ROOT / "hooks" / "gate-evidence-guard.js"
-WRITER = REPO_ROOT / "scripts" / "gate_marker.py"
+WRITER = REPO_ROOT / "scripts" / "gate-marker.js"
 
 SETTINGS_FILES = [REPO_ROOT / ".claude" / "settings.json", REPO_ROOT / "settings" / "harness.json"]
 
@@ -218,7 +217,7 @@ def _write_marker(cwd: Path) -> str:
     agreeing with itself that AC-1 rules out.
     """
     proc = subprocess.run(
-        [sys.executable, str(WRITER), "write"], cwd=cwd, capture_output=True, text=True, timeout=60
+        [_node(), str(WRITER), "write"], cwd=cwd, capture_output=True, text=True, timeout=60
     )
     assert proc.returncode == 0, f"the production writer failed: {proc.stderr}"
     return proc.stdout.split(":", 1)[1].split("->")[0].strip()

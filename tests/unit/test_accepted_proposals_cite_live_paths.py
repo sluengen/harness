@@ -15,11 +15,12 @@ every sample below call that same function, so a change to how production judges
 a cite is a change to what every sample measures — ``craft.md`` → *Exercise the
 production path, not merely a production constant*.
 
-**Where the teeth are.** After #458's pass there are **zero** `accepted`
-proposals, so the corpus sweep ranges over an empty set and proves nothing about
-the predicate today; it is kept as forward regression protection for the next
-proposal accepted, and it says so rather than dressing an empty sweep up as
-coverage. The predicate's teeth are the paired samples:
+**Where the teeth are.** #458's pass advanced all nineteen proposals then live to
+`shipped` or `superseded`, leaving the corpus sweep over an empty set — vacuous,
+and said so rather than dressed up as coverage. `node-gate-marker-refresh` is the
+first proposal accepted since, so the sweep now has a subject; it will empty again
+when that one ships. **The sweep's cardinality is therefore not a property to rely
+on**, and the predicate's teeth remain the paired samples:
 
 * a dead cite in ordinary prose is flagged (the admission direction);
 * a live cite in ordinary prose is not (the stale-exemption direction);
@@ -344,11 +345,12 @@ def test_the_predicate_reads_real_proposal_text() -> None:
     """Paired splice: prove the corpus reader reaches real proposal bytes.
 
     ``craft.md`` → *A prose mutation needs a paired splice to prove it was live*.
-    While the sweep below covers an empty set, nothing else here would notice a
-    reader that had stopped resolving the corpus at all. This splices a token the
-    predicate is known to catch into a real tracked proposal and requires it
-    caught **there**, so "the sweep found nothing" is distinguishable from "the
-    sweep read nothing".
+    Nothing else here would notice a reader that had stopped resolving the corpus
+    at all — and because the sweep's subject set empties and refills as proposals
+    are accepted and shipped, that hole opens again every time it empties. This
+    splices a token the predicate is known to catch into a real tracked proposal
+    and requires it caught **there**, so "the sweep found nothing" stays
+    distinguishable from "the sweep read nothing" at any corpus size.
     """
     tracked = _tracked_paths()
     dirs = _tracked_dirs(tracked)
@@ -375,13 +377,16 @@ def test_the_predicate_reads_real_proposal_text() -> None:
 def test_no_accepted_proposal_cites_a_dead_path() -> None:
     """AC-2, over whatever proposals currently read `accepted`.
 
-    **This sweep may cover zero proposals.** #458 advanced all nineteen to
-    `shipped` or `superseded`, so on the shipping tree its subject set is empty
-    and it asserts nothing about the predicate — the samples above are what
-    measure that. It is kept because the next proposal accepted is the one this
-    check exists for, and it fails the day that proposal cites something gone.
-    No floor asserts the subject set is non-empty: here empty is the intended
-    state, and a floor demanding otherwise would be permanently red.
+    **This sweep may cover zero proposals**, and did between #458 — which advanced
+    all nineteen then live to `shipped` or `superseded` — and the acceptance of
+    `node-gate-marker-refresh`. Over an empty set it asserts nothing about the
+    predicate; the samples above are what measure that, and
+    :func:`test_the_predicate_reads_real_proposal_text` is what keeps an empty
+    sweep distinguishable from a broken reader.
+
+    No floor asserts the subject set is non-empty, and none should: empty is a
+    legitimate state of a repo with nothing accepted outstanding, so a floor
+    demanding otherwise would go red for a reason that is not a defect.
     """
     tracked = _tracked_paths()
     dirs = _tracked_dirs(tracked)

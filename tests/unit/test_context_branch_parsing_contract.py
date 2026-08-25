@@ -9,11 +9,13 @@ guards at once, and a shared module's own load failure would disarm both
 enforcement hooks together).
 
 The **marker** half of that duplication has been pinned by execution since #436
-(``test_gate_marker_contract.py``). The **branches** half never was, and it had
-already drifted in shape by the time #457 measured it: an array from one parser,
-a map from the other. Shape is not the risk — the two consume their own return
-value correctly. The risk is the *set that falls out*, which is what each hook
-actually decides on, and where drift is silent in both directions:
+(``test_gate_marker_contract.py``, which since #500 holds three copies in one
+language rather than two in JavaScript and one in Python). The **branches** half
+never was, and it had already drifted in shape by the time #457 measured it: an
+array from one parser, a map from the other. Shape is not the risk — the two
+consume their own return value correctly. The risk is the *set that falls out*,
+which is what each hook actually decides on, and where drift is silent in both
+directions:
 
 * the push guard stops refusing a push to a branch the Stop hook still treats as
   shared, so unverified work lands; or
@@ -271,6 +273,31 @@ _CRLF_FLOW = "\r\n".join(
 _CRLF_BLOCK_VALUES = {"crlf-lane", "crlf-main"}
 _CRLF_FLOW_VALUES = {"crlf-flow-lane", "crlf-flow-main"}
 
+_PARTIAL_FLOW = """# CONTEXT.md
+
+```yaml
+branches: {\"integration\": partial-flow-lane, release: partial-flow-main}
+```
+"""
+
+_PARTIAL_BLOCK = """# CONTEXT.md
+
+```yaml
+branches:
+  integration: partial-block-lane
+  \"release\": partial-block-main
+```
+"""
+
+_DUPLICATE_VALUE_BLOCK = """# CONTEXT.md
+
+```yaml
+branches:
+  integration: shared-lane
+  release: shared-lane
+```
+"""
+
 _VARIANTS = {
     "declared": _DECLARED,
     "missing": None,
@@ -283,6 +310,8 @@ _VARIANTS = {
     "quoted-comma-flow": _QUOTED_COMMA_FLOW,
     "crlf-block": _CRLF_BLOCK,
     "crlf-flow": _CRLF_FLOW,
+    "partial-flow": _PARTIAL_FLOW,
+    "partial-block": _PARTIAL_BLOCK,
 }
 
 
@@ -602,7 +631,7 @@ def test_a_flow_mapping_declaration_is_actually_read(tmp_path: Path) -> None:
             f"{hook} derived an empty protected set from the flow-mapping fixture, so the "
             "assertions below compare nothing"
         )
-        assert derived >= _FLOW_VALUES, (
+        assert derived == _FLOW_VALUES, (
             f"{hook} did not read the flow-mapping declaration: {sorted(derived)}. "
             "`branches: {integration: …}` is byte-for-byte valid yaml that a real loader "
             "reads identically to the block form, so a scanner that sees nothing in it "
@@ -634,6 +663,47 @@ def test_an_unreadable_declaration_falls_back_rather_than_protecting_nothing(
                 f"{variant!r} fixture. An unreadable declaration must protect "
                 "more, never less."
             )
+
+
+@pytest.mark.parametrize(
+    ("spelling", "fixture"),
+    (("partial-flow", _PARTIAL_FLOW), ("partial-block", _PARTIAL_BLOCK)),
+)
+def test_a_partially_read_declaration_falls_back_completely(
+    spelling: str, fixture: str, tmp_path: Path
+) -> None:
+    """#506 AC-4 — one unsupported pair invalidates the whole declaration.
+
+    These are valid YAML mappings with a readable pair before a quoted key the
+    deliberately small scanner does not support.  Before #506, each hook kept
+    the first name, suppressing its unreadable notice and leaving the other
+    declared branch unprotected.  The contract is complete-or-unreadable, so
+    the production protected-set composition must select the conservative
+    fallback rather than a subset.
+    """
+    fallback = _fallback()
+    assert fallback, "the fallback set derived to nothing, so this regression measures nothing"
+
+    repo = _repo_with(tmp_path, fixture)
+    for hook in (_PUSH_HOOK, _STOP_HOOK):
+        assert _protected(hook, repo) == fallback, (
+            f"{hook} retained a partial protected set for {spelling!r}; an unsupported "
+            "pair must discard the complete declaration rather than leave another "
+            f"declared branch unprotected: {sorted(_protected(hook, repo))}"
+        )
+
+
+def test_a_block_mapping_may_assign_one_branch_to_multiple_roles(tmp_path: Path) -> None:
+    """#506 review finding — duplicate values are not duplicate keys.
+
+    The supported declaration grammar permits any role key, and the protected
+    set naturally de-duplicates branch names.  Distinct keys that assign the
+    same branch must therefore remain a complete readable mapping in both
+    independently implemented parsers; only a repeated key is ambiguous.
+    """
+    _assert_actually_read(
+        tmp_path, _DUPLICATE_VALUE_BLOCK, {"shared-lane"}, "duplicate-value-block"
+    )
 
 
 # --- the expressions above stand in for real call sites -----------------------

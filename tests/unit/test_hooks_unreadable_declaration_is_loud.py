@@ -167,6 +167,26 @@ branches: lonely-lane
 ```
 """
 
+#: #506: accepted parser pairs surrounding an unsupported quoted key are still
+#: one declaration.  The old scanners silently preserved the accepted pair and
+#: discarded this key; this fixture proves the production notice/fallback path
+#: now treats the whole declaration as unreadable instead.
+_UNREADABLE_PARTIAL_FLOW = """# spine
+
+```yaml
+branches: {\"integration\": partial-flow-lane, release: partial-flow-main}
+```
+"""
+
+_UNREADABLE_PARTIAL_BLOCK = """# spine
+
+```yaml
+branches:
+  integration: partial-block-lane
+  \"release\": partial-block-main
+```
+"""
+
 #: **Formerly the sixth unreadable spelling; readable since #488.** A block
 #: declaration whose key line carries an inline comment. The block arm used to
 #: key on a bare ``branches:`` line, so the perfectly readable mapping below it
@@ -234,6 +254,8 @@ _UNREADABLE_FIXTURES = {
     "nested-flow": _UNREADABLE_NESTED_FLOW,
     "multiline-flow": _UNREADABLE_MULTILINE_FLOW,
     "plain-scalar": _UNREADABLE_SCALAR,
+    "partial-flow": _UNREADABLE_PARTIAL_FLOW,
+    "partial-block": _UNREADABLE_PARTIAL_BLOCK,
 }
 
 #: The floor under the corpus above. #488 moved one spelling out of it, and a
@@ -242,7 +264,7 @@ _UNREADABLE_FIXTURES = {
 #: (``craft.md`` → *a sweep over a corpus needs a floor on the corpus*). Five is
 #: the count after the move, and it is stated as a floor rather than an equality
 #: so adding a newly-discovered unreadable spelling is not a test edit.
-_MIN_UNREADABLE_SPELLINGS = 5
+_MIN_UNREADABLE_SPELLINGS = 7
 
 #: A spine with no ``branches:`` key at all: the ordinary un-adopted repo. The
 #: control. A hook that chattered here would emit noise on every tool call in
@@ -655,7 +677,10 @@ def test_two_unreadable_files_are_both_named(tmp_path: Path) -> None:
 # --- the contract around the notice is unchanged ------------------------------
 
 
-def test_the_blocking_contract_is_unchanged_while_the_notice_fires(tmp_path: Path) -> None:
+@pytest.mark.parametrize("spelling", ("sequence-block", "partial-flow", "partial-block"))
+def test_the_blocking_contract_is_unchanged_while_the_notice_fires(
+    spelling: str, tmp_path: Path
+) -> None:
     """End to end on the production path: the notice is additive.
 
     The real ``push-target-guard`` binary, a real ``git push`` payload, an
@@ -668,7 +693,7 @@ def test_the_blocking_contract_is_unchanged_while_the_notice_fires(tmp_path: Pat
     exactly what is in force when the declaration cannot be read, and the deny it
     produces is the behaviour that must survive the notice.
     """
-    repo = _repo(tmp_path, spine=_UNREADABLE)
+    repo = _repo(tmp_path, spine=_UNREADABLE_FIXTURES[spelling])
     payload = {
         "tool_name": "Bash",
         "cwd": str(repo),

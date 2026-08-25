@@ -70,8 +70,9 @@ If you do open a PR:
 
   It refuses before it writes a byte, in this order: an ungated tree (the
   **gate lock** — `run` requires a fresh gate marker over the tree's exact
-  bytes, the same `scripts/gate_marker.py` convention the hooks read; `check`
-  is exempt), a malformed **table**, a
+  bytes, the same `scripts/gate-marker.js` convention the hooks read, reached
+  with one read-only `status` query, so `run` needs a runnable `node` while
+  `check` is exempt from both), a malformed **table**, a
   **containment** failure (the wrong tree), a **landing** failure (`old` absent
   or ambiguous), a red **baseline**, a mistyped **prediction**, and an unusable
   **observable** (nondeterministic, or already failing on the pristine tree). It

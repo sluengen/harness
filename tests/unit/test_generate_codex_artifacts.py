@@ -151,6 +151,56 @@ def test_generation_ports_agents_commands_and_skills_into_codex(repo: Path) -> N
     assert "commands/go.md" in adapter, "the adapter must point back at the canonical command"
 
 
+def test_generation_converts_commands_and_agents_into_portable_plugin_skills(
+    repo: Path,
+) -> None:
+    """Native plugins expose reusable command and agent behaviour as skills.
+
+    The portable copies carry the source bodies rather than a repo-relative
+    pointer, so they still work after Codex installs the plugin into its cache.
+    """
+    assert _generate(repo) == 0
+
+    command_skill = (repo / "skills" / "command-go" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    assert command_skill.startswith("---\n")
+    assert "name: command-go" in command_skill
+    assert '\ndescription: "' in command_skill
+    assert "two directories above this SKILL.md" in command_skill
+    assert "Body of the command." in command_skill
+
+    agent_skill = (repo / "skills" / "agent-dev" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    assert agent_skill.startswith("---\n")
+    assert "name: agent-dev" in agent_skill
+    assert "two directories above this SKILL.md" in agent_skill
+    assert "Build things." in agent_skill
+
+    official_link = repo / ".agents" / "skills" / "command-go"
+    assert official_link.is_symlink(), "repo-local Codex skills live under .agents/skills"
+    assert (official_link / "SKILL.md").read_text(encoding="utf-8") == command_skill
+
+
+def test_generation_migrates_an_existing_legacy_command_adapter(repo: Path) -> None:
+    """A pre-native checkout already has real ``.codex/skills/command-*`` dirs.
+
+    Regeneration must update those adapters in place instead of trying to replace
+    each directory with the new portable skill symlink.
+    """
+    legacy = repo / ".codex" / "skills" / "command-go"
+    legacy.mkdir(parents=True)
+    (legacy / "SKILL.md").write_text("old adapter\n", encoding="utf-8")
+
+    assert _generate(repo) == 0
+
+    assert not legacy.is_symlink()
+    generated = (legacy / "SKILL.md").read_text(encoding="utf-8")
+    assert "Body of the command." in generated
+    assert "plugin root is three directories above this SKILL.md" in generated
+
+
 def test_regeneration_prunes_artifacts_whose_sources_are_gone(repo: Path) -> None:
     """A retired agent, skill, or command must not leave its port behind."""
     assert _generate(repo) == 0
@@ -164,6 +214,9 @@ def test_regeneration_prunes_artifacts_whose_sources_are_gone(repo: Path) -> Non
     assert not (repo / ".codex" / "agents" / "dev.toml").exists()
     assert not (repo / ".codex" / "skills" / "command-go").exists()
     assert not (repo / ".codex" / "skills" / "alpha").is_symlink()
+    assert not (repo / "skills" / "command-go").exists()
+    assert not (repo / "skills" / "agent-dev").exists()
+    assert not (repo / ".agents" / "skills" / "command-go").is_symlink()
 
 
 # --- The drift direction (--check) --------------------------------------------
@@ -205,6 +258,17 @@ def test_check_flags_a_missing_or_stale_codex_artifact(
     assert _generate(repo) == 0
     assert _check(repo) == 0
     assert not stale.exists()
+
+
+def test_check_flags_a_stale_portable_plugin_skill(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert _generate(repo) == 0
+    portable = repo / "skills" / "command-go" / "SKILL.md"
+    portable.write_text("tampered\n", encoding="utf-8")
+
+    assert _check(repo) == 1
+    assert "skills/command-go/SKILL.md" in capsys.readouterr().err
 
 
 def test_check_never_writes(repo: Path) -> None:

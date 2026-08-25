@@ -1,0 +1,158 @@
+# Shared no-prompt and hard-stop rules for the Harness workflow.
+#
+# These are intentionally narrow: an omitted command remains subject to the
+# normal on-request policy and automatic review.
+
+prefix_rule(
+    pattern = ["git", "status"],
+    decision = "allow",
+    match = ["git status --short --branch"],
+)
+
+prefix_rule(
+    pattern = ["git", "diff"],
+    decision = "allow",
+    match = ["git diff --cached --check"],
+)
+
+prefix_rule(
+    pattern = ["git", "log"],
+    decision = "allow",
+    match = ["git log --oneline -8"],
+)
+
+prefix_rule(
+    pattern = ["git", "show"],
+    decision = "allow",
+    match = ["git show --stat HEAD"],
+)
+
+prefix_rule(
+    pattern = ["git", "rev-parse"],
+    decision = "allow",
+    match = ["git rev-parse --show-toplevel"],
+)
+
+prefix_rule(
+    pattern = ["git", "merge-base"],
+    decision = "allow",
+    match = ["git merge-base dev HEAD"],
+)
+
+prefix_rule(
+    pattern = ["git", "ls-files"],
+    decision = "allow",
+    match = ["git ls-files"],
+)
+
+prefix_rule(
+    pattern = ["git", "worktree", "list"],
+    decision = "allow",
+    match = ["git worktree list --porcelain"],
+)
+
+prefix_rule(
+    pattern = ["git", "worktree", "add"],
+    decision = "allow",
+    match = ["git worktree add /private/tmp/harness-task -b codex/task dev"],
+)
+
+prefix_rule(
+    pattern = ["git", "add"],
+    decision = "allow",
+    match = ["git add AGENTS.md"],
+)
+
+prefix_rule(
+    pattern = ["git", "commit"],
+    decision = "allow",
+    match = ["git commit -m docs\\(codex\\): configure autonomous routine work"],
+)
+
+prefix_rule(
+    pattern = ["git", "fetch", "origin"],
+    decision = "allow",
+    match = ["git fetch origin dev"],
+)
+
+prefix_rule(
+    pattern = ["git", "push"],
+    decision = "prompt",
+    justification = "Pushes leave the local workspace and are reviewed automatically; standard force and release push forms are blocked below.",
+    match = ["git push origin dev", "git push origin HEAD:dev"],
+)
+
+prefix_rule(
+    pattern = ["bash", "scripts/verify.sh"],
+    decision = "allow",
+    match = ["bash scripts/verify.sh"],
+)
+
+prefix_rule(
+    pattern = ["uv", "run", "python", "scripts/generate_codex_artifacts.py"],
+    decision = "allow",
+    match = ["uv run python scripts/generate_codex_artifacts.py --check"],
+)
+
+prefix_rule(
+    pattern = ["git", "reset", "--hard"],
+    decision = "forbidden",
+    justification = "Use a reversible targeted edit or ask the operator to reset history.",
+    match = ["git reset --hard HEAD"],
+)
+
+prefix_rule(
+    pattern = ["git", "push", "--force"],
+    decision = "forbidden",
+    justification = "Force-pushing is prohibited; publish a new reviewed commit instead.",
+    match = ["git push --force origin dev"],
+)
+
+prefix_rule(
+    pattern = ["git", "push", "--force-with-lease"],
+    decision = "forbidden",
+    justification = "Force-pushing is prohibited; publish a new reviewed commit instead.",
+    match = ["git push --force-with-lease origin dev"],
+)
+
+prefix_rule(
+    pattern = ["git", "push", "origin", "main"],
+    decision = "forbidden",
+    justification = "Release promotion goes through the reviewed dev-to-main workflow.",
+    match = ["git push origin main"],
+)
+
+prefix_rule(
+    pattern = ["git", "push", "origin", "HEAD:main"],
+    decision = "forbidden",
+    justification = "Release promotion goes through the reviewed dev-to-main workflow.",
+    match = ["git push origin HEAD:main"],
+)
+
+prefix_rule(
+    pattern = ["git", "merge", "main"],
+    decision = "forbidden",
+    justification = "Do not merge the release branch directly; use the recorded promotion path.",
+    match = ["git merge main"],
+)
+
+prefix_rule(
+    pattern = ["git", "merge", "origin/main"],
+    decision = "forbidden",
+    justification = "Do not merge the release branch directly; use the recorded promotion path.",
+    match = ["git merge origin/main"],
+)
+
+prefix_rule(
+    pattern = ["gh", "pr", "merge"],
+    decision = "forbidden",
+    justification = "A release pull request is an operator decision.",
+    match = ["gh pr merge 123"],
+)
+
+prefix_rule(
+    pattern = ["rm"],
+    decision = "forbidden",
+    justification = "Do not recursively delete files; use a targeted, recoverable operation instead.",
+    match = ["rm -rf build"],
+)

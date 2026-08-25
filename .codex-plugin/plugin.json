@@ -1,0 +1,29 @@
+{
+  "name": "harness",
+  "version": "5.1.0",
+  "description": "A spec-driven development process for agent-driven repos: nine lifecycle commands, the craft skills behind them, four agents, and the enforcement hooks that make a green gate the only path to a shared branch.",
+  "author": {
+    "name": "sluengen",
+    "url": "https://github.com/sluengen"
+  },
+  "homepage": "https://sluengen.github.io/harness/",
+  "repository": "https://github.com/sluengen/harness",
+  "license": "MIT",
+  "keywords": ["agentic-development", "code-review", "spec-driven-development"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Harness",
+    "shortDescription": "Spec-driven agent development",
+    "longDescription": "Lifecycle skills, role guidance, and gate-evidence hooks for spec-driven development in agent-run repositories.",
+    "developerName": "sluengen",
+    "category": "Developer Tools",
+    "capabilities": ["Read", "Write"],
+    "websiteURL": "https://sluengen.github.io/harness/",
+    "defaultPrompt": [
+      "Initialize Harness in this repository.",
+      "Build the next Harness ticket.",
+      "Review the current branch with Harness."
+    ],
+    "brandColor": "#F97316"
+  }
+}

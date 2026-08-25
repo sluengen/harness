@@ -473,8 +473,8 @@ def test_a_printed_count_that_disagrees_with_its_list_is_reported() -> None:
     Paired with the agreeing case below, so neither is a constant.
     """
     spliced = _page_text().replace(
-        '<h3>Skills <span class="n">15</span></h3>',
-        '<h3>Skills <span class="n">14</span></h3>',
+        '<h3>Skills <span class="n">28</span></h3>',
+        '<h3>Skills <span class="n">27</span></h3>',
         1,
     )
     assert spliced != _page_text(), (
@@ -497,4 +497,31 @@ def test_the_real_page_counts_agree_with_their_lists() -> None:
         f"{PAGE_PATH} prints a count that its own list contradicts, as "
         f"(printed, listed): {wrong}. The inventory sweep does not read these "
         f"numbers, so a wrong one ships green."
+    )
+
+
+def test_the_page_positions_the_native_package_for_both_hosts() -> None:
+    """The published identity names both hosts in metadata and visible copy."""
+    html = _page_text()
+    head, separator, body = html.partition("</head>")
+    assert separator, "the page has no closing head tag"
+    phrase = "native plugins for Claude Code and Codex"
+    assert phrase in head, "page metadata still positions harness for only one host"
+    assert phrase in body, "visible page copy still positions harness for only one host"
+
+
+def test_the_hero_surface_counts_match_the_tracked_tree() -> None:
+    """The top-line product summary is measured from the same shipped surface."""
+    html = _page_text()
+    hero, separator, _ = html.partition("</header>")
+    assert separator, "the page has no closing hero header"
+    observed = {
+        kind.rstrip("s"): int(count)
+        for count, kind in re.findall(
+            r"<li><b>(\d+)</b> (commands|skills|agents|hooks)</li>", hero
+        )
+    }
+    expected = {kind: len(units) for kind, units in tree_units().items()}
+    assert observed == expected, (
+        f"the hero summarizes {observed}, but the tracked plugin surface is {expected}"
     )

@@ -33,9 +33,11 @@ suite. The end-to-end proof over a real pytest run is
 
 from __future__ import annotations
 
+import ast
 import io
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -605,34 +607,309 @@ def test_the_work_dir_is_announced_before_the_first_write(
     assert (work_dir / "backup" / "pkg" / "calc.py").exists()
 
 
-def test_the_module_spawns_only_python_never_git() -> None:
-    """Restoration reads from backups; nothing in this module shells out to git.
+#: The one non-interpreter argv this module may build, as its three literal
+#: elements: ``["node", <a name bound to the gate-marker helper>, "status"]``.
+#: Stated as constants so each one can be sampled by a synthetic case below —
+#: a predicate fed only production source is indistinguishable from a hardcoded
+#: pass (#458), so every constant here has a case whose answer differs from this
+#: tree's.
+HELPER_RUNTIME = "node"
+HELPER_QUERY = "status"
 
-    Structural rather than remembered: every ``subprocess`` call the module can
-    build is asserted to start its argv with ``sys.executable``. ``git checkout``
-    is the revert that cost #163 forty minutes of finished work, and the rule
-    against it only holds if nothing here can reach git at all.
+#: What a name must be bound to before it can fill the middle slot. The exemption
+#: is **earned from the subject**, not granted to a name: the guard resolves the
+#: module's own top-level assignments and admits only a name whose value is built
+#: from this literal. Rename the constant and the guard follows it; re-point it at
+#: another file and the exemption evaporates. There is no list to go stale in
+#: either direction (#449 → #458, five findings).
+HELPER_FILENAME = "gate-marker.js"
+
+
+def _helper_names(tree: ast.Module) -> set[str]:
+    """Top-level names bound to something built from ``HELPER_FILENAME``.
+
+    Read off the assignment rather than matched by name, so
+    ``GATE_MARKER_JS = str(PLUGIN_DIR / "gate-marker.js")`` resolves and a name
+    that merely *looks* like a helper path does not. Top-level only: a local
+    rebinding inside a function is not the module's declared constant.
     """
-    import ast
+    names: set[str] = set()
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        literals = {
+            child.value
+            for child in ast.walk(node.value)
+            if isinstance(child, ast.Constant) and isinstance(child.value, str)
+        }
+        if HELPER_FILENAME not in literals:
+            continue
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                names.add(target.id)
+    return names
 
+
+#: The module whose calls this guard extracts. The canonical name is a member of
+#: the module set below rather than the whole of it: ``subprocess.run(...)`` needs
+#: no import to parse, and every synthetic case here is a fragment.
+SPAWN_MODULE = "subprocess"
+
+
+def _spawn_names(tree: ast.Module) -> tuple[set[str], set[str]]:
+    """The names ``tree``'s own imports bind to :data:`SPAWN_MODULE`.
+
+    Returns ``(module names, called names)``: names standing for the module, so
+    ``import subprocess as sp`` makes ``sp.run(...)`` a spawn, and names bound
+    directly, so ``from subprocess import Popen as spawn`` makes ``spawn(...)``
+    one. Earned from the import in the same shape :func:`_helper_names` earns the
+    helper from its assignment — a name is a spawn because of what it was bound
+    to, never because of what it is called, so ``from pkg.jobs import run`` is not
+    one and there is no list of function names to go stale (#490).
+
+    Every name a ``from subprocess import`` binds counts when called, including
+    one that spawns nothing (``TimeoutExpired``). That over-reports in the loud
+    direction — a false offender is a red test naming its line — and it needs no
+    enumeration of which members of the module spawn.
+
+    A star import binds whatever ``subprocess.__all__`` names, so that is what it
+    contributes here — asked of the module rather than transcribed, which is the
+    same earned-from-the-subject shape and leaves nothing to go stale. The
+    spelling is refused in ``scripts/`` by ruff (F403/F405, measured) before this
+    guard ever runs; it is read anyway, because a predicate that goes silent on a
+    legal spelling of its subject is a hole rather than strictness (#484/#487).
+
+    Imports anywhere, not top level only: an import inside a function binds a
+    working spawn just as well, and unlike the helper constant there is nothing
+    here that a local rebinding could weaken.
+    """
+    modules = {SPAWN_MODULE}
+    called: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == SPAWN_MODULE:
+                    modules.add(alias.asname or alias.name)
+        elif isinstance(node, ast.ImportFrom) and node.module == SPAWN_MODULE:
+            for alias in node.names:
+                if alias.name == "*":
+                    called |= set(subprocess.__all__)
+                else:
+                    called.add(alias.asname or alias.name)
+    return modules, called
+
+
+def subprocess_calls(tree: ast.Module) -> list[ast.Call]:
+    """Every call in ``tree`` that spawns through :data:`SPAWN_MODULE`.
+
+    Every spelling an import can bind: ``subprocess.run(...)``, an aliased
+    ``sp.run(...)``, and a bare ``run(...)`` or ``Popen(...)`` off a
+    ``from``-import, aliased, plain, or by ``*``. A predicate that reads one
+    spelling of a shape its subject may legally write is a hole, not strictness
+    (#484/#487).
+
+    Split out from the offender predicate so the non-vacuity floor can assert the
+    scan *found* something: a guard whose extractor silently returned ``[]`` would
+    satisfy "nothing spawns anything" having read nothing at all (#467).
+    """
+    modules, called = _spawn_names(tree)
+    calls: list[ast.Call] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if isinstance(func, ast.Attribute):
+            if isinstance(func.value, ast.Name) and func.value.id in modules:
+                calls.append(node)
+        elif isinstance(func, ast.Name) and func.id in called:
+            calls.append(node)
+    return calls
+
+
+def _is_interpreter_argv(argv: ast.expr | None) -> bool:
+    """``[sys.executable, …]`` — this module running its own interpreter."""
+    if not isinstance(argv, ast.List) or not argv.elts:
+        return False
+    head = argv.elts[0]
+    return isinstance(head, ast.Attribute) and head.attr == "executable"
+
+
+def _is_helper_query_argv(argv: ast.expr | None, helpers: set[str]) -> bool:
+    """Exactly ``["node", <helper name>, "status"]`` and nothing else.
+
+    Three elements, not "starts with": a fourth element is a different command,
+    and the length is what stops ``["node", HELPER, "status", "--write"]`` from
+    inheriting the exemption.
+    """
+    if not isinstance(argv, ast.List) or len(argv.elts) != 3:
+        return False
+    runtime, helper, verb = argv.elts
+    return (
+        isinstance(runtime, ast.Constant)
+        and runtime.value == HELPER_RUNTIME
+        and isinstance(helper, ast.Name)
+        and helper.id in helpers
+        and isinstance(verb, ast.Constant)
+        and verb.value == HELPER_QUERY
+    )
+
+
+def unpermitted_spawns(source: str, origin: str = "<source>") -> list[str]:
+    """Every subprocess argv in ``source`` this module is not permitted to build.
+
+    One function, called by the tree-wide assertion **and** by every synthetic
+    case, so a change to how production is scanned is a change to what every
+    control measures (craft.md → *A positive control must exercise the predicate,
+    not re-implement it*).
+    """
+    tree = ast.parse(source, filename=origin)
+    helpers = _helper_names(tree)
+    offenders: list[str] = []
+    for call in subprocess_calls(tree):
+        argv = call.args[0] if call.args else None
+        if _is_interpreter_argv(argv) or _is_helper_query_argv(argv, helpers):
+            continue
+        spelling = "no argv" if argv is None else ast.unparse(argv)
+        offenders.append(f"{origin}:{call.lineno}: {spelling}")
+    return offenders
+
+
+def test_the_module_spawns_only_this_interpreter_and_one_read_only_query() -> None:
+    """Restoration reads from backups; nothing here can reach git to revert.
+
+    ``git checkout -- .`` is the revert that cost #163 forty minutes of finished
+    work, and the rule against it only holds if no call that spawns through
+    ``subprocess`` under any name its own ``import`` statements bind — which is
+    what :func:`subprocess_calls` derives — can build an argv that reaches git
+    destructively.
+
+    What that does not cover, named rather than implied, because a scope stated
+    as *everything* is the claim that goes false first. A shell reached without
+    ``subprocess`` at all, of which ``os.system("git checkout -- .")`` is the
+    short spelling: enumerating ``os``'s spawn surface would take an allowlist
+    with both a stale and an admitting direction, this repo's most repeated defect
+    class (#449 → #458), and ruff refuses that line in ``scripts/`` today (S605
+    and S607, measured) though a ``# noqa`` suppresses it as this module already
+    suppresses S603. And a spawner reached under a name no ``import`` statement
+    bound — ``sp = subprocess`` rebound by assignment, or a module fetched through
+    ``importlib`` — which is where following the name stops being a question a
+    predicate over text can answer.
+
+    #500 widened the permission by exactly one shape, and the widening is stated as a
+    shape rather than as a name. The gate lock has to reach the gate-marker
+    convention, which ADR 0018 moved into Node; the alternative was a fourth
+    Python parser of ``HARNESS_GATE_MARKER_MAX_AGE_SECONDS``. Naming ``node``
+    would not protect the property this guard exists for — ``node -e`` runs
+    anything. Naming the exact three-element argv does, because ``status`` is
+    read-only by construction and every drift toward power fails the shape. The
+    only widening direction left is a deliberate edit to this predicate, which is
+    the loud one.
+
+    Reads the **working file** on purpose: that keeps this guard inside
+    ``scripts/mutate.py``'s own mutation instrument, which edits working files.
+    """
     source = (REPO_ROOT / "scripts" / "mutate.py").read_text(encoding="utf-8")
-    calls = [
-        node
-        for node in ast.walk(ast.parse(source))
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and isinstance(node.func.value, ast.Name)
-        and node.func.value.id == "subprocess"
-    ]
-    assert calls, "expected at least one subprocess call to constrain"
-    for call in calls:
-        argv = call.args[0]
-        assert isinstance(argv, ast.List), ast.dump(argv)
-        head = argv.elts[0]
-        assert isinstance(head, ast.Attribute) and head.attr == "executable", (
-            "the only binary scripts/mutate.py may spawn is this interpreter — "
-            f"found {ast.dump(head)}"
-        )
+    tree = ast.parse(source)
+
+    assert subprocess_calls(tree), "expected at least one subprocess call to constrain"
+    assert _helper_names(tree), (
+        "scripts/mutate.py declares no top-level name built from "
+        f"{HELPER_FILENAME!r}, so the middle slot of the permitted argv can never "
+        "match and this guard has degraded to 'only the interpreter' without "
+        "saying so"
+    )
+    assert unpermitted_spawns(source, "scripts/mutate.py") == []
+
+
+#: Synthetic sources whose answers **differ from this tree's**: one per constant
+#: in the permission half, one per import spelling in the extraction half. Fed
+#: only production source, a shape matcher and a hardcoded pass are
+#: indistinguishable (#458), and a corpus that spells a shape one way never shows
+#: an extractor the spellings it misses (#484/#487).
+_PREAMBLE = 'HELPER = str(PLUGIN_DIR / "gate-marker.js")\n'
+
+_SPAWN_CASES: list[tuple[str, str, bool]] = [
+    ("interpreter", 'subprocess.run([sys.executable, "-c", "x"])', True),
+    ("helper-status", f'{_PREAMBLE}subprocess.run(["node", HELPER, "status"], cwd=t)', True),
+    ("helper-write", f'{_PREAMBLE}subprocess.run(["node", HELPER, "write"])', False),
+    ("helper-plus-flag", f'{_PREAMBLE}subprocess.run(["node", HELPER, "status", "-f"])', False),
+    ("node-eval", 'subprocess.run(["node", "-e", "require(0)"])', False),
+    ("other-runtime", f'{_PREAMBLE}subprocess.run(["deno", HELPER, "status"])', False),
+    (
+        "other-file",
+        'HELPER = str(PLUGIN_DIR / "other.js")\nsubprocess.run(["node", HELPER, "status"])',
+        False,
+    ),
+    (
+        "locally-bound-helper",
+        'def go():\n    HELPER = "gate-marker.js"\n    subprocess.run(["node", HELPER, "status"])',
+        False,
+    ),
+    ("git-checkout", 'subprocess.run(["git", "checkout", "--", "."])', False),
+    ("non-literal-argv", "subprocess.run(argv)", False),
+    (
+        "aliased-module",
+        'import subprocess as sp\nsp.run(["git", "checkout", "--", "."])',
+        False,
+    ),
+    (
+        "from-import",
+        'from subprocess import run\nrun(["git", "checkout", "--", "."])',
+        False,
+    ),
+    (
+        "from-import-aliased",
+        'from subprocess import Popen as spawn\nspawn(["git", "checkout", "--", "."])',
+        False,
+    ),
+    (
+        "star-import",
+        'from subprocess import *\nrun(["git", "checkout", "--", "."])',
+        False,
+    ),
+    (
+        "aliased-module-helper-status",
+        f'import subprocess as sp\n{_PREAMBLE}sp.run(["node", HELPER, "status"])',
+        True,
+    ),
+    (
+        "same-name-from-another-module",
+        'from pkg.jobs import run\nrun(["git", "checkout", "--", "."])',
+        True,
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("source", "permitted"),
+    [(source, permitted) for _, source, permitted in _SPAWN_CASES],
+    ids=[name for name, _, _ in _SPAWN_CASES],
+)
+def test_the_spawn_predicate_admits_only_the_two_shapes(source: str, permitted: bool) -> None:
+    """The predicate's own acceptance matrix, over sources this tree does not hold.
+
+    Two halves, because a source can read as permitted either by being judged so
+    or by never being extracted at all.
+
+    *Permission.* Each offender row samples one constant: ``helper-write`` and
+    ``helper-plus-flag`` sample the ``status`` verb and the argv length,
+    ``node-eval`` samples the requirement that the middle slot be a *name*,
+    ``other-runtime`` samples ``node``, ``other-file`` and
+    ``locally-bound-helper`` sample how the helper name is earned, and
+    ``git-checkout`` samples the class the whole rule exists for.
+
+    *Extraction.* ``aliased-module``, ``from-import``, ``from-import-aliased``
+    and ``star-import`` carry that same ``git checkout -- .`` in the spellings a
+    bare ``subprocess.<attr>`` match cannot see. ``aliased-module-helper-status``
+    holds the exemption open through one of them, so the widening cannot buy its
+    coverage by condemning the one permitted shape. And
+    ``same-name-from-another-module`` differs from ``from-import`` in nothing but
+    the module the name came from, which is what separates a name earned from an
+    import from a name matched by spelling (#490).
+    """
+    offenders = unpermitted_spawns(source, "<synthetic>")
+
+    assert (offenders == []) is permitted, offenders
 
 
 # ---------------------------------------------------------------------------

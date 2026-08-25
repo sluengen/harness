@@ -3,18 +3,18 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>harness — a spec-driven development process, shipped as a Claude Code plugin</title>
-<meta name="description" content="harness: a spec-driven development process for agent-driven repos, shipped as a Claude Code plugin. Nine lifecycle commands, fourteen craft skills, four agent roles, and hooks that make a green gate the only path to a shared branch." />
+<title>harness — a spec-driven development process, shipped as native plugins for Claude Code and Codex</title>
+<meta name="description" content="harness: a spec-driven development process for agent-driven repos, shipped as native plugins for Claude Code and Codex. Nine lifecycle workflows, twenty-eight skill packages, four agent roles, and hooks that make a green gate the only path to a shared branch." />
 <link rel="icon" type="image/png" sizes="32x32" href="favicon.png" />
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <meta property="og:type" content="website" />
 <meta property="og:url" content="https://sluengen.github.io/harness/" />
-<meta property="og:title" content="harness — a spec-driven development process, shipped as a Claude Code plugin" />
-<meta property="og:description" content="Let the agent do the judgement work; make the repo own the evidence. Nine lifecycle commands, the craft skills behind them, four agent roles, and hooks that refuse." />
+<meta property="og:title" content="harness — native plugins for Claude Code and Codex" />
+<meta property="og:description" content="Let the agent do the judgement work; make the repo own the evidence. Nine lifecycle workflows, portable skills, four agent roles, and hooks that refuse." />
 <meta property="og:image" content="https://sluengen.github.io/harness/og-card.png" />
 <meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="harness — a spec-driven development process, shipped as a Claude Code plugin" />
-<meta name="twitter:description" content="Let the agent do the judgement work; make the repo own the evidence. Nine lifecycle commands, the craft skills behind them, four agent roles, and hooks that refuse." />
+<meta name="twitter:title" content="harness — native plugins for Claude Code and Codex" />
+<meta name="twitter:description" content="Let the agent do the judgement work; make the repo own the evidence. Nine lifecycle workflows, portable skills, four agent roles, and hooks that refuse." />
 <meta name="twitter:image" content="https://sluengen.github.io/harness/og-card.png" />
 <style>
   :root{
@@ -174,18 +174,18 @@
 
   <!-- ============ HERO ============ -->
   <header class="hero">
-    <p class="eyebrow">Claude Code plugin</p>
+    <p class="eyebrow">Claude Code + Codex</p>
     <h1>A spec-driven development process<br /><span class="accent">for agent-driven repos.</span></h1>
     <p class="thesis">
-      <b>harness</b> is a development process shipped as a Claude Code plugin: nine lifecycle commands,
-      the craft skills behind them, four agent roles, and enforcement hooks that make a green gate the
-      only path to a shared branch. Install it, run <b>/harness:init</b>, and the repo owns its own
-      contract from then on.
+      <b>harness</b> is a development process shipped as native plugins for Claude Code and Codex:
+      nine lifecycle workflows, portable skills, four agent roles, and enforcement hooks that make a
+      green gate the only path to a shared branch. Install it, initialize the repo, and the repo owns
+      its own contract from then on.
     </p>
     <p class="creed">Let the agent do the judgement work; make the repo own the evidence.</p>
     <ul class="counts">
       <li><b>9</b> commands</li>
-      <li><b>14</b> skills</li>
+      <li><b>28</b> skills</li>
       <li><b>4</b> agents</li>
       <li><b>5</b> hooks</li>
       <li><b>1</b> gate</li>
@@ -211,8 +211,9 @@
       <article class="card card--product">
         <h3>The spine</h3>
         <p>
-          A repo-owned <code>CLAUDE.md</code> carries the iron laws, the lifecycle contract, and the
-          repo's own config block — always loaded, never optional. Skills carry the depth and load by task.
+          Repo-owned <code>CLAUDE.md</code> and <code>AGENTS.md</code> files carry the iron laws, the
+          lifecycle contract, and the repo's own config block — always loaded, never optional. Skills
+          carry the depth and load by task.
         </p>
       </article>
       <article class="card card--strategy">
@@ -229,31 +230,34 @@
   <section class="section" id="install">
     <h2>How a repo adopts it</h2>
     <p class="lede">
-      The guidance ships as a plugin from this repo, which is also its marketplace. Three steps, then the
-      process is live in every session.
+      The guidance ships from this repo through native marketplaces for both hosts. Three steps, then
+      the process is live in every session.
     </p>
     <div class="install">
       <div class="step">
         <span class="step__n">1</span>
         <h3>Add the marketplace</h3>
-        <pre>/plugin marketplace add sluengen/harness</pre>
-        <p>Points Claude Code at this repository as a plugin source.</p>
+        <pre>Claude: /plugin marketplace add sluengen/harness
+Codex: codex plugin marketplace add sluengen/harness</pre>
+        <p>Points either host at this repository as a plugin source.</p>
       </div>
       <div class="step">
         <span class="step__n">2</span>
         <h3>Install the plugin</h3>
-        <pre>/plugin install harness@harness</pre>
-        <p>Brings the commands, skills, agents, and hooks into your sessions.</p>
+        <pre>Claude: /plugin install harness@harness
+Codex: codex plugin add harness@harness</pre>
+        <p>Brings the host-native workflows, skills, roles, and hooks into your sessions.</p>
       </div>
       <div class="step">
         <span class="step__n">3</span>
         <h3>Hydrate the repo</h3>
-        <pre>/harness:init</pre>
+        <pre>Claude: /harness:init
+Codex: ask to initialize Harness</pre>
         <p>
-          Interviews for the repo's values and writes the files that must be repo-owned: the spine, the
-          specs scaffold, the infrastructure record, and — where there is no gate yet — a
+          Interviews for the repo's values and writes the files that must be repo-owned: both host
+          spines, Codex role adapters, the specs scaffold, the infrastructure record, and — where there is no gate yet — a
           <code>scripts/verify.sh</code> skeleton with the marker write. After a plugin update,
-          <code>/harness:init --refresh</code> regenerates the spine's generated block and nothing else.
+          refresh regenerates the marked spine blocks and role adapters without replacing repo-owned prose.
         </p>
       </div>
     </div>
@@ -336,14 +340,14 @@
   <section class="section" id="surface">
     <h2>What the plugin installs</h2>
     <p class="lede">
-      The whole surface, as the repository carries it. Commands are the entry points; skills are the
-      depth they load by task; agents are the roles a run dispatches; hooks are the enforcement.
+      The whole surface, as the repository carries it. Claude exposes lifecycle commands and agents;
+      Codex carries matching portable skills. Craft skills supply the depth, and hooks enforce the gate.
     </p>
 
     <div class="grid2">
       <article class="card inv inv--commands">
         <h3>Commands <span class="n">9</span></h3>
-        <p>The entry points. Only <code>/harness:init</code> needs its prefix spoken.</p>
+        <p>Claude's entry points. Codex exposes the same workflows through <code>command-*</code> skills.</p>
         <ul class="units">
           <li class="unit" data-unit="command:build"><code>/build</code><span>Implement, verify, review, and ship a ticket — the one lifecycle driver.</span></li>
           <li class="unit" data-unit="command:capture"><code>/capture</code><span>File an already-decided change straight to Todo.</span></li>
@@ -359,7 +363,7 @@
 
       <article class="card inv inv--agents">
         <h3>Agents <span class="n">4</span></h3>
-        <p>The roles a run dispatches, each in its own fresh context.</p>
+        <p>Claude's roles. Codex carries the same procedures through <code>agent-*</code> skills.</p>
         <ul class="units">
           <li class="unit" data-unit="agent:dev"><code>dev</code><span>Implementation — test-first, strictly in scope, verified before handoff.</span></li>
           <li class="unit" data-unit="agent:reviewer"><code>reviewer</code><span>The final gate before merge; records what actually shipped on PASS.</span></li>
@@ -382,8 +386,8 @@
     </div>
 
     <article class="card inv inv--skills" style="margin-top:20px">
-      <h3>Skills <span class="n">15</span></h3>
-      <p>Loaded by task, not all at once. The builder and the reviewer read the same files, so the bar is identical on both sides.</p>
+      <h3>Skills <span class="n">28</span></h3>
+      <p>Loaded by task, not all at once. Fifteen craft skills are shared directly; Codex also receives nine command workflows and four role procedures as portable skills.</p>
       <ul class="units units--two">
         <li class="unit" data-unit="skill:engineering"><code>engineering</code><span>The build leg of the triad: durable principles, test-first method, scope, the gate.</span></li>
         <li class="unit" data-unit="skill:architecture"><code>architecture</code><span>The design leg: cross-cutting decisions, recorded in the spec they govern.</span></li>
@@ -400,6 +404,19 @@
         <li class="unit" data-unit="skill:writing-quality"><code>writing-quality</code><span>Plain prose; kill the predictable AI-writing patterns.</span></li>
         <li class="unit" data-unit="skill:github-issues"><code>github-issues</code><span>The GitHub provider recipes for reading and updating the queue.</span></li>
         <li class="unit" data-unit="skill:linear"><code>linear</code><span>The Linear provider recipes for the same backend-neutral contract.</span></li>
+        <li class="unit" data-unit="skill:command-assess"><code>command-assess</code><span>The Codex-native periodic assessment workflow.</span></li>
+        <li class="unit" data-unit="skill:command-build"><code>command-build</code><span>The Codex-native ticket build, review, and ship workflow.</span></li>
+        <li class="unit" data-unit="skill:command-capture"><code>command-capture</code><span>The Codex-native workflow for filing decided work.</span></li>
+        <li class="unit" data-unit="skill:command-digest"><code>command-digest</code><span>The Codex-native operator report and decision drain.</span></li>
+        <li class="unit" data-unit="skill:command-init"><code>command-init</code><span>The Codex-native repository hydration workflow.</span></li>
+        <li class="unit" data-unit="skill:command-promote"><code>command-promote</code><span>The Codex-native promotion workflow.</span></li>
+        <li class="unit" data-unit="skill:command-propose"><code>command-propose</code><span>The Codex-native proposal workflow.</span></li>
+        <li class="unit" data-unit="skill:command-review"><code>command-review</code><span>The Codex-native branch review workflow.</span></li>
+        <li class="unit" data-unit="skill:command-routine"><code>command-routine</code><span>The Codex-native unattended build cycle.</span></li>
+        <li class="unit" data-unit="skill:agent-architect"><code>agent-architect</code><span>The architect role procedure packaged for Codex.</span></li>
+        <li class="unit" data-unit="skill:agent-dev"><code>agent-dev</code><span>The implementation role procedure packaged for Codex.</span></li>
+        <li class="unit" data-unit="skill:agent-reviewer"><code>agent-reviewer</code><span>The independent reviewer procedure packaged for Codex.</span></li>
+        <li class="unit" data-unit="skill:agent-steward"><code>agent-steward</code><span>The whole-system assessment role packaged for Codex.</span></li>
       </ul>
     </article>
   </section>

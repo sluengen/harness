@@ -89,7 +89,6 @@ import os
 import shlex
 import shutil
 import subprocess
-import sys
 import time
 from pathlib import Path
 
@@ -99,7 +98,7 @@ from tests.unit._hooks import REAL_STOP_PAYLOAD
 from tests.unit._prose import REPO_ROOT
 
 HOOK = REPO_ROOT / "hooks" / "gate-evidence-guard.js"
-WRITER = REPO_ROOT / "scripts" / "gate_marker.py"
+WRITER = REPO_ROOT / "scripts" / "gate-marker.js"
 
 #: A phrasing from the hook's claim-pattern set, and deliberately ordinary.
 CLAIM = "All acceptance criteria are met and the tests pass. This is done."
@@ -270,11 +269,11 @@ def _blocked(out: dict) -> bool:
 def _tree(cwd: Path) -> str:
     """The tree oid, from the **production** computation.
 
-    ``scripts/gate_marker.py tree`` is the writer's own answer, so a test that
+    ``node scripts/gate-marker.js tree`` is the writer's own answer, so a test that
     asserts on it is not re-implementing the hook's arithmetic in the assertion.
     """
     proc = subprocess.run(
-        [sys.executable, str(WRITER), "tree"], cwd=cwd, capture_output=True, text=True, timeout=60
+        [_node(), str(WRITER), "tree"], cwd=cwd, capture_output=True, text=True, timeout=60
     )
     assert proc.returncode == 0, f"the production tree computation failed: {proc.stderr}"
     return proc.stdout.strip()
@@ -283,7 +282,7 @@ def _tree(cwd: Path) -> str:
 def _write_marker(cwd: Path) -> str:
     """Produce a marker with the **production** writer and return its tree."""
     proc = subprocess.run(
-        [sys.executable, str(WRITER), "write"], cwd=cwd, capture_output=True, text=True, timeout=60
+        [_node(), str(WRITER), "write"], cwd=cwd, capture_output=True, text=True, timeout=60
     )
     assert proc.returncode == 0, f"the production writer failed: {proc.stderr}"
     return proc.stdout.split(":", 1)[1].split("->")[0].strip()

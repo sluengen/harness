@@ -2,8 +2,8 @@
 
 📖 **[Read the one-page guide →](https://sluengen.github.io/harness/)** — the operating model at a glance. (This README stays the canonical text; the page is its visual companion.)
 
-**A spec-driven development process for agent-driven repos, shipped as a Claude
-Code plugin**: nine lifecycle commands, the craft skills behind them, four agent
+**A spec-driven development process for agent-driven repos, shipped natively for
+Claude Code and Codex**: nine lifecycle workflows, the craft skills behind them, four agent
 roles, and enforcement hooks that make a green gate the only path to a shared
 branch.
 
@@ -32,8 +32,9 @@ process the plugin publishes, against the same gate.
 
 ## Install
 
-The guidance ships as a Claude Code plugin from this repo (which is also its
-marketplace):
+This repo is the marketplace for both native plugin manifests.
+
+Claude Code:
 
 ```
 /plugin marketplace add sluengen/harness
@@ -46,17 +47,29 @@ Then, in the repo you want to run the process in:
 /harness:init
 ```
 
-`init` interviews for the repo's values and writes the handful of files that
-must be repo-owned: the spine (`CLAUDE.md`), the specs scaffold, the
-infrastructure record, and — where the repo has no gate yet — a
-`scripts/verify.sh` skeleton with the marker write. After a plugin update,
-`/harness:init --refresh` regenerates the spine's generated block and nothing
-else.
+Codex:
 
-Codex is a secondary, compiled surface: `AGENTS.md` and `.codex/` are generated
-from the same sources by `scripts/generate_codex_artifacts.py`, and a gate
-stage keeps them from drifting. Codex sessions get the spine and the skills,
-not the hooks.
+```bash
+codex plugin marketplace add sluengen/harness
+codex plugin add harness@harness
+```
+
+Then ask Codex to initialize Harness in the repository. The installed
+`command-init` skill carries the same workflow as `/harness:init`.
+
+`init` interviews for the repo's values and writes the files that must be
+repo-owned: both host spines (`CLAUDE.md` and `AGENTS.md`), Codex role adapters,
+the specs scaffold, the infrastructure record, and — where the repo has no gate yet — a
+`scripts/verify.sh` skeleton with the marker write. After a plugin update,
+`/harness:init --refresh` regenerates the marked blocks in both spines and the
+generated Codex role adapters.
+
+Codex installs a native `.codex-plugin/plugin.json` package. Commands and agent
+procedures are compiled into portable skills because the universal plugin format
+packages skills rather than Claude command or agent directories. Codex also runs
+the plugin hooks; the scripts accept both hosts' payload and output contracts.
+`scripts/generate_codex_artifacts.py --check` keeps the portable skills,
+`AGENTS.md`, `.agents/`, and the legacy `.codex/` dogfood surface in sync.
 
 ## The nine commands
 

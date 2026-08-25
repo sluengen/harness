@@ -99,9 +99,11 @@ const { spawnSync } = require("child_process");
 
 const TAG = "[GATE-EVIDENCE-GUARD]";
 
-//: The freshness bound, mirrored from ``scripts/gate_marker.py``. Its purpose is
+//: The freshness bound, mirrored from ``scripts/gate-marker.js``. Its purpose is
 //: toolchain drift under an unchanged tree, not session scope. The equivalence
-//: with the Python parser is measured by ``test_gate_marker_contract.py``.
+//: with the writer's parser and the push guard's is measured by
+//: ``test_gate_marker_contract.py``, against a hand-written table of the
+//: degenerate spellings so all three cannot be wrong together.
 const MAX_AGE_ENV = "HARNESS_GATE_MARKER_MAX_AGE_SECONDS";
 const DEFAULT_MAX_AGE_SECONDS = 86400;
 
@@ -255,7 +257,7 @@ function hasFreshMarker(tree, cwd) {
  * markers rather than in TMPDIR: the git directory is guaranteed to exist
  * wherever this can run at all, and the location cannot affect the oid.
  *
- * Mirrors ``scripts/gate_marker.py``; the equivalence is measured by
+ * Mirrors ``scripts/gate-marker.js``; the equivalence is measured by
  * ``test_gate_marker_contract.py``, because drift between the writer tree and
  * the reader tree would be silent and total. */
 let scratchIndexSerial = 0;
@@ -288,8 +290,10 @@ function currentTree(cwd) {
     try {
       fs.unlinkSync(index);
     } catch (err) {
-      // Best-effort cleanup of a scratch index; a leftover is pruned with the
-      // markers and is never read by anything.
+      // Best-effort cleanup of a scratch index, and nothing else sweeps one: the
+      // prune in the writer globs ``*.json`` and this file is named ``.index-…``,
+      // so a leftover stays until the clone goes. It is never read by anything.
+      // (Measured at #500; the comment previously claimed the prune caught it.)
       void err;
     }
   }
@@ -347,7 +351,7 @@ const BRANCHES_KEY = /^branches\s*:/;
 //: string literals to count braces, and a lone quote inside a pattern throws
 //: their offsets off. Every match includes its key, so no match is zero-length
 //: and the global scan always advances.
-const FLOW_PAIR = /([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*(\x22[^\x22]*\x22|\x27[^\x27]*\x27|[^,]*)/g;
+const FLOW_PAIR = /\s*([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*(\x22[^\x22]*\x22|\x27[^\x27]*\x27|[^,]*)\s*/y;
 
 
 //: Files already reported as unreadable, so a hook that resolves its declaration
@@ -415,6 +419,8 @@ function declaredBranches(contextFile) {
   const found = {};
   let declares = false;
   let indent = -1;
+  let entryIndent = -1;
+  let invalid = false;
   for (const raw of text.split("\n")) {
     // ``\r`` first, then tabs. Splitting on ``\n`` leaves a CRLF file's lines
     // ending in ``\r``, and ``PAIR``'s trailing ``(.*)$`` cannot cross one —
@@ -430,10 +436,34 @@ function declaredBranches(contextFile) {
       declares = true;
       const flow = BRANCHES_FLOW.exec(trimmed);
       if (flow) {
-        for (const match of flow[1].matchAll(FLOW_PAIR)) {
+        const candidate = {};
+        let cursor = 0;
+        while (cursor < flow[1].length) {
+          FLOW_PAIR.lastIndex = cursor;
+          const match = FLOW_PAIR.exec(flow[1]);
+          if (match === null || match.index !== cursor) {
+            invalid = true;
+            break;
+          }
           const value = scalar(match[2]);
-          if (value) found[match[1]] = value;
+          if (!value || Object.hasOwn(candidate, match[1])) {
+            invalid = true;
+            break;
+          }
+          candidate[match[1]] = value;
+          cursor = FLOW_PAIR.lastIndex;
+          if (cursor === flow[1].length) break;
+          if (flow[1][cursor] !== ",") {
+            invalid = true;
+            break;
+          }
+          cursor += 1;
+          if (cursor === flow[1].length) {
+            invalid = true;
+            break;
+          }
         }
+        if (!invalid) Object.assign(found, candidate);
         break; // a flow mapping is the whole declaration
       }
       // A block opens when the key carries **no value** — asked through
@@ -452,12 +482,29 @@ function declaredBranches(contextFile) {
       if (scalar(trimmed.replace(BRANCHES_KEY, "")) === "") indent = lead;
       continue;
     }
-    if (!line.trim()) continue;
+    const content = line.trim();
+    if (!content) continue;
     if (lead <= indent) break; // the block ended
+    if (content.startsWith("#")) continue;
+    if (entryIndent === -1) entryIndent = lead;
+    if (lead !== entryIndent) {
+      invalid = true;
+      break;
+    }
     const match = PAIR.exec(line);
-    if (!match) continue;
+    if (!match) {
+      invalid = true;
+      break;
+    }
     const value = scalar(match[2]);
-    if (value) found[match[1]] = value;
+    if (!value || Object.hasOwn(found, match[1])) {
+      invalid = true;
+      break;
+    }
+    found[match[1]] = value;
+  }
+  if (invalid) {
+    for (const key of Object.keys(found)) delete found[key];
   }
   if (declares && Object.keys(found).length === 0) noticeUnreadableDeclaration(contextFile);
   return found;
@@ -905,11 +952,13 @@ if (require.main === module) {
 }
 
 // Exported so ``test_gate_marker_contract.py`` can execute this hook copy of the
-// contract against the Python writer. The tree is computed in two languages and
-// the path in three, which is exactly the shape that drifts silently; an
-// equivalence test that runs all of them is what catches it. The
-// ``require.main === module`` guard above means importing for that introspection
-// never runs the hook.
+// contract beside the writer's and the push guard's. The tree is computed in two
+// separate copies and the path in three, which is exactly the shape that drifts
+// silently; an equivalence test that runs all of them is what catches it. Since
+// ADR 0018 they are one language, so that test also holds the three textually
+// independent — a shared module would make the equivalence true by construction.
+// The ``require.main === module`` guard above means importing for that
+// introspection never runs the hook.
 //
 // ``declaredBranches`` and ``protectedBranches`` join them for the same reason,
 // one duplication further along: the spine's ``branches:`` block is parsed
