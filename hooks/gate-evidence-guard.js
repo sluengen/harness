@@ -351,7 +351,7 @@ const BRANCHES_KEY = /^branches\s*:/;
 //: string literals to count braces, and a lone quote inside a pattern throws
 //: their offsets off. Every match includes its key, so no match is zero-length
 //: and the global scan always advances.
-const FLOW_PAIR = /([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*(\x22[^\x22]*\x22|\x27[^\x27]*\x27|[^,]*)/g;
+const FLOW_PAIR = /\s*([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*(\x22[^\x22]*\x22|\x27[^\x27]*\x27|[^,]*)\s*/y;
 
 
 //: Files already reported as unreadable, so a hook that resolves its declaration
@@ -419,6 +419,8 @@ function declaredBranches(contextFile) {
   const found = {};
   let declares = false;
   let indent = -1;
+  let entryIndent = -1;
+  let invalid = false;
   for (const raw of text.split("\n")) {
     // ``\r`` first, then tabs. Splitting on ``\n`` leaves a CRLF file's lines
     // ending in ``\r``, and ``PAIR``'s trailing ``(.*)$`` cannot cross one —
@@ -434,10 +436,34 @@ function declaredBranches(contextFile) {
       declares = true;
       const flow = BRANCHES_FLOW.exec(trimmed);
       if (flow) {
-        for (const match of flow[1].matchAll(FLOW_PAIR)) {
+        const candidate = {};
+        let cursor = 0;
+        while (cursor < flow[1].length) {
+          FLOW_PAIR.lastIndex = cursor;
+          const match = FLOW_PAIR.exec(flow[1]);
+          if (match === null || match.index !== cursor) {
+            invalid = true;
+            break;
+          }
           const value = scalar(match[2]);
-          if (value) found[match[1]] = value;
+          if (!value || Object.hasOwn(candidate, match[1])) {
+            invalid = true;
+            break;
+          }
+          candidate[match[1]] = value;
+          cursor = FLOW_PAIR.lastIndex;
+          if (cursor === flow[1].length) break;
+          if (flow[1][cursor] !== ",") {
+            invalid = true;
+            break;
+          }
+          cursor += 1;
+          if (cursor === flow[1].length) {
+            invalid = true;
+            break;
+          }
         }
+        if (!invalid) Object.assign(found, candidate);
         break; // a flow mapping is the whole declaration
       }
       // A block opens when the key carries **no value** — asked through
@@ -456,12 +482,29 @@ function declaredBranches(contextFile) {
       if (scalar(trimmed.replace(BRANCHES_KEY, "")) === "") indent = lead;
       continue;
     }
-    if (!line.trim()) continue;
+    const content = line.trim();
+    if (!content) continue;
     if (lead <= indent) break; // the block ended
+    if (content.startsWith("#")) continue;
+    if (entryIndent === -1) entryIndent = lead;
+    if (lead !== entryIndent) {
+      invalid = true;
+      break;
+    }
     const match = PAIR.exec(line);
-    if (!match) continue;
+    if (!match) {
+      invalid = true;
+      break;
+    }
     const value = scalar(match[2]);
-    if (value) found[match[1]] = value;
+    if (!value || Object.hasOwn(found, match[1])) {
+      invalid = true;
+      break;
+    }
+    found[match[1]] = value;
+  }
+  if (invalid) {
+    for (const key of Object.keys(found)) delete found[key];
   }
   if (declares && Object.keys(found).length === 0) noticeUnreadableDeclaration(contextFile);
   return found;
