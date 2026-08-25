@@ -3,8 +3,8 @@
 For a repository that installed the guidance the pre-v5 way — copied
 `commands/` / `skills/` / `agents/` / `hooks/` trees, a `.guidance-lock.yaml`
 pinning their versions, a `CONTEXT.md`, and `/update-guidance` to pull updates.
-That whole channel is retired (ADR 0017): the guidance now ships as a Claude
-Code plugin with one version, and the repo owns only a handful of hydrated
+That whole channel is retired (ADR 0017): the guidance now ships as native
+Claude Code and Codex plugins with one version, and the repo owns only hydrated
 files. Migration is per-repo, at your own pace — nothing breaks on the day the
 source repo moves.
 
@@ -17,14 +17,23 @@ source repo moves.
    /plugin install harness@harness
    ```
 
-2. **Hydrate:** run `/harness:init` in the repo. It interviews for the repo's
+   Codex installs the same release:
+
+   ```bash
+   codex plugin marketplace add sluengen/harness
+   codex plugin add harness@harness
+   ```
+
+2. **Hydrate:** run `/harness:init` in Claude Code or ask Codex to initialize
+   Harness. It interviews for the repo's
    values (tracker, commands, branch roles, layers) — taking answers from the
    repo itself where it can, including your existing `CONTEXT.md` — and writes
-   the repo-owned files: the spine (`CLAUDE.md`), the specs scaffold, the
-   infrastructure record, and a `scripts/verify.sh` skeleton only if the repo
-   has no gate yet. **An existing `CLAUDE.md` is merged, not overwritten**: the
-   generated block is inserted above your content, which becomes the repo-owned
-   section. Hydration is working-tree only — you review and commit the result.
+   the repo-owned files: both spines (`CLAUDE.md` and `AGENTS.md`), Codex role
+   adapters under `.codex/agents/`, the specs scaffold, the infrastructure
+   record, and a `scripts/verify.sh` skeleton only if the repo has no gate yet.
+   Existing host files are merged, not overwritten: the generated block is
+   inserted above their content, which remains repo-owned. Hydration is
+   working-tree only — you review and commit the result.
 
 3. **Declare where the plugin comes from.** Installing it wrote the
    enablement into whichever settings scope you chose — the repo's own
@@ -61,8 +70,9 @@ source repo moves.
    anything repo-specific you still want into the spine's repo section and
    delete it.
 
-6. **After future plugin updates:** `/harness:init --refresh` regenerates the
-   spine's generated block between its markers and touches nothing else. There
+6. **After future plugin updates:** `/harness:init --refresh`, or the same init
+   skill in Codex, regenerates both spines' marked blocks and the generated Codex
+   role adapters. There
    is no `/update-guidance` any more; the plugin manager owns updates.
 
 ## Version pinning

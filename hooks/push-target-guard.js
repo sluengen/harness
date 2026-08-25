@@ -153,9 +153,13 @@ function failOpen(reason, err) {
   process.stderr.write(`${TAG} fail-open: ${reason}: ${cause.replace(/\s+/g, " ").slice(0, 200)}\n`);
 }
 
+let codexRuntime = false;
+
 function readStdin() {
   try {
-    return JSON.parse(fs.readFileSync(0, "utf8"));
+    const input = JSON.parse(fs.readFileSync(0, "utf8"));
+    codexRuntime = Object.prototype.hasOwnProperty.call(input, "turn_id");
+    return input;
   } catch (err) {
     failOpen("could not parse the hook payload on stdin", err);
     return {};
@@ -762,7 +766,8 @@ function deny(reason) {
 }
 
 /** Defer to the normal permission flow — do NOT pre-approve. */
-function passThrough() {
+function passThrough(input) {
+  if (input && Object.prototype.hasOwnProperty.call(input, "turn_id")) return;
   process.stdout.write(JSON.stringify({ continue: true }));
 }
 
@@ -859,9 +864,9 @@ function verdict(push, parser) {
 
 function main() {
   const input = readStdin();
-  if ((input.tool_name || "") !== "Bash") return passThrough();
+  if ((input.tool_name || "") !== "Bash") return passThrough(input);
   const command = (input.tool_input && input.tool_input.command) || "";
-  if (!command) return passThrough();
+  if (!command) return passThrough(input);
 
   // Lazy, inside main()'s try: a top-level sibling require sits outside the
   // fail-open path, turning an ESM-root load failure into a crash before stdout.
@@ -876,7 +881,7 @@ function main() {
         `nothing until ${SIBLING_PARSER} is restored`,
       { message: `looked for ${sibling}` }
     );
-    return passThrough();
+    return passThrough(input);
   }
   const parser = require("./git-push-guard.js");
 
@@ -885,7 +890,7 @@ function main() {
     const reason = verdict(push, parser);
     if (reason) return deny(reason);
   }
-  passThrough();
+  passThrough(input);
 }
 
 if (require.main === module) {
@@ -895,7 +900,7 @@ if (require.main === module) {
     // State 1: the hook could not run, so it has no opinion. Pass through, but
     // loudly — a disarmed enforcement hook must not look like a clean pass.
     failOpen("crashed before it could decide", err);
-    process.stdout.write(JSON.stringify({ continue: true }));
+    if (!codexRuntime) process.stdout.write(JSON.stringify({ continue: true }));
   }
 }
 
