@@ -255,6 +255,32 @@ constant*, where both operands are real and are measured against each other in
 incommensurable units. Here the operands are fine and the **question** was put
 to a pruned graph.
 
+### A regenerated reference measures the generator, not the tree
+
+A comparison gate that manufactures its reference side at run time is a claim
+about the tool that manufactured it. Unless the generator is pinned in the same
+commit as the gate, a green means only that the runner's output happened to agree
+with the committed one — which two different versions often do — and a red does
+not distinguish a stale committed file from a runner whose generator writes
+different bytes. Neither verdict is about the tree alone.
+
+**Falsifying example.** A lockfile-sync gate regenerated `package-lock.json`
+from its manifest and diffed the result against the committed file, using
+whatever `npm` sat on `PATH`. npm's output is version-dependent on byte-identical
+input: the incident sampled versions on both sides of a release boundary, seeding
+each run with the committed lockfile — every one it tried below 11.7.0 wrote a
+`"dev": true` line on the `fsevents` entry, and every one from 11.7.0 up omitted
+it. The committed file carried the older form, and had been restored by hand
+twice — each time by someone who had regenerated it and diffed, correctly, on the
+npm they happened to have. CI ran a newer one, so the first runner that disagreed
+blocked a promotion over a difference between two npms rather than anything wrong
+in the tree. Pinning the generator in the manifest, and invoking it through that
+pin, makes the reference a function of the tree again.
+
+Its sibling above is *A question answered over a simplified graph measures the
+topology*, where the environment shapes the **question**. Here the question is
+fine and the environment supplies one of the **operands**.
+
 ## Prose predicates and text guards
 
 ### A blacklist inversion sweep fails open on an appended grant
