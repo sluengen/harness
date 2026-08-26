@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-25
-- **Source:** ticket #500; consumer migration follow-up #501.
+- **Source:** tickets #500 and #507; consumer migration follow-up #501.
 
 ## Context
 
@@ -21,6 +21,27 @@ The principle boundary this draws, and the rule that decides for the next file:
 **A contract with an implementation forced into a runtime by its host is implemented in that runtime everywhere.** The hooks are forced into Node by Claude Code, so the marker convention is Node end to end. Everything else under `scripts/` stays Python: its only host is the gate, which already runs `uv`, and Python is where this repo's lint, type-check and coverage instruments reach. The test for the next executable file is one question — *does any part of this contract already run inside a host-imposed runtime?* If yes, it joins that runtime beside the code that is already there. If no, it is Python. Neither answer may introduce a build step, a package manager, or a non-stdlib dependency; that constraint is what `hooks/` and `scripts/` already share and it is not relaxed here.
 
 The module type is pinned by `scripts/package.json` (`{"type": "commonjs"}`), the same one-key mechanism and the same reasoning as `hooks/package.json`: Node resolves a `.js` file's type from the nearest `package.json` walking up, and in a consuming repo that walk otherwise terminates at a root the harness does not control.
+
+### Marker-emission boundary (amended by #507)
+
+`gate-marker.js` exposes no direct successful write command. Its public `run`
+subcommand accepts no operands and launches only the fixed
+`<cwd>/scripts/verify.sh` with `HARNESS_GATE_MARKER_RUNNER=1`; it forwards that
+gate's output and exit status. Only after a measured zero exit does its
+non-exported emitter write the tree-named marker and record `exit: 0` in the
+diagnostic payload. A launch failure is infrastructure (exit 3), while a red
+internal stage preserves its own non-zero exit and produces no evidence.
+
+The public `scripts/verify.sh` delegates to that fixed runner. Its internal-mode
+path retains the consumer's shell-compatible verification stages and does not
+write a marker. `write` is retired with usage exit 64. Query operations
+(`preflight`, `tree`, `path`, and `status`) remain public. This narrows the
+supported interface without claiming cryptographic attestation: a process able
+to modify the checkout or set the internal variable remains in the same local
+trust domain; CI and server-side branch protection remain authoritative.
+
+#501 is downstream adoption work only. It refreshes consumer wiring to this
+contract and does not redefine the marker interface.
 
 ## Alternatives rejected
 

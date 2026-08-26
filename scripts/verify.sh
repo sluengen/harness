@@ -3,6 +3,13 @@
 # All checks must pass; any failure exits immediately.
 set -euo pipefail
 
+# The public gate delegates marker ownership to the fixed Node runner.  The
+# runner re-enters this script in internal mode after it has established the
+# boundary that only a measured successful run may create evidence.
+if [ "${HARNESS_GATE_MARKER_RUNNER:-}" != "1" ]; then
+  exec node scripts/gate-marker.js run
+fi
+
 # Toolchain preflight (CAL-1160). The checks below need ruff, mypy, and pytest
 # runnable under `uv run --extra dev`. If the toolchain cannot even launch (a
 # missing tool, a broken venv — infrastructure, not a red tree; the observed live
@@ -131,15 +138,6 @@ echo "=== codex drift guard ==="
 # regeneration off CLAUDE.md, agents/, commands/, and skills/ — the Codex
 # surface is compiled, never hand-edited (ADR 0017; v5 chunk 3).
 uv run --extra dev python scripts/generate_codex_artifacts.py --check
-
-echo "=== gate marker ==="
-# Record that the gate exited 0 over *these exact bytes* (#436). The marker is
-# named after the git tree object of this working tree and lives in the git
-# common directory, so it cannot be swept into the tree it records. Two hooks
-# read it: the Stop hook refuses a completion claim over a tree no marker
-# covers, and the push guard refuses a push to a protected branch carrying one.
-# Last, because `set -e` is what makes "after every stage" mean "only on green".
-node scripts/gate-marker.js write
 
 echo ""
 echo "All checks passed."

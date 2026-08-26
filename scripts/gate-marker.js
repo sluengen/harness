@@ -60,7 +60,7 @@
  * Subcommands:
  *
  *     node scripts/gate-marker.js preflight          # reject Git-visible nested worktrees
- *     node scripts/gate-marker.js write              # the gate's success path
+ *     node scripts/gate-marker.js run                # the gate's success path
  *     node scripts/gate-marker.js tree               # the tree oid of the current worktree
  *     node scripts/gate-marker.js path --tree <oid>  # where that tree's marker would live
  *     node scripts/gate-marker.js status             # {tree, marker, max_age_seconds}
@@ -72,6 +72,7 @@
  * `package.json` walking up, and in a consuming repo that walk otherwise
  * terminates at a root the harness does not control (#302's mechanism).
  */
+// size: CLI dispatch and marker contract stay cohesive to avoid a shared hook dependency that could disable both enforcement hooks.
 "use strict";
 
 const fs = require("node:fs");
@@ -114,6 +115,11 @@ const EXIT_REFUSED = 2;
 //: not run at all, and the wrapper in `verify.sh` treats it that way — so this
 //: design does not depend on which code Node picks for an uncaught exception.
 const EXIT_USAGE = 64;
+
+//: A failure to launch the fixed internal gate is infrastructure, neither a
+//: repository refusal nor a red verification stage.  Kept distinct so callers
+//: can report the missing runner rather than a false claim about the tree.
+const EXIT_RUNNER_UNAVAILABLE = 3;
 
 /** A git invocation this program needs did not succeed.
  *
@@ -383,11 +389,14 @@ function branchOf(cwd) {
   }
 }
 
-/** Record that the gate exited `exitCode` over `cwd`'s current tree.
+/** Record a measured successful gate completion over `cwd`'s current tree.
  *
  * Called only on green. The body is diagnostics for a human; the *filename* is
  * the claim the hooks read. */
-function writeMarker(cwd, exitCode) {
+function emitSuccessfulMarker(cwd, measuredExit) {
+  if (measuredExit !== 0) {
+    throw new Error("gate-marker: refusing to emit evidence for a non-zero gate result");
+  }
   const tree = currentTree(cwd);
   const target = markerPath(tree, cwd);
   fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -398,7 +407,7 @@ function writeMarker(cwd, exitCode) {
     branch: branchOf(cwd),
     worktree: canonical(git(["rev-parse", "--show-toplevel"], cwd)),
     gate: "bash scripts/verify.sh",
-    exit: exitCode === undefined ? 0 : exitCode,
+    exit: measuredExit,
     finished_at: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
     epoch: Math.floor(Date.now() / 1000),
     host: os.hostname(),
@@ -409,10 +418,42 @@ function writeMarker(cwd, exitCode) {
   return target;
 }
 
+/** Run the only gate whose green result may produce a marker.
+ *
+ * The fixed argv is the boundary: unlike a generic command runner it cannot be
+ * turned into a public success-minting wrapper for an arbitrary process.  The
+ * shell script retains responsibility for consumer-specific stages; its
+ * internal mode prevents this child from delegating back to us.
+ */
+function runGate(cwd) {
+  const gate = path.join(cwd, "scripts", "verify.sh");
+  if (!fs.existsSync(gate)) {
+    process.stderr.write(`gate-marker: could not launch fixed gate: ${gate} does not exist\n`);
+    return EXIT_RUNNER_UNAVAILABLE;
+  }
+  const result = spawnSync("bash", [gate], {
+    cwd: String(cwd),
+    encoding: "utf8",
+    env: Object.assign({}, process.env, { HARNESS_GATE_MARKER_RUNNER: "1" }),
+  });
+  if (result.stdout) process.stdout.write(String(result.stdout));
+  if (result.stderr) process.stderr.write(String(result.stderr));
+  if (result.error || result.status === null) {
+    const reason = result.error ? result.error.message : "terminated without an exit status";
+    process.stderr.write(`gate-marker: could not launch fixed gate: ${reason}\n`);
+    return EXIT_RUNNER_UNAVAILABLE;
+  }
+  if (result.status !== 0) return result.status;
+
+  const target = emitSuccessfulMarker(cwd, result.status);
+  process.stdout.write(`gate marker: ${path.basename(target, ".json")} -> ${target}\n`);
+  return 0;
+}
+
 function usage(message) {
   process.stderr.write(
     `gate-marker: usage: ${message}\n` +
-      "  gate-marker.js preflight | write | tree | path --tree <oid> | status\n"
+      "  gate-marker.js preflight | run | tree | path --tree <oid> | status\n"
   );
   return EXIT_USAGE;
 }
@@ -433,12 +474,11 @@ function main(argv) {
   try {
     if (command === "preflight") {
       preflight(cwd);
+    } else if (command === "run") {
+      if (argv.length !== 1) return usage("run accepts no operands");
+      return runGate(cwd);
     } else if (command === "write") {
-      const target = writeMarker(cwd);
-      // The filename is the claim, so the announcement reads it back off the
-      // path rather than recomputing the tree — two computations here could
-      // disagree, and the one that matters is the one on disk.
-      process.stdout.write(`gate marker: ${path.basename(target, ".json")} -> ${target}\n`);
+      return usage("write is retired; run the canonical verification gate instead");
     } else if (command === "tree") {
       process.stdout.write(`${currentTree(cwd)}\n`);
     } else if (command === "path") {
@@ -488,7 +528,6 @@ module.exports = {
   currentTree,
   preflight,
   prune,
-  writeMarker,
   main,
   GitError,
   SCHEMA,
@@ -497,4 +536,5 @@ module.exports = {
   MAX_AGE_ENV,
   DEFAULT_MAX_AGE_SECONDS,
   MARKER_SUBDIR,
+  EXIT_RUNNER_UNAVAILABLE,
 };
