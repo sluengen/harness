@@ -94,6 +94,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.unit._gate_marker_runner import install_internal_gate
 from tests.unit._hooks import REAL_STOP_PAYLOAD
 from tests.unit._prose import REPO_ROOT
 
@@ -281,8 +282,9 @@ def _tree(cwd: Path) -> str:
 
 def _write_marker(cwd: Path) -> str:
     """Produce a marker with the **production** writer and return its tree."""
+    install_internal_gate(cwd)
     proc = subprocess.run(
-        [_node(), str(WRITER), "write"], cwd=cwd, capture_output=True, text=True, timeout=60
+        [_node(), str(WRITER), "run"], cwd=cwd, capture_output=True, text=True, timeout=60
     )
     assert proc.returncode == 0, f"the production writer failed: {proc.stderr}"
     return proc.stdout.split(":", 1)[1].split("->")[0].strip()

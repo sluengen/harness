@@ -70,6 +70,7 @@ from pathlib import Path
 import pytest
 
 from tests._gitutil import indexed_text
+from tests.unit._gate_marker_runner import install_internal_gate
 from tests.unit._prose import REPO_ROOT
 
 VERIFY = REPO_ROOT / "scripts" / "verify.sh"
@@ -268,23 +269,22 @@ def test_verify_writes_the_marker_on_its_success_path() -> None:
     "only when the tree is green".
 
     Read out of the git **index**, like the other text guard in this module: a
-    tree *staging* a ``verify.sh`` with the write removed, while the correct file
+    tree *staging* a ``verify.sh`` without the runner delegation, while the correct file
     sits unstaged on disk, passes a working-file read at the moment
     ``git write-tree`` certifies the broken one (#482).
     """
     source = indexed_text(VERIFY.relative_to(REPO_ROOT).as_posix())
-    invocation = "node scripts/gate-marker.js write"
+    invocation = "exec node scripts/gate-marker.js run"
 
     assert invocation in source, (
-        "scripts/verify.sh does not invoke the gate-marker writer, so a green "
+        "scripts/verify.sh does not delegate to the gate-marker runner, so a green "
         "gate leaves no evidence and both enforcement hooks refuse everything "
         f"(or, if they fall open, enforce nothing). Add `{invocation}` to the "
         "success path."
     )
-    assert source.index("pytest -n") < source.index(invocation), (
-        "the marker is written before the pytest stage, so a red suite would "
-        "still record the tree as verified. It must sit after every stage that "
-        "can fail."
+    assert source.index(invocation) < source.index("pytest -n"), (
+        "the public gate must delegate before it enters the internal stages; the "
+        "runner, not this shell path, owns successful marker emission."
     )
 
 
@@ -434,13 +434,14 @@ def test_a_reader_finds_the_marker_the_production_writer_produced(
     """The anti-vacuity spine of this whole change, stated once here.
 
     Every allow-path test in the two hook suites produces its marker by running
-    ``node scripts/gate-marker.js write`` — the production writer — never by
+    ``node scripts/gate-marker.js run`` — the production runner — never by
     hand-authoring a file. This test is the reason that works: the path the writer
     chose and the path the reader looks in are the same string, measured rather
     than assumed.
     """
+    install_internal_gate(dirty_repo)
     proc = subprocess.run(
-        [_node(), str(WRITER), "write"],
+        [_node(), str(WRITER), "run"],
         cwd=dirty_repo,
         capture_output=True,
         text=True,

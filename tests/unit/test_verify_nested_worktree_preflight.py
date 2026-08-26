@@ -51,7 +51,7 @@ import pytest
 from tests._gitutil import indexed_text
 
 #: The preflight line the shared log must carry. Anchored on the subcommand, not
-#: merely on the file name, so a ``node scripts/gate-marker.js write`` would not
+#: merely on the file name, so a direct retired marker-write command would not
 #: satisfy it.
 PREFLIGHT_LINE = re.compile(r"^node .*gate-marker\.js preflight$")
 
