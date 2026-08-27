@@ -43,17 +43,17 @@ Its command contract replaces the Python helper without changing the marker prot
 | Command | Required behaviour |
 |---|---|
 | `node scripts/gate-marker.js preflight` | Refuse a Git-visible nested worktree before any expensive gate stage. |
-| `node scripts/gate-marker.js write` | After every gate stage succeeds, write the marker for the current Git tree to the shared Git directory. |
+| `node scripts/gate-marker.js run` | Run the fixed internal gate, then write the marker for the current Git tree to the shared Git directory only after its measured exit succeeds. It accepts no stage operands. |
 | `node scripts/gate-marker.js tree` | Print the current working tree's tree object ID. |
 | `node scripts/gate-marker.js path --tree <oid>` | Print the path where that tree's marker belongs. |
 
-The marker file path, tree computation, freshness environment variable, and payload schema remain compatible with the existing hooks. The payload's writer identifier changes to identify the JavaScript writer. The hooks continue to treat the filename and freshness as the enforcement inputs; the payload remains diagnostics.
+The public `scripts/verify.sh` delegates marker ownership with `exec node scripts/gate-marker.js run`. In internal mode, that script contains the repository's arbitrary shell stages; the runner alone emits evidence after their measured successful exit. The marker file path, tree computation, freshness environment variable, and payload schema remain compatible with the existing hooks. The payload's writer identifier changes to identify the JavaScript writer. The hooks continue to treat the filename and freshness as the enforcement inputs; the payload remains diagnostics.
 
 `/harness:init --refresh` becomes the one-shot prompt for the whole repo-owned Harness refresh set:
 
 1. Replace only the generated block in `CLAUDE.md` and merge the existing gate-ignore block in `.gitignore`.
 2. Materialize the current `scripts/gate-marker.js` from the plugin template.
-3. Update Harness-managed verify wiring to run `node scripts/gate-marker.js preflight` before the first expensive stage and `node scripts/gate-marker.js write` as the final success-path command.
+3. Update Harness-managed `scripts/verify.sh` so its public entry point delegates with `exec node scripts/gate-marker.js run`. Preserve its internal shell stages as the gate the runner measures; do not add a direct marker-writing command. The runner performs the preflight before those stages and emits the marker only after their successful exit.
 4. Remove the legacy Python helper `gate_marker.py` from the consumer's `scripts/` directory only when it is the recognized Harness-managed helper and no remaining tracked invocation references it. (The path is in the *consumer's* frame: this repo deleted its own copy in #500.)
 5. Report each changed, retained, and skipped artifact. The command remains working-tree only: it creates no ticket, commit, or push.
 
@@ -61,7 +61,7 @@ The migration is deterministic for managed files. A custom marker helper, a modi
 
 Plugin-provided commands, skills, agents, and hooks update when the plugin updates. `--refresh` applies the corresponding repo-owned changes in the same invocation: the spine, ignore block, marker helper, and verify wiring. It does not attempt to copy plugin prose into consumer-owned files or change the consumer's lint, typecheck, or test commands.
 
-Harness dogfoods the same helper. Its own `scripts/verify.sh` changes to invoke `node scripts/gate-marker.js`; the Python writer is removed after the mutation instrument and tests no longer import it. Python remains the source repository's test and tooling language. This proposal moves the helper Harness delivers, rather than requiring a repository-wide language rewrite.
+Harness dogfoods the same helper. Its public `scripts/verify.sh` delegates with `exec node scripts/gate-marker.js run`; the runner owns preflight and marker emission. The Python writer is removed after the mutation instrument and tests no longer import it. Python remains the source repository's test and tooling language. This proposal moves the helper Harness delivers, rather than requiring a repository-wide language rewrite.
 
 ## Decisions — resolved
 
@@ -74,12 +74,12 @@ Harness dogfoods the same helper. Its own `scripts/verify.sh` changes to invoke 
 ## Breakdown
 
 1. **[#500](https://github.com/sluengen/harness/issues/500) — Ship the Node writer and prove the contract** — **Landed 2026-08-25 as `cc78cd4`**, with the runtime decision recorded in `specs/decisions/0018-gate-marker-convention-is-node.md`. Write failing contract tests first. Add the canonical `scripts/gate-marker.js` asset and migrate Harness's own gate to it. Execute the writer and both hook readers over clean and dirty linked-worktree fixtures; assert equal marker paths, tree IDs, freshness parsing, nested-worktree preflight, and successful marker discovery. Remove the Python writer only after its users are migrated.
-2. **[#501](https://github.com/sluengen/harness/issues/501) — Deliver and migrate the helper through init and refresh** — Update first-time init to copy `scripts/gate-marker.js`, then extend `--refresh` to recognize the known Python helper, materialize the JavaScript replacement, rewrite only recognized Harness-managed verify invocations, and remove the legacy file only after the rewrite is complete. Fixture tests cover fresh installs, an unmodified legacy install, an already-migrated install, a modified helper, and a custom verify command. Reconcile the command, README, architecture record, and generated Codex surface in the same ticket.
+2. **[#501](https://github.com/sluengen/harness/issues/501) — Deliver and migrate the helper through init and refresh** — Downstream adoption of the marker contract established by #500 and #507. Update first-time init to copy `scripts/gate-marker.js`, then extend `--refresh` to recognize the known Python helper, materialize the JavaScript replacement, rewrite only recognized Harness-managed public verify entry points to delegate with `exec node scripts/gate-marker.js run`, and remove the legacy file only after the rewrite is complete. The runner, rather than refresh or the consumer script, owns preflight and marker emission. Fixture tests cover fresh installs, an unmodified legacy install, an already-migrated install, a modified helper, and a custom verify command. Reconcile the command, README, architecture record, and generated Codex surface in the same ticket.
 
 ## Risks / unknowns
 
 - **Node is unavailable in a consumer environment.** The plugin's hooks already require it, so the migration does not add a new runtime dependency. `/harness:init` must report that precondition before writing a verify command that uses Node.
-- **A custom gate is damaged by automatic text rewriting.** Refresh recognizes only managed invocations and preserves every other gate command. Fixture tests must prove both sides: a known legacy command migrates, and an unrecognized command is reported without modification.
+- **A custom gate is damaged by automatic text rewriting.** Refresh recognizes only managed invocations and preserves every other gate command. Fixture tests must prove both sides: a known legacy command migrates to the runner-owned entry point, and an unrecognized command is reported without modification.
 - **The new writer drifts from the hooks.** The contract tests execute all three implementations against the same repositories. A payload comparison alone is insufficient because the enforcement readers rely on the path, tree, and freshness rules.
 - **Partial updates leave stale guidance.** The delivery items land as one coherent feature: a plugin release that supplies the Node helper also teaches first-time init and refresh to install it, then updates every consumer-facing description of that operation.
 

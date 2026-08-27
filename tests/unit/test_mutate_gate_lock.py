@@ -45,8 +45,8 @@ The contract, each direction its own test:
 
 The fixture is a real repository — the marker convention keys on the git common
 directory and the tree oid, so nothing less would exercise the real path — and
-the marker is written by ``node scripts/gate-marker.js write`` itself, the same
-writer the gate runs, so the two computations of "the current tree" cannot drift
+the marker is written by ``node scripts/gate-marker.js run`` itself, the same
+runner the gate delegates to, so the two computations of "the current tree" cannot drift
 apart in this module's favour.
 """
 
@@ -62,6 +62,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.unit._gate_marker_runner import install_internal_gate
 from tests.unit._prose import REPO_ROOT
 
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
@@ -85,8 +86,9 @@ def _helper(tree: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 
 def _write_marker(tree: Path) -> Path:
-    """Produce a marker with the production writer and return its path."""
-    proc = _helper(tree, "write")
+    """Produce a marker through the production runner and return its path."""
+    install_internal_gate(tree)
+    proc = _helper(tree, "run")
     assert proc.returncode == 0, proc.stderr
     return Path(proc.stdout.split("->", 1)[1].strip())
 

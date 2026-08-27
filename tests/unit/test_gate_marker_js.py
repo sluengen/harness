@@ -122,6 +122,25 @@ def _cli(
     )
 
 
+def _write_internal_gate(repo: Path, *, exit_code: int = 0) -> None:
+    """Install the smallest fixed gate the production runner can execute.
+
+    Reader fixtures must reach marker creation through ``run`` rather than
+    authoring evidence or calling an otherwise-public emitter.  The sentinel
+    makes this a real internal-mode invocation, not a script that would also
+    pass when run directly.
+    """
+    scripts = repo / "scripts"
+    scripts.mkdir(exist_ok=True)
+    gate = scripts / "verify.sh"
+    gate.write_text(
+        "#!/usr/bin/env sh\n"
+        'test "${HARNESS_GATE_MARKER_RUNNER:-}" = "1"\n'
+        f"exit {exit_code}\n",
+        encoding="utf-8",
+    )
+
+
 def _exec(repo: Path, body: str, env: dict[str, str] | None = None) -> str:
     """Evaluate ``body`` against the helper's exports, in ``repo``.
 
@@ -277,11 +296,12 @@ def test_writing_a_marker_leaves_the_working_tree_untouched(repo: Path) -> None:
     """The marker home cannot be tracked by construction, so no consuming repo
     needs a ``.gitignore`` rule to adopt this — and a gate run adds nothing for a
     human to explain away in ``git status``."""
+    _write_internal_gate(repo)
     (repo / "b.txt").write_text("two\n")
     before = _git(repo, "status", "--porcelain")
     assert before, "the fixture is clean, so an equality over `status` measures nothing"
 
-    assert _cli(repo, "write").returncode == 0
+    assert _cli(repo, "run").returncode == 0
 
     assert _git(repo, "status", "--porcelain") == before
 
@@ -294,7 +314,8 @@ def test_writing_a_marker_does_not_perturb_the_tree_it_records(repo: Path) -> No
     never again be the tree the gate computes — a silent, permanent fail-closed
     wedge. Measured by recomputing the tree after the write.
     """
-    proc = _cli(repo, "write")
+    _write_internal_gate(repo)
+    proc = _cli(repo, "run")
     assert proc.returncode == 0, proc.stderr
     recorded = Path(proc.stdout.split("->", 1)[1].strip())
 
@@ -439,7 +460,8 @@ def test_preflight_fails_closed_when_git_cannot_decide_ignore_status(
 
 
 def test_the_marker_records_the_tree_it_covers(repo: Path) -> None:
-    proc = _cli(repo, "write")
+    _write_internal_gate(repo)
+    proc = _cli(repo, "run")
     assert proc.returncode == 0, proc.stderr
     marker = Path(proc.stdout.split("->", 1)[1].strip())
     payload = json.loads(marker.read_text())
@@ -461,7 +483,8 @@ def test_the_filename_carries_the_claim_not_the_body(repo: Path) -> None:
     plus the mtime, which is honest: anyone who can write the file can write
     valid JSON, so parsing buys nothing. Pinned so a later change that starts
     depending on a body field has to argue with this test."""
-    proc = _cli(repo, "write")
+    _write_internal_gate(repo)
+    proc = _cli(repo, "run")
     assert proc.returncode == 0, proc.stderr
     marker = Path(proc.stdout.split("->", 1)[1].strip())
 
@@ -481,8 +504,9 @@ def test_writing_a_marker_before_the_first_commit_records_what_it_can(tmp_path: 
     root.mkdir()
     _git(root, "init", "-q", "--initial-branch=dev")
     (root / "a.txt").write_text("one\n")
+    _write_internal_gate(root)
 
-    proc = _cli(root, "write")
+    proc = _cli(root, "run")
     assert proc.returncode == 0, proc.stderr
     payload = json.loads(Path(proc.stdout.split("->", 1)[1].strip()).read_text())
 
@@ -599,18 +623,61 @@ def test_pruning_survives_a_marker_that_vanishes(repo: Path) -> None:
 def test_writing_prunes(repo: Path) -> None:
     """The prune runs on the write path, so the directory stays bounded without
     anything else having to remember to call it."""
+    _write_internal_gate(repo)
     directory = _marker_dir(repo)
     stale = directory / ("a" * 40 + ".json")
     stale.write_text("{}")
     old = time.time() - 10 * 86400
     os.utime(stale, (old, old))
 
-    assert _cli(repo, "write").returncode == 0
+    assert _cli(repo, "run").returncode == 0
 
     assert not stale.exists()
 
 
 # --- the CLI, which is what verify.sh and mutate.py run -----------------------
+
+
+def test_the_runner_writes_a_marker_only_after_its_internal_gate_succeeds(repo: Path) -> None:
+    """AC-1/4: ``run`` measures the fixed internal gate before it emits evidence."""
+    _write_internal_gate(repo)
+    tree = _tree(repo)
+
+    proc = _cli(repo, "run")
+
+    marker = _marker_path(repo, tree)
+    assert proc.returncode == 0, proc.stderr
+    assert marker.exists()
+    assert json.loads(marker.read_text())["exit"] == 0
+
+
+def test_the_runner_does_not_write_a_marker_when_its_internal_gate_fails(repo: Path) -> None:
+    """AC-2: a red configured stage leaves the candidate without fresh evidence."""
+    _write_internal_gate(repo, exit_code=17)
+    tree = _tree(repo)
+
+    proc = _cli(repo, "run")
+
+    assert proc.returncode == 17
+    assert not _marker_path(repo, tree).exists()
+
+
+def test_the_retired_direct_write_command_cannot_mint_a_marker(repo: Path) -> None:
+    """AC-3: only the runner owns successful marker emission."""
+    common = Path(_git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir"))
+
+    proc = _cli(repo, "write")
+
+    assert proc.returncode == 64
+    assert "usage" in proc.stderr
+    assert not (common / "harness" / "gate").exists()
+
+
+def test_runner_launch_failure_uses_the_reserved_infrastructure_exit(repo: Path) -> None:
+    """A missing fixed gate is a runner failure, distinct from a red stage."""
+    proc = _cli(repo, "run")
+
+    assert proc.returncode == 3
 
 
 def test_the_tree_subcommand_prints_the_tree(repo: Path) -> None:
@@ -621,12 +688,13 @@ def test_the_tree_subcommand_prints_the_tree(repo: Path) -> None:
     assert proc.stdout.strip() == _git(repo, "rev-parse", "HEAD^{tree}")
 
 
-def test_the_write_subcommand_creates_the_marker_and_announces_it(repo: Path) -> None:
+def test_the_run_subcommand_creates_the_marker_and_announces_it(repo: Path) -> None:
     """The announcement is diagnostic, not mechanism — but its **format** is
     mechanism: ``tests/unit/test_gate_evidence_hook.py`` parses the tree back out
     of it with ``split(":", 1)[1].split("->")[0]``, so the shape is pinned here
     rather than left to a reader's eye."""
-    proc = _cli(repo, "write")
+    _write_internal_gate(repo)
+    proc = _cli(repo, "run")
 
     assert proc.returncode == 0, proc.stderr
     tree = _tree(repo)
@@ -683,8 +751,8 @@ def test_the_cli_refuses_outside_a_repository(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     "argv",
-    [(), ("frobnicate",), ("path",), ("path", "--tree")],
-    ids=["none", "unknown", "no-flag", "no-oid"],
+    [(), ("frobnicate",), ("write",), ("path",), ("path", "--tree")],
+    ids=["none", "unknown", "retired-write", "no-flag", "no-oid"],
 )
 def test_a_usage_error_is_distinct_from_a_refusal(repo: Path, argv: tuple[str, ...]) -> None:
     """``scripts/verify.sh`` reads the exit code to decide what to *print*: exit 2
@@ -697,6 +765,25 @@ def test_a_usage_error_is_distinct_from_a_refusal(repo: Path, argv: tuple[str, .
 
     assert proc.returncode == 64, proc.stderr
     assert "usage" in proc.stderr
+
+
+def test_run_operands_cannot_mint_a_marker(repo: Path) -> None:
+    """#507: rejecting ``run`` operands must happen before the green gate runs.
+
+    The fixed internal gate is deliberately green: without the operand check,
+    this invocation would run it and create the candidate marker below.  The
+    precise absence assertion therefore distinguishes the exit-code-only
+    regression from the evidence-minting failure it is meant to prevent.
+    """
+    _write_internal_gate(repo)
+    tree = _tree(repo)
+    marker = _marker_path(repo, tree)
+
+    proc = _cli(repo, "run", "unexpected")
+
+    assert proc.returncode == 64, proc.stderr
+    assert "usage" in proc.stderr
+    assert not marker.exists()
 
 
 # --- AC-6: the Python writer is gone, and nothing imports it ------------------

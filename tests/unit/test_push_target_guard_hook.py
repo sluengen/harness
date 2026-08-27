@@ -23,7 +23,7 @@ two worktrees at *divergent* HEADs, which is the only shape where that bug is
 visible at all.
 
 **The allow path is produced by production code.** Every test here that expects
-a pass runs ``node scripts/gate-marker.js write`` — the writer ``verify.sh`` runs — and
+a pass runs ``node scripts/gate-marker.js run`` — the runner ``verify.sh`` delegates to — and
 never hand-authors a marker file. A test that wrote its own marker would be
 validating the hook against the *test's* idea of the contract, which is the
 "fixture agreeing with itself" the acceptance criteria rule out. The path
@@ -93,6 +93,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.unit._gate_marker_runner import install_internal_gate
 from tests.unit._prose import REPO_ROOT
 
 # size: one hook's acceptance matrix, and the hook is the repo's flagship
@@ -154,8 +155,18 @@ def _write_marker(cwd: Path) -> str:
     test that authored its own copy of it would agree with itself no matter what
     the hook did.
     """
+    install_internal_gate(cwd)
+    tracked = subprocess.run(
+        ["git", "ls-files", "--error-unmatch", "scripts/verify.sh"],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+    )
+    if tracked.returncode != 0:
+        _git(cwd, "add", "scripts/verify.sh")
+        _git(cwd, "commit", "-q", "-m", "fixture internal gate")
     proc = subprocess.run(
-        [_node(), str(WRITER), "write"],
+        [_node(), str(WRITER), "run"],
         cwd=cwd,
         capture_output=True,
         text=True,

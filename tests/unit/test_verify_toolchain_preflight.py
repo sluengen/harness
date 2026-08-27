@@ -119,7 +119,10 @@ def _run_gate(tmp_path: Path, bindir: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["/bin/bash", str(script)],
         cwd=REPO_ROOT,
-        env={"PATH": str(bindir)},
+        env={
+            "HARNESS_GATE_MARKER_RUNNER": "1",
+            "PATH": str(bindir),
+        },
         capture_output=True,
         text=True,
         timeout=100,

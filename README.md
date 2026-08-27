@@ -60,9 +60,11 @@ Then ask Codex to initialize Harness in the repository. The installed
 `init` interviews for the repo's values and writes the files that must be
 repo-owned: both host spines (`CLAUDE.md` and `AGENTS.md`), Codex role adapters,
 the specs scaffold, the infrastructure record, and — where the repo has no gate yet — a
-`scripts/verify.sh` skeleton with the marker write. After a plugin update,
-`/harness:init --refresh` regenerates the marked blocks in both spines and the
-generated Codex role adapters.
+`scripts/verify.sh` skeleton that delegates to `node scripts/gate-marker.js run`.
+After a plugin update, `/harness:init --refresh` regenerates the marked blocks,
+generated Codex role adapters, and recognized Harness-owned gate assets. It leaves
+custom gate wiring and unsafe JavaScript module contexts untouched, with a
+path-specific report for the operator.
 
 Codex installs a native `.codex-plugin/plugin.json` package. Commands and agent
 procedures are compiled into portable skills because the universal plugin format
