@@ -39,14 +39,29 @@ When two or more agents work at once, each must have its own worktree — mandat
 
 ## Cleanup
 
-When the task is merged, tear down anything the worktree started (a compose stack, a dev server), then remove the worktree and prune:
+When the task is merged, run cleanup as part of shipping. First stop and remove
+every temporary resource the task created, then remove its worktree, prune Git's
+administrative records, and delete the merged task branch:
 
 ```bash
+# Stop task-owned services before removing their files.
 git worktree remove ../<repo>-<task-id>
 git worktree prune
+git branch -d <task-id>
 ```
 
-Scope the teardown to this worktree's own resources — a per-worktree Compose project drops its own image and named volumes and never another worktree's. Skip the step where the worktree started nothing. Without it, each worktree leaves its build artifacts behind on the host.
+Name and retain the identifiers for each resource when provisioning it. Cleanup
+only resources it owns: a per-worktree Compose project can remove its own
+Docker containers, images, networks, and named volumes; a task can remove its
+own iOS simulator app and build artifacts; a dev server can stop only the
+process it started. Delete a published remote task branch after merge when the
+hosting workflow permits it.
+
+Never select by broad host-wide cleanup or another worktree's name. Do not
+delete shared simulator devices, caches, volumes, or services. Skip resource
+teardown when the task started nothing, but always remove a merged worktree and
+branch. Without this lifecycle, short-lived task artifacts accumulate on the
+host.
 
 Uncommitted artifacts in a worktree are lost when it is removed. Commit (or deliberately discard) before cleanup.
 
