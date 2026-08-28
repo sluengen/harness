@@ -1,6 +1,6 @@
 ---
 proposal: drift-reconvergence
-status: draft            # draft | under-decision | accepted | shipped | rejected | split
+status: accepted         # draft | under-decision | accepted | shipped | rejected | split
 date: 2026-08-28
 related: [rebase-stable-certification, plugin-surface]
 ---
@@ -59,6 +59,8 @@ The current rule is defended by the observation that re-binds find real defects.
 | #452 | a mutation-kill count contradicting its own table, and a false measured claim of the re-bind's own | no — false before the drift |
 | #451 | a `git log`-caller count (two, actually four) and an assertion count the first pass had invalidated itself | no — false before the drift |
 
+**Both drift-caused findings violated a rule this repo already has.** `skills/spec-authoring/SKILL.md:106`, shipped by #470 on 2026-08-17, requires that an as-built record never state a bare present-tense quantity: the figure names the commit it was measured at, or a guard derives it, or the record restates it as the invariant it was evidence for. A 97 that becomes 98 when someone else's commit lands is precisely the class that rule forbids — and #484 shipped it **two days after the rule landed**. The rule is unenforced, and the re-bind has been acting as its enforcement mechanism by accident.
+
 Three patterns, and none of them is *the reviewer re-judged the change*:
 
 1. **Every drift-caused reviewer finding is one class** — a measured count in the reviewer-owned as-built record that the incoming commit falsified. Both of them.
@@ -89,7 +91,7 @@ The sequencing is the same discipline `rebase-stable-certification` applied and 
 
 - **A and D are independent of the measurement and can proceed immediately.** A is free and precedent says it may be sufficient on its own. D is a strict improvement at any collision rate: it removes a round trip that this repo's own ledger shows yields, on the drift-caused axis, only re-measurement.
 - **The instrument is the gating item.** The 2026-08-01 decision rested on being able to read a rate. Nothing currently records a reconcile-after-verdict or its cause, so `λ` and `W` in the table above are assumptions. B is a real coordination primitive and should not be bought on an assumption.
-- **A ten-minute gate is itself a finding.** Every option here treats it as a fixed input. It may not be one, and `process-economy` is the skill that would ask. Worth naming before spending on machinery that exists to tolerate it.
+- **The ten-minute gate is a fixed input.** Decided 2026-08-28 (below): it is that slow for reasons that will not move, so the machinery here exists to tolerate it rather than to postpone fixing it. This is the assumption to revisit first if the ordering above stops making sense.
 
 ## Open decisions
 
@@ -100,15 +102,25 @@ The sequencing is the same discipline `rebase-stable-certification` applied and 
 | Does the spine gain a `landing:` key (`free` \| `queued` \| `locked`) so `/build` can read the repo's strategy rather than assume one? | architect | spine config, `plugin-surface.md` |
 | Does a scoped re-gate leave the marker meaning anything? Blocks C entirely | — | [#513](https://github.com/sluengen/harness/issues/513) |
 
+## Decisions — 2026-08-28
+
+Taken by the operator on this proposal; each is carried into the breakdown item that implements it.
+
+**D1 — the sequencing stands.** A and D proceed now, item 1 instruments the rate, and Option B is not bought until that instrument reports. Items 1–4 are filed; **item 5 is deliberately unfiled**. This repeats the ordering `rebase-stable-certification` was vindicated on, and the reversal condition is the same: item 1 reporting a residue the cheap fixes did not remove.
+
+**D2 — re-measuring is not authoring; iron law 4 is not engaged.** Under Option D the reviewer still writes every sentence of the as-built record. The builder re-runs only the measurements those sentences cite, against the merged tree, and changes a numeral or removes the claim. It may not add, reframe, or reinterpret — any edit beyond re-deriving an existing measurement returns the record to the reviewer. Item 3 carries this distinction into `commands/build.md` in that wording; a re-bind that cannot be closed by re-derivation alone falls back to today's path.
+
+**D3 — gate duration is an input, not a target.** The affected repos' gates are slow for reasons that will not move, so no ticket is filed against the duration itself and no option here is scored on its ability to shorten it. Recorded so a later reader does not mistake the omission for an oversight.
+
 ## Breakdown
 
-1. **Instrument reconcile-after-verdict.** Record each occurrence with its cause (disjoint drift / textual conflict / monotonic collision) and the elapsed certification window, so `λ` and `W` become readable. Nothing else here should be decided on assumptions. — `simple`
-2. **A drift-fragility rule in `engineering` and `spec-authoring`.** Name the shared-insertion-point class (single-block changelog, version field, barrel file, migration ordinal) and require new work to avoid creating one. This is #267's lesson generalised from a fix into guidance. — `simple`
-3. **The mechanically-licensed re-bind** (Option D). Rewrite `commands/build.md:131` and its `skills/command-build/SKILL.md` mirror to carry the four conditions and the fallback. — `simple`
-4. **Drift-invariant as-built records.** Promote *omit the count; if load-bearing, derive it at the shipping tree* from craft advice to record-authoring policy. Both drift-caused findings in the table above would not have existed under it. — `trivial`
+1. **Instrument reconcile-after-verdict.** Record each occurrence with its cause (disjoint drift / textual conflict / monotonic collision) and the elapsed certification window, so `λ` and `W` become readable. Nothing else here should be decided on assumptions. — `simple` Filed as [#515](https://github.com/sluengen/harness/issues/515).
+2. **A drift-fragility rule in `engineering` and `spec-authoring`.** Name the shared-insertion-point class (single-block changelog, version field, barrel file, migration ordinal) and require new work to avoid creating one. This is #267's lesson generalised from a fix into guidance. — `simple` Filed as [#516](https://github.com/sluengen/harness/issues/516).
+3. **The mechanically-licensed re-bind** (Option D). Rewrite `commands/build.md:131` to carry the four conditions and the fallback, and regenerate `skills/command-build/SKILL.md` (generated by `scripts/generate_codex_artifacts.py`, held by the gate's codex drift stage). — `simple` Filed as [#517](https://github.com/sluengen/harness/issues/517).
+4. **Enforce the present-tense-quantity rule that already exists.** `spec-authoring:106` (shipped by #470) forbids the exact class both drift-caused findings belong to, and #484 violated it two days later. Nothing checks it. Give it a guard, or a reviewer-side check on the record-writing path. This is not new policy — it is an unenforced rule doing no work. — `simple` Filed as [#518](https://github.com/sluengen/harness/issues/518).
 5. **Landing serialization** (Option B) — *conditional on item 1's measurement.* Spine `landing:` key, the acquire/hold/release discipline in `/build`'s ship stage, lease expiry, and the wedged-holder path. — `complex`
 
-Items 1–4 are independent of each other and of the measurement. Item 5 is filed only if item 1 says the residue is real.
+Items 1–4 are independent of each other and of the measurement, and are filed (#515, #516, #517, #518). **Item 5 is not filed** — per D1 it waits on item 1's instrument.
 
 ## Risks / unknowns
 
@@ -116,4 +128,5 @@ Items 1–4 are independent of each other and of the measurement. Item 5 is file
 - **The tally is eight re-binds, six carrying findings, from one repo's ledger.** Enough to show *what shape* a re-bind finding takes; not enough to bound how often a re-bind would catch something D's four conditions let through. The named residual: a change on the integration branch that falsifies the reviewed *rationale* without breaking the gate and without touching a count — dev landing a guard the candidate should have satisfied, or already fixing the same bug. D is blind to that class by construction.
 - **A lock's failure mode is worse than a lost race.** A wedged queue stops every agent, where today a losing candidate merely retries. Expiry and observability are not optional parts of item 5.
 - **Serialization trades throughput for predictability.** With a slow gate, a queue converts concurrent agents into a waiting line. If that latency is unacceptable the real ticket is gate duration, not coordination — which loops back to the third bullet of the recommendation.
-- **Item 4 can falsify records that are currently true.** Deleting a count is a deletion, and this repo's #492 lesson applies: prove the surviving sentence still says something true without it.
+- **Item 4 is a guard over prose, and ADR 0017 D5 constrains what a guard may assert.** A guard may assert code behaviour, a spine property, asset integrity, frontmatter, or tree consistency — never what prose *means*. "Is this numeral anchored?" sits close to that line, and item 4's first job is to establish which side it falls on. If it cannot be guarded within D5, the reviewer-side check is the answer and the item shrinks accordingly.
+- **Removing a count is a deletion.** Where item 4's remedy is to drop a figure rather than anchor it, #492's lesson applies: prove the surviving sentence still says something true without it.
