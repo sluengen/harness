@@ -176,7 +176,8 @@ def _project(tmp_path: Path, name: str = "proj") -> Path:
     _git(root, "config", "user.email", "t@example.com")
     _git(root, "config", "user.name", "t")
     (root / "CONTEXT.md").write_text(
-        "```yaml\nbranches:\n  integration: dev\n  staging: staging\n  release: main\n```\n"
+        "```yaml\nbranches:\n  integration: dev\n  staging: staging\n  release: main\n"
+        "commands:\n  verify: bash scripts/verify.sh\n```\n"
     )
     (root / ".gitignore").write_text(".worktrees/\n")
     (root / "a.txt").write_text("one\n")
