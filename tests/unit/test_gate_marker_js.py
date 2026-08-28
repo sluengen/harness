@@ -141,6 +141,22 @@ def _write_internal_gate(repo: Path, *, exit_code: int = 0) -> None:
     )
 
 
+def _declare_verify(repo: Path, declaration: str, *, spine: str = "CLAUDE.md") -> None:
+    """Write the one trusted gate declaration the runner may select.
+
+    Fixtures execute the shipped runner against a real repository.  The command
+    itself stays deliberately small: these cases measure runner selection and
+    exit forwarding, not a second implementation of a consumer's gate.
+    """
+    (repo / spine).write_text(
+        "```yaml\n"
+        "commands:\n"
+        f"  verify: {declaration}\n"
+        "```\n",
+        encoding="utf-8",
+    )
+
+
 def _exec(repo: Path, body: str, env: dict[str, str] | None = None) -> str:
     """Evaluate ``body`` against the helper's exports, in ``repo``.
 
@@ -660,6 +676,212 @@ def test_the_runner_does_not_write_a_marker_when_its_internal_gate_fails(repo: P
 
     assert proc.returncode == 17
     assert not _marker_path(repo, tree).exists()
+
+
+def test_the_runner_executes_the_verify_command_declared_in_claude(repo: Path) -> None:
+    """A consumer's trusted spine, not a literal shell path, selects its gate.
+
+    There is intentionally no ``scripts/verify.sh`` in this repository.  A
+    runner that retains the previous fixed-path launch therefore fails with its
+    infrastructure exit rather than reaching the marker assertion below.
+    """
+    _declare_verify(repo, '"printf selected-gate"')
+    tree = _tree(repo)
+
+    proc = _cli(repo, "run")
+
+    assert proc.returncode == 0, proc.stderr
+    assert "selected-gate" in proc.stdout
+    assert _marker_path(repo, tree).exists()
+
+
+def test_the_declared_gate_forwards_its_nonzero_status_without_a_marker(repo: Path) -> None:
+    """A red declared gate remains red; ``run`` cannot mint evidence for it."""
+    _declare_verify(repo, '"printf declared-red; exit 17"')
+    tree = _tree(repo)
+
+    proc = _cli(repo, "run")
+
+    assert proc.returncode == 17
+    assert "declared-red" in proc.stdout
+    assert not _marker_path(repo, tree).exists()
+
+
+def test_an_absent_spine_preserves_the_legacy_fixed_gate(repo: Path) -> None:
+    """AC-3: with no spine at all, the historical gate runs, named as it was.
+
+    Distinct from
+    :func:`test_the_runner_writes_a_marker_only_after_its_internal_gate_succeeds`
+    on the two axes that make this the *legacy* case rather than another green
+    run: the absence of both spine files is asserted rather than assumed, and
+    the gate reports the argv it was launched under, so the fallback is pinned
+    by name. ``bash scripts/verify.sh`` — the repo-relative literal, under bash —
+    is what an unmigrated consumer's wiring, its `.github/workflows`, and this
+    repo's own history all name; a fallback that quietly became an absolute path
+    or another interpreter would still be green everywhere else.
+    """
+    scripts = repo / "scripts"
+    scripts.mkdir(exist_ok=True)
+    (scripts / "verify.sh").write_text(
+        "#!/usr/bin/env sh\n"
+        'test "${HARNESS_GATE_MARKER_RUNNER:-}" = "1"\n'
+        'printf "legacy-gate argv0=%s shell=%s\\n" "$0" "${BASH_VERSION:+bash}"\n'
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    tree = _tree(repo)
+
+    assert not (repo / "CLAUDE.md").exists()
+    assert not (repo / "CONTEXT.md").exists()
+
+    proc = _cli(repo, "run")
+
+    assert proc.returncode == 0, proc.stderr
+    assert "legacy-gate argv0=scripts/verify.sh shell=bash" in proc.stdout, proc.stdout
+    assert _marker_path(repo, tree).exists()
+
+
+def test_a_declared_gate_the_shell_cannot_launch_forwards_the_shells_status(
+    repo: Path,
+) -> None:
+    """A launch failure of the **declared** command is a red tree, not exit 3.
+
+    Under ``sh -c`` the runner never sees a launch failure: the shell reports it
+    as its own 127 and that status is forwarded like any other. Mapping it back
+    to the infrastructure exit would be wrong in the other direction — a
+    consumer's gate can legitimately exit 127 from an inner command, and
+    conflating the two would report a genuinely red tree as a broken runner.
+    Exit 3 therefore covers only a declaration this runner could not *resolve*,
+    and the missing legacy ``scripts/verify.sh``. ADR 0018 and
+    ``specs/features/plugin-surface.md`` said otherwise until #510's second
+    review cycle; this is the behaviour they now describe.
+    """
+    _declare_verify(repo, "definitely-not-a-command-510")
+    tree = _tree(repo)
+
+    proc = _cli(repo, "run")
+
+    assert proc.returncode == 127, (proc.returncode, proc.stderr)
+    assert proc.returncode != 3
+    assert "not found" in proc.stderr, proc.stderr
+    assert not _marker_path(repo, tree).exists()
+
+
+def test_context_is_the_legacy_spine_only_when_claude_is_absent(repo: Path) -> None:
+    """A present CLAUDE.md is authoritative, even when CONTEXT.md is usable."""
+    _declare_verify(repo, '"printf legacy-context"', spine="CONTEXT.md")
+
+    legacy = _cli(repo, "run")
+
+    assert legacy.returncode == 0, legacy.stderr
+    assert "legacy-context" in legacy.stdout
+
+    (repo / "CLAUDE.md").write_text("```yaml\ncommands:\n  test: pytest\n```\n")
+    selected = _cli(repo, "run")
+
+    assert selected.returncode == 3
+    assert "CLAUDE.md" in selected.stderr
+    assert "commands.verify" in selected.stderr
+
+
+def test_an_unreadable_claude_spine_cannot_fall_back_to_context(repo: Path) -> None:
+    """A dangling trusted spine is present but unreadable, never absent."""
+    _declare_verify(repo, '"printf legacy-context"', spine="CONTEXT.md")
+    (repo / "CLAUDE.md").symlink_to(repo / "missing-spine.md")
+
+    proc = _cli(repo, "run")
+
+    assert proc.returncode == 3
+    assert "CLAUDE.md" in proc.stderr
+    assert "commands.verify" in proc.stderr
+
+
+@pytest.mark.parametrize(
+    "declaration",
+    [
+        "",
+        '""',
+        '"printf first"\n  verify: "printf second"',
+        "{ command: printf malformed }",
+        '"printf unterminated',
+        '"printf outer" && "printf inner"',
+    ],
+    ids=[
+        "missing",
+        "empty",
+        "duplicate",
+        "malformed",
+        # Unbalanced and re-tokenisable quoting, end to end: the harm the parser
+        # fixtures describe is a *marker* written for a tree whose declared gate
+        # never ran, so it is measured here as exit 3 with no marker directory,
+        # not only as a parser return value.
+        "unterminated-quote",
+        "two-quoted-scalars-in-one-value",
+    ],
+)
+def test_an_invalid_selected_verify_field_is_runner_infrastructure(
+    repo: Path, declaration: str
+) -> None:
+    """The selected spine fails closed before any legacy or fixed fallback."""
+    _declare_verify(repo, declaration)
+    _write_internal_gate(repo)
+    marker_dir = _marker_path(repo, "0" * 40).parent
+
+    proc = _cli(repo, "run")
+
+    assert proc.returncode == 3
+    assert "commands.verify" in proc.stderr
+    assert not marker_dir.exists()
+
+
+def test_a_declared_gate_that_delegates_back_to_the_runner_is_refused(
+    repo: Path, tmp_path: Path
+) -> None:
+    """#510 review cycle 2, F1: ``run`` may not re-enter ``run``.
+
+    Before the gate command was read from the spine, the only launchable child
+    was ``scripts/verify.sh``, whose ``HARNESS_GATE_MARKER_RUNNER`` check *was*
+    the recursion guard. The child is now an arbitrary declared command, and a
+    consumer whose ``commands.verify`` reaches ``node scripts/gate-marker.js
+    run`` — directly, or through the ``npm run verify`` that the public entry
+    documents — re-enters without bound.
+
+    Two harms, both measured here. The gate is re-run once per level, and an
+    inner level that exits zero **mints a marker for the tree while the outer
+    stages are still running** — evidence for a tree its own gate then reports
+    red, which is exactly the claim the marker is not allowed to make.
+
+    The relay caps its own depth at two, so a regression is bounded rather than
+    a fork bomb on the host, and it counts its invocations in a log **outside**
+    the repository so the tree the runner measures does not move underneath it.
+    The count is the measurement: with the guard the declared gate runs exactly
+    once; without it the cap is what stops the recursion, not the runner.
+    """
+    log = tmp_path / "relay-invocations.log"
+    (repo / "relay.sh").write_text(
+        "#!/usr/bin/env sh\n"
+        'printf "ran\\n" >> "$RELAY_LOG"\n'
+        'depth="${RELAY_DEPTH:-0}"\n'
+        'if [ "$depth" -ge 2 ]; then exit 0; fi\n'
+        "RELAY_DEPTH=$((depth + 1))\n"
+        "export RELAY_DEPTH\n"
+        'node "$RELAY_HELPER" run\n'
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    _declare_verify(repo, '"sh relay.sh"')
+
+    proc = _cli(repo, "run", env={"RELAY_LOG": str(log), "RELAY_HELPER": str(HELPER)})
+
+    assert proc.returncode != 0, proc.stdout
+    assert sorted(_marker_dir(repo).glob("*.json")) == [], (
+        "a re-entered runner minted evidence for a tree whose gate then exited non-zero"
+    )
+    assert log.read_text(encoding="utf-8").count("ran") == 1, (
+        "the declared gate re-entered the runner; the fixture's depth cap stopped it, "
+        f"not the runner: {log.read_text(encoding='utf-8')!r}"
+    )
+    assert "gate-marker:" in proc.stderr and "delegated back" in proc.stderr, proc.stderr
 
 
 def test_the_retired_direct_write_command_cannot_mint_a_marker(repo: Path) -> None:
