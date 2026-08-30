@@ -22,7 +22,7 @@ The principle boundary this draws, and the rule that decides for the next file:
 
 The module type is pinned by `scripts/package.json` (`{"type": "commonjs"}`), the same one-key mechanism and the same reasoning as `hooks/package.json`: Node resolves a `.js` file's type from the nearest `package.json` walking up, and in a consuming repo that walk otherwise terminates at a root the harness does not control.
 
-### Marker-emission boundary (amended by #507 and #510)
+### Marker-emission boundary (amended by #507, #510, and #513)
 
 `gate-marker.js` exposes no direct successful write command. Its public `run`
 subcommand accepts no operands and resolves its gate command only from
@@ -54,6 +54,9 @@ outer stages were still running. `verify.sh`'s check on the same variable was
 that guard only while the sole launchable child was `verify.sh`. Only after a
 measured zero exit does its non-exported emitter write the tree-named marker
 and record `exit: 0` in the diagnostic payload.
+The payload's diagnostic `gate` field records the exact command selected and
+launched by `run`, including the historical fallback only when no spine exists;
+it does not affect the hooks' decision.
 
 **Exit 3 is narrower than this record first stated, and the widening is
 deliberate (#510, second review cycle).** It covers a gate declaration this

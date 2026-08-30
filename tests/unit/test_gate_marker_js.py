@@ -695,6 +695,19 @@ def test_the_runner_executes_the_verify_command_declared_in_claude(repo: Path) -
     assert _marker_path(repo, tree).exists()
 
 
+def test_the_marker_records_the_declared_gate_command(repo: Path) -> None:
+    """The payload names the command that actually produced the marker."""
+    declaration = "printf selected-gate"
+    _declare_verify(repo, f'"{declaration}"')
+    tree = _tree(repo)
+
+    proc = _cli(repo, "run")
+
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(_marker_path(repo, tree).read_text(encoding="utf-8"))
+    assert payload["gate"] == declaration
+
+
 def test_the_declared_gate_forwards_its_nonzero_status_without_a_marker(repo: Path) -> None:
     """A red declared gate remains red; ``run`` cannot mint evidence for it."""
     _declare_verify(repo, '"printf declared-red; exit 17"')

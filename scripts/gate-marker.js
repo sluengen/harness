@@ -403,7 +403,7 @@ function branchOf(cwd) {
  *
  * Called only on green. The body is diagnostics for a human; the *filename* is
  * the claim the hooks read. */
-function emitSuccessfulMarker(cwd, measuredExit) {
+function emitSuccessfulMarker(cwd, measuredExit, gate) {
   if (measuredExit !== 0) {
     throw new Error("gate-marker: refusing to emit evidence for a non-zero gate result");
   }
@@ -416,7 +416,7 @@ function emitSuccessfulMarker(cwd, measuredExit) {
     head: headOf(cwd),
     branch: branchOf(cwd),
     worktree: canonical(git(["rev-parse", "--show-toplevel"], cwd)),
-    gate: "bash scripts/verify.sh",
+    gate,
     exit: measuredExit,
     finished_at: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
     epoch: Math.floor(Date.now() / 1000),
@@ -683,7 +683,7 @@ function runGate(cwd) {
   }
   if (result.status !== 0) return result.status;
 
-  const target = emitSuccessfulMarker(cwd, result.status);
+  const target = emitSuccessfulMarker(cwd, result.status, gate.command);
   process.stdout.write(`gate marker: ${path.basename(target, ".json")} -> ${target}\n`);
   return 0;
 }
