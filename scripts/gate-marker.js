@@ -116,10 +116,20 @@ const EXIT_REFUSED = 2;
 //: design does not depend on which code Node picks for an uncaught exception.
 const EXIT_USAGE = 64;
 
-//: A failure to launch the fixed internal gate is infrastructure, neither a
-//: repository refusal nor a red verification stage.  Kept distinct so callers
-//: can report the missing runner rather than a false claim about the tree.
+//: A failure to *resolve* the gate this runner may launch is infrastructure,
+//: neither a repository refusal nor a red verification stage.  Kept distinct so
+//: callers can report the missing runner rather than a false claim about the
+//: tree.  Deliberately **not** the code for a declared command the shell could
+//: not launch: `sh -c` reports that as its own 127, and a consumer's gate can
+//: legitimately exit 127 from an inner command, so mapping it here would
+//: misclassify a genuinely red tree as infrastructure (#510).
 const EXIT_RUNNER_UNAVAILABLE = 3;
+
+//: Set on the declared gate's environment, and read back here.  `verify.sh`
+//: reads it to take its internal path, which used to be the *only* recursion
+//: guard: the sole launchable child was that one script.  The child is now an
+//: arbitrary declared command, so the runner reads its own variable too.
+const RUNNER_ENV = "HARNESS_GATE_MARKER_RUNNER";
 
 /** A git invocation this program needs did not succeed.
  *
@@ -418,29 +428,257 @@ function emitSuccessfulMarker(cwd, measuredExit) {
   return target;
 }
 
-/** Run the only gate whose green result may produce a marker.
+/** A trusted spine does not declare a usable ``commands.verify`` field. */
+class GateDeclarationError extends Error {}
+
+//: The two quote characters, written as escapes rather than as themselves. The
+//: repo's source scanners blank string-literal contents to count delimiters, and
+//: a lone quote inside a pattern or a class throws their offsets off — the same
+//: reason `hooks/push-target-guard.js` spells them `\x22`/`\x27`.
+const DOUBLE = "\x22";
+const SINGLE = "\x27";
+
+//: One ``key: value`` pair inside the block — the sibling reader's own pattern.
+//: Matched against the **raw** line, so the `\r` of a CRLF spine is stripped
+//: before it gets here: `(.*)$` cannot cross one, because JavaScript counts it
+//: as a line terminator, and a clone made under `core.autocrlf=true` otherwise
+//: loses its whole block (#488).
+const PAIR = /^\s*([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*(.*)$/;
+
+//: A line opening a ``commands:`` key at the **top level** of the config map,
+//: whatever follows it. Anchored at column 0 on purpose: an indented
+//: ``commands:`` is an example inside prose or a nested mapping, and reading one
+//: would let a document's illustration decide what may mint a marker.
+const COMMANDS_KEY = /^commands\s*:(.*)$/;
+
+//: The yaml indicators that make a value something other than the plain or
+//: quoted scalar this reader understands: block and folded scalars, an anchor,
+//: an alias, a flow mapping, a flow sequence. Refused rather than returned. A
+//: line reader hands back the indicator *itself* — ``sh -c ">"`` exits 2, the
+//: code this CLI reserves for a fact about the repository — so the silent
+//: mis-derivation is worse than the loud refusal (#510).
+const INDICATOR = /^[|>&*{[]/;
+
+/** Classify ``raw`` as a yaml scalar: ``{value, quoted, malformed}``.
  *
- * The fixed argv is the boundary: unlike a generic command runner it cannot be
- * turned into a public success-minting wrapper for an arbitrary process.  The
- * shell script retains responsibility for consumer-specific stages; its
- * internal mode prevents this child from delegating back to us.
+ * ``value`` is the scalar with its inline comment removed and its quotes still
+ * attached, so the indicator test below reads the same characters yaml would.
+ *
+ * **Quoting is recognised only where yaml recognises it — at the first
+ * character of the value.** A reader that tracked quote state *anywhere* had two
+ * failures at once (#510, third review cycle). ``verify: echo it's fine # x`` is
+ * a legal plain scalar whose apostrophe is ordinary text; that reader opened a
+ * quote it never closed, so it never cut the comment and handed ``sh`` a longer
+ * command than the spine declares. And ``verify: "a" && "b"`` has *even* parity,
+ * so no open-state check sees it, while stripping "one surrounding pair" deletes
+ * two quotes that never delimited the whole value — leaving a fragment ``sh``
+ * re-tokenises into a different command that can exit 0 and mint a marker for a
+ * tree whose declared gate never ran. That is the exact harm :data:`INDICATOR`
+ * refuses indicators to prevent, so both spellings are refused here too:
+ * ``malformed`` is set when a value opens with a quote and is not one whole
+ * enclosing quoted scalar — unterminated, or carrying content after its close.
+ *
+ * In a plain scalar a ``#`` must be preceded by whitespace to open a comment,
+ * which is what yaml says and what keeps ``make target#1`` intact — a deliberate
+ * departure from the sibling reader's ``indexOf("#")``, kept from the reader
+ * this replaces. In a quoted scalar the ``#`` is inside the quotes and is data:
+ * ``verify: "npm test # smoke"`` is one command whose text contains a ``#``.
+ */
+function withoutComment(raw) {
+  const text = String(raw).trim();
+  const opener = text[0];
+  if (opener !== DOUBLE && opener !== SINGLE) {
+    for (let i = 0; i < text.length; i += 1) {
+      if (text[i] === "#" && (i === 0 || /\s/.test(text[i - 1]))) {
+        return { value: text.slice(0, i).trim(), quoted: false, malformed: false };
+      }
+    }
+    return { value: text, quoted: false, malformed: false };
+  }
+  const close = text.indexOf(opener, 1);
+  if (close === -1) return { value: text, quoted: true, malformed: true };
+  const rest = text.slice(close + 1);
+  // Only whitespace, or whitespace and a comment, may follow the closing quote.
+  if (rest.trim() !== "" && !/^\s+#/.test(rest)) {
+    return { value: text, quoted: true, malformed: true };
+  }
+  return { value: text.slice(0, close + 1), quoted: true, malformed: false };
+}
+
+/** ``value`` with its enclosing quote pair removed.
+ *
+ * Applied **only** to a value :func:`withoutComment` classified as one whole
+ * enclosing quoted scalar. Its own first/last test is belt and braces: on a
+ * value that merely begins and ends with a quote without being delimited by one
+ * — ``"a" && "b"`` — that test is true and the result is a fragment.
+ */
+function unquote(value) {
+  const first = value[0];
+  const last = value[value.length - 1];
+  if (value.length >= 2 && (first === DOUBLE || first === SINGLE) && last === first) {
+    return value.slice(1, -1);
+  }
+  return value;
+}
+
+/** Return the one ``commands.verify`` scalar a spine declares.
+ *
+ * This is deliberately a small reader rather than a YAML dependency: the spine
+ * is markdown around a simple configuration map, and the runner needs one
+ * scalar only. A malformed, missing, empty, or duplicate selected field is an
+ * infrastructure failure, never a reason to select another command.
+ *
+ * The scan reads the **whole** file and collects every top-level ``commands:``
+ * block, then insists on exactly one ``verify`` value across all of them. Two
+ * consequences, both deliberate. A ``commands: <scalar>`` line — prose, an
+ * example, a flow mapping — no longer aborts the scan, so a mention above the
+ * real declaration cannot make the gate permanently unrunnable. And two
+ * declarations are an *ambiguity* rather than a race the first one wins: the
+ * value chosen here decides which command may mint evidence, so it fails closed
+ * where the sibling ``branches:`` reader can afford to take the first block.
+ *
+ * Whether a key opens a block is asked through :func:`withoutComment`, the same
+ * helper that decides comments on values — the shape the sibling arm took at
+ * #488, when requiring a literally empty key made ``branches:   # a comment``
+ * skip the perfectly ordinary mapping beneath it. This repo's own spine writes
+ * inline comments on sibling lines of this very block.
+ *
+ * **Tabs are expanded for the indentation measurement only** — `tabsExpanded`
+ * feeds `lead` and nothing else, while `PAIR` reads the `\r`-stripped raw line.
+ * Expanding across the whole line rewrote a tab *inside* a declared value into
+ * two spaces before the value was read: `verify: make<TAB>foo` reached `sh` as
+ * `make<SPACE><SPACE>foo`, so the runner launched a command the spine does not
+ * declare — the silent mis-derivation this reader refuses indicators and quote
+ * fragments to prevent (#510, sixth review cycle). The expansion itself stays,
+ * because it is what makes a tab-indented entry and a space-indented sibling
+ * compare at the same lead.
+ */
+function declaredVerify(text, source) {
+  const values = [];
+  let inBlock = false;
+  let entryIndent = -1;
+  let sawScalarCommandsKey = false;
+  let sawMalformedQuoting = false;
+  for (const raw of text.split("\n")) {
+    const line = raw.replace(/\r$/, "");
+    const trimmed = line.trim();
+    const tabsExpanded = line.replace(/\t/g, "  ");
+    const lead = tabsExpanded.length - tabsExpanded.trimStart().length;
+    // Anything back at column 0 ends the block — including the closing fence of
+    // the markdown code block the config map lives in.
+    if (inBlock && trimmed !== "" && lead === 0) {
+      inBlock = false;
+      entryIndent = -1;
+    }
+    if (!inBlock) {
+      const key = COMMANDS_KEY.exec(line);
+      if (key === null) continue;
+      if (withoutComment(key[1]).value !== "") {
+        sawScalarCommandsKey = true;
+        continue;
+      }
+      inBlock = true;
+      continue;
+    }
+    if (trimmed === "" || trimmed.startsWith("#")) continue;
+    if (entryIndent === -1) entryIndent = lead;
+    if (lead !== entryIndent) continue;
+    const pair = PAIR.exec(line);
+    if (pair === null || pair[1] !== "verify") continue;
+    const scalar = withoutComment(pair[2]);
+    if (scalar.malformed) {
+      sawMalformedQuoting = true;
+      values.push(null);
+      continue;
+    }
+    const literal = scalar.value;
+    if (literal === "" || INDICATOR.test(literal)) {
+      values.push(null);
+      continue;
+    }
+    values.push((scalar.quoted ? unquote(literal) : literal) || null);
+  }
+  if (values.length !== 1 || values[0] === null) {
+    let hint = "";
+    if (values.length === 0 && sawScalarCommandsKey) {
+      hint = "; a one-line `commands: {…}` mapping is deliberately not read";
+    } else if (sawMalformedQuoting) {
+      hint = "; a quoted value must be one whole enclosing quoted scalar";
+    }
+    throw new GateDeclarationError(
+      `${source}: commands.verify must be one non-empty scalar${hint}`
+    );
+  }
+  return values[0];
+}
+
+/** Read only the selected trusted spine, then the fixed legacy gate. */
+function gateCommand(cwd) {
+  for (const name of ["CLAUDE.md", "CONTEXT.md"]) {
+    const source = path.join(cwd, name);
+    let text;
+    try {
+      // ``lstatSync`` distinguishes a missing spine from a dangling link. A
+      // link is still a selected declaration path, so falling through would
+      // let an unreadable CLAUDE.md select CONTEXT.md instead.
+      fs.lstatSync(source);
+    } catch (err) {
+      if (err.code === "ENOENT") continue;
+      throw new GateDeclarationError(`${source}: commands.verify could not be read`);
+    }
+    try {
+      text = fs.readFileSync(source, "utf8");
+    } catch (err) {
+      throw new GateDeclarationError(`${source}: commands.verify could not be read`);
+    }
+    return { command: declaredVerify(text, source), legacy: false };
+  }
+  return { command: "bash scripts/verify.sh", legacy: true };
+}
+
+/** Run the one trusted gate whose green result may produce a marker.
+ *
+ * The command is fixed by the checked-in spine rather than by an operand or
+ * environment variable.  A fixed ``sh -c`` entry preserves commands such as
+ * ``npm run verify`` while keeping per-invocation callers unable to mint
+ * success for an arbitrary process.
  */
 function runGate(cwd) {
-  const gate = path.join(cwd, "scripts", "verify.sh");
-  if (!fs.existsSync(gate)) {
-    process.stderr.write(`gate-marker: could not launch fixed gate: ${gate} does not exist\n`);
+  // A declared gate that reaches this verb again would re-run the whole gate at
+  // every level and — worse — an inner level that exits zero writes a marker for
+  // the tree while the outer stages are still running, minting evidence for a
+  // tree its own gate then reports red. `verify.sh`'s check on the same variable
+  // covered this only while the sole launchable child was `verify.sh`.
+  if (process.env[RUNNER_ENV] === "1") {
+    process.stderr.write(
+      "gate-marker: the declared gate delegated back to `gate-marker.js run`; " +
+        "refusing to re-enter the runner. Point commands.verify at the " +
+        "verification stages themselves, never at this runner.\n"
+    );
     return EXIT_RUNNER_UNAVAILABLE;
   }
-  const result = spawnSync("bash", [gate], {
+  let gate;
+  try {
+    gate = gateCommand(cwd);
+  } catch (err) {
+    process.stderr.write(`gate-marker: ${err.message}\n`);
+    return EXIT_RUNNER_UNAVAILABLE;
+  }
+  const legacyGate = path.join(cwd, "scripts", "verify.sh");
+  if (gate.legacy && !fs.existsSync(legacyGate)) {
+    process.stderr.write(`gate-marker: could not launch fixed gate: ${legacyGate} does not exist\n`);
+    return EXIT_RUNNER_UNAVAILABLE;
+  }
+  const result = spawnSync("sh", ["-c", gate.command], {
     cwd: String(cwd),
     encoding: "utf8",
-    env: Object.assign({}, process.env, { HARNESS_GATE_MARKER_RUNNER: "1" }),
+    env: Object.assign({}, process.env, { [RUNNER_ENV]: "1" }),
   });
   if (result.stdout) process.stdout.write(String(result.stdout));
   if (result.stderr) process.stderr.write(String(result.stderr));
   if (result.error || result.status === null) {
     const reason = result.error ? result.error.message : "terminated without an exit status";
-    process.stderr.write(`gate-marker: could not launch fixed gate: ${reason}\n`);
+    process.stderr.write(`gate-marker: could not launch declared gate: ${reason}\n`);
     return EXIT_RUNNER_UNAVAILABLE;
   }
   if (result.status !== 0) return result.status;
@@ -522,6 +760,8 @@ if (require.main === module) {
 // implementations are held equivalent by execution and textually independent by
 // assertion; a shared module would turn that equivalence into `assert x == x`.
 module.exports = {
+  declaredVerify,
+  GateDeclarationError,
   markerPath,
   markerDir,
   maxAgeSeconds,
