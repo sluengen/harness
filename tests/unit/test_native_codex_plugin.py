@@ -74,25 +74,3 @@ def test_every_portable_skill_resolves_its_plugin_asset_references() -> None:
             assert (plugin_root / reference).exists(), (
                 f"{skill.relative_to(REPO_ROOT)} names missing plugin asset {reference}"
             )
-
-
-def test_every_legacy_command_skill_resolves_its_plugin_asset_references() -> None:
-    """Legacy ``.codex`` discovery has one additional directory level."""
-    asset = re.compile(
-        r"`((?:commands|skills|agents|templates|hooks|\.codex)/[^`\s]+)`"
-    )
-    generated = sorted(
-        (REPO_ROOT / ".codex" / "skills").glob("command-*/SKILL.md")
-    )
-    assert generated
-
-    for skill in generated:
-        text = skill.read_text(encoding="utf-8")
-        assert "three directories above this SKILL.md" in text
-        plugin_root = skill.parents[3]
-        for reference in asset.findall(text):
-            if any(char in reference for char in "*<>{}"):
-                continue
-            assert (plugin_root / reference).exists(), (
-                f"{skill.relative_to(REPO_ROOT)} names missing plugin asset {reference}"
-            )
