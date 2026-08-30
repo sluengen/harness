@@ -65,6 +65,7 @@ from __future__ import annotations
 import ast
 import json
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -76,13 +77,316 @@ from tests._gitutil import indexed_text, tracked_files_under, tracked_py_sources
 from tests.unit._prose import REPO_ROOT
 
 HELPER = REPO_ROOT / "scripts" / "gate-marker.js"
+MANIFEST = REPO_ROOT / "scripts" / "package.json"
+
+#: Every literal ``node:`` specifier the helper imports.  Do not replace this
+#: mapping with a generic ``node:`` feature: a later built-in (for example
+#: ``node:sqlite``) must fail the inventory until its actual floor is known.
+_NODE_BUILTIN_FLOORS = {
+    "node:child_process": (14, 18, 0),
+    "node:crypto": (14, 18, 0),
+    "node:fs": (14, 18, 0),
+    "node:os": (14, 18, 0),
+    "node:path": (14, 18, 0),
+}
+#: Exact Node APIs used by the helper. ``fs.rmSync`` ensures this check cannot
+#: let the declaration outlive the source requirement.
+_NODE_API_FLOORS = {
+    "child_process.spawnSync": (0, 11, 12),
+    "crypto.randomBytes": (0, 5, 8),
+    "fs.existsSync": (0, 1, 21),
+    "fs.mkdirSync": (0, 1, 8),
+    "fs.readdirSync": (0, 1, 8),
+    "fs.realpathSync": (0, 1, 31),
+    "fs.rmSync": (14, 14, 0),
+    "fs.statSync": (0, 1, 30),
+    "fs.writeFileSync": (0, 1, 29),
+    "os.hostname": (0, 3, 3),
+    "path.basename": (0, 1, 25),
+    "path.dirname": (0, 1, 16),
+    "path.isAbsolute": (0, 11, 2),
+    "path.join": (0, 1, 16),
+    "path.relative": (0, 5, 0),
+    "path.resolve": (0, 1, 16),
+    "process.argv": (0, 1, 27),
+    "process.cwd": (0, 1, 8),
+    "process.env": (0, 1, 27),
+    "process.exitCode": (0, 11, 8),
+    "process.pid": (0, 1, 27),
+    "process.stderr": (0, 1, 100),
+    "process.stdout": (0, 1, 100),
+}
+_NODE_REQUIRE = re.compile(r"require\(\s*[\"'](?P<specifier>node:[^\"']+)[\"']\s*\)")
+_NODE_NAMESPACE_REQUIRE = re.compile(
+    r"\b(?:const|let|var)\s+(?P<alias>[A-Za-z_]\w*)\s*=\s*"
+    r"(?P<require>require\(\s*[\"'](?P<specifier>node:[^\"']+)[\"']\s*\))"
+)
+_NODE_DESTRUCTURED_REQUIRE = re.compile(
+    r"\b(?:const|let|var)\s*\{(?P<members>[^}]+)\}\s*=\s*"
+    r"(?P<require>require\(\s*[\"'](?P<specifier>node:[^\"']+)[\"']\s*\))"
+)
+_NODE_DIRECT_REQUIRE_MEMBER = re.compile(
+    r"(?P<require>require\(\s*[\"'](?P<specifier>node:[^\"']+)[\"']\s*\))"
+    r"\.(?P<member>[A-Za-z_]\w*)"
+)
+_NODE_MEMBER_ACCESS = re.compile(r"\b(?P<alias>[A-Za-z_]\w*)\.(?P<member>\w+)")
+_COMMONJS_REQUIRE_CALL = re.compile(r"\brequire\s*\(\s*[^)\s]")
+_NODE_UNSUPPORTED_NAMESPACE_ACCESS = re.compile(
+    r"\b(?P<alias>[A-Za-z_]\w*)\s*(?:\?\.|\[)"
+)
+_NODE_NAMESPACE_RENAME = re.compile(
+    r"\b(?:const|let|var)\s+(?P<rename>[A-Za-z_]\w*)\s*=\s*(?P<alias>[A-Za-z_]\w*)\s*;"
+)
+_NODE_ENGINE_RANGE = re.compile(r">=(\d+)\.(\d+)\.(\d+)")
+
+
+def _source_node_floor() -> tuple[int, int, int]:
+    """Derive the helper's floor from the Node APIs it currently uses."""
+    source = HELPER.read_text(encoding="utf-8")
+    builtins = {match.group("specifier") for match in _NODE_REQUIRE.finditer(source)}
+    unclassified_builtins = sorted(builtins - _NODE_BUILTIN_FLOORS.keys())
+    assert not unclassified_builtins, (
+        f"unclassified Node built-ins: {', '.join(unclassified_builtins)}"
+    )
+    namespace_requires = list(_NODE_NAMESPACE_REQUIRE.finditer(source))
+    destructured_requires = list(_NODE_DESTRUCTURED_REQUIRE.finditer(source))
+    direct_members = list(_NODE_DIRECT_REQUIRE_MEMBER.finditer(source))
+    supported_requires = {
+        *(match.start("require") for match in namespace_requires),
+        *(match.start("require") for match in destructured_requires),
+        *(match.start("require") for match in direct_members),
+    }
+    unsupported_requires = sorted(
+        match.start()
+        for match in _COMMONJS_REQUIRE_CALL.finditer(source)
+        if match.start() not in supported_requires
+    )
+    assert not unsupported_requires, (
+        "unsupported CommonJS require form at character offsets: "
+        f"{', '.join(str(offset) for offset in unsupported_requires)}"
+    )
+    namespace_modules = {}
+    for match in namespace_requires:
+        module = match.group("specifier").removeprefix("node:")
+        alias = match.group("alias")
+        assert alias == module, f"unsupported Node namespace alias: {alias} for {module}"
+        namespace_modules[alias] = module
+    unsupported_namespace_access = sorted(
+        match.group("alias")
+        for match in _NODE_UNSUPPORTED_NAMESPACE_ACCESS.finditer(source)
+        if match.group("alias") in namespace_modules or match.group("alias") == "process"
+    )
+    assert not unsupported_namespace_access, (
+        "unsupported Node namespace access: "
+        f"{', '.join(unsupported_namespace_access)}"
+    )
+    renamed_namespaces = sorted(
+        match.group("rename")
+        for match in _NODE_NAMESPACE_RENAME.finditer(source)
+        if match.group("alias") in namespace_modules or match.group("alias") == "process"
+    )
+    assert not renamed_namespaces, (
+        "unsupported Node namespace rename: "
+        f"{', '.join(renamed_namespaces)}"
+    )
+    apis = {
+        f"{namespace_modules[match.group('alias')]}.{match.group('member')}"
+        for match in _NODE_MEMBER_ACCESS.finditer(source)
+        if match.group("alias") in namespace_modules
+    }
+    apis.update(
+        f"process.{match.group('member')}"
+        for match in _NODE_MEMBER_ACCESS.finditer(source)
+        if match.group("alias") == "process"
+    )
+    apis.update(
+        f"{match.group('specifier').removeprefix('node:')}.{match.group('member')}"
+        for match in direct_members
+    )
+    for match in destructured_requires:
+        module = match.group("specifier").removeprefix("node:")
+        for member in match.group("members").split(","):
+            name = member.strip()
+            assert re.fullmatch(r"[A-Za-z_]\w*", name) is not None, (
+                f"unsupported Node destructured import: {name!r}"
+            )
+            apis.add(f"{module}.{name}")
+    unclassified = sorted(apis - _NODE_API_FLOORS.keys())
+    assert not unclassified, f"unclassified Node APIs: {', '.join(unclassified)}"
+    found = [
+        *((builtin, _NODE_BUILTIN_FLOORS[builtin]) for builtin in builtins),
+        *((api, _NODE_API_FLOORS[api]) for api in apis),
+    ]
+    assert found, "no known Node runtime requirement was found in gate-marker.js"
+    assert builtins, (
+        "the source scan no longer found the node: specifiers that currently set "
+        "the helper's runtime floor; update the built-in inventory with its replacement"
+    )
+    return max(floor for _, floor in found)
+
+
+def _declared_node_floor() -> tuple[int, int, int]:
+    """Read the lower bound from the manifest's intentionally simple range."""
+    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    assert isinstance(manifest, dict), "scripts/package.json must contain a JSON object"
+    engines = manifest.get("engines")
+    assert isinstance(engines, dict), "scripts/package.json engines.node must be a string range"
+    engine = engines.get("node")
+    assert isinstance(engine, str), f"scripts/package.json engines.node is not a string: {engine!r}"
+    match = _NODE_ENGINE_RANGE.fullmatch(engine)
+    assert match is not None, (
+        "scripts/package.json engines.node must be one lower-bound range such as "
+        f"'>=14.18.0', got {engine!r}"
+    )
+    return (int(match.group(1)), int(match.group(2)), int(match.group(3)))
 
 
 def _node() -> str:
     node = shutil.which("node")
     if node is None:
-        pytest.skip("node not available")
+        pytest.fail("node is required to execute gate-marker tests")
     return node
+
+
+def _node_version(node: str) -> tuple[int, int, int]:
+    proc = subprocess.run([node, "--version"], capture_output=True, text=True, timeout=60)
+    assert proc.returncode == 0, f"node --version failed: {proc.stderr.strip()}"
+    match = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)", proc.stdout.strip())
+    assert match is not None, f"node --version did not return a semver version: {proc.stdout!r}"
+    return (int(match.group(1)), int(match.group(2)), int(match.group(3)))
+
+
+def test_node_absence_fails_gate_marker_execution_tests(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Node is a mandatory runtime, so its absence must not turn execution into a skip."""
+    monkeypatch.setattr(shutil, "which", lambda _: None)
+
+    try:
+        _node()
+    except BaseException as error:
+        assert isinstance(error, pytest.fail.Exception), (
+            "gate-marker execution tests skipped instead of failing when Node was absent"
+        )
+        assert "node is required" in str(error)
+    else:
+        pytest.fail("_node() returned a Node executable after its lookup was removed")
+
+
+def test_the_manifest_floor_matches_the_helper_source() -> None:
+    """Reject an engines declaration either below or above the source's real floor."""
+    declared = _declared_node_floor()
+    source = _source_node_floor()
+
+    assert declared == source, (
+        f"scripts/package.json declares Node {declared}, but gate-marker.js requires {source}; "
+        "the declaration is lower or higher than the runtime floor"
+    )
+
+
+def test_the_source_floor_rejects_an_unclassified_node_api(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A new Node API must be classified before it can raise the declared floor."""
+    original_read_text = Path.read_text
+
+    def read_text_with_new_api(path: Path, *args: object, **kwargs: object) -> str:
+        source = original_read_text(path, *args, **kwargs)
+        if path == HELPER:
+            return source + "\nfs.cpSync('source', 'destination');\n"
+        return source
+
+    monkeypatch.setattr(Path, "read_text", read_text_with_new_api)
+
+    with pytest.raises(AssertionError, match=r"unclassified Node APIs: fs\.cpSync"):
+        _source_node_floor()
+
+
+def test_the_source_floor_rejects_an_unclassified_direct_node_api(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An inline CommonJS member must not bypass the API inventory (#512)."""
+    original_read_text = Path.read_text
+
+    def read_text_with_direct_api(path: Path, *args: object, **kwargs: object) -> str:
+        source = original_read_text(path, *args, **kwargs)
+        if path == HELPER:
+            return source + '\nrequire("node:fs").cpSync("source", "destination");\n'
+        return source
+
+    monkeypatch.setattr(Path, "read_text", read_text_with_direct_api)
+
+    with pytest.raises(AssertionError, match=r"unclassified Node APIs: fs\.cpSync"):
+        _source_node_floor()
+
+
+def test_the_source_floor_rejects_an_unclassified_node_builtin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A new ``node:`` specifier cannot inherit the floor of older built-ins."""
+    original_read_text = Path.read_text
+
+    def read_text_with_new_builtin(path: Path, *args: object, **kwargs: object) -> str:
+        source = original_read_text(path, *args, **kwargs)
+        if path == HELPER:
+            return source + '\nconst sqlite = require("node:sqlite");\n'
+        return source
+
+    monkeypatch.setattr(Path, "read_text", read_text_with_new_builtin)
+
+    with pytest.raises(AssertionError, match=r"unclassified Node built-ins: node:sqlite"):
+        _source_node_floor()
+
+
+def test_the_source_floor_rejects_an_unclassified_node_imported_member(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An unused imported member is still a Node runtime requirement."""
+    original_read_text = Path.read_text
+
+    def read_text_with_new_member(path: Path, *args: object, **kwargs: object) -> str:
+        source = original_read_text(path, *args, **kwargs)
+        if path == HELPER:
+            return source + '\nconst { execSync } = require("node:child_process");\n'
+        return source
+
+    monkeypatch.setattr(Path, "read_text", read_text_with_new_member)
+
+    with pytest.raises(AssertionError, match=r"unclassified Node APIs: child_process\.execSync"):
+        _source_node_floor()
+
+
+def test_the_manifest_floor_rejects_a_missing_engines_declaration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A malformed manifest is an assertion failure, never a lookup error."""
+    original_read_text = Path.read_text
+
+    def read_text_without_engines(path: Path, *args: object, **kwargs: object) -> str:
+        if path == MANIFEST:
+            return '{"type": "commonjs"}'
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", read_text_without_engines)
+
+    with pytest.raises(AssertionError, match=r"engines\.node"):
+        _declared_node_floor()
+
+
+def test_the_helper_answers_a_read_only_query_on_an_admitted_node(repo: Path) -> None:
+    """The declared range admits the actual Node that loads the shipped helper."""
+    node = _node()
+    declared = _declared_node_floor()
+    actual = _node_version(node)
+    assert actual >= declared, (
+        f"the executing Node {actual} is outside scripts/package.json's declared "
+        f"lower bound {declared}"
+    )
+
+    proc = _cli(repo, "status")
+
+    assert proc.returncode == 0, proc.stderr
+    status = json.loads(proc.stdout)
+    assert set(status) == {"tree", "marker", "max_age_seconds"}
+    assert status["tree"] == _tree(repo)
+    assert status["marker"].endswith("/" + status["tree"] + ".json")
+    assert status["max_age_seconds"] == 86400
 
 
 def _git_binary() -> str:
