@@ -13,8 +13,9 @@ Entries are chronological (oldest first); each new fold appends below. Format:
 
 A `process` entry carries a fourth field — `· baseline: <assurance:product ratio> /
 <gate wall-clock> / <unjustified checks>` — so that scope's tracked quantities
-survive the fold (`templates/assessment.md`). No `process` pass has run yet, so no
-entry below carries one.
+survive the fold (`templates/assessment.md`). The first process pass,
+`2026-08-31-process.md`, remains in `assessments/` as the latest report for its
+scope, so no entry below carries one yet.
 
 **Each entry preserves the scope vocabulary in force when that pass ran**, so
 `system`, `code-deep`, and the same-day `-am` / `-pm` / `-eve` stems appear below
