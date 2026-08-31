@@ -62,6 +62,22 @@ def _tokens() -> dict:
     return json.loads((REPO_ROOT / "design" / "03-tokens" / "tokens.json").read_text())
 
 
+def _relative_luminance(color: str) -> float:
+    """Return the WCAG relative luminance of a six-digit CSS hex colour."""
+    channels = (int(color[index : index + 2], 16) / 255 for index in range(1, 7, 2))
+
+    def linearize(channel: float) -> float:
+        return channel / 12.92 if channel <= 0.04045 else ((channel + 0.055) / 1.055) ** 2.4
+
+    red, green, blue = (linearize(channel) for channel in channels)
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+
+
+def _contrast_ratio(foreground: str, background: str) -> float:
+    darker, lighter = sorted((_relative_luminance(foreground), _relative_luminance(background)))
+    return (lighter + 0.05) / (darker + 0.05)
+
+
 def _page_with_markers(body_lines: list[str]) -> str:
     """A minimal ``<style>`` page with the generated-region markers in place,
     ``body_lines`` (already indented) sandwiched between them."""
@@ -110,7 +126,7 @@ def test_resolved_vars_match_current_palette() -> None:
     expected = {
         "--ink": "#0e1430",
         "--ink-2": "#3c4467",
-        "--muted": "#6b7396",
+        "--muted": "#656d8c",
         "--line": "#e6e8f2",
         "--card": "#ffffff",
         "--bg": "#f5f6fb",
@@ -135,6 +151,36 @@ def test_primitives_are_not_emitted_directly() -> None:
     """AC-2 design constraint: only semantic-tier paths drive emission."""
     tokens = _tokens()
     assert set(bdt.resolve_css_vars(tokens)) == set(bdt.SEMANTIC_TO_CSS_VAR.values())
+
+
+@pytest.mark.parametrize(
+    ("surface", "background"),
+    (
+        ("page", "#f5f6fb"),
+        ("card", "#ffffff"),
+        ("marker", "#f2f3fa"),
+        ("blue body-gradient endpoint", "#eef1ff"),
+        ("green body-gradient endpoint", "#eafff6"),
+    ),
+)
+def test_muted_normal_text_meets_aa_on_every_rendered_surface(
+    surface: str, background: str
+) -> None:
+    """#530 AC-1/2: normal muted text has 4.5:1 contrast on every real surface.
+
+    The named cases are the page, card, marker, and both body-gradient
+    endpoints used by the normal-size muted selectors in ``docs/index.html``.
+    Keeping each surface as its own parametrized case gives a failing endpoint
+    an exclusive, readable result; see review-discipline craft, *Floors decay
+    into decoration*.
+    """
+    muted = bdt.resolve_css_vars(_tokens())["--muted"]
+    ratio = _contrast_ratio(muted, background)
+
+    assert ratio >= 4.5, (
+        f"muted text {muted} has only {ratio:.4f}:1 contrast on the {surface} "
+        f"surface {background}; WCAG 2.1 AA requires 4.5:1"
+    )
 
 
 # --------------------------------------------------------------------------- #

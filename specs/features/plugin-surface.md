@@ -1,7 +1,7 @@
 ---
 feature: plugin-surface
 status: implemented
-last_updated: 2026-08-31
+last_updated: 2026-09-01
 ---
 
 # The plugin surface
@@ -29,6 +29,10 @@ The build/design/operate triad follows the how/what pattern (ADR 0017 D3): the s
 ### Evidence follows its subject
 
 ADR 0019 is the one evidence contract. The spine carries its full subject matrix; architecture principles, authoring, engineering, review, the build procedure, roles, and templates cite it and state their own action. Executable behaviour and mechanically enforceable invariants retain RED then the smallest GREEN. A runtime or compatibility floor has a declared floor and functional execution on every supported environment; configuration and generated artifacts use a validator, producer check, or smoke without duplicate consumer suites. Prose is reviewed or used directly, never judged by a predicate or wording guard, and an unobserved preventive guard requires a recorded risk decision. `writing-quality` makes the minimum effective edit, preserves the author's terminology, cadence, and useful edge, and cuts sentences without a decision, constraint, evidence, action, or necessary context. Developer and reviewer roles load it immediately before substantial handoffs and review reports; `/build` and `/capture` load it before authoring change specs, while short status and structured output remain outside the skill. A criterion may change before implementation only with evidence, a smaller replacement, owner approval, and a tracker amendment; it is never silently descoped.
+
+### Landing-page muted text
+
+The source muted token is `#656d8c`; the generated `--muted` declaration in `docs/index.html` resolves from it through `color.semantic.text.muted`. Normal-size muted text meets WCAG 2.1 AA's 4.5:1 contrast floor on the page background, white cards, marker panel, and both body-gradient endpoints. `tests/unit/test_build_design_tokens.py` measures those five rendered surfaces, while `scripts/build_design_tokens.py --check` keeps the page's generated token region aligned with `tokens.json`.
 
 ### The spine
 
