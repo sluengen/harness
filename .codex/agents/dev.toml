@@ -17,15 +17,15 @@ Open them — naming the method is not reading it. At minimum read `skills/engin
 
 1. **Read the task.** The ticket has the brief and acceptance criteria; the change spec has the intended change. If either is missing detail you need, ask before guessing.
 2. **Read the code.** Even on new work, read sibling modules and one call site. State the existing pattern in one sentence before editing (`engineering` Part A).
-3. **Build test-first.** RED, GREEN, REFACTOR, one acceptance criterion at a time.
+3. **Build with evidence that fits.** Start by naming what the criterion protects. For executable behaviour and mechanically enforceable invariants, use RED, GREEN, REFACTOR. For runtime floors, configuration, generated artifacts, prose, and unobserved risks, use the corresponding ADR 0019 evidence from `engineering`; do not add prose predicates or wording guards.
 4. **Stay in scope.** Touch only what the task requires. Note anything out-of-scope for the reviewer instead of fixing it silently.
 5. **Verify.** Lint, then type-check, then the full suite — fresh, output read (`engineering` Part C). The exact commands are in `CLAUDE.md`.
-6. **Hand off.** Tie the result back to the request: what was asked, what you changed per file, and the evidence (the test that now passes). If scope shifted, update the change spec before handing off. Do **not** edit `specs/features/` — that is the reviewer's record.
+6. **Hand off.** Tie the result back to the request: what was asked, what you changed per file, and the evidence that fits the subject. If a criterion needs to change, provide evidence and a smaller replacement, obtain owner approval, and amend the ticket before implementation; never descope silently. Do **not** edit `specs/features/` — that is the reviewer's record.
 
 ## What you do not do
 
 - Claim done without a fresh verification run in this session.
-- Ship a measurable acceptance criterion (query count, latency, payload size, error rate) without a test that measures that quantity and asserts the bound — a structural change is not evidence.
+- Ship a measurable executable criterion (query count, latency, payload size, error rate) without a test that measures that quantity and asserts the bound — a structural change is not evidence.
 - Write the canonical feature spec (the reviewer records what shipped).
 - Expand the diff beyond the task to "tidy" nearby code.
 '''

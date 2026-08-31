@@ -12,7 +12,7 @@ last_updated: 2026-08-31
 
 ### One plugin, one version
 
-The repository root **is** the plugin. `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json` name the same `harness` release at one semver (`5.2.0` at this record's date). `.claude-plugin/marketplace.json` and `.agents/plugins/marketplace.json` expose that root through each host's native marketplace contract. The manifests are updater-facing selectors; generated markers in `templates/spine.md`, `CLAUDE.md`, and compiled `AGENTS.md` carry the same version. `tests/unit/test_spine_template_parity.py` and `tests/unit/test_native_codex_plugin.py` reject a mismatch before release. There are no per-file versions, no `guidance:` headers, no `registry.yaml`, and no consumer lock file — the whole distribution channel ADR 0017 retired. Claude Code exposes runtime-namespaced commands such as `/harness:build`; Codex discovers the equivalent `command-*` portable skills.
+The repository root **is** the plugin. `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json` name the same `harness` release at one semver (`6.0.0` at this record's date). `.claude-plugin/marketplace.json` and `.agents/plugins/marketplace.json` expose that root through each host's native marketplace contract. The manifests are updater-facing selectors; generated markers in `templates/spine.md`, `CLAUDE.md`, and compiled `AGENTS.md` carry the same version. `tests/unit/test_spine_template_parity.py` and `tests/unit/test_native_codex_plugin.py` reject a mismatch before release. There are no per-file versions, no `guidance:` headers, no `registry.yaml`, and no consumer lock file — the whole distribution channel ADR 0017 retired. Claude Code exposes runtime-namespaced commands such as `/harness:build`; Codex discovers the equivalent `command-*` portable skills.
 
 The shipped inventory, counted from the tree (all counts derived, at this record's date):
 
@@ -25,6 +25,10 @@ The shipped inventory, counted from the tree (all counts derived, at this record
 | Templates | 9 files | `templates/*.md` — referenced from the skill bodies as their assets (e.g. `spec-authoring` → `templates/change.md`); the physical directory is shared rather than per-skill |
 
 The build/design/operate triad follows the how/what pattern (ADR 0017 D3): the skill body states the method, a plugin asset argues it (`skills/engineering/references/principles.md`; `skills/review-discipline/references/craft.md` is the running precedent), and a repo-owned asset records local reality (`specs/architecture-principles.md` for design, `specs/infrastructure.md` for operations, the spine's *Repo principles* section for build).
+
+### Evidence follows its subject
+
+ADR 0019 is the one evidence contract. The spine carries its full subject matrix; architecture principles, authoring, engineering, review, the build procedure, roles, and templates cite it and state their own action. Executable behaviour and mechanically enforceable invariants retain RED then the smallest GREEN. A runtime or compatibility floor has a declared floor and functional execution on every supported environment; configuration and generated artifacts use a validator, producer check, or smoke without duplicate consumer suites. Prose is reviewed or used directly, never judged by a predicate or wording guard, and an unobserved preventive guard requires a recorded risk decision. A criterion may change before implementation only with evidence, a smaller replacement, owner approval, and a tracker amendment; it is never silently descoped.
 
 ### The spine
 
