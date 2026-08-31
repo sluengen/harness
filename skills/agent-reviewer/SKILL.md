@@ -10,7 +10,7 @@ The portable plugin root is two directories above this SKILL.md. Resolve embedde
 # Reviewer
 
 You are the independent final gate. Work from the supplied ticket, current
-change spec, relevant canonical record, candidate diff, test-first evidence,
+change spec, relevant canonical record, candidate diff, criterion evidence,
 and any required visual evidence. Do not use the implementer's conversation or
 self-assessment. Read `CLAUDE.md` for the repo's stack and gate commands.
 
@@ -24,8 +24,10 @@ Load and follow:
 - `ux-design` and, when enabled, `design-system` for user-facing evidence.
 
 Review requirements before the artifact. Stage 1 checks every current
-acceptance criterion, specified design, scope, intent, and meaningful
-failing-first tests. Stop with FAIL if Stage 1 fails. Only then perform Stage 2
+acceptance criterion, its ADR 0019 evidence fit, specified design, scope, and
+intent. For executable behaviour and mechanically enforceable invariants,
+confirm meaningful failing-first tests; review or representative use is the
+evidence for prose. Stop with FAIL if Stage 1 fails. Only then perform Stage 2
 quality review and any conditional checks linked by `review-discipline`.
 
 For a user-facing change, inspect final visual evidence for the named states and
@@ -42,7 +44,8 @@ A surface may not reach a second shipped ticket without an as-built record.
 
 Run the configured gate independently over that final candidate. Fix only an
 error introduced by your record edit; implementation failures return to the
-builder. Nothing may land after the certifying run. Report a one-line verdict,
+builder. Nothing may land after the certifying run. Immediately before writing
+a substantial review report, load `skills/writing-quality/SKILL.md`. Report a one-line verdict,
 Stage 1 status per criterion, Stage 2 findings placed in the 2×2 with what/where/why/how,
 a **Proposals** section carrying every improvement the review proposes rather than
 files — one line each with its case, or the word `none`, never an omitted section,

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Compile the native and repo-local Codex surfaces (ADR 0017).
+"""Compile the native and repo-owned Codex surfaces (ADR 0017).
 
-Emits portable command/agent skills, ``AGENTS.md``, current ``.agents/skills``
-links, and legacy-compatible ``.codex`` agents and skills. Outputs are committed;
-``--check`` compares them with a regeneration so drift makes the gate red.
+Emits portable command/agent skills, ``AGENTS.md``, and ``.codex/agents`` role
+adapters. Outputs are committed; ``--check`` compares them with a regeneration
+so drift makes the gate red.
 """
 
-# size: this file is the one compiler boundary for five mutually checked output
+# size: this file is the one compiler boundary for three mutually checked output
 # families; splitting a writer away from its shared inventory would duplicate it.
 
 from __future__ import annotations
@@ -25,13 +25,6 @@ _PORTABLE_ROOT_NOTE = (
     "paths beginning `commands/`, `skills/`, `agents/`, `templates/`, `hooks/`, or "
     "`.codex/` from that root; resolve repository artifacts from the workspace root."
 )
-_LEGACY_ROOT_NOTE = (
-    "The plugin root is three directories above this SKILL.md in this legacy `.codex` "
-    "layout. Resolve embedded paths beginning `commands/`, `skills/`, `agents/`, "
-    "`templates/`, `hooks/`, or `.codex/` from that root; resolve repository artifacts "
-    "from the workspace root."
-)
-
 _FRONTMATTER_RE = re.compile(
     r"(?:<!--.*?-->\n)?---\n(?P<frontmatter>.*?)\n---\n(?P<body>.*)",
     flags=re.DOTALL,
@@ -77,16 +70,8 @@ class Layout:
         return self.codex_dir / "agents"
 
     @property
-    def codex_skills_dir(self) -> Path:
-        return self.codex_dir / "skills"
-
-    @property
     def codex_commands(self) -> Path:
         return self.codex_dir / "commands"
-
-    @property
-    def agents_skills_dir(self) -> Path:
-        return self.root / ".agents" / "skills"
 
 
 @dataclass(frozen=True)
@@ -218,25 +203,6 @@ def _ensure_agents_md(layout: Layout, *, check: bool) -> list[str]:
     return []
 
 
-def _ensure_symlink(link: Path, target: Path, *, check: bool) -> list[str]:
-    if link.is_symlink() and link.readlink() == target:
-        return []
-
-    if check:
-        return [f"{link}: expected symlink to {target}"]
-
-    if link.exists() or link.is_symlink():
-        if link.is_dir() and not link.is_symlink():
-            raise IsADirectoryError(f"{link}: refusing to replace a real directory")
-        link.unlink()
-    link.symlink_to(target)
-    return []
-
-
-def _skill_ids(layout: Layout) -> list[str]:
-    return sorted(path.parent.name for path in layout.skills_dir.glob("*/SKILL.md"))
-
-
 def _command_skill_name(command: Path) -> str:
     slug = re.sub(r"[^a-z0-9-]+", "-", command.stem.lower()).strip("-")
     return f"command-{slug}"
@@ -264,15 +230,6 @@ def _render_command_skill(layout: Layout, command: Path, *, root_note: str) -> s
         + command.read_text(encoding="utf-8").strip()
         + "\n"
     )
-
-
-def _expected_command_skills(layout: Layout) -> dict[Path, str]:
-    expected: dict[Path, str] = {}
-    for command in sorted(layout.commands_dir.glob("*.md")):
-        expected[layout.codex_skills_dir / _command_skill_name(command) / "SKILL.md"] = (
-            _render_command_skill(layout, command, root_note=_LEGACY_ROOT_NOTE)
-        )
-    return expected
 
 
 def _expected_portable_skills(layout: Layout) -> dict[Path, str]:
@@ -326,107 +283,6 @@ def _ensure_portable_skills(layout: Layout, *, check: bool) -> list[str]:
     return errors
 
 
-def _ensure_official_skill_links(layout: Layout, *, check: bool) -> list[str]:
-    errors: list[str] = []
-    skills_dir = layout.agents_skills_dir
-    expected = {
-        skills_dir / skill_id: Path("../../skills") / skill_id
-        for skill_id in _skill_ids(layout)
-    }
-    if not check:
-        skills_dir.mkdir(parents=True, exist_ok=True)
-    if check and not skills_dir.is_dir():
-        return [f"{skills_dir}: missing"]
-    for link, target in expected.items():
-        errors.extend(_ensure_symlink(link, target, check=check))
-    actual: set[Path] = set()
-    if skills_dir.exists():
-        actual = {path for path in skills_dir.iterdir() if path.is_symlink()}
-    if check:
-        stale = sorted(actual - set(expected))
-        errors.extend(f"{path}: stale generated skill symlink" for path in stale)
-    else:
-        for path in sorted(actual - set(expected)):
-            path.unlink()
-    return errors
-
-
-def _ensure_codex_skills(layout: Layout, *, check: bool) -> list[str]:
-    errors: list[str] = []
-    skills_dir = layout.codex_skills_dir
-
-    if skills_dir.is_symlink() or (skills_dir.exists() and not skills_dir.is_dir()):
-        if check:
-            return [f"{skills_dir}: expected generated skills directory"]
-        skills_dir.unlink()
-
-    if not check:
-        skills_dir.mkdir(parents=True, exist_ok=True)
-
-    expected_command_skills = _expected_command_skills(layout)
-    command_skill_ids = {path.parent.name for path in expected_command_skills}
-    expected_skill_links = {
-        skills_dir / skill_id: Path("../../skills") / skill_id
-        for skill_id in _skill_ids(layout)
-        if skill_id not in command_skill_ids
-    }
-
-    if check and not skills_dir.exists():
-        errors.append(f"{skills_dir}: missing")
-        return errors
-
-    for link, target in expected_skill_links.items():
-        errors.extend(_ensure_symlink(link, target, check=check))
-
-    # A retired skill leaves its generated symlink behind. Nothing else notices:
-    # the link still parses, `--check` only inspects the links it expects, and
-    # Codex resolves it to a directory that no longer exists. So prune every
-    # symlink under the generated skills dir that no canonical skill claims.
-    stale_skill_links = (
-        {
-            path
-            for path in skills_dir.iterdir()
-            if path.is_symlink() and path not in expected_skill_links
-        }
-        if skills_dir.exists()
-        else set()
-    )
-    if check:
-        for stale_link in sorted(stale_skill_links):
-            errors.append(f"{stale_link}: stale generated skill symlink")
-    else:
-        for stale_link in sorted(stale_skill_links):
-            stale_link.unlink()
-
-    actual_command_skill_dirs = (
-        {path for path in skills_dir.glob("command-*") if path.is_dir()}
-        if skills_dir.exists()
-        else set()
-    )
-    expected_command_skill_dirs = {path.parent for path in expected_command_skills}
-
-    if check:
-        for path, expected_text in expected_command_skills.items():
-            if not path.exists():
-                errors.append(f"{path}: missing")
-                continue
-            if path.read_text(encoding="utf-8") != expected_text:
-                errors.append(f"{path}: stale generated content")
-        for stale in sorted(actual_command_skill_dirs - expected_command_skill_dirs):
-            errors.append(f"{stale}: stale generated command skill")
-        return errors
-
-    for stale in sorted(actual_command_skill_dirs - expected_command_skill_dirs):
-        skill_file = stale / "SKILL.md"
-        if skill_file.exists():
-            skill_file.unlink()
-        stale.rmdir()
-    for path, expected_text in expected_command_skills.items():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(expected_text, encoding="utf-8")
-    return errors
-
-
 def _remove_unsupported_codex_commands(layout: Layout, *, check: bool) -> list[str]:
     commands = layout.codex_commands
     if not commands.exists() and not commands.is_symlink():
@@ -453,8 +309,6 @@ def _write_or_check(layout: Layout, *, check: bool) -> list[str]:
     else:
         layout.codex_dir.mkdir(exist_ok=True)
 
-    errors.extend(_ensure_codex_skills(layout, check=check))
-    errors.extend(_ensure_official_skill_links(layout, check=check))
     errors.extend(_remove_unsupported_codex_commands(layout, check=check))
 
     expected = _expected_agent_files(layout)
@@ -506,11 +360,14 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     if args.check:
         print(
-            "codex drift guard: OK — AGENTS.md, portable skills, .agents/, and "
-            f".codex/ match {_GENERATOR}"
+            "codex drift guard: OK — AGENTS.md, portable skills, and "
+            f".codex/agents/ match {_GENERATOR}"
         )
     else:
-        print("codex artifacts: generated native skills, AGENTS.md, .agents/, and .codex/")
+        print(
+            "codex artifacts: generated portable skills, AGENTS.md, and "
+            ".codex/agents/"
+        )
     return 0
 
 

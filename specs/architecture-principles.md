@@ -1,6 +1,6 @@
 ---
 spec: architecture-principles
-last_updated: 2026-08-20  # the /assess process scope and its process-economy domain standard
+last_updated: 2026-08-31  # ADR 0019: purpose precedes proof
 ---
 
 # Architecture Principles
@@ -15,9 +15,13 @@ How this system is built — the technical principles that govern design *here*.
 
 **The harness is a set of deterministic gates plus the guidance and hooks that route an agent through them — it runs nothing of its own.** ADR 0015 retired the runtime: there is no verb, no ledger, no container, no CLI. What remains executes only when a person or an agent asks for it — `scripts/verify.sh` and the drift guards it calls, `scripts/mutate.py`, and the agent-host hooks. Everything else this repo publishes is prose an agent reads. *Derived from: `engineering` (do the simplest thing that works) and [ADR 0015](decisions/0015-harness-v4-thin-verification-layer.md).*
 
+### Evidence follows the subject it protects
+
+**[ADR 0019](decisions/0019-purpose-before-proof.md) is the sole evidence matrix.** This architecture keeps drift and generator checks only where they prove artifact integrity, not prose meaning. Changes challenge a wrong criterion through an owner-approved tracker amendment before implementation; they never descope silently. *Derived from: [ADR 0019](decisions/0019-purpose-before-proof.md).*
+
 ### Enforcement is a gate a change must pass, not a process it must follow
 
-**Every invariant this repo enforces is expressed as something that fails `bash scripts/verify.sh`.** A rule that lives only in prose is advice; a rule with a test is a bound. This is why the guidance surface carries so many tree-reading guards — a version stamp, a mirror's byte-identity, a registry entry's resolution — each is an invariant that would otherwise depend on an agent remembering it. The corollary bites hardest on deletions: a guard whose subject is removed must be removed with it, because a sweep over an empty set passes and reports a property nothing holds. *Derived from: `engineering` (no completion claim without fresh gate evidence) and product requirement — nothing merges unverified.*
+**Executable and mechanically decidable invariants fail the gate.** This is why the guidance surface carries tree-reading checks for a version stamp, mirror byte-identity, and registry resolution: each proves an artifact contract rather than a prose claim. The corollary bites hardest on deletions: remove a guard whose subject is gone, because a sweep over an empty set reports a property nothing holds. *Derived from: `engineering` (no completion claim without fresh gate evidence) and product requirement — nothing merges unverified.*
 
 ### Self-enforcing guardrails
 
@@ -88,6 +92,7 @@ Every numbered record, in one place. `CLAUDE.md` → *Repo principles* states th
 - [0016 — tests own structure and negative space; the reviewer owns meaning](decisions/0016-tests-own-structure-and-negative-space.md)
 - [0017 — harness v5: the guidance ships as a plugin; the package manager is retired](decisions/0017-harness-v5-plugin-shaped-guidance.md)
 - [0018 — the gate-marker convention is implemented once, in Node](decisions/0018-gate-marker-convention-is-node.md) — the writer joins the two hook readers in the runtime the host imposes; `scripts/gate_marker.py` is deleted, `scripts/` stays Python for everything else
+- [0019 — purpose precedes proof](decisions/0019-purpose-before-proof.md) — requirements and checks name the outcome or risk they protect before Harness chooses the cheapest adequate evidence
 
 ### Decision: Invert the orchestration boundary — harness becomes verbs, the agent orchestrates
 

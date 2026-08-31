@@ -3,9 +3,8 @@
 ``scripts/generate_codex_artifacts.py`` compiles the secondary Codex surface
 from the canonical guidance: ``AGENTS.md`` at the repo root (the spine plus a
 generated index of the skills and commands, because Codex reads ``AGENTS.md``
-natively but discovers none of the leaves on its own) and ``.codex/`` (agent
-definitions as TOML, skills as symlinks, commands as skill-typed adapters —
-Codex discovers repo-local skills, not repo-local slash commands).
+natively but discovers none of the leaves on its own), portable plugin skills,
+and ``.codex/agents/`` role adapters as TOML.
 
 Admission (ADR 0017 D5): class (a) — the generator is executable code, so its
 behaviour is proven by *running* it against fixture repos built in ``tmp_path``,
@@ -132,26 +131,20 @@ def test_generation_compiles_agents_md_from_the_spine_and_the_leaves(repo: Path)
     assert "`skills/alpha/SKILL.md`" in agents_md
 
 
-def test_generation_ports_agents_commands_and_skills_into_codex(repo: Path) -> None:
-    """AC: ``.codex/`` holds the agent TOMLs, skill symlinks, and skill-typed
-    command adapters — the shapes Codex discovers."""
+def test_generation_emits_role_adapters_without_local_skill_mirrors(repo: Path) -> None:
+    """AC: named-agent adapters remain under ``.codex/agents/`` only."""
     assert _generate(repo) == 0
 
     toml = (repo / ".codex" / "agents" / "dev.toml").read_text(encoding="utf-8")
     assert 'name = "dev"' in toml
     assert 'description = "Fixture implementation agent."' in toml
     assert "developer_instructions = '''" in toml and "Build things." in toml
-
-    link = repo / ".codex" / "skills" / "alpha"
-    assert link.is_symlink(), "each canonical skill is exposed to Codex as a symlink"
-    assert (link / "SKILL.md").read_text(encoding="utf-8").startswith("---\nname: alpha")
-
-    adapter = (repo / ".codex" / "skills" / "command-go" / "SKILL.md").read_text(encoding="utf-8")
-    assert "name: command-go" in adapter
-    assert "commands/go.md" in adapter, "the adapter must point back at the canonical command"
+    assert (repo / ".codex" / "agents").is_dir()
+    assert not (repo / ".codex" / "skills").exists()
+    assert not (repo / ".agents" / "skills").exists()
 
 
-def test_generation_converts_commands_and_agents_into_portable_plugin_skills(
+def test_generation_retains_portable_skills_and_generated_agents_md(
     repo: Path,
 ) -> None:
     """Native plugins expose reusable command and agent behaviour as skills.
@@ -177,28 +170,9 @@ def test_generation_converts_commands_and_agents_into_portable_plugin_skills(
     assert "name: agent-dev" in agent_skill
     assert "two directories above this SKILL.md" in agent_skill
     assert "Build things." in agent_skill
-
-    official_link = repo / ".agents" / "skills" / "command-go"
-    assert official_link.is_symlink(), "repo-local Codex skills live under .agents/skills"
-    assert (official_link / "SKILL.md").read_text(encoding="utf-8") == command_skill
-
-
-def test_generation_migrates_an_existing_legacy_command_adapter(repo: Path) -> None:
-    """A pre-native checkout already has real ``.codex/skills/command-*`` dirs.
-
-    Regeneration must update those adapters in place instead of trying to replace
-    each directory with the new portable skill symlink.
-    """
-    legacy = repo / ".codex" / "skills" / "command-go"
-    legacy.mkdir(parents=True)
-    (legacy / "SKILL.md").write_text("old adapter\n", encoding="utf-8")
-
-    assert _generate(repo) == 0
-
-    assert not legacy.is_symlink()
-    generated = (legacy / "SKILL.md").read_text(encoding="utf-8")
-    assert "Body of the command." in generated
-    assert "plugin root is three directories above this SKILL.md" in generated
+    assert (repo / "AGENTS.md").is_file()
+    assert not (repo / ".agents" / "skills").exists()
+    assert not (repo / ".codex" / "skills").exists()
 
 
 def test_regeneration_prunes_artifacts_whose_sources_are_gone(repo: Path) -> None:
@@ -212,11 +186,8 @@ def test_regeneration_prunes_artifacts_whose_sources_are_gone(repo: Path) -> Non
 
     assert _generate(repo) == 0
     assert not (repo / ".codex" / "agents" / "dev.toml").exists()
-    assert not (repo / ".codex" / "skills" / "command-go").exists()
-    assert not (repo / ".codex" / "skills" / "alpha").is_symlink()
     assert not (repo / "skills" / "command-go").exists()
     assert not (repo / "skills" / "agent-dev").exists()
-    assert not (repo / ".agents" / "skills" / "command-go").is_symlink()
 
 
 # --- The drift direction (--check) --------------------------------------------
@@ -245,19 +216,14 @@ def test_check_flags_a_missing_or_stale_codex_artifact(
 ) -> None:
     assert _generate(repo) == 0
     (repo / ".codex" / "agents" / "dev.toml").write_text("tampered\n", encoding="utf-8")
-    stale = repo / ".codex" / "skills" / "command-old"
-    stale.mkdir()
-    (stale / "SKILL.md").write_text("orphaned adapter\n", encoding="utf-8")
 
     assert _check(repo) == 1
     err = capsys.readouterr().err
     assert "dev.toml" in err
-    assert "command-old" in err
 
-    # And a regeneration repairs both directions.
+    # And a regeneration repairs the role adapter.
     assert _generate(repo) == 0
     assert _check(repo) == 0
-    assert not stale.exists()
 
 
 def test_check_flags_a_stale_portable_plugin_skill(
@@ -283,7 +249,7 @@ def test_check_never_writes(repo: Path) -> None:
 
 def test_the_gate_runs_the_codex_drift_check() -> None:
     """``scripts/verify.sh`` carries the ``--check`` stage, so a stale committed
-    ``AGENTS.md`` / ``.codex/`` is a red gate rather than silent drift — the
+    ``AGENTS.md`` / ``.codex/agents/`` is a red gate rather than silent drift — the
     same wiring pin the coverage floor and the design-token guard carry."""
     stages = [
         line.strip()

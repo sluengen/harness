@@ -66,12 +66,14 @@ generated Codex role adapters, and recognized Harness-owned gate assets. It leav
 custom gate wiring and unsafe JavaScript module contexts untouched, with a
 path-specific report for the operator.
 
-Codex installs a native `.codex-plugin/plugin.json` package. Commands and agent
-procedures are compiled into portable skills because the universal plugin format
-packages skills rather than Claude command or agent directories. Codex also runs
-the plugin hooks; the scripts accept both hosts' payload and output contracts.
+Codex installs a native `.codex-plugin/plugin.json` package. Its `skills/`
+directory contains the portable native plugin skills, including compiled command
+and role procedures. The repository-owned `.codex/agents/*.toml` files are Codex
+role adapters for named-agent workflows; `/harness:init` hydrates them into a
+consumer repository. Codex also runs the plugin hooks; the scripts accept both
+hosts' payload and output contracts.
 `scripts/generate_codex_artifacts.py --check` keeps the portable skills,
-`AGENTS.md`, `.agents/`, and the legacy `.codex/` dogfood surface in sync.
+`AGENTS.md`, and `.codex/agents/` in sync.
 
 ## The nine commands
 
