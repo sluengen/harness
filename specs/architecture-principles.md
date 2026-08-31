@@ -1,6 +1,6 @@
 ---
 spec: architecture-principles
-last_updated: 2026-08-20  # the /assess process scope and its process-economy domain standard
+last_updated: 2026-08-31  # ADR 0019: purpose precedes proof
 ---
 
 # Architecture Principles
@@ -88,6 +88,7 @@ Every numbered record, in one place. `CLAUDE.md` → *Repo principles* states th
 - [0016 — tests own structure and negative space; the reviewer owns meaning](decisions/0016-tests-own-structure-and-negative-space.md)
 - [0017 — harness v5: the guidance ships as a plugin; the package manager is retired](decisions/0017-harness-v5-plugin-shaped-guidance.md)
 - [0018 — the gate-marker convention is implemented once, in Node](decisions/0018-gate-marker-convention-is-node.md) — the writer joins the two hook readers in the runtime the host imposes; `scripts/gate_marker.py` is deleted, `scripts/` stays Python for everything else
+- [0019 — purpose precedes proof](decisions/0019-purpose-before-proof.md) — requirements and checks name the outcome or risk they protect before Harness chooses the cheapest adequate evidence
 
 ### Decision: Invert the orchestration boundary — harness becomes verbs, the agent orchestrates
 
