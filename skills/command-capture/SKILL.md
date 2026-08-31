@@ -33,7 +33,7 @@ it can be decided and broken down.
 
 A clear capture proceeds; there is no bespoke confirm gate.
 
-**3 — fill the capture sections** of `templates/change.md`: the kind and area, **As-built (observed)**, **Desired**, **From actual use**, and **Acceptance criteria** (specific outcomes that name what they protect). Grounding and Design stay empty — `/build` fills them at build time.
+**3 — fill the capture sections.** Immediately before authoring the change spec, load `writing-quality`. Fill `templates/change.md`: the kind and area, **As-built (observed)**, **Desired**, **From actual use**, and **Acceptance criteria** (specific outcomes that name what they protect). Grounding and Design stay empty — `/build` fills them at build time.
 
 **4 — file it.** Title, UTF-8 body file, and exactly one assurance level — chosen per `spec-authoring` → *Choosing assurance*, never restated here — through the provider skill's `create` recipe, with mandatory explicit Todo placement (the spine's Filing contract). If the provider reports a partial creation, surface the identifier and URL and stop; never retry by creating a duplicate.
 
