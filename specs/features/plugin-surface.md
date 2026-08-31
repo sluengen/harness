@@ -1,7 +1,7 @@
 ---
 feature: plugin-surface
 status: implemented
-last_updated: 2026-08-31
+last_updated: 2026-09-01
 ---
 
 # The plugin surface
@@ -50,6 +50,15 @@ Three hooks refuse and two advise, all reading that convention:
 - `push-target-guard.js` (PreToolUse: Bash) refuses a `git push` targeting a branch the spine's `branches:` block declares unless a fresh marker covers the pushed tree. It resolves the push's real directory (`cd`, literal-target `pushd`/bare `popd`, `git -C`), denies what it cannot resolve statically (globs, expansions, `--git-dir`/`GIT_DIR=` spellings — the #477 closure), and denies `--mirror` unconditionally and `--all` where a protected branch exists.
 - `git-push-guard.js` refuses history rewrites (`--force` in any spelling, `+refspec`, hidden in wrappers) and lends the other two its shell lexer.
 - `prompt-guard.js` and `workflow-guard.js` advise on injection-shaped writes and out-of-worktree source edits.
+
+The public `docs/index.html` companion states the same evidence boundary in its
+Hooks lede: `gate-evidence-guard` requires a fresh marker over the worked tree,
+while `push-target-guard` requires one over the pushed tree; neither admits a
+branch-name exemption. `design/01-voice/README.md` records that plain,
+mechanism-first copy discipline, and `design/03-tokens/how-it-works.md` records
+the separate, marker-bounded token-generation seam. The inventory guard holds
+names and counts to the tracked tree; reviewers, rather than a prose predicate,
+hold narrative accuracy.
 
 The same `hooks/hooks.json` serves both hosts. The PreToolUse scripts normalize Claude Code's `tool_name` / `tool_input` and Codex's corresponding payload before evaluating the request. Claude decisions retain their existing output contract. A Codex advisory returns `hookSpecificOutput.additionalContext`; a benign Codex request and every Codex fail-open catch path exit successfully with no stdout, rather than emitting the unsupported `{continue:true}` response. `prompt-guard.js` and `workflow-guard.js` also read Codex `apply_patch` requests from `tool_input.command`.
 

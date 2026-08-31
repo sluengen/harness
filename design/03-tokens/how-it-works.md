@@ -3,7 +3,7 @@ layer: 03-tokens
 kind: how-to
 status: active
 owner: sluengen
-last_updated: 2026-07-29
+last_updated: 2026-09-01
 ---
 
 # How tokens flow into `docs/index.html`
@@ -12,9 +12,7 @@ last_updated: 2026-07-29
 > No runtime re-skin, no per-tenant anything — the harness's page has exactly
 > one skin.
 
-This describes the seam #242 builds. It does not exist yet as of #241 — this
-issue stands up `tokens.json` as the source of truth; #242 is the generator
-that makes the page consume it.
+This describes the generator that writes the token source into the page.
 
 ```
  ┌──────────────────┐   scripts/build_design_tokens.py   ┌───────────────────────┐
@@ -26,14 +24,11 @@ that makes the page consume it.
 
 ## Why a narrow, marker-bounded write
 
-`docs/index.html` is 662 lines of hand-tuned CSS, SVG, and prose, pinned by
-seven unit tests (`tests/unit/test_landing_page.py`). The generator's write
-must be scoped to exactly the `:root{...}` block — a generator that reflows
-anything outside its markers would fight every future hand edit to the rest
-of the page. ADR 0004 chose a lean drift-checked guard over a full generator
-for the page's narrative content for the same reason; #243 narrows that ADR's
-scope to record that the token block is the one part of the page that *is*
-now generated.
+`docs/index.html` combines hand-authored CSS, SVG, and prose. The token
+generator owns only the `:root{...}` region between its markers; it must not
+reflow any other part of the page. `tests/unit/test_build_design_tokens.py`
+and the verification gate check that generated region. The inventory test
+checks the plugin surface, while narrative copy remains direct-review work.
 
 ## The two tiers the build emits
 
@@ -56,8 +51,6 @@ There is no component tier to emit in this capture — `tokens.json`'s
 2. `docs/index.html`'s `:root` block becomes a **generated region**, written
    only inside explicit start/end markers.
 3. `scripts/verify.sh` drift-checks the generated region against
-   `tokens.json` (#243) — the same discipline
-   `scripts/check_landing_page_guidance.py` already applies to the page's
-   guidance references.
+   `tokens.json`.
 4. The generated region is never hand-edited; an edit there is lost the next
    build.
