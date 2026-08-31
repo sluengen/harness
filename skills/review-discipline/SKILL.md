@@ -17,12 +17,12 @@ Stage 1 must pass before Stage 2 begins. Quality is irrelevant if the artifact d
 One question: **does the output meet the requirements?**
 
 1. **Read the requirements first**, before the artifact: the change spec — its acceptance criteria *and* its design.
-2. **Check each requirement.** For every criterion, mark met / partial / missing.
+2. **Check each requirement and its evidence.** For every criterion, mark met / partial / missing. Confirm that it names what it protects and uses ADR 0019's evidence. Verify RED then GREEN for executable behaviour and mechanically enforceable invariants, a declared runtime floor with functional execution, and direct prose judgment rather than a predicate or wording guard.
 3. **Check the design was specified and followed.** For non-trivial work the change spec should state its design (data model / interface / scenarios), not just acceptance criteria (`spec-authoring`). If the design was specified, confirm the code matches it; if a non-trivial change shipped with no design at all, that is a Stage 1 gap — the contract was invented mid-build. (Trivial changes are exempt.)
 4. **Check scope.** Was anything added that was not asked for? Was anything in-scope skipped? (Per `engineering` → *Scope*.)
 5. **Check intent.** Does it meet the spirit, not just the letter? A technically-compliant solution that misses the point fails.
-6. **For code: verify TDD.** Every acceptance criterion has a test. Tests were written to fail first (the diff and history should show it). Tests are meaningful, not trivially true.
-7. **Check the criteria are current, and any renegotiation is on the ticket.** Review against the acceptance criteria *as they stand on the ticket now* — not a remembered earlier version. A builder who found a criterion wrong mid-build must have renegotiated it *on the tracker issue* (comment with the evidence, amend the criterion there — `spec-authoring`), and you flag that amendment in the review report. A criterion renegotiated only in a commit body or PR description — never amended on the ticket — is a Stage 1 **FAIL** even when the engineering call is right: the canonical record is the ticket, so a Done ticket whose current criteria the diff did not meet is a false record, regardless of how sound the reasoning buried in the commit was. (A raw file-size criterion is itself a Stage 1 gap — `spec-authoring` forbids it; the structural outcome is what the spec should state.)
+6. **For executable behaviour and mechanically enforceable invariants: verify TDD.** Tests were written to fail first (the diff and history should show it), exercise the named contract, and are meaningful rather than trivially true. Do not demand a test for prose, a runtime floor, configuration, or a generated artifact when the matrix names a smaller adequate form of evidence.
+7. **Check the criteria are current, and any challenge is approved and on the ticket.** Review against the acceptance criteria *as they stand on the ticket now* — not a remembered earlier version. A builder who challenged a criterion before build must have supplied evidence and a smaller replacement, obtained the owner's approval, and amended the tracker issue (`spec-authoring`); flag that amendment in the review report. A criterion changed only in a commit body or PR description is a Stage 1 **FAIL** even when the engineering call is right: the canonical record is the ticket, so a Done ticket whose current criteria the diff did not meet is false. (A raw file-size criterion is itself a Stage 1 gap — `spec-authoring` forbids it; the structural outcome is what the spec should state.)
 
 **If Stage 1 fails, stop.** Report what is missing. Issue a FAIL. Do not review quality.
 
@@ -33,7 +33,7 @@ Only after Stage 1 passes.
 **For code:**
 - **Correctness** — logic errors, edge cases, off-by-one, null handling, error messages.
 - **Diff-shape checks** — when the change adds a type predicate; deletes or ports a public surface; repeats a helper; introduces placeholder, synchronization, fetch/refetch, watchlist, or CONTEXT/as-built-record changes, load [`skills/review-discipline/references/diff-shape-checks.md`](references/diff-shape-checks.md) and apply only the matching checks.
-- **Craft — defect classes that read as green** — when the change adds or edits a guard, a prose predicate, a mutation table, or a deletion pass, load [`skills/review-discipline/references/craft.md`](references/craft.md) and check the diff against the matching family. Each entry names a shape where a fully green suite shipped the defect.
+- **Craft — defect classes that read as green** — when the change adds or edits a mechanically decidable guard, mutation table, or deletion pass, load [`skills/review-discipline/references/craft.md`](references/craft.md) and check the diff against the matching family. Do not add a prose predicate or wording guard; prose meaning is reviewed directly.
 - **Over-engineering** — complexity the change *adds* that a simpler form replaces. Tag each finding with the cut it names, and in the finding name *what replaces it* so the fix is concrete, not a vibe:
   - `stdlib:` hand-rolled what the standard library already ships — name the function that replaces it.
   - `native:` a dependency, or a block of code, doing what the language or platform already does — name the built-in feature.
@@ -45,7 +45,7 @@ Only after Stage 1 passes.
 
 **For specs and designs:**
 - **Completeness** — no TBDs, no unresolved questions.
-- **Testability** — every criterion is verifiable by a test, not subjective ("feels fast").
+- **Evidence fit** — every criterion names what it protects and uses ADR 0019's evidence suited to its subject. Prose is reviewed or used directly, not scored or reduced to a wording predicate.
 - **Clarity** — an implementer could build it without asking. (And it reads cleanly: `writing-quality`.)
 - **Consistency** — no contradiction with existing specs or recorded decisions.
 

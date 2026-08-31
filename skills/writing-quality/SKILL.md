@@ -6,7 +6,7 @@ description: Use when writing prose for the repo — specs, designs, decisions, 
 
 Eliminate predictable AI writing patterns from prose: specs, designs, decisions, copy, commit bodies, handoffs. Not code or structured data.
 
-**Core rule:** remove the layers between idea and reader. State the point. Trust the reader.
+**Core rule:** make the minimum effective edit. Preserve the author's terminology, cadence, and useful edge. State the point and trust the reader. Cut a sentence that carries no decision, constraint, evidence, action, or necessary context. Prefer a specific fact to generic importance; replace universal claims with the actual scope.
 
 ## Phrases to cut
 
@@ -22,10 +22,7 @@ navigate→handle · unpack→explain · lean into→accept · landscape→field
 **Adverbs, softeners, hedges.**
 really, just, literally, genuinely, honestly, simply, actually, deeply, truly, fundamentally, inherently, interestingly, importantly, crucially. Also "at its core", "at the end of the day", "in today's X", "it's worth noting", "when it comes to", "the reality is".
 
-**Meta-commentary.** The document should move, not announce itself.
-"In this section we'll...", "As we'll see...", "Let me walk you through...", "Hint:", "Spoiler:".
-
-**Vague declaratives.** Name the specific thing instead.
+**Generic importance claims.** Name the fact or cut the claim.
 "The reasons are structural", "The implications are significant", "The stakes are high", "This is genuinely hard".
 
 ## Structural patterns to avoid
@@ -43,11 +40,10 @@ really, just, literally, genuinely, honestly, simply, actually, deeply, truly, f
 - Vary sentence and paragraph length. Two items often beat a forced three.
 - No weak starters. Restructure sentences leaning on What/When/Which/How as a crutch; lead with subject or verb.
 - Minimise em-dashes; a comma or period usually serves.
-- Specific over vague. Replace "everyone/always/never" with the actual scope; replace "significant" with the actual impact.
 
 ## When to apply
 
 All prose output. **Do not apply to** code, structured data (YAML/JSON), test names, CLI output, or table cells where brevity already governs.
 
 ---
-*Adapted from [stop-slop](https://github.com/hardikpandya/stop-slop) (MIT) by Hardik Pandya.*
+*Adapted from [Stop Slop](https://github.com/hardikpandya/stop-slop) (MIT) by Hardik Pandya and [No AI Slop](https://github.com/petergyang/no-ai-slop) by Peter Gyang.*

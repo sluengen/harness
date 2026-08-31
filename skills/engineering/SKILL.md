@@ -42,6 +42,12 @@ Walk the rungs in order and stop at the first that holds: does this need to exis
 
 The principles pull against each other; resolving the tension is the work. When a change knowingly relaxes a principle, record the decision (architecture-principles spec for cross-cutting, the change spec for local) rather than drifting. The reviewer treats principle violations as findings and cites the principle, not a preference.
 
+## Evidence before implementation
+
+ADR 0019 is the sole evidence matrix. Before implementation, name what the change protects and use its native or cheapest adequate evidence. For executable behaviour and mechanically enforceable invariants, begin RED and make the smallest GREEN; for a runtime or compatibility floor, provide its declaration and functional execution on every supported environment. Review prose directly, never with a predicate or wording guard, and do not duplicate producer evidence in a consumer.
+
+Challenge a criterion whose outcome, target, or evidence is wrong before implementation: provide evidence and a smaller replacement, obtain the owner's approval, and amend the tracker issue. Never descope silently. This is a reasoning rule, not a new form or score.
+
 ## Test-first
 
 **No production code without a failing test first.** If you wrote implementation before its test, delete it and start over — no exceptions for "too simple", "as reference", or "right after".
@@ -98,5 +104,5 @@ For fetches of URLs derived from user input or page-declared content, load [`ref
 
 - **A new guard cites the occurrence it prevents** — the craft-file entry or the incident where its defect class was observed, written beside the assertion. A guard nobody can trace to an occurrence is speculative, and an assessment may read it as a deletion candidate.
 - **A guard that regenerates its reference pins the generator in the same commit, and a guard whose failure mode is warn-and-pass has not been shown to run until it has failed once for the real reason** — an unpinned generator makes a green a fact about the runner as much as about the tree (`review-discipline` craft: *A regenerated reference measures the generator, not the tree*), and a warn-and-pass path exits green without having compared anything, so its result is indistinguishable from a real pass and "it passed locally" can be true and mean nothing.
-- **A guard over prose owns structure and negative space, never meaning** — forbidden vocabulary and structural correspondence are testable; whether prose affirmatively says the right thing belongs to the reviewer. One minimal tripwire per rule-home, never a pinned sentence.
+- **A guard owns only a mechanically decidable contract** — artifact integrity, generated-output correspondence, and other executable or structural properties can fail a check. Do not add a prose predicate, wording guard, vocabulary test, or pinned sentence to judge meaning; review prose directly.
 - **A green suite is only evidence if its inputs are real** — a test driving on synthesized events no production path emits exercises a branch the live system never reaches.

@@ -1,6 +1,6 @@
 # Review craft: defect classes that read as green
 
-Load this when the change adds or edits a guard, a prose predicate, a mutation
+Load this when the change adds or edits a mechanically decidable guard, a mutation
 table, or a deletion pass. Those are the diff shapes where an entirely green
 suite is compatible with a shipped defect, and each entry below is a class that
 did exactly that. The families not gated on those shapes — *The ticket and its
@@ -281,7 +281,13 @@ Its sibling above is *A question answered over a simplified graph measures the
 topology*, where the environment shapes the **question**. Here the question is
 fine and the environment supplies one of the **operands**.
 
-## Prose predicates and text guards
+## Retired prose predicates and text guards
+
+ADR 0019 rejects predicates and wording guards as evidence of prose meaning.
+Do not add or repair them. The historical cases below explain why: changing a
+pattern cannot make a semantic claim mechanically decidable. Review or use the
+guidance directly instead. Structural artifact checks remain covered by the
+other families in this reference.
 
 ### A blacklist inversion sweep fails open on an appended grant
 

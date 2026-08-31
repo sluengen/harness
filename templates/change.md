@@ -49,7 +49,7 @@ Behaviour where it is non-obvious or edge cases are easy to forget.
 
 ## Acceptance criteria
 
-Specific, testable outcomes. Each must be verifiable by a test (not "feels right").
+Specific outcomes. For each, name what it protects and state the evidence selected from ADR 0019. Use RED then GREEN for executable behaviour and invariants; a runtime floor needs its declaration plus functional execution. Request direct review or representative use for prose, never a predicate or wording guard.
 - AC-1: {…}
 - AC-2: {…}
 
