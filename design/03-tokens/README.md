@@ -3,7 +3,7 @@ layer: 03-tokens
 kind: readme
 status: active
 owner: sluengen
-last_updated: 2026-07-29
+last_updated: 2026-09-01
 ---
 
 # 03 · Tokens
@@ -19,12 +19,13 @@ artifact. This is the substantive layer of the system (#241); the page's
 |---|---|
 | [`tokens.json`](tokens.json) | **The source of truth.** A three-tier tree: primitive → semantic → component. Authored by hand; the only file you edit. |
 | [`_naming.md`](_naming.md) | The naming scheme. Predictable names, followed everywhere. |
-| [`how-it-works.md`](how-it-works.md) | How a token flows from JSON into `docs/index.html`, and the seam #242 builds to do it. |
+| [`how-it-works.md`](how-it-works.md) | How a token flows from JSON into the generated `:root` region in `docs/index.html`. |
 
-There is no `../build/` directory yet — no generator exists (#242). Until then,
-`tokens.json` is the source of truth in the sense that its values are
-byte-identical to what the page renders, not in the sense that the page is
-generated from it.
+[`../../scripts/build_design_tokens.py`](../../scripts/build_design_tokens.py)
+resolves `tokens.json` and writes only the marker-bounded generated region in
+[`../../docs/index.html`](../../docs/index.html)'s `:root` block. The rest of
+the page remains hand-authored. Its write and drift-check behaviour is covered
+by [`../../tests/unit/test_build_design_tokens.py`](../../tests/unit/test_build_design_tokens.py).
 
 ## The three tiers
 
@@ -42,17 +43,13 @@ generated from it.
 
 ## Capture, not redesign
 
-Every token value in `tokens.json` is byte-identical to what
-[`../../docs/index.html`](../../docs/index.html) renders today via its
-hand-authored `:root` block — pinned by
-[`tests/unit/test_design_system_layer.py`](../../tests/unit/test_design_system_layer.py),
-which resolves the full tree and compares it against the page's rendered
-`:root` values as a set. This issue (#241) only stands up the source of truth;
-no visual change ships here, and the page itself is byte-unchanged.
+Every emitted token value in `tokens.json` is byte-identical to what
+[`../../docs/index.html`](../../docs/index.html) renders through its generated
+`:root` region. `tests/unit/test_build_design_tokens.py` verifies the generated
+region is derived from the token source, is confined to its markers, and fails
+the drift check when either source or region changes without regeneration.
 
 ## What's next
 
-[`how-it-works.md`](how-it-works.md) describes the seam #242 builds: a
-generator that writes `tokens.json`'s resolved values back into
-`docs/index.html`'s `:root` block, inside marker-bounded region, checked for
-drift in `scripts/verify.sh` (#243).
+[`how-it-works.md`](how-it-works.md) explains the generated region and the
+drift check that `scripts/verify.sh` runs against it.

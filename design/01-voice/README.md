@@ -3,26 +3,17 @@ layer: 01-voice
 kind: readme
 status: active
 owner: sluengen
-last_updated: 2026-07-29
+last_updated: 2026-09-01
 ---
 
 # 01 · Voice
 
-How the page reads: headings, labels, and the descriptions of what each loop
-and verb does. Captured from the page's existing prose (issue #241), not
-invented.
+How the page reads: headings, labels, and descriptions of the plugin surface.
+Captured from the page's existing prose, not invented.
 
 **Register: plain, technical, unhurried.** The page describes an operating
-model to an audience of engineers and agents — it does not sell. Sentences
-state a mechanism and its cadence, not a benefit. Compare the loop cards'
-own copy:
-
-> "A scheduled Claude routine that autonomously picks which task to work on."
-> "The product owner (human) working with Claude."
-> "Human-run, on no fixed period — assisted by agent research."
-
-Each is a **trigger + driver** stated as fact, in the same grammatical shape
-across all four loops — no loop gets an adjective the others don't.
+model to engineers and agents; it does not sell. Sentences state a mechanism,
+its evidence, or the role that carries it.
 
 ## Principles
 
@@ -30,15 +21,12 @@ across all four loops — no loop gets an adjective the others don't.
   what the diagram encodes; it does not say the diagram is "intuitive" or
   "powerful". A claim about how good something is, rather than what it does,
   is a voice violation.
-- **Every section heading is a question or a plain label**, in the small-caps
-  eyebrow style already established (`How we build · operating model`, `How
-  the loops are triggered`) — never a slogan.
+- **Every section heading is a plain label** in the established small-caps
+  eyebrow style, never a slogan.
 - **Command names and syntax are never paraphrased.** `/build`, `/propose`,
   `--refresh` appear verbatim, in `<code>`, exactly as a user would type them.
-- **Status is stated at the cadence and mechanism level**, e.g. "Automated ·
-  the verify gate is the tool inside this loop", "Human-driven — the rudder
-  for everything inside" — one line, no elaboration, always ending on who or
-  what drives the loop.
+- **Status describes the actual enforcement or advisory role.** Use the page's
+  `refuses` and `advises` labels, then name the evidence or condition behind it.
 - **Bold marks the one word that carries the sentence's point**, not for
   emphasis generally — "Intent flows inward" is bolded on *inward*, because
   the direction is the fact being stated.
@@ -49,9 +37,7 @@ token change, and vice versa.
 
 ## Terms that are fixed
 
-These names are load-bearing (guidance ids the page cross-references via
-`data-guidance`) and must not be paraphrased: `Build`, `Product`, `Quality`,
-`Strategy` (the four loops); `harness`, `build`, `start`, `propose`,
-`assess`, `researcher` (verbs/commands/agents named on the page). Renaming
-one on the page without a matching `registry.yaml` id is exactly the drift
-`test_named_guidance_resolves_in_registry` exists to catch.
+The page's commands, skills, agents, and hooks are identified by `data-unit`
+tags. Their visible names and identifiers come from the tracked tree. The
+inventory test verifies that correspondence; reviewers check the surrounding
+narrative directly rather than pinning sentence wording.

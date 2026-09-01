@@ -1,7 +1,7 @@
 ---
 feature: plugin-surface
 status: implemented
-last_updated: 2026-08-31
+last_updated: 2026-09-01
 ---
 
 # The plugin surface
@@ -12,7 +12,7 @@ last_updated: 2026-08-31
 
 ### One plugin, one version
 
-The repository root **is** the plugin. `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json` name the same `harness` release at one semver (`6.0.0` at this record's date). `.claude-plugin/marketplace.json` and `.agents/plugins/marketplace.json` expose that root through each host's native marketplace contract. The manifests are updater-facing selectors; generated markers in `templates/spine.md`, `CLAUDE.md`, and compiled `AGENTS.md` carry the same version. `tests/unit/test_spine_template_parity.py` and `tests/unit/test_native_codex_plugin.py` reject a mismatch before release. There are no per-file versions, no `guidance:` headers, no `registry.yaml`, and no consumer lock file — the whole distribution channel ADR 0017 retired. Claude Code exposes runtime-namespaced commands such as `/harness:build`; Codex discovers the equivalent `command-*` portable skills.
+The repository root **is** the plugin. `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json` name the same `harness` release at one semver (`6.0.1` at this record's date). `.claude-plugin/marketplace.json` and `.agents/plugins/marketplace.json` expose that root through each host's native marketplace contract. The manifests are updater-facing selectors; generated markers in `templates/spine.md`, `CLAUDE.md`, and compiled `AGENTS.md` carry the same version. `tests/unit/test_spine_template_parity.py` and `tests/unit/test_native_codex_plugin.py` reject a mismatch before release. There are no per-file versions, no `guidance:` headers, no `registry.yaml`, and no consumer lock file — the whole distribution channel ADR 0017 retired. Claude Code exposes runtime-namespaced commands such as `/harness:build`; Codex discovers the equivalent `command-*` portable skills.
 
 The shipped inventory, counted from the tree (all counts derived, at this record's date):
 
@@ -29,6 +29,14 @@ The build/design/operate triad follows the how/what pattern (ADR 0017 D3): the s
 ### Evidence follows its subject
 
 ADR 0019 is the one evidence contract. The spine carries its full subject matrix; architecture principles, authoring, engineering, review, the build procedure, roles, and templates cite it and state their own action. Executable behaviour and mechanically enforceable invariants retain RED then the smallest GREEN. A runtime or compatibility floor has a declared floor and functional execution on every supported environment; configuration and generated artifacts use a validator, producer check, or smoke without duplicate consumer suites. Prose is reviewed or used directly, never judged by a predicate or wording guard, and an unobserved preventive guard requires a recorded risk decision. `writing-quality` makes the minimum effective edit, preserves the author's terminology, cadence, and useful edge, and cuts sentences without a decision, constraint, evidence, action, or necessary context. Developer and reviewer roles load it immediately before substantial handoffs and review reports; `/build` and `/capture` load it before authoring change specs, while short status and structured output remain outside the skill. A criterion may change before implementation only with evidence, a smaller replacement, owner approval, and a tracker amendment; it is never silently descoped.
+
+### Landing-page muted text
+
+The source muted token is `#656d8c`; the generated `--muted` declaration in `docs/index.html` resolves from it through `color.semantic.text.muted`. Normal-size muted text meets WCAG 2.1 AA's 4.5:1 contrast floor on the page background, white cards, marker panel, and both body-gradient endpoints. `tests/unit/test_build_design_tokens.py` measures those five rendered surfaces, while `scripts/build_design_tokens.py --check` keeps the page's generated token region aligned with `tokens.json`.
+
+### Landing-page install layout
+
+The self-contained public page keeps three install cards above its existing 780px breakpoint and one below it. The `.install` grid uses `minmax(0, 1fr)` tracks and `.step` permits shrinking, so long commands cannot widen the document; each command block remains horizontally scrollable within its card. Ticket #534's browser captures at 1440, 834, 781, 779, and 390 CSS pixels recorded no document-level horizontal overflow after this containment change.
 
 ### The spine
 
@@ -54,6 +62,15 @@ Three hooks refuse and two advise, all reading that convention:
 - `push-target-guard.js` (PreToolUse: Bash) refuses a `git push` targeting a branch the spine's `branches:` block declares unless a fresh marker covers the pushed tree. It resolves the push's real directory (`cd`, literal-target `pushd`/bare `popd`, `git -C`), denies what it cannot resolve statically (globs, expansions, `--git-dir`/`GIT_DIR=` spellings — the #477 closure), and denies `--mirror` unconditionally and `--all` where a protected branch exists.
 - `git-push-guard.js` refuses history rewrites (`--force` in any spelling, `+refspec`, hidden in wrappers) and lends the other two its shell lexer.
 - `prompt-guard.js` and `workflow-guard.js` advise on injection-shaped writes and out-of-worktree source edits.
+
+The public `docs/index.html` companion states the same evidence boundary in its
+Hooks lede: `gate-evidence-guard` requires a fresh marker over the worked tree,
+while `push-target-guard` requires one over the pushed tree; neither admits a
+branch-name exemption. `design/01-voice/README.md` records that plain,
+mechanism-first copy discipline, and `design/03-tokens/how-it-works.md` records
+the separate, marker-bounded token-generation seam. The inventory guard holds
+names and counts to the tracked tree; reviewers, rather than a prose predicate,
+hold narrative accuracy.
 
 The same `hooks/hooks.json` serves both hosts. The PreToolUse scripts normalize Claude Code's `tool_name` / `tool_input` and Codex's corresponding payload before evaluating the request. Claude decisions retain their existing output contract. A Codex advisory returns `hookSpecificOutput.additionalContext`; a benign Codex request and every Codex fail-open catch path exit successfully with no stdout, rather than emitting the unsupported `{continue:true}` response. `prompt-guard.js` and `workflow-guard.js` also read Codex `apply_patch` requests from `tool_input.command`.
 
