@@ -30,15 +30,17 @@ reflow any other part of the page. `tests/unit/test_build_design_tokens.py`
 and the verification gate check that generated region. The inventory test
 checks the plugin surface, while narrative copy remains direct-review work.
 
-## The two tiers the build emits
+## The semantic tier the build emits
 
-Only **semantic** tokens become `:root` custom properties — primitives
-resolve to literals inside them and stay out of the page:
+Only **semantic** tokens become `:root` custom properties. The generator
+resolves primitive references to literals, then maps each semantic path to the
+existing custom property its page consumers use; it does not derive a new CSS
+name from the token path. Primitives stay out of the page:
 
 ```css
 :root {
-  --color-loop-build-accent: #0f9d6e;   /* primitive ref -> literal */
-  --shadow-elevation-default: 0 1px 2px rgba(16,24,64,.05), 0 10px 30px rgba(16,24,64,.06);
+  --build: #0f9d6e;   /* color.semantic.loop.build.accent */
+  --shadow: 0 1px 2px rgba(16,24,64,.05), 0 10px 30px rgba(16,24,64,.06);
 }
 ```
 

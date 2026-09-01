@@ -3,12 +3,13 @@ layer: 03-tokens
 kind: naming
 status: active
 owner: sluengen
-last_updated: 2026-07-29
+last_updated: 2026-09-01
 ---
 
 # Token naming
 
-> One scheme, followed everywhere. Predictable names beat creative names.
+> Semantic paths name token roles; the generator maps them to the page's
+> stable CSS custom-property names.
 
 ## Path in `tokens.json`
 
@@ -27,23 +28,23 @@ component.<domain>.<role>...          ← component tier is its own top-level na
 - `role…` — what the token is for, one or more segments (`loop.build.accent`,
   `elevation.default`).
 
-## CSS custom-property name (for the #242 generator)
+## CSS custom-property names in the page
 
-The build derives the variable name from the path by **dropping the tier
-word** (`primitive` / `semantic`) and joining the rest with dashes.
-`component` is kept, since it is the namespace, not a tier word:
+`scripts/build_design_tokens.py` maps each emitted semantic token to the
+existing custom property used by `docs/index.html`; it does not derive the
+property name from the token path:
 
 | Token path | CSS variable |
 |---|---|
-| `color.semantic.loop.build.accent` | `--color-loop-build-accent` |
-| `color.semantic.surface.card` | `--color-surface-card` |
-| `shadow.semantic.elevation.default` | `--shadow-elevation-default` |
+| `color.semantic.loop.build.accent` | `--build` |
+| `color.semantic.surface.card` | `--card` |
+| `shadow.semantic.elevation.default` | `--shadow` |
 
 Primitives (`*.primitive.*`) are not emitted as variables — they resolve to
-literals inside the semantic values that reference them. This is a naming
-convention for the generator #242 builds; it is a deliberate rename from the
-page's *current* hand-authored variable names (`--build`, `--build-soft`,
-`--build-ink`, …), which #242's own change spec settles.
+literals inside the semantic values that reference them. The explicit mapping
+preserves the page's existing CSS consumers (`--build`, `--build-soft`,
+`--build-ink`, and the other emitted properties) while keeping the generator's
+write confined to the marked `:root` region.
 
 ## Rules
 
