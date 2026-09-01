@@ -91,9 +91,9 @@
   .grid2{display:grid; grid-template-columns:repeat(2,1fr); gap:20px}
 
   /* ---------- INSTALL ---------- */
-  .install{display:grid; grid-template-columns:repeat(3,1fr); gap:20px}
+  .install{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:20px}
   .step{background:var(--card); border:1px solid var(--line); border-radius:18px; padding:20px 22px;
-    box-shadow:var(--shadow)}
+    box-shadow:var(--shadow); min-width:0}
   .step__n{display:inline-grid; place-items:center; width:28px; height:28px; border-radius:9px;
     background:var(--product); color:#fff; font-weight:800; font-size:14px; margin-bottom:12px}
   .step h3{margin:0 0 8px; font-size:16px; letter-spacing:-.01em}

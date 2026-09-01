@@ -12,7 +12,7 @@ last_updated: 2026-09-01
 
 ### One plugin, one version
 
-The repository root **is** the plugin. `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json` name the same `harness` release at one semver (`6.0.0` at this record's date). `.claude-plugin/marketplace.json` and `.agents/plugins/marketplace.json` expose that root through each host's native marketplace contract. The manifests are updater-facing selectors; generated markers in `templates/spine.md`, `CLAUDE.md`, and compiled `AGENTS.md` carry the same version. `tests/unit/test_spine_template_parity.py` and `tests/unit/test_native_codex_plugin.py` reject a mismatch before release. There are no per-file versions, no `guidance:` headers, no `registry.yaml`, and no consumer lock file — the whole distribution channel ADR 0017 retired. Claude Code exposes runtime-namespaced commands such as `/harness:build`; Codex discovers the equivalent `command-*` portable skills.
+The repository root **is** the plugin. `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json` name the same `harness` release at one semver (`6.0.1` at this record's date). `.claude-plugin/marketplace.json` and `.agents/plugins/marketplace.json` expose that root through each host's native marketplace contract. The manifests are updater-facing selectors; generated markers in `templates/spine.md`, `CLAUDE.md`, and compiled `AGENTS.md` carry the same version. `tests/unit/test_spine_template_parity.py` and `tests/unit/test_native_codex_plugin.py` reject a mismatch before release. There are no per-file versions, no `guidance:` headers, no `registry.yaml`, and no consumer lock file — the whole distribution channel ADR 0017 retired. Claude Code exposes runtime-namespaced commands such as `/harness:build`; Codex discovers the equivalent `command-*` portable skills.
 
 The shipped inventory, counted from the tree (all counts derived, at this record's date):
 
@@ -33,6 +33,10 @@ ADR 0019 is the one evidence contract. The spine carries its full subject matrix
 ### Landing-page muted text
 
 The source muted token is `#656d8c`; the generated `--muted` declaration in `docs/index.html` resolves from it through `color.semantic.text.muted`. Normal-size muted text meets WCAG 2.1 AA's 4.5:1 contrast floor on the page background, white cards, marker panel, and both body-gradient endpoints. `tests/unit/test_build_design_tokens.py` measures those five rendered surfaces, while `scripts/build_design_tokens.py --check` keeps the page's generated token region aligned with `tokens.json`.
+
+### Landing-page install layout
+
+The self-contained public page keeps three install cards above its existing 780px breakpoint and one below it. The `.install` grid uses `minmax(0, 1fr)` tracks and `.step` permits shrinking, so long commands cannot widen the document; each command block remains horizontally scrollable within its card. Ticket #534's browser captures at 1440, 834, 781, 779, and 390 CSS pixels recorded no document-level horizontal overflow after this containment change.
 
 ### The spine
 
