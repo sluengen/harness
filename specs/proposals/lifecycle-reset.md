@@ -67,7 +67,7 @@ Decided with the operator, 2026-09-04. It is included here as the worked example
 
 - The blocking gate certifies the **composite** tree: the candidate merged with the integration branch at that moment. One gate per build.
 - Landing does **not** re-gate a clean auto-merge. The push guard gains a second acceptance path: a fresh marker covering an ancestor commit's tree, that commit a parent of the pushed merge, and no authored bytes in the merge.
-- A **conflicted** merge does re-gate. Resolution bytes are the one thing no gate and no reviewer has seen.
+- A **conflicted** merge re-gates over the conflicted paths. Resolution bytes are the one thing no gate and no reviewer has seen. The marker gains a scope field so it never asserts coverage the run did not have (D4, D3).
 - A red integration branch is found by the next builder's composite gate rather than by CI, which the consuming repos do not have. Sessions share findings through git refs.
 - The verdict binds to the **authored** tree rather than the shipped tree. This restates spine law 3 and the tree-binding contract.
 
@@ -124,23 +124,32 @@ This proposal stays narrow on purpose. It fixes the basis and lands one instance
 
 | Decision | Who decides | Recorded in |
 |---|---|---|
-| Do the principles enter the spine as a numbered list that later work cites by number? | user | `CLAUDE.md` spine |
-| Does the verdict bind to the authored tree rather than the shipped tree? Restates spine law 3; breakdown items 1 and 2 depend on it | user | `CLAUDE.md`, `specs/decisions/` |
-| Is the landing strategy a spine key (`landing: free \| gate-on-conflict \| queued`), or one fixed default? | architect | spine config, `plugin-surface.md` |
-| Does a conflicted landing merge re-gate? Recommended yes, and a repo may declare otherwise | user | spine config |
-| A prune policy for accumulated gate records over months | architect | the ref protocol spec |
+| Do the principles enter the spine as a numbered list that later work cites by number? **Held** 2026-09-04: the operator judged this part of the wider redesign rather than a question this proposal should settle alone | user | `CLAUDE.md` spine |
+
+## Decisions — 2026-09-04
+
+Taken by the operator on this proposal. Each is carried into the breakdown item that implements it.
+
+**D2 — the verdict binds to the authored tree, and a clean auto-merge may carry it.** The claim narrows to *every authored byte that ships was gated and reviewed, and the merge carrying them added no authored bytes*. The guard proves that from git alone: one merge base, parents exactly the passed commit and the incoming tip, a clean index and worktree, no staged resolution. Disjoint changed-path sets were considered and **not** required, so two builds touching one file still take the fast path when git resolves it. The residual risk is a silent semantic merge inside a shared file, and the next builder's composite gate is what catches it.
+
+**D4 — a conflicted merge re-gates over the conflicted paths, not the whole tree.** Resolution bytes are the only uncertified path left under D2, so they are gated; a slow gate is why the run is scoped rather than full. This is the one place the proposal adds machinery, and D3 is how that machinery was kept to a single line.
+
+**D3 — one optional command, no strategy key.** A repo names its scoped test command in the existing `commands:` block. Declared, the conflict path runs scoped; undeclared, it runs the full gate. No `landing:` block, no strategy branch in `/build`, and one acceptance shape in the push guard. This mirrors `assurance.trivial_certify`, which already degrades when a repo has not opted in, so an unconfigured repo is safe by construction rather than by remembering to set a key.
+
+**D5 — pruning rides on a write that already happens.** When a builder publishes a gate record it also deletes records whose dev tree has left the integration branch's recent history. No scheduler, no standing job, and nothing to run in the CI budget the design does not have. The cost is that one session routinely deletes refs another session wrote, which is safe only because records are content-keyed and re-derivable by re-running a gate.
 
 ## Breakdown
 
-Items 1 and 2 gate the rest. Every criterion below measures something that runs.
+Items 1 and 2 gate the rest. Every criterion measures something that runs.
 
-1. **Push guard second acceptance path.** `push-target-guard.js` accepts a push whose tree carries no marker when a fresh marker covers an ancestor commit's tree and the merge introduced no authored bytes. *Criterion:* the guard allows the clean-merge case and denies the authored-bytes case.
+1. **Push guard second acceptance path.** `push-target-guard.js` accepts a push whose tree carries no marker when a fresh marker covers an ancestor commit's tree and the merge introduced no authored bytes. *Criterion:* the guard allows a clean two-parent merge over a certified ancestor, and denies the same shape once one byte is authored into it.
 2. **Spine law restatement.** Law 3 and the tree-binding contract in authored-tree terms; the Stop hook and gate-evidence guard follow. No new guard.
-3. **Gate record protocol.** `refs/harness/gate/<dev-tree>-red|-green` as blobs, flat keys, `ls-remote` discovery. *Criterion:* a record published from one clone is read by another in one `ls-remote` with no object transfer.
+3. **Gate record protocol.** `refs/harness/gate/<dev-tree>-red|-green` as blobs, flat keys, `ls-remote` discovery, and the prune from D5 riding on each publish. *Criterion:* a record published from one clone is read by another in one `ls-remote` with no object transfer; publishing a record for a current dev tree deletes a record whose tree has left the recent history and leaves current ones alone.
 4. **Claim protocol.** `refs/harness/claim/<dev-tree>-<epoch-bucket>`, create-wins, no force anywhere. *Criterion:* two concurrent creates on one bucket yield exactly one winner, and a rotated bucket admits a new one.
-5. **`/build` stages.** Composite gate before the verdict, land loop after it, triage before diagnosis, park when the claim is lost.
-6. **Green pointer.** `refs/harness/green/<integration>` advances on uncontended landings; new worktrees branch from it.
-7. **Cost/benefit at creation.** `spec-authoring` and `/capture` require the line. Convention, no guard.
+5. **Scoped re-gate on the conflict path.** `commands.test_scoped` in the spine, and a marker that records what the run covered. *Criterion:* a marker written by a scoped run names its scope, and a push whose authored bytes fall outside that scope is denied; a repo declaring no scoped command runs the full gate on this path instead.
+6. **`/build` stages.** Composite gate before the verdict, land loop after it, triage before diagnosis, park when the claim is lost.
+7. **Green pointer.** `refs/harness/green/<integration>` advances on uncontended landings; new worktrees branch from it.
+8. **Cost/benefit at creation.** `spec-authoring` and `/capture` require the line. Convention, no guard.
 
 ## Risks / unknowns
 
@@ -148,6 +157,7 @@ Items 1 and 2 gate the rest. Every criterion below measures something that runs.
 - **Detection latency for a red integration branch becomes "until the next build"** rather than one gate duration. A repo with few builds per day is materially worse off than with CI, and should re-decide the trade.
 - **Ref growth over months is unmeasured**, and no prune policy exists.
 - **Principle 5 is the one most likely to be cited without being applied.** A cost/benefit line is easy to write and hard to falsify. It is convention by design, and if it decays this proposal has bought a preamble.
+- **The scoped re-gate is where this proposal spends against its own principle 3.** It is the only new machinery here: a spine command, a marker scope field, and a scope-derivation step. If the derivation is wrong the marker asserts coverage the run did not have, which is the vacuity shape `craft.md` already catalogues. Item 5's criterion exists to make that failure visible, and a repo that declares no scoped command never buys any of it.
 - **This proposal can become what it describes.** If the reset spawns a governance layer, an enforcement guard, or a standing audit obligation, principle 3 has been broken by the document that states it.
 
 **What would invalidate the recommendation:** a measured λ near zero across consuming repos, which collapses the landing posture's benefit; or a second derivation showing the post-cull regrowth is entirely legitimate code-behaviour tests, which weakens the ratchet thesis and leaves cycle time as the only problem.
