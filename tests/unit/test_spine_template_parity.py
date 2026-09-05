@@ -16,7 +16,7 @@ every session in every consuming repo reads. Nothing measured the assertion:
 verified at #489's grounding, before this module existed, no file under ``tests/``
 or ``scripts/`` referenced ``templates/spine.md`` at all. This repo
 dogfoods its own plugin, so a spine edit made here and not mirrored into the
-template ships a consuming repo a different set of iron laws from the ones this
+template ships a consuming repo a different set of principles and laws from the ones this
 repo runs on.
 
 **Admitted under ADR 0017 D5 class (e), tree-consistency.** Both operands are
@@ -648,14 +648,15 @@ def test_a_regenerated_marker_with_different_spacing_still_parses() -> None:
 
 
 def test_the_spine_and_its_template_carry_the_same_generated_block() -> None:
-    """AC-3: the plugin-owned region of both spines is byte-identical."""
+    """AC-3: the plugin-owned region of the template and the spine it seeds is
+    byte-identical."""
     difference = block_divergence(_block(TEMPLATE_PATH), _block(SPINE_PATH))
     assert difference == {}, (
         f"{SPINE_PATH}'s generated block has drifted from {TEMPLATE_PATH}'s. "
         f"`only_in_template` names lines the shipped spine carries that this repo "
         f"does not; `only_in_spine` names lines edited here and never mirrored "
-        f"back, so a consuming repo would receive different iron laws from the "
-        f"ones this repo runs on. Both are wrong: {difference}"
+        f"back, so a consuming repo would receive different principles and laws "
+        f"from the ones this repo runs on. Both are wrong: {difference}"
     )
 
 

@@ -78,9 +78,9 @@ and `tests/unit/test_codex_agent_adapters.py` holds each one in correspondence
 with its `agents/*.md` counterpart. Codex also runs the plugin hooks; the scripts
 accept both hosts' payload and output contracts.
 
-## The nine commands
+## The nine workflows
 
-| Command | Does |
+| Workflow | Does |
 |---|---|
 | `/build <ticket>` | Implement, verify, review, and ship a ticket — the one lifecycle driver |
 | `/capture` | File an already-decided change straight to Todo |

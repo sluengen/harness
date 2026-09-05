@@ -1,7 +1,9 @@
 """#487 AC-2 — a ``branches:`` declaration the hook cannot read says so, once.
 
-Both enforcement hooks parse the spine's ``branches:`` block with a line scanner
-and substitute ``FALLBACK_PROTECTED`` when the parse comes back empty. For any
+Both enforcement hooks resolve the ``branches:`` block through the one shared
+reader (``scripts/harness-config.js`` since #537, which reads ``harness.yaml``
+first and the markdown spines behind it) and substitute ``FALLBACK_PROTECTED``
+when nothing readable comes back. For any
 repo using conventional branch names — most repos — that makes an **unreadable**
 declaration byte-identical in effect to a readable one: the guards look healthy
 right up until the repo's declaration diverges from the fallback, at which point

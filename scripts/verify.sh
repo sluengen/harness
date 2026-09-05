@@ -108,8 +108,8 @@ echo "=== ruff ==="
 uv run --extra dev ruff check .
 
 echo "=== mypy ==="
-# `scripts` is the only Python tree left: v5 chunk 3 moved the Codex compile
-# step out of `templates/`, which now holds markdown templates alone.
+# `scripts` is the only Python tree left, and smaller since #537 retired the
+# Codex compile step entirely; `templates/` holds markdown and yaml templates.
 uv run --extra dev mypy scripts
 
 echo "=== pytest ==="

@@ -80,7 +80,7 @@ from tests.unit._prose import REPO_ROOT
 HELPER = REPO_ROOT / "scripts" / "gate-marker.js"
 
 #: What this repository's own spine declares. Hardcoded on purpose: it is the
-#: string ``CLAUDE.md`` carries under ``commands.verify`` and the command every
+#: string ``harness.yaml`` carries under ``commands.verify`` and the command every
 #: completion claim in this repo runs, so re-deriving it with a second parser
 #: here would compare the subject against itself. Changing this repo's gate
 #: command turns this test red, which is the correct amount of friction.
@@ -152,10 +152,19 @@ def test_the_repositorys_own_declaration_resolves() -> None:
 
     Until #537 this ran over two large markdown spines, one of them the generated
     Codex mirror of the other. The configuration now lives in one place, so the
-    corpus is one file — but it is still the real one: ``harness.yaml`` carries
-    comments after keys, quoted values, and a comment on the very line the
-    parser has to decide is a block opener, which is the spelling that broke at
-    #488. A parser surviving only a hand-written five-line fixture fails here.
+    corpus is one file — but it is still the real one, and what it carries is
+    worth stating exactly rather than approximately: comments after **values**,
+    both plain (``language: Python 3.11+   # tooling only``) and quoted
+    (``bootstrap: "bash scripts/setup-cloud-env.sh"   # provisions uv``), several
+    of them inside the very ``commands:`` block this reader walks. A parser
+    surviving only a hand-written five-line fixture fails here.
+
+    What this file does **not** carry is a comment on a top-level key line —
+    ``branches:   # the shared ones``, the spelling that broke at #488 by making
+    the key look non-empty. That one is held by the ``comment-on-the-key-line``
+    fixture below, not by this floor, and saying so is the point: a floor that
+    claimed coverage it does not have is worth less than a smaller one that is
+    true, because the next person trusts it.
 
     Read from the git **index**: the tree the gate certifies is the staged one
     (#482), and this is the declaration that decides what may mint its marker.
@@ -873,13 +882,18 @@ def test_the_gate_command_can_only_come_from_a_file_the_tree_carries() -> None:
         assert "process.env" not in expression and "argv" not in expression, (
             f"the shared reader is chosen by a per-invocation value: {expression}"
         )
+    # Only the sibling named from **inside the command's producer chain** counts.
+    # Reading every required sibling under `scripts/` was looser than the rule
+    # stated above it: evidence from an unrelated module would satisfy a closure
+    # that reads nothing. Today one module qualifies either way; the guard should
+    # match its own sentence regardless.
+    closure_text = "".join(source[spans[name][0] : spans[name][1]] for name in sorted(closure))
     sibling_text = ""
-    for name in {
-        match.strip("\"'") for expression in required for match in MODULE_NAME.findall(expression)
-    }:
-        sibling = REPO_ROOT / "scripts" / name
-        if sibling.exists():
-            sibling_text += sibling.read_text(encoding="utf-8")
+    for expression in REQUIRED_SIBLING.findall(closure_text):
+        for match in MODULE_NAME.findall(expression):
+            sibling = REPO_ROOT / "scripts" / match.strip("\"'")
+            if sibling.exists():
+                sibling_text += sibling.read_text(encoding="utf-8")
 
     bodies = [source[spans[name][0] : spans[name][1]] for name in sorted(closure)]
     assert any(FILE_READ in body for body in bodies) or FILE_READ in sibling_text, (

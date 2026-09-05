@@ -255,10 +255,13 @@ Codex: codex plugin add harness@harness</pre>
         <pre>Claude: /harness:init
 Codex: ask to initialize Harness</pre>
         <p>
-          Interviews for the repo's values and writes the files that must be repo-owned: both host
-          spines, Codex role adapters, the specs scaffold, the infrastructure record, and — where there is no gate yet — a
+          Interviews for the repo's values and writes the files that must be repo-owned:
+          <code>harness.yaml</code>, the spine (<code>AGENTS.md</code>) and its
+          <code>CLAUDE.md</code> pointer, the path-scoped rules, Codex role adapters, the specs
+          scaffold, the infrastructure record, and — where there is no gate yet — a
           <code>scripts/verify.sh</code> skeleton with the marker write. After a plugin update,
-          refresh regenerates the marked spine blocks and role adapters without replacing repo-owned prose.
+          refresh migrates the configuration into <code>harness.yaml</code> as a verbatim move and
+          regenerates the marked spine block, without replacing repo-owned prose.
         </p>
       </div>
     </div>
@@ -322,7 +325,7 @@ Codex: ask to initialize Harness</pre>
         </p>
         <ul class="stages">
           <li>ruff</li><li>mypy</li><li>pytest + coverage floor</li><li>design-token drift</li>
-          <li>codex drift</li><li>marker write</li>
+          <li>marker write</li>
         </ul>
       </div>
       <div class="marker">
@@ -341,8 +344,9 @@ Codex: ask to initialize Harness</pre>
   <section class="section" id="surface">
     <h2>What the plugin installs</h2>
     <p class="lede">
-      The whole surface, as the repository carries it. Claude exposes lifecycle commands and agents;
-      Codex carries matching portable skills. Craft skills supply the depth, and hooks enforce the gate.
+      The whole surface, as the repository carries it. Both hosts read the same
+      <code>skills/</code> — the nine lifecycle workflows and the craft skills behind them — and hooks
+      enforce the gate.
     </p>
 
     <div class="grid2">
@@ -426,7 +430,7 @@ Codex: ask to initialize Harness</pre>
         <h3>No runtime, nothing to install</h3>
         <p>
           There is no CLI and no service behind any of this. Python here is tooling only — the gate, the
-          token generator, the Codex compile step, the mutation instrument. Work moves
+          token generator, the mutation instrument. Work moves
           <code>dev → main</code>, and what lands on release is exactly the tree that was gated.
         </p>
       </article>
@@ -440,7 +444,7 @@ Codex: ask to initialize Harness</pre>
       The README is the canonical text; this page is its visual companion.
     </p>
     <p>
-      Every command, skill, agent, and hook named above is checked against the repository's own tracked
+      Every skill, agent, and hook named above is checked against the repository's own tracked
       tree by the gate — a name that stops resolving turns this page red before it reaches a reader.
     </p>
   </footer>

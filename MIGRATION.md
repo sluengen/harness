@@ -73,8 +73,9 @@ source repo moves.
    delete it.
 
 6. **After future plugin updates:** `/harness:init --refresh`, or the same init
-   skill in Codex, regenerates both spines' marked blocks and the generated Codex
-   role adapters. There
+   skill in Codex, migrates the configuration into `harness.yaml` where a repo
+   still carries it in prose, then refreshes the spine's marked block and the
+   Codex role adapters. There
    is no `/update-guidance` any more; the plugin manager owns updates.
 
 ## Version pinning

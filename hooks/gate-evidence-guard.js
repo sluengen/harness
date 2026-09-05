@@ -376,8 +376,10 @@ function declaredBranches(top) {
 
 /** The declared ``branches:`` map for the repo at ``top``.
  *
- * Kept as a named function because both call sites and the test suite reach for
- * it; the spine-then-fallback ordering it used to carry is now the one reader's.
+ * A one-line alias since #537 moved the source ordering it used to carry into
+ * the shared reader. Kept rather than inlined because the name is the seam three
+ * test modules drive this hook through; collapsing it would rename a contract to
+ * save a line.
  */
 function declaredConfig(top) {
   return declaredBranches(top);
