@@ -91,9 +91,13 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const { spawnSync } = require("node:child_process");
 
-//: Bumped when the payload shape changes. The hooks do not read it — they do not
-//: read the body at all — so this is for a human reading a marker, and for a
-//: future writer that needs to tell two shapes apart.
+//: Bumped when the payload shape changes. **No hook keys on it** and none should:
+//: a consumer repo materializes this writer at hydration time and receives its
+//: hooks from the plugin cache, so writer and reader versions drift by design and
+//: a reader that refused an unknown schema would wedge every push in exactly
+//: those repos. It is for a human reading a marker, and for a future writer that
+//: needs to tell two shapes apart. (One hook does read one *field* — see
+//: :func:`emitSuccessfulMarker` and *Why the filename carries the claim*.)
 const SCHEMA = 2;
 
 //: Recorded in the payload so a marker names what produced it.
@@ -411,8 +415,10 @@ function branchOf(cwd) {
 
 /** Record a measured successful gate completion over `cwd`'s current tree.
  *
- * Called only on green. The body is diagnostics for a human; the *filename* is
- * the claim the hooks read.
+ * Called only on green. The body is diagnostics for a human and the *filename*
+ * is the claim, with one exception since #539: `scope`, which
+ * `hooks/push-target-guard.js` reads and nothing else does. That is why the
+ * write below is atomic.
  *
  * `startedAt` is the epoch-millisecond instant the runner launched the gate, so
  * `finished_at - started_at` is the gate's own duration rather than the span

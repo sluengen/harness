@@ -502,10 +502,20 @@ def test_the_marker_records_the_tree_it_covers(repo: Path) -> None:
 
 
 def test_the_filename_carries_the_claim_not_the_body(repo: Path) -> None:
-    """No hook parses the marker body. The decision predicate is the filename
-    plus the mtime, which is honest: anyone who can write the file can write
-    valid JSON, so parsing buys nothing. Pinned so a later change that starts
-    depending on a body field has to argue with this test."""
+    """The marker's *name* is the claim: the tree it covers, plus its mtime.
+
+    This test invited an argument from any change that started depending on a
+    body field, and #539 is that change: `hooks/push-target-guard.js` reads
+    `scope`, and only `scope`. The argument, made rather than ducked — the
+    filename still carries the whole claim for an **unscoped** marker, which is
+    every marker written before that change and every marker a repo without
+    `commands.test_scoped` will ever write; a marker that covered *less* than its
+    tree had no way to say so, and the alternative was a second filename shape
+    for every reader. `hooks/gate-evidence-guard.js` still parses nothing.
+
+    So what is pinned here is unchanged and still worth pinning: the name is the
+    tree, and no reader needs the body to find it.
+    """
     _write_internal_gate(repo)
     proc = _cli(repo, "run")
     assert proc.returncode == 0, proc.stderr

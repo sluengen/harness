@@ -156,13 +156,56 @@ def test_a_moved_tip_that_conflicts_asks_for_a_resolution_and_names_its_scope(
     assert code == 0, payload
     assert payload["decision"] == "resolve" and payload["case"] == "conflict", payload
     assert payload["conflicts"] == ["shared.txt"], payload["conflicts"]
-    assert "--scope shared.txt" in payload["scope_command"]
+    assert payload["scope_argv"][-2:] == ["--scope", "shared.txt"], payload["scope_argv"]
     assert "theirs.txt" not in payload["scope_command"], (
         "a cleanly merged path is not a resolution and does not belong in the scope"
     )
     assert "UU shared.txt" in _git(repo, "status", "--porcelain"), (
         "the worktree must be left conflicted for the agent to resolve"
     )
+
+
+def test_the_scope_command_quotes_the_paths_git_chose(repo: Path) -> None:
+    """The workflow hands this string to Bash, and the operands are filenames.
+
+    Git will hand back whatever bytes a filename holds. A conflicted path
+    carrying shell syntax, spliced unquoted into a command the agent then runs,
+    is a command-injection hole one merge away.
+    """
+    nasty = "a b;touch pwned.txt"
+    _git(repo, "checkout", "-q", "-B", "other", "origin/main")
+    (repo / nasty).write_text("theirs\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "their side")
+    _git(repo, "push", "-q", "origin", "other:main")
+    _git(repo, "fetch", "-q", "origin")
+    _git(repo, "checkout", "-q", "work")
+    (repo / nasty).write_text("ours\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "our side")
+
+    payload = _land(repo, "plan")[1]
+    assert payload["decision"] == "resolve", payload
+    assert payload["conflicts"] == [nasty], payload["conflicts"]
+    assert payload["scope_argv"][-1] == nasty, payload["scope_argv"]
+
+    # Round-tripped through a real shell rather than pattern-matched: the claim
+    # is about what Bash does with the string, not about which quotes are in it.
+    # A `node` on PATH that only prints its argv, so the command runs as written.
+    shim = repo / "shim"
+    shim.mkdir()
+    (shim / "node").write_text('#!/usr/bin/env sh\nprintf "%s\\n" "$@"\n', encoding="utf-8")
+    (shim / "node").chmod(0o755)
+    echoed = subprocess.run(
+        ["sh", "-c", str(payload["scope_command"])],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+        env={**os.environ, "PATH": f"{shim}{os.pathsep}{os.environ['PATH']}"},
+    ).stdout.splitlines()
+    assert echoed[-2:] == ["--scope", nasty], echoed
+    assert not (repo / "pwned.txt").exists(), "a conflicted path reached the shell as syntax"
 
 
 def test_finish_hands_over_the_push_once_nothing_has_moved_again(repo: Path) -> None:
@@ -232,13 +275,20 @@ def test_an_unknown_subcommand_is_a_usage_error(repo: Path) -> None:
 # --- it never pushes, and never gates ----------------------------------------
 
 
-def test_no_verb_ever_pushes(repo: Path, tmp_path: Path) -> None:
-    """Measured with a shim, not read off the source.
+def test_no_verb_pushes_a_branch(repo: Path, tmp_path: Path) -> None:
+    """Every verb, under a shim — and `done` is the one that had to be in it.
 
-    A push this script made would run inside one Bash tool call and the
-    PreToolUse guard would never see it, so the script would be the way around
-    the guard. The shim records every git invocation; `done` is included because
-    it is the verb that talks to a remote.
+    A **branch** push this script made would run inside one Bash tool call and
+    the PreToolUse guard would never see it, so the script would be the way
+    around the guard it exists to satisfy. `done` does push: a gate record and
+    the green pointer, both under `refs/harness/`, neither able to move a branch.
+    So the invariant a guard can hold is *no verb pushes a branch*, not *no verb
+    pushes* — and the first version of this test asserted the second while
+    running only `plan` and `finish`, which is a coverage claim over the one verb
+    it did not reach.
+
+    The assertion is on every push's **destination**, so appending
+    `git push origin HEAD:main` to any verb fails here.
     """
     _move_the_tip(repo, "theirs.txt", "concurrent\n")
     shim = tmp_path / "shim"
@@ -253,10 +303,25 @@ def test_no_verb_ever_pushes(repo: Path, tmp_path: Path) -> None:
     (shim / "git").chmod(0o755)
     assert _land(repo, "plan", path_prefix=shim)[0] == 0
     assert _land(repo, "finish", path_prefix=shim)[0] == 0
+    _git(repo, "push", "-q", "origin", "HEAD:main")
+    assert _land(repo, "done", path_prefix=shim)[0] == 0
+
     seen = log.read_text(encoding="utf-8").splitlines()
     assert seen, "the shim recorded nothing, so it observed nothing"
-    pushes = [entry for entry in seen if entry.split()[0] == "push"]
-    assert pushes == [], f"the landing script pushed: {pushes}"
+    pushes = [entry.split() for entry in seen if entry.split()[0] == "push"]
+    assert pushes, (
+        "no verb pushed anything, so this measured nothing — `done` publishes a "
+        "gate record and the green pointer and must reach the shim"
+    )
+    destinations: list[str] = []
+    for push in pushes:
+        for operand in push[2:]:
+            if operand.startswith("-"):
+                continue
+            destinations.append(operand.split(":")[-1] if ":" in operand else operand)
+    assert destinations, f"a push carried no refspec this test can read: {pushes}"
+    stray = [ref for ref in destinations if not ref.startswith("refs/harness/")]
+    assert stray == [], f"the landing script pushed outside refs/harness/: {stray}"
 
 
 # --- AC-6: the green pointer --------------------------------------------------
@@ -271,6 +336,26 @@ def _green(repo: Path) -> str:
         check=True,
     )
     return proc.stdout.strip()
+
+
+def test_the_pointer_does_not_advance_before_the_push_has_landed(repo: Path) -> None:
+    """`done` run out of order, or after a push that failed.
+
+    The pointer names the last integration commit known green and
+    `worktree-isolation` hands it to every new worktree as its base. A commit
+    that is not on the shared branch is not a base anybody can start from, and
+    nothing else would have caught it: the run that calls `done` is the same run
+    whose push may have been refused.
+    """
+    _move_the_tip(repo, "theirs.txt", "concurrent\n")
+    assert _land(repo, "plan")[0] == 0
+    code, payload, stderr = _land(repo, "done")
+    assert code == 0, stderr
+    assert payload["green_pointer_advanced"] is False, payload
+    assert _green(repo) == "", payload
+    _git(repo, "push", "-q", "origin", "HEAD:main")
+    landed, after, _ = _land(repo, "done")
+    assert landed == 0 and after["green_pointer_advanced"] is True, after
 
 
 def test_the_pointer_advances_on_an_uncontended_landing(repo: Path) -> None:

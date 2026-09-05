@@ -22,12 +22,20 @@
  * deviable anyway. What stays in the workflow is the part that needs judgment —
  * when it applies, and what to do with each answer.
  *
- * **This script never pushes, and that is not an oversight.** It is invoked as
- * one Bash command, so a `git push` it made internally would be invisible to the
- * PreToolUse guard: the landing script would become the way around the guard it
- * exists to satisfy. It decides, it merges, and it prints the push for the agent
- * to run through the tool the hook can see. One adjudicator, and it stays the
- * hook.
+ * **This script never pushes a branch, and that is not an oversight.** It is
+ * invoked as one Bash command, so a branch push it made internally would be
+ * invisible to the PreToolUse guard: the landing script would become the way
+ * around the guard it exists to satisfy. It decides, it merges, and it *prints*
+ * the push for the agent to run through the tool the hook can see. One
+ * adjudicator, and it stays the hook.
+ *
+ * What it does push is `refs/harness/*` and nothing else — `done` publishes a
+ * gate record and advances the green pointer. Both live outside `refs/heads/`,
+ * neither can move a branch, and nothing reads either as authorisation. So the
+ * invariant is *no verb pushes a branch*, and that is what
+ * `tests/unit/test_land_script.py` measures over **every** verb. "Never pushes"
+ * was the stronger sentence and the weaker guard: it left the one verb that
+ * reaches a remote outside the check that named it.
  *
  * **It never runs the gate either.** Law 3 obliges the *agent* to run the gate
  * and read its output; a script that swallowed the run would take the reading
@@ -158,6 +166,18 @@ function conflictedPaths(cwd) {
   return out === null ? [] : out.split(NUL).filter(Boolean);
 }
 
+/** Quote one operand for `sh -c`, as `scripts/gate-marker.js` does.
+ *
+ * Duplicated rather than shared: these two files ship together but the sibling's
+ * copy is inside the one helper allowed to mint gate evidence, and a `require`
+ * across that boundary for four lines of string handling buys a coupling neither
+ * wants. Held equivalent by nothing, and nothing depends on their being equal —
+ * each quotes its own operands for its own shell.
+ */
+function shellQuote(operand) {
+  return `'${String(operand).split("'").join(`'\\''`)}'`;
+}
+
 function report(payload) {
   process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
 }
@@ -250,12 +270,18 @@ function plan(options) {
     tip,
     attempt,
     conflicts,
-    scope_command: [
-      "node",
-      path.join(__dirname, "gate-marker.js"),
-      "run",
-      ...conflicts.map((entry) => `--scope ${entry}`),
-    ].join(" "),
+    // Quoted, because the workflow hands this string to Bash and the operands
+    // are **filenames git chose**. A conflicted path carrying a space already
+    // fails closed (the runner's own validation refuses the resulting argv), but
+    // one carrying shell syntax would be executed. `scope_argv` is the same list
+    // unquoted, for any caller that can spawn a vector instead.
+    scope_command: ["node", path.join(__dirname, "gate-marker.js"), "run"]
+      .map(shellQuote)
+      .concat(conflicts.flatMap((entry) => ["--scope", shellQuote(entry)]))
+      .join(" "),
+    scope_argv: ["node", path.join(__dirname, "gate-marker.js"), "run"].concat(
+      conflicts.flatMap((entry) => ["--scope", entry])
+    ),
     next:
       "resolve every path above, commit the merge, run the scoped gate and read its " +
       "output, then `land.js finish`",
@@ -302,7 +328,9 @@ function finish(options) {
  * branches from a base that was verified rather than from a tip that may be red.
  * It advances on an **uncontended** landing only: where the merge conflicted, the
  * bytes that landed carry a resolution whose only evidence is a scoped gate, and
- * a scoped gate is not the whole-tree claim the pointer makes.
+ * a scoped gate is not the whole-tree claim the pointer makes. And only once the
+ * push has actually landed — this verb runs in the same session whose push the
+ * guard may have refused.
  */
 function done(options) {
   const ctx = context(options);
@@ -326,9 +354,17 @@ function done(options) {
     });
     contended = recomputed.status !== 0;
   }
-  const advanced = contended
-    ? false
-    : helper.advanceGreen({ commit: head, remote: ctx.remote }, ctx.cwd);
+  // The pointer may only name a commit the shared branch actually carries.
+  // `done` runs in the same session whose push may have been refused, or out of
+  // order, and `worktree-isolation` hands this commit to every new worktree as
+  // its base — a commit that never landed is not a base anybody can start from.
+  const landed =
+    git(["fetch", "--quiet", ctx.remote, ctx.branch], ctx.cwd) !== null &&
+    git(["merge-base", "--is-ancestor", head, tipRef(ctx)], ctx.cwd) !== null;
+  const advanced =
+    contended || !landed
+      ? false
+      : helper.advanceGreen({ commit: head, remote: ctx.remote }, ctx.cwd);
   report({
     decision: "push",
     case: "done",
@@ -337,6 +373,7 @@ function done(options) {
     head,
     record_published: published,
     contended,
+    landed,
     green_pointer_advanced: advanced,
   });
   return 0;
