@@ -471,13 +471,33 @@ def test_a_printed_count_that_disagrees_with_its_list_is_reported() -> None:
     """The failing direction, spliced from the real page rather than invented.
 
     Paired with the agreeing case below, so neither is a constant.
+
+    **The splice target is derived, not written down (#547).** It used to name
+    one card's heading and its number literally, which made every change to the
+    page's inventory also a change to this test — and a test edited alongside the
+    thing it measures is the one shape law 7 exists to refuse. The first count the
+    page prints is now read out of the page and incremented, so the splice tracks
+    a page that legitimately grows and shrinks while still proving the same
+    property. The vacuity assertion below is what keeps the derivation honest: a
+    regex that stopped matching yields no splice and fails here rather than
+    passing over an unchanged string.
     """
-    spliced = _page_text().replace(
-        '<h3>Craft skills <span class="n">15</span></h3>',
-        '<h3>Craft skills <span class="n">14</span></h3>',
-        1,
+    page = _page_text()
+    mark = _COUNT_TAG.search(page)
+    assert mark is not None, (
+        "the page prints no counted card, so there is nothing to splice — the "
+        "count tag stopped parsing rather than the page having shrunk"
     )
-    assert spliced != _page_text(), (
+    listed = printed_against_listed(page)[0][1]
+    assert int(mark.group("printed")) == listed, (
+        "the first card already disagrees with its own list, so incrementing it "
+        "could make it agree and this sample would prove nothing — the agreeing "
+        "case below is the failure to read"
+    )
+    spliced = page[: mark.start()] + (
+        f'<span class="n">{listed + 1}</span>'
+    ) + page[mark.end() :]
+    assert spliced != page, (
         "the splice matched nothing — this test would pass without reading the "
         "page, which is the vacuity it exists to avoid"
     )
