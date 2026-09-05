@@ -147,7 +147,10 @@ def _spine(*lines: str, newline: str = "\n") -> str:
 # --- the floor: this repository's own spine files ------------------------------
 
 
-@pytest.mark.parametrize("spine", ["CLAUDE.md", "AGENTS.md"])
+# #537: the gate command is declared in ``harness.yaml``. The two spines are
+# still read *by the reader* for repos that have not migrated; what this pins is
+# that **this** repo's declaration resolves, wherever it lives.
+@pytest.mark.parametrize("spine", ["harness.yaml"])
 def test_the_repositorys_own_spine_declares_the_gate_it_runs(spine: str) -> None:
     """The subject's own file is the first corpus (#484/#487).
 

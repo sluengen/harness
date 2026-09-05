@@ -1,0 +1,37 @@
+# The repo's Harness configuration. `/harness:init` writes it from the
+# interview; `--refresh` migrates an existing repo's fenced spine block into
+# it, unchanged. One reader parses it: `scripts/harness-config.js`.
+#
+# Replace every {placeholder}. Keys the repo invents are kept as written —
+# nothing here is translated, so a repo may declare more than the plugin reads.
+
+repo:
+  name: {name}
+  project: {project}
+tracker: {github | linear | none}
+stack:
+  language: {language and version}
+commands:
+  install: "{install command}"
+  lint: "{lint command}"
+  typecheck: "{typecheck command}"
+  test: "{test command}"
+  test_one: "{single-test command}"
+  verify: "{the canonical gate — one command that decides green}"
+branches:
+  integration: {dev}
+  release: {main}
+  # staging: only where something deploys to a staging environment (ADR 0003 as amended)
+loop:
+  max_review_cycles: 5
+  unconditional_review_cycles: 3
+layers:
+  design_system: false
+  feature_specs: true
+paths:
+  tests: {tests/}
+  proposals: specs/proposals/
+  features: specs/features/
+  decisions: specs/decisions/
+env:
+  file: .env

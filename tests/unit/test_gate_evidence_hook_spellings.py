@@ -451,16 +451,29 @@ def test_the_spawn_extractor_derives_its_answer(
     assert spawn_sites(source) == expected
 
 
-def test_the_hook_really_does_call_exec_on_a_regexp(hook_source: str) -> None:
-    """The false positive this extractor was rewritten to stop having, pinned to
-    the subject rather than to the synthetic case above. The shipped hook calls
-    ``RegExp.prototype.exec``; a name-matching extractor counted those as
-    subprocesses and reddened AC-4 against a correct file."""
-    stripped = strip_comments(hook_source)
-    assert re.search(r"[A-Za-z_$][\w$]*\s*\.\s*exec\s*\(", stripped), (
-        "the hook no longer calls .exec() on anything, so the discrimination "
-        "test_the_spawn_extractor_derives_its_answer pins is no longer exercised "
-        "by the real subject"
+def test_a_real_module_full_of_regexp_exec_reports_no_spawn_site() -> None:
+    """The false positive this extractor was rewritten to stop having, pinned to a
+    real subject rather than to the synthetic case above.
+
+    A name-matching extractor counted ``RegExp.prototype.exec`` calls as
+    subprocesses and reddened AC-4 against a correct file. Until #537 the shipped
+    hook itself carried those calls, in the ``branches:`` parser it has now handed
+    to ``scripts/harness-config.js``; the discrimination is therefore measured
+    where the calls went. That module is the stronger control the hook ever was —
+    it is dense with ``.exec()`` and spawns no process at all, so an extractor
+    that confused the two would report several sites here rather than one.
+    """
+    reader = indexed_text("scripts/harness-config.js")
+    stripped = strip_comments(reader)
+    calls = re.findall(r"[A-Za-z_$][\w$]*\s*\.\s*exec\s*\(", stripped)
+    assert calls, (
+        "scripts/harness-config.js no longer calls .exec() on anything, so the "
+        "discrimination test_the_spawn_extractor_derives_its_answer pins is no "
+        "longer exercised by a real subject"
+    )
+    assert spawn_sites(reader) == [], (
+        f"the extractor read {len(calls)} RegExp.exec() calls in the shared reader "
+        "as subprocess spawns — the false positive it was rewritten to stop having"
     )
 
 

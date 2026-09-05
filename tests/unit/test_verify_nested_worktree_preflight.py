@@ -30,8 +30,13 @@ Two runs over the same fixture, differing in exactly one variable — whether
   couple of stage shapes, and what Run B measures is the log, not a verdict.
 
 The fixture is written out of the **git index** — ``verify.sh``,
-``gate-marker.js`` and ``package.json`` — which is also a free assertion that
-those three files are enough for a consumer to run the preflight. Index-reading
+``gate-marker.js``, ``harness-config.js`` and ``package.json`` — which is also a
+free assertion that those four files are enough for a consumer to run the
+preflight, and the reason it is worth keeping: #537 split the configuration
+reader out of ``gate-marker.js``, and this fixture is what said so, by failing on
+a half-materialized install rather than letting one ship. ``/harness:init``
+materializes the set, so the set is a deployment contract and this is where it is
+measured. Index-reading
 puts this module outside ``scripts/mutate.py``'s reach; its mutations are proved
 by staged probe (#490).
 """
@@ -73,7 +78,12 @@ def _fixture(tmp_path: Path) -> Path:
     """A repository carrying the three shipped files a preflight needs."""
     root = tmp_path / "repo"
     (root / "scripts").mkdir(parents=True)
-    for relative in ("scripts/verify.sh", "scripts/gate-marker.js", "scripts/package.json"):
+    for relative in (
+        "scripts/verify.sh",
+        "scripts/gate-marker.js",
+        "scripts/harness-config.js",
+        "scripts/package.json",
+    ):
         (root / relative).write_text(indexed_text(relative), encoding="utf-8")
     _git(root, "init", "-q", "--initial-branch=dev")
     _git(root, "config", "user.email", "t@example.com")

@@ -66,7 +66,11 @@ from tests.unit._prose import REPO_ROOT
 
 _SETTINGS = REPO_ROOT / ".claude" / "settings.json"
 _MARKETPLACE = REPO_ROOT / ".claude-plugin" / "marketplace.json"
-_SPINE = REPO_ROOT / "CLAUDE.md"
+#: #537 moved the configuration map out of the spine's prose and into
+#: ``harness.yaml``, so the declaration this module corresponds against lives
+#: there now. The extractor still accepts a fenced block, because the repos this
+#: plugin ships to have not migrated and their declaration is still in a spine.
+_SPINE = REPO_ROOT / "harness.yaml"
 
 #: The settings key Claude Code reads a repository's extra marketplaces from.
 #: Measured against the shipped CLI (2.1.234), whose own settings schema

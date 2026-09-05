@@ -1,8 +1,11 @@
 """This repo's spine must carry the generated block its own template ships.
 
 **The occurrence this guard cites (#489, from the v5 merge review of #481).**
-``templates/spine.md`` is the ``CLAUDE.md`` the plugin writes into a consuming
-repo, and ``CLAUDE.md`` is this repo's own copy of it. The region between
+``templates/spine.md`` is the ``AGENTS.md`` the plugin writes into a consuming
+repo, and ``AGENTS.md`` is this repo's own copy of it. #537 made ``AGENTS.md`` the
+source instruction file both hosts read and reduced ``CLAUDE.md`` to ``@AGENTS.md``
+plus the deltas that apply on one host, so the generated block has one home again
+rather than a copy in each. The region between
 ``<!-- spine:generated:begin harness@<version> -->`` and
 ``<!-- spine:generated:end -->`` is the plugin-owned half — the iron laws, the
 lifecycle, the contract, and the enforcement summary — and everything after it
@@ -45,7 +48,7 @@ machine that wrote the edit and says nothing about the clone that ships (#482,
 :func:`block_divergence` are mutation-proved with ``scripts/mutate.py`` over the
 synthetic samples. The *file* half is out of ``mutate.py``'s reach, because
 ``mutate.py`` edits working files and these readers resolve the index (#490): it
-is proved by **staged probe** — stage an edited block in ``CLAUDE.md``, observe
+is proved by **staged probe** — stage an edited block in ``AGENTS.md``, observe
 the red, restore; then stage an edited block in ``templates/spine.md``, observe
 the red in the other direction, restore; re-derive ``git write-tree`` each time
 to prove the restore was exact.
@@ -82,7 +85,7 @@ from tests.unit._prose import REPO_ROOT
 TEMPLATE_PATH = "templates/spine.md"
 
 #: This repo's own spine.
-SPINE_PATH = "CLAUDE.md"
+SPINE_PATH = "AGENTS.md"
 
 #: The updater-facing source of the one plugin release version.
 PLUGIN_MANIFEST_PATH = ".claude-plugin/plugin.json"
@@ -165,7 +168,7 @@ def block_divergence(template: GeneratedBlock, spine: GeneratedBlock) -> dict[st
     duplicate, an extra blank line beside blank lines the block already carries, a
     changed line ending and a changed trailing newline each reach it, and each is
     reported with a non-empty diff. Not one of those five is a permutation.
-    The blank-line case is not hypothetical — staging ``CLAUDE.md`` with one extra
+    The blank-line case is not hypothetical — staging ``AGENTS.md`` with one extra
     blank line after ``## Iron laws``, with no wording touched, is how #489's review
     reached this arm on the real subject. So the message names the condition the arm
     actually tests, offers the three shapes that condition admits, and leaves the
@@ -244,11 +247,16 @@ def test_both_blocks_are_live() -> None:
     does not go red here.
     """
     for block, label in ((_block(TEMPLATE_PATH), TEMPLATE_PATH), (_block(SPINE_PATH), SPINE_PATH)):
-        assert "## Iron laws" in block.body, (
-            f"{label}'s generated block no longer carries the iron-laws heading — "
-            f"the extraction is {len(block.body)} characters and may not be reaching "
-            f"the block at all"
-        )
+        # #537 split the single ``## Iron laws`` heading into the two the block now
+        # owns. Both are anchored, because the block's shape is that principles come
+        # first and the laws are derived from them; an extraction reaching only one
+        # of them is reaching part of the block.
+        for heading in ("## Principles", "## Laws"):
+            assert heading in block.body, (
+                f"{label}'s generated block no longer carries the {heading!r} heading — "
+                f"the extraction is {len(block.body)} characters and may not be reaching "
+                f"the block at all"
+            )
         assert block.version, f"{label}'s begin marker declares no plugin version"
 
 
@@ -257,7 +265,7 @@ def test_the_two_operands_are_different_documents() -> None:
 
     Two readers resolving to the *same* file would agree perfectly and prove
     nothing. The tail of ``templates/spine.md`` is a placeholder skeleton and the
-    tail of ``CLAUDE.md`` is this repo's own configuration, so the whole texts must
+    tail of ``AGENTS.md`` is this repo's own configuration, so the whole texts must
     differ even while the blocks match.
     """
     assert indexed_text(TEMPLATE_PATH) != indexed_text(SPINE_PATH), (
@@ -463,7 +471,7 @@ def test_a_repeated_line_is_reported_with_a_diff() -> None:
 def test_an_extra_blank_line_is_reported_with_a_diff() -> None:
     """The drift two hand-edited spines actually produce.
 
-    Measured at #489's review: staging ``CLAUDE.md`` with one extra blank line
+    Measured at #489's review: staging ``AGENTS.md`` with one extra blank line
     after ``## Iron laws`` — no wording touched — reached this arm and was reported
     as a reordering. The empty line is already carried by both blocks, so it is
     unique to neither and the two ``only_in_*`` lists stay empty. This is the
@@ -599,7 +607,7 @@ def test_prose_mentioning_the_marker_does_not_open_a_block() -> None:
     """The opener is anchored to line start, and this is what says so.
 
     ``craft.md`` → *A paired delimiter can be counterfeited by prose that mentions
-    it*. ``CLAUDE.md``'s own third line discusses the ``spine:generated`` block in
+    it*. ``AGENTS.md``'s own third line discusses the ``spine:generated`` block in
     ordinary prose, and this module's docstring names both markers, so a document
     *about* the syntax is the structurally most exposed corpus for this defect. An
     unanchored opener would start the block at the mention and swallow the real
