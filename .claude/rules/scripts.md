@@ -45,7 +45,10 @@ other task.
   setting a variable is not.
 - A guard asserts a property of the **tracked tree**, never the working directory. Read
   both operands through the index (`git show :<path>`, or `tests._gitutil.indexed_text`) —
-  a guard over the working tree passes on bytes that are not the bytes that ship.
+  a guard over the working tree passes on bytes that are not the bytes that ship. The one
+  carve-out is a guard whose *subject is the gap between them*: `test_seeded_assets_are_tracked.py`
+  must read the working tree, because a file that never entered the index is exactly what
+  it looks for. Such a guard states that in its docstring; anything else reads the index.
 - Prove a guard can fail before trusting it: `scripts/mutate.py`, or a staged probe where
   the guard reads the index and is out of its reach. A guard that has never gone red is a
   claim, not a control.

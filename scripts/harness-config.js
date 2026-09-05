@@ -366,7 +366,15 @@ function declaredBranches(top, onUnreadable) {
   return readMap(top, "branches", onUnreadable);
 }
 
-/** The ``loop:`` map the repo at ``top`` declares — review cycle settings. */
+/** The ``loop:`` map the repo at ``top`` declares — review cycle settings.
+ *
+ * AC-2 names roles, commands **and** loop settings as what one reader must serve.
+ * No hook consumes this yet: the loop numbers are read by the review workflow,
+ * which T2 rewrites. It ships now rather than later because the alternative is a
+ * fourth reader written under time pressure by whoever needs it first, which is
+ * the exact history this module ends. ``test_harness_config_reader.py`` exercises
+ * it, so it is not unverified code waiting for a caller.
+ */
 function declaredLoop(top, onUnreadable) {
   return readMap(top, "loop", onUnreadable);
 }
@@ -460,16 +468,12 @@ function gateCommand(top) {
   return { command: declaredVerify(selected.text, selected.source), legacy: false };
 }
 
+// The public surface: what a caller uses, plus what a test names. Nothing else
+// is exported — an export with neither is a maintenance obligation for a
+// contract nobody has.
 module.exports = {
   SOURCES,
   ConfigDeclarationError,
-  configSource,
-  configSources,
-  configText,
-  blockMap,
-  withoutComment,
-  unquote,
-  plainScalar,
   declaredBranches,
   declaredLoop,
   declaredCommands,

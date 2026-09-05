@@ -112,6 +112,10 @@ const MARKER_SUBDIR = ["harness", "gate"];
 //: the message it emits cannot disagree about which file is missing.
 const SIBLING_PARSER = "git-push-guard.js";
 
+//: The cap on a path echoed into a diagnostic, the same 200 the sibling hook
+//: names. A path is repo-controlled text, so it is truncated, never trusted.
+const MAX_REPORTED_PATH = 200;
+
 //: Used when a repo declares no branches. Deliberately over-broad: a false deny
 //: is recoverable in one command (run the gate), a false allow lands unverified
 //: work on the integration branch of a repo that told the guidance nothing about
@@ -122,10 +126,6 @@ const SIBLING_PARSER = "git-push-guard.js";
 //: sibling dependency the bundle keeps to exactly one), so
 //: ``test_workflow_guard_hook`` derives its corpus from this export instead:
 //: adding a name here is what makes that hook's list red.
-//: The cap on a path echoed into a diagnostic, the same 200 the sibling hook
-//: names. A path is repo-controlled text, so it is truncated, never trusted.
-const MAX_REPORTED_PATH = 200;
-
 const FALLBACK_PROTECTED = [
   "main",
   "master",
@@ -274,6 +274,18 @@ const reportedUnreadable = new Set();
  * untouched, and nothing from the payload is echoed. Without it, an unreadable
  * declaration is indistinguishable from a readable one in every repo whose
  * branch names happen to match the fallback (#487).
+ *
+ * **What the notice may claim is bounded by what the caller then does**, and the
+ * caller has more left to try than the fallback: the shared reader steps over an
+ * unreadable source and keeps searching the ones behind it, so a repo part-way
+ * through a migration is protected by a *later* file's declaration. A line
+ * asserting the fallback set is in force is therefore false exactly where an
+ * operator acts on it — measured on this branch, where an unreadable
+ * ``CLAUDE.md`` and a readable ``CONTEXT.md`` denied a push to ``ctx-lane``,
+ * a name in no fallback, while stderr said the fallback was in force. So it
+ * reports the one thing true in every case: *this file's* declaration is not
+ * what is being protected. ``test_hooks_unreadable_declaration_is_loud.py``
+ * measures the bound.
  */
 function noticeUnreadableDeclaration(file) {
   const name = String(file);
@@ -281,7 +293,8 @@ function noticeUnreadableDeclaration(file) {
   reportedUnreadable.add(name);
   process.stderr.write(
     `${TAG} unreadable-declaration: ${name.replace(/\s+/g, " ").slice(0, MAX_REPORTED_PATH)}: ` +
-      `declares branches this reader could not read; using the fallback set\n`
+      `declares branches this reader could not read, so this file's declaration ` +
+      `is not what is being protected\n`
   );
 }
 
@@ -763,17 +776,20 @@ if (require.main === module) {
 // test also holds them textually independent — a shared module would make the
 // equivalence true by construction. The ``require.main === module`` guard above
 // means importing for that introspection never runs the hook.
-// ``declaredBranches`` and ``protectedBranches`` are exported for the same
-// reason and by the same argument, one duplication further along:
-// the spine's ``branches:`` block is parsed here **and** in
-// ``gate-evidence-guard.js``, and the two have already drifted in shape (an
-// array here, a map there). Drift in what the two consider *protected* is
-// silent in both directions — this guard would stop refusing a push the Stop
-// hook still treats as shared, or refuse one it does not — so
-// ``test_context_branch_parsing_contract.py`` executes both over one fixture
-// corpus and compares the sets that fall out. The differing return shapes are
-// deliberate and are not being unified; the equivalence test is the drift
-// control the no-shared-lib decision asks for.
+// ``declaredBranches`` and ``protectedBranches`` are exported for a related but
+// now *different* reason. Until #537 the ``branches:`` block was parsed here
+// **and** in ``gate-evidence-guard.js``, and the two had drifted in shape (an
+// array here, a map there); ``test_context_branch_parsing_contract.py`` executed
+// both over one fixture corpus and compared the sets that fell out, because
+// drift in what the two consider *protected* is silent in both directions. That
+// equivalence is now **true by construction** — both hooks delegate to
+// ``scripts/harness-config.js`` — which is precisely what the paragraph above
+// says a shared module does to an equivalence test, and it is why the parser was
+// extracted rather than held in step: two copies wrong identically is what let
+// #488 hide from that very control. What the module still measures is the arm a
+// shared reader cannot make vacuous: that each hook's protected set is really
+// derived from the declaration, and that an unloadable reader leaves both
+// protecting the fallback rather than nothing.
 // ``isLiteralDir`` is exported so the over-denial floors drive the **production**
 // predicate rather than a re-implementation of its character class: a test that
 // re-applied the shipped class in its own loop would measure the class and agree

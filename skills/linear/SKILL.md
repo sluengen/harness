@@ -4,7 +4,7 @@ description: Use when the repo's harness.yaml says tracker linear and you need t
 ---
 # Linear
 
-The **Linear provider recipes** for the tracker contract. Policy — the states, holds, assurance labels, filing rules, and the `none` degrade — is the spine's contract (`harness.yaml` → *The contract*), already loaded; this file is only *how* each operation is performed against Linear's API.
+The **Linear provider recipes** for the tracker contract. Policy — the states, holds, assurance labels, filing rules, and the `none` degrade — is the spine's contract (`AGENTS.md` → *The contract*), already loaded; this file is only *how* each operation is performed against Linear's API.
 
 Applies when `harness.yaml` says `tracker: linear`. The team key is `repo.linear`; the queue scope is `repo.project`.
 
@@ -85,7 +85,7 @@ LINEAR 'query { teams { nodes { id key name } } }'
 LINEAR 'query { issueLabels { nodes { id name } } }'
 ```
 
-**CONTEXT override (the exception, not the default).** If a repo has *custom or renamed* states that `type` + name cannot disambiguate, cache those specific state UUIDs in `AGENTS.md` and use them directly. That override is for the unusual case — the type-based resolution above is the standard path and needs no per-repo setup.
+**CONTEXT override (the exception, not the default).** If a repo has *custom or renamed* states that `type` + name cannot disambiguate, cache those specific state UUIDs in `harness.yaml` and use them directly. That override is for the unusual case — the type-based resolution above is the standard path and needs no per-repo setup.
 
 **Move an issue's status** (resolve `<state-id>` by `type` per above; the issue id may be the `<issue-id>` identifier):
 ```bash

@@ -22,10 +22,18 @@ directions:
 * the Stop hook skips a worktree the push guard would refuse to publish from, so
   a claim of completion goes unchallenged on a branch that matters.
 
-This module therefore compares **protected sets, never return values**. The
-differing shapes are deliberate and are not unified here; an equivalence test is
-the drift control the no-shared-lib decision asks for, and unlike an extraction
-it adds no new failure mode.
+This module therefore compares **protected sets, never return values**.
+
+**#537 extracted the parser, so this module's subject changed.** Both hooks now
+delegate to ``scripts/harness-config.js``, which makes the equivalence true by
+construction — exactly what #436 said a shared module would do to a drift
+control. That is the reason for the extraction rather than an argument against
+it: two copies wrong *identically* is what let #488 hide from this very test, so
+equivalence could never have caught it. What survives here is the arm a shared
+reader cannot make vacuous — that each hook's protected set is really derived
+from the declaration rather than from its fallback, over a corpus of the
+spellings a real repo produces. ``test_harness_config_reader.py`` carries the
+parser's own behaviour and the fail-open floor #436 asked for.
 
 The corpus is the three variants the ticket names plus two that separate the
 parser from its fallback: a declared block, no file at all, a malformed block, an

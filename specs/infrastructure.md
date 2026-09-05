@@ -45,7 +45,7 @@ The repo-guide (`docs/index.html`, authored under CAL-1200) is hosted as the har
 |---|---|---|
 | sluengen/harness | public | git@github.com:sluengen/harness.git |
 
-Branch model: feature branches base from and merge back to `dev` (integration); the nightly promotion moves `dev → main` (`CLAUDE.md` `branches:`, and **Branch topology** above). `dev` dogfoods, `main` releases (merge-guidance-into-harness decision D7).
+Branch model: feature branches base from and merge back to `dev` (integration); the nightly promotion moves `dev → main` (`harness.yaml` `branches:`, and **Branch topology** above). `dev` dogfoods, `main` releases (merge-guidance-into-harness decision D7).
 
 ## Accounts / external services
 
@@ -57,7 +57,7 @@ Branch model: feature branches base from and merge back to `dev` (integration); 
 
 ## Secrets
 
-Nothing in this repo reads a *stored* credential. The `LINEAR_API_KEY` row that used to sit here belonged to the verbs, which fetched and transitioned tickets through Linear's GraphQL API; ADR 0015 deleted them, and this repo's tracker is GitHub (`CLAUDE.md` `tracker:`). What remains is the credentials the *agent host* needs, listed so an operator knows what to have in place — read from the environment or the OS keystore at invocation, **never committed or logged**, with `.env` gitignored and values living only on the host.
+Nothing in this repo reads a *stored* credential. The `LINEAR_API_KEY` row that used to sit here belonged to the verbs, which fetched and transitioned tickets through Linear's GraphQL API; ADR 0015 deleted them, and this repo's tracker is GitHub (`harness.yaml` `tracker:`). What remains is the credentials the *agent host* needs, listed so an operator knows what to have in place — read from the environment or the OS keystore at invocation, **never committed or logged**, with `.env` gitignored and values living only on the host.
 
 | Secret | Unlocks | Where it lives |
 |---|---|---|

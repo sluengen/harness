@@ -186,6 +186,31 @@ def test_every_declared_source_is_read(tmp_path: Path, filename: str) -> None:
     assert json.loads(proc.stdout) == {"integration": "dev", "release": "main"}
 
 
+@pytest.mark.parametrize(
+    ("reader", "block", "expected"),
+    [
+        ("declaredLoop", "loop:\n  max_review_cycles: 3\n", {"max_review_cycles": "3"}),
+        ("declaredCommands", 'commands:\n  verify: "bash x.sh"\n', {"verify": "bash x.sh"}),
+    ],
+)
+def test_every_map_the_criterion_names_is_readable(
+    tmp_path: Path, reader: str, block: str, expected: dict
+) -> None:
+    """AC-2 names roles, commands **and** loop settings. `branches` has a caller
+    today and these two do not — the review workflow that reads the loop numbers
+    is T2's. Exercising them here is what keeps them from being unverified code
+    waiting for a caller, which is how the fourth hand-rolled parser gets written."""
+    repo = _repo(tmp_path, f"map-{reader}", block)
+    proc = _run_node(
+        f"const c = require(process.env.READER);"
+        f"process.stdout.write(JSON.stringify(c.{reader}(process.cwd())));",
+        repo,
+        {"READER": str(READER)},
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert json.loads(proc.stdout) == expected
+
+
 def test_a_declaration_outside_any_fence_is_reported_not_silently_skipped(
     tmp_path: Path,
 ) -> None:
@@ -359,7 +384,13 @@ def test_no_environment_variable_can_redirect_the_reader() -> None:
     for name in _js_modules():
         text = indexed_text(name)
         for expression in require_call.findall(text):
-            if "harness-config" not in expression:
+            # Every ``require`` whose expression is not a plain Node builtin or a
+            # literal. Filtering on "harness-config" first was the narrower bug
+            # one step along: ``require(process.env.HARNESS_READER)`` names the
+            # module nowhere, so it was skipped before the walk could see it.
+            if re.fullmatch(r'\s*"node:[a-z_]+"\s*|\s*"[a-z_]+"\s*', expression):
+                continue
+            if expression.strip().startswith('"./') and "harness-config" not in expression:
                 continue
             # The expression itself, and every identifier feeding it. A guard that
             # only read the `require` line passed a two-line resolution —

@@ -4,7 +4,7 @@ description: Use when the repo's harness.yaml says tracker github and you need t
 ---
 # GitHub Issues
 
-The **GitHub provider recipes** for the tracker contract. Policy — the states, holds, assurance labels, filing rules, and the `none` degrade — is the spine's contract (`harness.yaml` → *The contract*), already loaded; this file is only *how* each operation is performed against GitHub Issues plus a Projects v2 board.
+The **GitHub provider recipes** for the tracker contract. Policy — the states, holds, assurance labels, filing rules, and the `none` degrade — is the spine's contract (`AGENTS.md` → *The contract*), already loaded; this file is only *how* each operation is performed against GitHub Issues plus a Projects v2 board.
 
 Applies when `harness.yaml` says `tracker: github`. The addresses come from its `github:` block:
 

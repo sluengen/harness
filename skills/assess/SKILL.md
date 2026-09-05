@@ -10,7 +10,7 @@ The portable plugin root is two directories above this SKILL.md. Resolve embedde
 
 Usage: `/assess <scope>` — `code`, `architecture`, or `process` (e.g. `/assess code`, `/assess process`)
 
-**Tracker operations follow the spine's contract** (`harness.yaml` → *Tracker dispatch* and *Filing*): the `tracker:` field names the backend, the matching provider skill (`github-issues` or `linear`) owns the API recipes, and `none` degrades to specs and session reports. Do not embed provider API calls here.
+**Tracker operations follow the spine's contract** (`AGENTS.md` → *Tracker dispatch* and *Filing*): the `tracker:` field names the backend, the matching provider skill (`github-issues` or `linear`) owns the API recipes, and `none` degrades to specs and session reports. Do not embed provider API calls here.
 
 Runs the `steward` over the codebase, produces a dated report, files its findings as tickets, and drains the repo's proposals ledger. This is the periodic-review loop: it catches what accumulates across many changes, which no per-change review can see.
 

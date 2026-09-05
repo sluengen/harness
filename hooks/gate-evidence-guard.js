@@ -340,6 +340,18 @@ const reportedUnreadable = new Set();
  * untouched, and nothing from the payload is echoed. Without it, an unreadable
  * declaration is indistinguishable from a readable one in every repo whose
  * branch names happen to match the fallback (#487).
+ *
+ * **What the notice may claim is bounded by what the caller then does**, and the
+ * caller has more left to try than the fallback: the shared reader steps over an
+ * unreadable source and keeps searching the ones behind it, so a repo part-way
+ * through a migration is protected by a *later* file's declaration. A line
+ * asserting the fallback set is in force is therefore false exactly where an
+ * operator acts on it — measured on this branch, where an unreadable
+ * ``CLAUDE.md`` and a readable ``CONTEXT.md`` denied a push to ``ctx-lane``,
+ * a name in no fallback, while stderr said the fallback was in force. So it
+ * reports the one thing true in every case: *this file's* declaration is not
+ * what is being protected. ``test_hooks_unreadable_declaration_is_loud.py``
+ * measures the bound.
  */
 function noticeUnreadableDeclaration(file) {
   const name = String(file);
@@ -347,7 +359,8 @@ function noticeUnreadableDeclaration(file) {
   reportedUnreadable.add(name);
   process.stderr.write(
     `${TAG} unreadable-declaration: ${name.replace(/\s+/g, " ").slice(0, MAX_REPORTED_PATH)}: ` +
-      `declares branches this reader could not read; using the fallback set\n`
+      `declares branches this reader could not read, so this file's declaration ` +
+      `is not what is being protected\n`
   );
 }
 
@@ -813,15 +826,18 @@ if (require.main === module) {
 // The ``require.main === module`` guard above means importing for that
 // introspection never runs the hook.
 //
-// ``declaredBranches`` and ``protectedBranches`` join them for the same reason,
-// one duplication further along: the spine's ``branches:`` block is parsed
-// here **and** in ``push-target-guard.js``, and the two have already drifted in
-// shape (a map here, an array there). A drift in what the two consider
-// *protected* is silent in both directions — this hook would stop skipping a
-// worktree the push guard still refuses to publish from, or skip one it does
-// not — so ``test_context_branch_parsing_contract.py`` executes both over one
-// fixture corpus and compares the sets that fall out, exactly as
-// ``test_gate_marker_contract.py`` does for the marker half.
+// ``declaredBranches`` and ``protectedBranches`` are exported for a related but
+// now *different* reason. Until #537 the ``branches:`` block was parsed here
+// **and** in ``push-target-guard.js``, in two shapes that had already drifted (a
+// map here, an array there), and ``test_context_branch_parsing_contract.py``
+// compared the sets that fell out because drift in what the two consider
+// *protected* is silent in both directions. Both hooks now delegate to
+// ``scripts/harness-config.js``, so that equivalence is true by construction —
+// the thing the paragraph above says a shared module does to an equivalence
+// test, and the reason the parser was extracted rather than held in step: two
+// copies wrong identically is what let #488 hide from that control. The module
+// still measures the arm a shared reader cannot make vacuous — that each hook's
+// protected set really is derived from the declaration.
 module.exports = {
   markerPath,
   maxAgeSeconds,

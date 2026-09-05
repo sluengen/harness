@@ -160,7 +160,7 @@ else
   fail "jq is not installed — scripts/verify.sh's preflight refuses to run without it"
 fi
 
-# --- gh — CLAUDE.md declares tracker: github; /build and /routine read and
+# --- gh — harness.yaml declares tracker: github; /build and /routine read and
 # write tickets through it via the github-issues skill. Not required for the
 # verify gate itself, so its absence is a warning, not a failure. ------------
 if ! command -v gh >/dev/null 2>&1; then

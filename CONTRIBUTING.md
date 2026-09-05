@@ -22,8 +22,9 @@ A decline is not a judgement of the work — fork freely and adapt to taste.
 If you do open a PR:
 
 - **Stay in scope and test-first.** The repo builds test-first and runs a gate —
-  `uv run --extra dev pytest`, plus `ruff` and `mypy`. See [`CLAUDE.md`](./CLAUDE.md)
-  for the exact commands and [`CLAUDE.md`](./CLAUDE.md) for how work happens here.
+  `uv run --extra dev pytest`, plus `ruff` and `mypy`. See
+  [`harness.yaml`](./harness.yaml) for the exact commands and
+  [`AGENTS.md`](./AGENTS.md) for how work happens here.
 - **Run the gate, not a subset.** `bash scripts/verify.sh` is the whole contract
   and the only thing that counts as verification: lint, types, the suite across
   your cores under a coverage floor, and the drift guards over the generated

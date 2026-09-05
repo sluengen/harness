@@ -7,8 +7,8 @@ source instruction file both hosts read and reduced ``CLAUDE.md`` to ``@AGENTS.m
 plus the deltas that apply on one host, so the generated block has one home again
 rather than a copy in each. The region between
 ``<!-- spine:generated:begin harness@<version> -->`` and
-``<!-- spine:generated:end -->`` is the plugin-owned half — the iron laws, the
-lifecycle, the contract, and the enforcement summary — and everything after it
+``<!-- spine:generated:end -->`` is the plugin-owned half — the principles, the
+laws, the lifecycle, the contract, and the enforcement summary — and everything after it
 belongs to the repo. ``specs/features/plugin-surface.md`` asserts in prose that the
 two blocks are byte-identical, and ADR 0017 D2 is what makes that matter — the
 contract lives in the spine, unconditionally loaded, so the block is the one file
@@ -265,7 +265,7 @@ def test_the_two_operands_are_different_documents() -> None:
 
     Two readers resolving to the *same* file would agree perfectly and prove
     nothing. The tail of ``templates/spine.md`` is a placeholder skeleton and the
-    tail of ``AGENTS.md`` is this repo's own configuration, so the whole texts must
+    tail of ``AGENTS.md`` is this repo's own section, so the whole texts must
     differ even while the blocks match.
     """
     assert indexed_text(TEMPLATE_PATH) != indexed_text(SPINE_PATH), (

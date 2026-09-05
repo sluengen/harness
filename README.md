@@ -17,9 +17,11 @@ depend on an agent remembering them:
   `bash scripts/verify.sh`) decides green and writes a marker named after the
   exact git tree it verified. Green over those exact bytes is the only evidence
   a completion claim may cite; one more edit invalidates it.
-- **The spine.** A repo-owned `CLAUDE.md` carries the iron laws, the lifecycle
-  contract, and the repo's own config block — always loaded, never optional.
-  Skills carry the depth and load by task.
+- **The spine.** A repo-owned `AGENTS.md` carries the five principles, the laws
+  derived from them, and the lifecycle contract — always loaded, never optional.
+  `CLAUDE.md` is `@AGENTS.md` plus the deltas that apply on that host alone, and
+  the repo's configuration is `harness.yaml`. Skills carry the depth and load by
+  task; path-scoped rules under `.claude/rules/` load with the files they scope.
 - **Builder / recorder separation.** The agent that promises delivery is not the
   one that records it, which keeps the as-built record honest.
 - **Hooks that refuse.** A completion claim without fresh gate evidence, a push
@@ -54,11 +56,12 @@ codex plugin marketplace add sluengen/harness
 codex plugin add harness@harness
 ```
 
-Then ask Codex to initialize Harness in the repository. The installed
-`command-init` skill carries the same workflow as `/harness:init`.
+Then ask Codex to initialize Harness in the repository. Both hosts read the same
+`init` workflow from `skills/init/`.
 
 `init` interviews for the repo's values and writes the files that must be
-repo-owned: both host spines (`CLAUDE.md` and `AGENTS.md`), Codex role adapters,
+repo-owned: `harness.yaml`, the spine (`AGENTS.md`) and its `CLAUDE.md` pointer,
+the path-scoped rules, Codex role adapters,
 the specs scaffold, the infrastructure record, and — where the repo has no gate yet — a
 `scripts/verify.sh` skeleton that delegates to `node scripts/gate-marker.js run`.
 After a plugin update, `/harness:init --refresh` regenerates the marked blocks,

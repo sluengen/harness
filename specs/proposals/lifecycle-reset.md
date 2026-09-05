@@ -33,7 +33,7 @@ Derived on this date with the commands named. Every figure is a starting line fo
 | Always-on spine | 98 lines | 178 lines | 143 lines | `wc -l CLAUDE.md` |
 | Test lines : source lines | 21,065 : 9,417 (`tests/unit` : `scripts` + `hooks`) | — | 67,846 : 32,065 | `wc -l` |
 
-Inside the harness itself, the plugin carried **28 skills**, of which 9 were generated `command-*` mirrors of the 9 command files (621 lines) and 4 were generated `agent-*` mirrors of the 4 agent files (171 lines); a 375-line generator, a gate stage, and tests existed to keep those mirrors byte-faithful (all retired by T1). The 5 hooks are 2,859 lines of JavaScript. The build workflow was 143 lines of normative procedure read once at the start of a run that then spans many sub-agent contexts. The review loop reached cycle 4 on twelve recorded occasions and cycle 5 on two; #510 took seven. Median ticket open-to-close over the last 200 closed tickets is 16.8 hours.
+Inside the harness itself, the plugin carried **28 skills**, of which 9 were generated `command-*` mirrors of the 9 command files (621 lines) and 4 were generated `agent-*` mirrors of the 4 agent files (171 lines); a 375-line generator, a gate stage, and tests existed to keep those mirrors byte-faithful. The 5 hooks are 2,859 lines of JavaScript. The build workflow was 143 lines of normative procedure read once at the start of a run that then spans many sub-agent contexts. The review loop reached cycle 4 on twelve recorded occasions and cycle 5 on two; #510 took seven. Median ticket open-to-close over the last 200 closed tickets is 16.8 hours.
 
 The prior version of this proposal measured the guard ratchet directly: 151 test modules before the v5 cull, 25 after it, 45 fourteen days later. **A cull without a stated basis for refusal resets the counter and changes nothing else.** That basis is what the principles below supply.
 
@@ -141,7 +141,7 @@ What changes in the tree to make the lifecycle above true. Each names its cost a
 
 ### Spine and configuration
 
-- **One source file, `AGENTS.md`;** `CLAUDE.md` becomes `@AGENTS.md` plus Claude-specific deltas. Retires the Codex generator (375 lines), the codex drift gate stage, and its tests. *Verify first:* that Codex reads `skills/` from the plugin manifest (it declares `"skills": "./skills/"`) and needs nothing from a commands directory; a probe, not an argument. **Probed and shipped in T1:** the manifest declares `skills/` alone, and the generator carried a routine whose only job was to delete a `.codex/commands` path, so `skills/` was already the Codex path.
+- **One source file, `AGENTS.md`;** `CLAUDE.md` becomes `@AGENTS.md` plus Claude-specific deltas. Retires the Codex generator (375 lines), the codex drift gate stage, and its tests. *Verify first:* that Codex reads `skills/` from the plugin manifest (it declares `"skills": "./skills/"`) and needs nothing from a commands directory; a probe, not an argument.
 - **Configuration leaves the prose.** The `repo: / tracker: / commands: / branches: / loop: / paths:` block moves to `harness.yaml`, read by hooks and skills alike. Retires the three hand-rolled spine readers in the hooks and the class of bugs they carried (#487, #488, #510).
 - **Laws become obligations.** Under 120 lines, one imperative per line, rationale in HTML comments (stripped before injection, so free). Emphasis spent on at most two lines. Path-scoped rules (`.claude/rules/*.md` with `paths:`) carry what only matters in `scripts/` or `design/`.
 
