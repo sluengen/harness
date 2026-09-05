@@ -80,7 +80,7 @@ from tests.unit._prose import REPO_ROOT
 HELPER = REPO_ROOT / "scripts" / "gate-marker.js"
 
 #: What this repository's own spine declares. Hardcoded on purpose: it is the
-#: string ``CLAUDE.md`` carries under ``commands.verify`` and the command every
+#: string ``harness.yaml`` carries under ``commands.verify`` and the command every
 #: completion claim in this repo runs, so re-deriving it with a second parser
 #: here would compare the subject against itself. Changing this repo's gate
 #: command turns this test red, which is the correct amount of friction.
@@ -147,16 +147,32 @@ def _spine(*lines: str, newline: str = "\n") -> str:
 # --- the floor: this repository's own spine files ------------------------------
 
 
-@pytest.mark.parametrize("spine", ["CLAUDE.md", "AGENTS.md"])
-def test_the_repositorys_own_spine_declares_the_gate_it_runs(spine: str) -> None:
+def test_the_repositorys_own_declaration_resolves() -> None:
     """The subject's own file is the first corpus (#484/#487).
 
-    Both are real, both are large, and ``AGENTS.md`` is the generated Codex
-    mirror — so a parser that only survives a hand-written five-line fixture
-    fails here. Read from the git **index**: the tree the gate certifies is the
-    staged one (#482).
+    Until #537 this ran over two large markdown spines, one of them the generated
+    Codex mirror of the other. The configuration now lives in one place, so the
+    corpus is one file — but it is still the real one, and what it carries is
+    worth stating exactly rather than approximately: five comments after
+    **values**, plain (``language: Python 3.11+   # tooling only``) and quoted
+    (``bootstrap: "bash scripts/setup-cloud-env.sh"   # provisions uv``), of
+    which **exactly one** — that ``bootstrap`` line — sits inside the
+    ``commands:`` block this reader walks. The ``verify:`` line it actually reads
+    carries no comment, so the comment path inside that block is exercised on a
+    sibling entry rather than on the value returned. A parser surviving only a
+    hand-written five-line fixture still fails here.
+
+    What this file does **not** carry is a comment on a top-level key line —
+    ``branches:   # the shared ones``, the spelling that broke at #488 by making
+    the key look non-empty. That one is held by the ``comment-on-the-key-line``
+    fixture below, not by this floor, and saying so is the point: a floor that
+    claimed coverage it does not have is worth less than a smaller one that is
+    true, because the next person trusts it.
+
+    Read from the git **index**: the tree the gate certifies is the staged one
+    (#482), and this is the declaration that decides what may mint its marker.
     """
-    assert _value(indexed_text(spine)) == OWN_GATE
+    assert _value(indexed_text("harness.yaml")) == OWN_GATE
 
 
 # --- one fixture per legal spelling --------------------------------------------
@@ -460,6 +476,15 @@ TAINTED = ("process.env", "process.argv", "argv")
 #: command without reading a file at all would satisfy every prohibition above
 #: while proving nothing (#467 — a sweep needs a floor on its corpus).
 FILE_READ = "readFileSync"
+
+#: A ``require`` of a sibling module, captured whole so the expression that
+#: chooses it can be inspected. #537 split the read out of this helper into
+#: ``scripts/harness-config.js``; a guard that only ever looked inside this one
+#: file would have gone quietly green on a helper that no longer reads anything.
+REQUIRED_SIBLING = re.compile(r"require\(([^)]*)\)")
+
+#: The string literals inside such an expression — the module it can name.
+MODULE_NAME = re.compile(r"\"[^\"]+\"|\'[^\']+\'")
 
 
 def _blank(source: str) -> str:
@@ -847,11 +872,36 @@ def test_the_gate_command_can_only_come_from_a_file_the_tree_carries() -> None:
     assert len(entries) == 1, f"expected exactly one shell entry to constrain, got {entries}"
     assert offenders == []
     assert closure, "the command's producer chain is empty, so nothing was scanned"
-    assert any(
-        FILE_READ in source[spans[name][0] : spans[name][1]] for name in sorted(closure)
-    ), (
-        f"no function in {sorted(closure)} reads a file, so the command this guard "
-        "calls checked-in has no checked-in origin"
+
+    # #537 moved the read itself into ``scripts/harness-config.js``, the one
+    # reader the hooks and this helper now share. The guard follows it rather
+    # than going blind: a precondition that lives in the caller dies the moment
+    # the work moves to a callee (#510). Two things are required of the crossing
+    # — the required path must be built from ``__dirname`` and string literals
+    # alone, so no per-invocation value chooses *which module* answers, and the
+    # module it names must be the thing that reads a checked-in file.
+    required = REQUIRED_SIBLING.findall(source)
+    for expression in required:
+        assert "process.env" not in expression and "argv" not in expression, (
+            f"the shared reader is chosen by a per-invocation value: {expression}"
+        )
+    # Only the sibling named from **inside the command's producer chain** counts.
+    # Reading every required sibling under `scripts/` was looser than the rule
+    # stated above it: evidence from an unrelated module would satisfy a closure
+    # that reads nothing. Today one module qualifies either way; the guard should
+    # match its own sentence regardless.
+    closure_text = "".join(source[spans[name][0] : spans[name][1]] for name in sorted(closure))
+    sibling_text = ""
+    for expression in REQUIRED_SIBLING.findall(closure_text):
+        for match in MODULE_NAME.findall(expression):
+            sibling = REPO_ROOT / "scripts" / match.strip("\"'")
+            if sibling.exists():
+                sibling_text += sibling.read_text(encoding="utf-8")
+
+    bodies = [source[spans[name][0] : spans[name][1]] for name in sorted(closure)]
+    assert any(FILE_READ in body for body in bodies) or FILE_READ in sibling_text, (
+        f"neither {sorted(closure)} nor the module they require reads a file, so the "
+        "command this guard calls checked-in has no checked-in origin"
     )
 
 

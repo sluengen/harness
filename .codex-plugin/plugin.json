@@ -1,7 +1,7 @@
 {
   "name": "harness",
   "version": "6.0.1",
-  "description": "A spec-driven development process for agent-driven repos: nine lifecycle commands, the craft skills behind them, four agents, and the enforcement hooks that make a green gate the only path to a shared branch.",
+  "description": "A spec-driven development process for agent-driven repos: nine lifecycle workflows, the craft skills behind them, four agents, and the enforcement hooks that make a green gate the only path to a shared branch.",
   "author": {
     "name": "sluengen",
     "url": "https://github.com/sluengen"

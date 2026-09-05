@@ -17,9 +17,11 @@ depend on an agent remembering them:
   `bash scripts/verify.sh`) decides green and writes a marker named after the
   exact git tree it verified. Green over those exact bytes is the only evidence
   a completion claim may cite; one more edit invalidates it.
-- **The spine.** A repo-owned `CLAUDE.md` carries the iron laws, the lifecycle
-  contract, and the repo's own config block — always loaded, never optional.
-  Skills carry the depth and load by task.
+- **The spine.** A repo-owned `AGENTS.md` carries the five principles, the laws
+  derived from them, and the lifecycle contract — always loaded, never optional.
+  `CLAUDE.md` is `@AGENTS.md` plus the deltas that apply on that host alone, and
+  the repo's configuration is `harness.yaml`. Skills carry the depth and load by
+  task; path-scoped rules under `.claude/rules/` load with the files they scope.
 - **Builder / recorder separation.** The agent that promises delivery is not the
   one that records it, which keeps the as-built record honest.
 - **Hooks that refuse.** A completion claim without fresh gate evidence, a push
@@ -54,11 +56,12 @@ codex plugin marketplace add sluengen/harness
 codex plugin add harness@harness
 ```
 
-Then ask Codex to initialize Harness in the repository. The installed
-`command-init` skill carries the same workflow as `/harness:init`.
+Then ask Codex to initialize Harness in the repository. Both hosts read the same
+`init` workflow from `skills/init/`.
 
 `init` interviews for the repo's values and writes the files that must be
-repo-owned: both host spines (`CLAUDE.md` and `AGENTS.md`), Codex role adapters,
+repo-owned: `harness.yaml`, the spine (`AGENTS.md`) and its `CLAUDE.md` pointer,
+the path-scoped rules, Codex role adapters,
 the specs scaffold, the infrastructure record, and — where the repo has no gate yet — a
 `scripts/verify.sh` skeleton that delegates to `node scripts/gate-marker.js run`.
 After a plugin update, `/harness:init --refresh` regenerates the marked blocks,
@@ -67,17 +70,17 @@ custom gate wiring and unsafe JavaScript module contexts untouched, with a
 path-specific report for the operator.
 
 Codex installs a native `.codex-plugin/plugin.json` package. Its `skills/`
-directory contains the portable native plugin skills, including compiled command
-and role procedures. The repository-owned `.codex/agents/*.toml` files are Codex
-role adapters for named-agent workflows; `/harness:init` hydrates them into a
-consumer repository. Codex also runs the plugin hooks; the scripts accept both
-hosts' payload and output contracts.
-`scripts/generate_codex_artifacts.py --check` keeps the portable skills,
-`AGENTS.md`, and `.codex/agents/` in sync.
+directory contains every skill both hosts read, the nine lifecycle workflows
+among them — each ships once, not as a mirror of a command file. The
+repository-owned `.codex/agents/*.toml` files are Codex role adapters for
+named-agent workflows; `/harness:init` hydrates them into a consumer repository,
+and `tests/unit/test_codex_agent_adapters.py` holds each one in correspondence
+with its `agents/*.md` counterpart. Codex also runs the plugin hooks; the scripts
+accept both hosts' payload and output contracts.
 
-## The nine commands
+## The nine workflows
 
-| Command | Does |
+| Workflow | Does |
 |---|---|
 | `/build <ticket>` | Implement, verify, review, and ship a ticket — the one lifecycle driver |
 | `/capture` | File an already-decided change straight to Todo |
@@ -89,7 +92,7 @@ hosts' payload and output contracts.
 | `/assess` | Periodic whole-system health assessment |
 | `/harness:init` | Hydrate a repo (the one command that needs its prefix spoken) |
 
-Small fixes need no command and no ticket: the fast lane is the same isolation
+Small fixes need no command and no ticket: the fix lane is the same isolation
 and the same gate, invoked by asking.
 
 ## The triad
@@ -104,7 +107,7 @@ sides.
 ## This repo
 
 The plugin's source, dogfooding itself. Three parts: the guidance surface
-(`commands/`, `skills/`, `agents/`, `hooks/`), the gate (`scripts/verify.sh`:
+(`skills/`, `agents/`, `hooks/`), the gate (`scripts/verify.sh`:
 ruff, mypy, pytest under a coverage floor, drift guards, marker write), and the
 guards (`tests/unit/`, admitted by ADR 0017's rule — behaviour of executable
 code, properties of the spine, integrity of shipped assets, frontmatter). There

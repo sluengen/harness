@@ -4,8 +4,12 @@ __pycache__/
 *$py.class
 *.egg-info/
 .eggs/
-build/
-!prompts/build/
+# Anchored to the repo root. Unanchored, `build/` matches a directory of that
+# name at any depth — which silently swallowed `skills/build/` when #537 gave the
+# `/build` workflow a skill of its own, so the plugin would have shipped without
+# its main lifecycle command and nothing would have said so. The pre-existing
+# `!prompts/build/` negation was the same bug already worked around once.
+/build/
 dist/
 .venv
 .venv/
@@ -29,7 +33,12 @@ htmlcov/
 # checkout resolves the same ruff/mypy/pytest every other checkout did.
 
 # State / artifacts
-.harness/
+# `.harness/` moved into the gate-ignore block below at #538: it now holds the
+# build's `run.json`, and a consuming repo hydrated by `/harness:init` never
+# received this line — leaving the run state untracked *and* unignored, so
+# `/build`'s own `git add -A && git write-tree` swept it into the tree identity
+# the verdict binds to. That is the failure `.evidence/` is in that block to
+# prevent.
 *.db
 *.db-shm
 *.db-wal
@@ -43,6 +52,7 @@ htmlcov/
 .evidence/
 .worktrees/
 .claude/worktrees/
+.harness/
 # harness:gate-ignore:end
 
 # OS
@@ -71,7 +81,7 @@ gate.log
 # Visual evidence a build loop renders for review (#434). Captures and their
 # manifest land at `.evidence/<TICKET-ID>/` in the run worktree — the one
 # documented location, so `/review` can hand the reviewer a directory
-# (`commands/build.md`). Two failure directions, same rule: untracked, each
+# (`skills/build/SKILL.md`). Two failure directions, same rule: untracked, each
 # capture reads as a dirty worktree to any gate that counts untracked files;
 # swept up, `/build`'s `git add -A` in *Independent review* and in *Ship*
 # publishes binary captures of seeded state into permanent history of a public

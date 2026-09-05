@@ -57,6 +57,10 @@
         "hooks": [
           {
             "type": "command",
+            "command": "node .claude/hooks/test-lock-guard.js"
+          },
+          {
+            "type": "command",
             "command": "node .claude/hooks/prompt-guard.js"
           },
           {

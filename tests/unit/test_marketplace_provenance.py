@@ -9,22 +9,23 @@ commands, no skills, and no enforcement hooks — with no error naming what was
 missing. The failure is silent in exactly the fresh-clone case where enforcement
 matters most.
 
-**Why this shape, and not a check on ``commands/init.md``.** The ticket asked
+**Why this shape, and not a check on ``skills/init/SKILL.md``.** The ticket asked
 for a test that the init command's *instructions name* the declaration. That is a
 restatement pin on prose, and ADR 0017 D5 admits no such class. What is
 admissible is class **(e)** tree-consistency, with class **(b)** supplying one
 operand: two tracked, machine-readable artifacts must correspond. The harness
-repo publishes a marketplace (``.claude-plugin/marketplace.json``) and its spine
-names the GitHub repository that marketplace is fetched from
-(``CLAUDE.md`` → ``github.repo``). The declaration in ``.claude/settings.json``
-must agree with both. Nothing here reads what any sentence means.
+repo publishes a marketplace (``.claude-plugin/marketplace.json``) and its
+configuration names the GitHub repository that marketplace is fetched from
+(``harness.yaml`` → ``github.repo``, moved out of the spine's prose by #537).
+The declaration in ``.claude/settings.json`` must agree with both. Nothing
+here reads what any sentence means.
 
 **What this repo is, and is not.** It publishes the marketplace and declares
 it; it does not *enable* the plugin, and ``.claude/settings.json`` carries no
 ``enabledPlugins``. ``.claude/hooks`` is a symlink to the plugin's own
 ``hooks/`` and that settings file wires those files directly, so enabling
 ``harness@harness`` here would register ``hooks/hooks.json`` on top of the same
-five hooks and fire each of them twice. The declaration is the half that costs
+set of hooks and fire each of them twice. The declaration is the half that costs
 nothing and the half a fresh clone needs, so this guard asserts the declaration
 and claims nothing about an enablement.
 
@@ -66,7 +67,11 @@ from tests.unit._prose import REPO_ROOT
 
 _SETTINGS = REPO_ROOT / ".claude" / "settings.json"
 _MARKETPLACE = REPO_ROOT / ".claude-plugin" / "marketplace.json"
-_SPINE = REPO_ROOT / "CLAUDE.md"
+#: #537 moved the configuration map out of the spine's prose and into
+#: ``harness.yaml``, so the declaration this module corresponds against lives
+#: there now. The extractor still accepts a fenced block, because the repos this
+#: plugin ships to have not migrated and their declaration is still in a spine.
+_SPINE = REPO_ROOT / "harness.yaml"
 
 #: The settings key Claude Code reads a repository's extra marketplaces from.
 #: Measured against the shipped CLI (2.1.234), whose own settings schema

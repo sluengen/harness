@@ -28,7 +28,8 @@ source repo moves.
    Harness. It interviews for the repo's
    values (tracker, commands, branch roles, layers) — taking answers from the
    repo itself where it can, including your existing `CONTEXT.md` — and writes
-   the repo-owned files: both spines (`CLAUDE.md` and `AGENTS.md`), Codex role
+   the repo-owned files: `harness.yaml`, the spine (`AGENTS.md`) and its
+   `CLAUDE.md` pointer, the path-scoped rules under `.claude/rules/`, Codex role
    adapters under `.codex/agents/`, the specs scaffold, the infrastructure
    record, and a `scripts/verify.sh` skeleton only if the repo has no gate yet.
    Existing host files are merged, not overwritten: the generated block is
@@ -62,17 +63,19 @@ source repo moves.
    Delete `.guidance-lock.yaml` last if you want the record of what was
    installed while you sweep.
 
-5. **`CONTEXT.md` keeps working until you retire it.** The enforcement hooks
-   read the spine's (`CLAUDE.md`) `branches:` block first and fall back to
-   `CONTEXT.md` for a repo hydrated before the spine absorbed it — so branch
-   protection does not lapse mid-migration. Once `/harness:init` has written a
+5. **`CONTEXT.md` keeps working until you retire it.** One reader,
+   `scripts/harness-config.js`, resolves the `branches:` block from the first
+   source that declares it: `harness.yaml`, then `AGENTS.md`, `CLAUDE.md`, and
+   legacy `CONTEXT.md` — so branch protection does not lapse mid-migration, and a
+   repo that never migrates keeps working unchanged. Once `/harness:init` has written a
    spine whose `branches:` block is right, `CONTEXT.md` is unread; fold
    anything repo-specific you still want into the spine's repo section and
    delete it.
 
 6. **After future plugin updates:** `/harness:init --refresh`, or the same init
-   skill in Codex, regenerates both spines' marked blocks and the generated Codex
-   role adapters. There
+   skill in Codex, migrates the configuration into `harness.yaml` where a repo
+   still carries it in prose, then refreshes the spine's marked block and the
+   Codex role adapters. There
    is no `/update-guidance` any more; the plugin manager owns updates.
 
 ## Version pinning

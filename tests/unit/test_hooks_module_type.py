@@ -249,6 +249,54 @@ def _probe_gate_evidence_guard(fixture: Path, tmp_path: Path) -> bool:
         return False
 
 
+def _probe_test_lock_guard(fixture: Path, tmp_path: Path) -> bool:
+    """Designed behaviour: deny an edit to a locked test file.
+
+    Needs all three conditions the lock requires before it has anything to say —
+    a declared ``paths.tests``, a test file the base commit carries, and an
+    armed ``run.json`` — so a probe that merely ran the hook would allow, which
+    is what this hook does in every ordinary session and would prove nothing.
+    """
+    # `_esm_fixture` copies only `hooks/`, but this hook reads its test root
+    # through the sibling `scripts/harness-config.js` the plugin ships beside
+    # them — the pair `.claude/rules/scripts.md` says to copy or omit together.
+    # Without it the reader cannot load, the lock degrades to inactive, and the
+    # probe would observe an allow that says nothing about the ESM question.
+    (fixture / "scripts").mkdir(exist_ok=True)
+    for asset in ("harness-config.js", "package.json"):
+        shutil.copy(REPO_ROOT / "scripts" / asset, fixture / "scripts" / asset)
+    (fixture / "harness.yaml").write_text("paths:\n  tests: tests/\n", encoding="utf-8")
+    (fixture / "tests").mkdir(exist_ok=True)
+    (fixture / "tests" / "test_locked.py").write_text("def test_x(): pass\n", encoding="utf-8")
+    _init_repo(fixture, "main")
+    base = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=fixture, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    (fixture / ".harness").mkdir(exist_ok=True)
+    (fixture / ".harness" / "run.json").write_text(
+        json.dumps(
+            {"version": 1, "lane": "change", "tests_locked": True, "base_commit": base}
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    _, out, _ = _run(
+        "test-lock-guard.js",
+        {
+            "tool_name": "Edit",
+            "cwd": str(fixture),
+            "tool_input": {"file_path": str(fixture / "tests" / "test_locked.py")},
+        },
+        fixture,
+        tmp_path,
+    )
+    try:
+        decision = json.loads(out).get("hookSpecificOutput", {}).get("permissionDecision")
+    except (json.JSONDecodeError, AttributeError):
+        return False
+    return decision == "deny"
+
+
 #: One probe per shipped hook, each asserting that hook's *designed observable*
 #: rather than "it exited 0" — the distinction AC-1 turns on.
 _PROBES = {
@@ -257,6 +305,7 @@ _PROBES = {
     "workflow-guard.js": _probe_workflow_guard,
     "push-target-guard.js": _probe_push_target_guard,
     "gate-evidence-guard.js": _probe_gate_evidence_guard,
+    "test-lock-guard.js": _probe_test_lock_guard,
 }
 
 

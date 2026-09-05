@@ -73,7 +73,12 @@ PAGE_PATH = "docs/index.html"
 #: introduces a fifth kind answers the coverage question in place
 #: (``craft.md`` → *A guard over an enumerable dimension must fail on an
 #: unclassified member*).
-KINDS = ("skill", "command", "agent", "hook")
+#: #537 collapsed the nine ``commands/*.md`` files into skills, so ``command``
+#: is no longer a kind the tree carries — a workflow is a skill with a slash
+#: trigger. Dropping the kind rather than deriving it empty is deliberate: an
+#: empty derivation would make every ``command:`` tag on the page pass
+#: silently, which is the vacuity this module exists to refuse.
+KINDS = ("skill", "agent", "hook")
 
 #: An inventory tag: ``data-unit="skill:engineering"``. Both quote styles are
 #: admitted because both are legal HTML and a page edit may reach for either;
@@ -119,12 +124,10 @@ def tree_units(*, repo_root: Path = REPO_ROOT) -> dict[str, set[str]]:
     identifier and the comparison needs no translation table to go stale.
     """
     skills = tracked_files_under("skills", repo_root=repo_root)
-    commands = tracked_files_under("commands", repo_root=repo_root)
     agents = tracked_files_under("agents", repo_root=repo_root)
     hooks = tracked_files_under("hooks", repo_root=repo_root)
     return {
         "skill": {path.parent.name for path in skills if path.name == "SKILL.md"},
-        "command": {path.stem for path in commands if path.suffix == ".md"},
         "agent": {path.stem for path in agents if path.suffix == ".md"},
         "hook": {path.stem for path in hooks if path.suffix == ".js"},
     }
@@ -180,8 +183,8 @@ def test_the_page_is_tracked() -> None:
 def test_the_reader_follows_the_index_not_the_disk() -> None:
     """The operand is the staged blob, and this is the sample that says so.
 
-    ``CLAUDE.md`` → *a guard asserts a property of the tracked tree, never the
-    working directory*. :func:`test_the_page_is_tracked` does not reach this: it
+    ``.claude/rules/scripts.md`` → *a guard asserts a property of the tracked
+    tree, never the working directory*. :func:`test_the_page_is_tracked` does not reach this: it
     asserts the page's **path** is in the index and says nothing about the bytes
     read. Measured at review, before this test existed, a tree that staged a page
     with `skill:linear` deleted — with the correct page restored on disk, unstaged
@@ -229,8 +232,7 @@ def test_the_tree_inventories_are_live() -> None:
     """
     tree = tree_units()
     anchors = {
-        "skill": "engineering",
-        "command": "build",
+        "skill": "build",
         "agent": "reviewer",
         "hook": "gate-evidence-guard",
     }
@@ -252,8 +254,7 @@ def test_the_page_declares_units_of_every_kind() -> None:
     """
     page = tagged_units(_page_text())
     anchors = {
-        "skill": "engineering",
-        "command": "build",
+        "skill": "build",
         "agent": "reviewer",
         "hook": "gate-evidence-guard",
     }
@@ -301,8 +302,7 @@ def test_the_parser_reads_the_real_page() -> None:
 
 _TREE_SAMPLE = {
     "skill": {"engineering", "review-discipline"},
-    "command": {"build", "routine"},
-    "agent": {"reviewer"},
+    "agent": {"reviewer", "dev"},
     "hook": {"gate-evidence-guard"},
 }
 
@@ -350,24 +350,24 @@ def test_an_agreeing_inventory_reports_nothing() -> None:
 def test_a_difference_in_one_kind_does_not_mask_another() -> None:
     """Each kind is compared in its own frame.
 
-    A predicate that pooled all four inventories into one set would let a
-    command named like a skill cover for a missing skill, and would report a
-    genuine difference under the wrong heading.
+    A predicate that pooled the inventories into one set would let an agent
+    named like a skill cover for a missing skill, and would report a genuine
+    difference under the wrong heading.
     """
-    html = '<li data-unit="skill:engineering"></li><li data-unit="command:build"></li>'
+    html = '<li data-unit="skill:engineering"></li><li data-unit="agent:reviewer"></li>'
     difference = inventory_difference(tagged_units(html), _TREE_SAMPLE)
     assert difference["skill"]["in_tree_only"] == ["review-discipline"]
-    assert difference["command"]["in_tree_only"] == ["routine"]
-    assert "agent" in difference and "hook" in difference
+    assert difference["agent"]["in_tree_only"] == ["dev"]
+    assert "hook" in difference
 
 
 def test_a_unit_tagged_under_the_wrong_kind_is_reported() -> None:
     """Each kind is its own comparison frame, and this is what says so.
 
     ``craft.md`` → *A comparison whose operands live in different frames is
-    constant*. `engineering` is a real skill, so a page tagging it as a
-    *command* names nothing that exists in the command frame. A predicate that
-    pooled the four inventories into one set would resolve it against the skills
+    constant*. `engineering` is a real skill, so a page tagging it as an
+    *agent* names nothing that exists in the agent frame. A predicate that
+    pooled the inventories into one set would resolve it against the skills
     and report no difference at all.
 
     Measured: before this sample, replacing the per-kind difference with a
@@ -375,8 +375,8 @@ def test_a_unit_tagged_under_the_wrong_kind_is_reported() -> None:
     cover it both happened to assert values the pooling left unchanged (#482
     mutation entry B5).
     """
-    page = tagged_units('<li data-unit="command:engineering"></li>')
-    assert inventory_difference(page, _TREE_SAMPLE)["command"]["on_page_only"] == [
+    page = tagged_units('<li data-unit="agent:engineering"></li>')
+    assert inventory_difference(page, _TREE_SAMPLE)["agent"]["on_page_only"] == [
         "engineering"
     ]
 
@@ -473,8 +473,8 @@ def test_a_printed_count_that_disagrees_with_its_list_is_reported() -> None:
     Paired with the agreeing case below, so neither is a constant.
     """
     spliced = _page_text().replace(
-        '<h3>Skills <span class="n">28</span></h3>',
-        '<h3>Skills <span class="n">27</span></h3>',
+        '<h3>Craft skills <span class="n">15</span></h3>',
+        '<h3>Craft skills <span class="n">14</span></h3>',
         1,
     )
     assert spliced != _page_text(), (

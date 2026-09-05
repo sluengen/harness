@@ -299,60 +299,34 @@ function currentTree(cwd) {
   }
 }
 
-/** Strip a matching pair of surrounding quotes. Written without quote
- * characters inside a regex on purpose — the repo hook source scanners blank
- * string literals to count braces, and a lone quote inside a pattern throws
- * their offsets off. */
-function stripQuotes(value) {
-  const quotes = "\"'";
-  if (value.length >= 2 && quotes.includes(value[0]) && value[0] === value[value.length - 1]) {
-    return value.slice(1, -1);
+/** The shared configuration reader, or ``null`` when it cannot be loaded.
+ *
+ * #537 replaced this hook's own ``branches:`` parser — and the identical one in
+ * the sibling hook, and the ``commands.verify`` reader in the marker helper —
+ * with one reader at ``scripts/harness-config.js``. #436 declined a shared
+ * module partly because "a shared module's own load failure would disarm both
+ * enforcement hooks together". That is why the require is guarded and why the
+ * failure degrades to :data:`FALLBACK_PROTECTED` rather than to an empty set: an
+ * empty protected set approves a push to the integration branch, while the
+ * fallback is the state every repo that never adopted the guidance is in.
+ * ``test_an_unloadable_reader_leaves_both_hooks_protecting`` measures it.
+ *
+ * **The path is fixed and has no override.** A variable naming the directory the
+ * reader is loaded from would be a per-invocation source for the protected set:
+ * a module returning ``{integration: "nothing"}`` leaves this guard protecting
+ * nothing, so an unreviewed push to the integration branch is approved by
+ * setting one environment variable. The test above makes the module unloadable
+ * by copying the hook somewhere it has no sibling ``scripts/``, which exercises
+ * the real resolution rather than an escape hatch built for it.
+ */
+function loadConfigReader() {
+  try {
+    return require(path.join(__dirname, "..", "scripts", "harness-config.js"));
+  } catch (err) {
+    failOpen("could not load the shared configuration reader", err);
+    return null;
   }
-  return value;
 }
-
-/** A yaml scalar with its inline comment and quotes removed. */
-function scalar(raw) {
-  const hash = raw.indexOf("#");
-  return stripQuotes((hash === -1 ? raw : raw.slice(0, hash)).trim());
-}
-
-//: One ``key: value`` pair, in either spelling of the block.
-const PAIR = /^\s*([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*(.*)$/;
-
-//: ``branches:`` written as a yaml **flow mapping** on one line — valid yaml a
-//: real loader reads identically to the block form, which the line scanner below
-//: read as nothing until #487. The body excludes braces, so only a flat mapping
-//: is accepted: a nested one (``{a: {b: c}}``) is left to the unreadable notice
-//: rather than half-parsed, and a flow *sequence* (``[a, b]``) declares no
-//: branch names to begin with. The trailing group is the comment yaml allows
-//: after the closing brace. A flow mapping wrapped across several lines is out
-//: of scope too — every spelling left out lands on the unreadable notice below
-//: rather than on a silent empty parse, which is the whole point of having it.
-const BRANCHES_FLOW = /^branches:\s*\{([^{}]*)\}\s*(?:#.*)?$/;
-
-//: Any line that opens a ``branches:`` key, whatever follows it. Wider than
-//: either arm above on purpose: a declaration this parser cannot read is the
-//: thing worth reporting, so the detector must not be the parser.
-const BRANCHES_KEY = /^branches\s*:/;
-
-//: One ``key: value`` pair inside a **flow mapping body**, scanned rather than
-//: split. The body used to be cut on every comma, which is wrong for a comma
-//: inside a quoted value: ``{release: "has,comma"}`` yielded the fragment
-//: ``"has`` — a name opening with a quote character, which no branch can be —
-//: and dropped the name actually declared (#488). Both hooks were wrong
-//: identically, so the two-parser equivalence could not see it and no notice
-//: fired.
-//:
-//: The value alternation tries both quoted forms before the bare one, so a
-//: quoted value is taken whole and only an unquoted value stops at a comma. The
-//: quote characters are written as ``\x22``/``\x27`` on purpose, for the same
-//: reason ``stripQuotes`` avoids them: the repo's hook source scanners blank
-//: string literals to count braces, and a lone quote inside a pattern throws
-//: their offsets off. Every match includes its key, so no match is zero-length
-//: and the global scan always advances.
-const FLOW_PAIR = /\s*([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*(\x22[^\x22]*\x22|\x27[^\x27]*\x27|[^,]*)\s*/y;
-
 
 //: Files already reported as unreadable, so a hook that resolves its declaration
 //: at more than one call site says it once. Process-scoped, and a hook process
@@ -360,20 +334,24 @@ const FLOW_PAIR = /\s*([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*(\x22[^\x22]*\x22|\x27[^\x
 const reportedUnreadable = new Set();
 
 /**
- * Say once, on stderr, that ``file`` declares branches this parser could not
- * read. Same posture and the same ``TAG`` as ``failOpen``: the caller carries on
- * with whatever it can read instead, stdout and the exit status are untouched,
- * and nothing from the payload is echoed. Without it, an unreadable declaration
- * is indistinguishable from a readable one in every repo whose branch names
- * happen to match the fallback (#487).
+ * Say once, on stderr, that ``file`` declares configuration this reader could
+ * not read. Same posture and the same ``TAG`` as ``failOpen``: the caller
+ * carries on with whatever it can read instead, stdout and the exit status are
+ * untouched, and nothing from the payload is echoed. Without it, an unreadable
+ * declaration is indistinguishable from a readable one in every repo whose
+ * branch names happen to match the fallback (#487).
  *
- * What the notice may claim is bounded by what the caller then does, and the
- * caller has two things left to try: ``CONTEXT.md`` behind an unreadable spine,
- * then ``FALLBACK_PROTECTED``. A repository part-way through the v5 migration
- * reaches the first, so a line asserting the conservative set is in force would
- * be false exactly where an operator acts on it. It reports the one thing true
- * in every case — this file's declaration is not what is being protected — and
- * ``test_hooks_unreadable_declaration_is_loud.py`` measures the bound.
+ * **What the notice may claim is bounded by what the caller then does**, and the
+ * caller has more left to try than the fallback: the shared reader steps over an
+ * unreadable source and keeps searching the ones behind it, so a repo part-way
+ * through a migration is protected by a *later* file's declaration. A line
+ * asserting the fallback set is in force is therefore false exactly where an
+ * operator acts on it — measured on this branch, where an unreadable
+ * ``CLAUDE.md`` and a readable ``CONTEXT.md`` denied a push to ``ctx-lane``,
+ * a name in no fallback, while stderr said the fallback was in force. So it
+ * reports the one thing true in every case: *this file's* declaration is not
+ * what is being protected. ``test_hooks_unreadable_declaration_is_loud.py``
+ * measures the bound.
  */
 function noticeUnreadableDeclaration(file) {
   const name = String(file);
@@ -381,140 +359,30 @@ function noticeUnreadableDeclaration(file) {
   reportedUnreadable.add(name);
   process.stderr.write(
     `${TAG} unreadable-declaration: ${name.replace(/\s+/g, " ").slice(0, MAX_REPORTED_PATH)}: ` +
-      "declares branches: but no names could be read from it; " +
-      "the branches it names are not the ones being protected\n"
+      `declares branches this reader could not read, so this file's declaration ` +
+      `is not what is being protected\n`
   );
 }
 
-/** The ``branches:`` map declared in a repo's spine, as plain key/value.
+/** The ``branches:`` map declared in the repo at ``top``, as plain key/value.
  *
- * The spine is ``CLAUDE.md`` (v5); callers fall back to ``CONTEXT.md`` for a
- * repo hydrated before the spine absorbed it.
- *
- * A small line parser, the same shape ``guidance-freshness.js`` already uses for
- * ``registry.yaml``: the file is markdown with a fenced yaml block, so a real
- * yaml load would need a dependency this surface does not have.
- *
- * Two spellings of the same declaration are read: the indented block, and the
- * one-line flow mapping (#487). The first ``branches:`` key wins; a second one
- * later in the file is not merged, matching how the block arm already stops at
- * the end of the first block it finds.
- *
- * A ``branches:`` key that yields no names — a hand-edited sequence, a spelling
- * nobody anticipated, or a declaration that really is empty — is reported once on
- * stderr and then falls through to the caller's fallback. Reporting an
- * explicitly empty declaration is deliberate: the fallback protects a set the
- * repo did not ask for either way, and that divergence is the thing worth
- * seeing. */
-function declaredBranches(contextFile) {
-  let text;
-  try {
-    text = fs.readFileSync(contextFile, "utf8");
-  } catch (err) {
-    // No spine is the ordinary case in a repo that has not adopted the
-    // guidance; the conservative fallback applies and that is not an error.
-    void err;
-    return {};
-  }
-  const found = {};
-  let declares = false;
-  let indent = -1;
-  let entryIndent = -1;
-  let invalid = false;
-  for (const raw of text.split("\n")) {
-    // ``\r`` first, then tabs. Splitting on ``\n`` leaves a CRLF file's lines
-    // ending in ``\r``, and ``PAIR``'s trailing ``(.*)$`` cannot cross one —
-    // JavaScript counts it as a line terminator, so ``PAIR.exec("  a: b\r")``
-    // was ``null`` and every block declaration in a CRLF spine parsed to nothing
-    // while the same declaration in the flow spelling parsed fine (#488). The
-    // flow arm never saw it because it runs against ``line.trim()``.
-    const line = raw.replace(/\r$/, "").replace(/\t/g, "  ");
-    const lead = line.length - line.trimStart().length;
-    if (indent === -1) {
-      const trimmed = line.trim();
-      if (!BRANCHES_KEY.test(trimmed)) continue;
-      declares = true;
-      const flow = BRANCHES_FLOW.exec(trimmed);
-      if (flow) {
-        const candidate = {};
-        let cursor = 0;
-        while (cursor < flow[1].length) {
-          FLOW_PAIR.lastIndex = cursor;
-          const match = FLOW_PAIR.exec(flow[1]);
-          if (match === null || match.index !== cursor) {
-            invalid = true;
-            break;
-          }
-          const value = scalar(match[2]);
-          if (!value || Object.hasOwn(candidate, match[1])) {
-            invalid = true;
-            break;
-          }
-          candidate[match[1]] = value;
-          cursor = FLOW_PAIR.lastIndex;
-          if (cursor === flow[1].length) break;
-          if (flow[1][cursor] !== ",") {
-            invalid = true;
-            break;
-          }
-          cursor += 1;
-          if (cursor === flow[1].length) {
-            invalid = true;
-            break;
-          }
-        }
-        if (!invalid) Object.assign(found, candidate);
-        break; // a flow mapping is the whole declaration
-      }
-      // A block opens when the key carries **no value** — asked through
-      // ``scalar``, so the one helper that already decides comments decides them
-      // in this position too. The old test was ``/^branches:\s*$/`` against the
-      // trimmed line, and yaml permits a comment after any key, so
-      // ``branches:   # the shared ones`` skipped the perfectly ordinary mapping
-      // beneath it and fell back (#488). This repo's own spine writes inline
-      // comments on sibling lines of this very block — ``branches.release``
-      // among them, inside the very mapping this arm is trying to read.
-      //
-      // Asking the value rather than widening the key pattern is what keeps the
-      // spellings that must stay unreadable unreadable: ``branches: lonely-lane``
-      // and ``branches: [main, staging]`` both yield a non-empty scalar and so
-      // are not blocks, and land on the notice as before.
-      if (scalar(trimmed.replace(BRANCHES_KEY, "")) === "") indent = lead;
-      continue;
-    }
-    const content = line.trim();
-    if (!content) continue;
-    if (lead <= indent) break; // the block ended
-    if (content.startsWith("#")) continue;
-    if (entryIndent === -1) entryIndent = lead;
-    if (lead !== entryIndent) {
-      invalid = true;
-      break;
-    }
-    const match = PAIR.exec(line);
-    if (!match) {
-      invalid = true;
-      break;
-    }
-    const value = scalar(match[2]);
-    if (!value || Object.hasOwn(found, match[1])) {
-      invalid = true;
-      break;
-    }
-    found[match[1]] = value;
-  }
-  if (invalid) {
-    for (const key of Object.keys(found)) delete found[key];
-  }
-  if (declares && Object.keys(found).length === 0) noticeUnreadableDeclaration(contextFile);
-  return found;
+ * Which sources are read, and in what order, is the shared reader's business.
+ */
+function declaredBranches(top) {
+  const config = loadConfigReader();
+  if (config === null) return {};
+  return config.declaredBranches(top, noticeUnreadableDeclaration);
 }
 
-/** The declared ``branches:`` map for the repo at ``top`` — spine first, fallback second. */
+/** The declared ``branches:`` map for the repo at ``top``.
+ *
+ * A one-line alias since #537 moved the source ordering it used to carry into
+ * the shared reader. Kept rather than inlined because the name is the seam three
+ * test modules drive this hook through; collapsing it would rename a contract to
+ * save a line.
+ */
 function declaredConfig(top) {
-  const fromSpine = declaredBranches(path.join(top, "CLAUDE.md"));
-  if (Object.keys(fromSpine).length) return fromSpine;
-  return declaredBranches(path.join(top, "CONTEXT.md"));
+  return declaredBranches(top);
 }
 
 /** A ref name reduced to its branch name. */
@@ -930,7 +798,7 @@ function main() {
       `This turn claims the work is finished, but no gate marker covers the current ` +
         `tree ${verdict.tree.slice(0, 12)} in ${where}. ${scope}The gate has not been ` +
         `run green over these exact bytes — a marker from before the last edit is not ` +
-        `evidence about them. Run the repo verify command (commands.verify in the spine, CLAUDE.md) ` +
+        `evidence about them. Run the repo verify command (commands.verify in harness.yaml) ` +
         `in ${where}, read its output, and name the test that proves each acceptance ` +
         `criterion; then say you are done. Expected marker: ${reportable(verdict.marker)}. ` +
         `If the gate is red and you cannot fix it, say so plainly instead of claiming ` +
@@ -960,15 +828,18 @@ if (require.main === module) {
 // The ``require.main === module`` guard above means importing for that
 // introspection never runs the hook.
 //
-// ``declaredBranches`` and ``protectedBranches`` join them for the same reason,
-// one duplication further along: the spine's ``branches:`` block is parsed
-// here **and** in ``push-target-guard.js``, and the two have already drifted in
-// shape (a map here, an array there). A drift in what the two consider
-// *protected* is silent in both directions — this hook would stop skipping a
-// worktree the push guard still refuses to publish from, or skip one it does
-// not — so ``test_context_branch_parsing_contract.py`` executes both over one
-// fixture corpus and compares the sets that fall out, exactly as
-// ``test_gate_marker_contract.py`` does for the marker half.
+// ``declaredBranches`` and ``protectedBranches`` are exported for a related but
+// now *different* reason. Until #537 the ``branches:`` block was parsed here
+// **and** in ``push-target-guard.js``, in two shapes that had already drifted (a
+// map here, an array there), and ``test_context_branch_parsing_contract.py``
+// compared the sets that fell out because drift in what the two consider
+// *protected* is silent in both directions. Both hooks now delegate to
+// ``scripts/harness-config.js``, so that equivalence is true by construction —
+// the thing the paragraph above says a shared module does to an equivalence
+// test, and the reason the parser was extracted rather than held in step: two
+// copies wrong identically is what let #488 hide from that control. The module
+// still measures the arm a shared reader cannot make vacuous — that each hook's
+// protected set really is derived from the declaration.
 module.exports = {
   markerPath,
   maxAgeSeconds,

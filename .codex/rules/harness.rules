@@ -89,12 +89,6 @@ prefix_rule(
 )
 
 prefix_rule(
-    pattern = ["uv", "run", "python", "scripts/generate_codex_artifacts.py"],
-    decision = "allow",
-    match = ["uv run python scripts/generate_codex_artifacts.py --check"],
-)
-
-prefix_rule(
     pattern = ["git", "reset", "--hard"],
     decision = "forbidden",
     justification = "Use a reversible targeted edit or ask the operator to reset history.",

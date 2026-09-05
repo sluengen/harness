@@ -1,0 +1,43 @@
+# Harness configuration for this repo.
+#
+# Moved out of the spine's prose by #537: the hooks, the gate marker helper and
+# the skills all read these values, and a fenced block inside a markdown document
+# needed a hand-rolled parser in each of them. This file is read by one reader,
+# `scripts/harness-config.js`. The three markdown spines are still read behind it
+# for repos that have not migrated.
+#
+# Values are unchanged from the block this replaces; the move is a move.
+
+repo:
+  name: harness
+  project: Harness
+tracker: github
+github:
+  repo: sluengen/harness
+  project: sluengen/2
+stack:
+  language: Python 3.11+   # tooling only — no runtime dependencies
+commands:
+  bootstrap: "bash scripts/setup-cloud-env.sh"   # provisions uv/python/node/gh, then install
+  install: "uv sync --extra dev"
+  lint: "uv run --extra dev ruff check ."
+  typecheck: "uv run --extra dev mypy scripts"
+  test: "uv run --extra dev pytest"
+  test_one: "uv run --extra dev pytest <path/to/test_file.py::test_name>"
+  verify: "bash scripts/verify.sh"
+branches:
+  integration: dev
+  release: main   # ADR 0003 as amended: two-branch topology, dev -> main
+loop:
+  max_review_cycles: 3
+layers:
+  design_system: true    # design/ is the source for docs/index.html
+  feature_specs: true    # reviewer-owned as-built records live in specs/features/
+paths:
+  tests: tests/
+  proposals: specs/proposals/
+  features: specs/features/
+  decisions: specs/decisions/
+  design_system: design/
+env:
+  file: .env

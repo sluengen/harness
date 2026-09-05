@@ -4,7 +4,7 @@
 ``settings/harness.json`` is the tracked settings template — the tree's own name
 for it is *the installed-surface template* (``tests/unit/test_git_push_guard_hook.py``)
 — and ``.claude/settings.json`` is this repo's installed settings. What the template
-is *for* in v5 is deliberately not decided here: ``commands/init.md`` never names it,
+is *for* in v5 is deliberately not decided here: ``skills/init/SKILL.md`` never names it,
 and #489 scopes the question out, recording only which properties must correspond.
 Nothing has held the two together since v5, and the drift the unguarded interval
 accumulated was found by hand at grounding time:
@@ -190,8 +190,8 @@ def test_the_installed_operand_is_live_and_is_the_other_file() -> None:
 def test_the_readers_follow_the_index_not_the_disk() -> None:
     """The operands are staged blobs, and this is the sample that says so.
 
-    ``CLAUDE.md`` → *a guard asserts a property of the tracked tree, never the
-    working directory*. :func:`test_both_settings_documents_are_tracked` does not
+    ``.claude/rules/scripts.md`` → *a guard asserts a property of the tracked
+    tree, never the working directory*. :func:`test_both_settings_documents_are_tracked` does not
     reach this: it asserts the **paths** are in the index and says nothing about the
     bytes read. Measured at the #482 review on the sibling module, a tree staging a
     wrong file passed 12/12 while ``git write-tree`` reported an oid whose content

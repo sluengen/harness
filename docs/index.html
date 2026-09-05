@@ -184,10 +184,10 @@
     </p>
     <p class="creed">Let the agent do the judgement work; make the repo own the evidence.</p>
     <ul class="counts">
-      <li><b>9</b> commands</li>
-      <li><b>28</b> skills</li>
+      <li><b>9</b> workflows</li>
+      <li><b>24</b> skills</li>
       <li><b>4</b> agents</li>
-      <li><b>5</b> hooks</li>
+      <li><b>6</b> hooks</li>
       <li><b>1</b> gate</li>
     </ul>
   </header>
@@ -211,9 +211,10 @@
       <article class="card card--product">
         <h3>The spine</h3>
         <p>
-          Repo-owned <code>CLAUDE.md</code> and <code>AGENTS.md</code> files carry the iron laws, the
-          lifecycle contract, and the repo's own config block — always loaded, never optional. Skills
-          carry the depth and load by task.
+          A repo-owned <code>AGENTS.md</code> carries the five principles, the laws derived from
+          them, and the lifecycle contract — always loaded, never optional. <code>CLAUDE.md</code> is
+          a pointer to it plus that host's deltas, and the repo's configuration is
+          <code>harness.yaml</code>. Skills carry the depth and load by task.
         </p>
       </article>
       <article class="card card--strategy">
@@ -254,10 +255,13 @@ Codex: codex plugin add harness@harness</pre>
         <pre>Claude: /harness:init
 Codex: ask to initialize Harness</pre>
         <p>
-          Interviews for the repo's values and writes the files that must be repo-owned: both host
-          spines, Codex role adapters, the specs scaffold, the infrastructure record, and — where there is no gate yet — a
+          Interviews for the repo's values and writes the files that must be repo-owned:
+          <code>harness.yaml</code>, the spine (<code>AGENTS.md</code>) and its
+          <code>CLAUDE.md</code> pointer, the path-scoped rules, Codex role adapters, the specs
+          scaffold, the infrastructure record, and — where there is no gate yet — a
           <code>scripts/verify.sh</code> skeleton with the marker write. After a plugin update,
-          refresh regenerates the marked spine blocks and role adapters without replacing repo-owned prose.
+          refresh migrates the configuration into <code>harness.yaml</code> as a verbatim move and
+          regenerates the marked spine block, without replacing repo-owned prose.
         </p>
       </div>
     </div>
@@ -272,7 +276,7 @@ Codex: ask to initialize Harness</pre>
     </p>
     <div class="grid3">
       <article class="lane lane--fast">
-        <h3>Fast lane</h3>
+        <h3>The fix lane</h3>
         <p class="role">No ticket · ask and it ships</p>
         <p>
           A small fix needs no command and no ticket. It still runs on its own branch, in its own
@@ -287,7 +291,7 @@ Codex: ask to initialize Harness</pre>
         <p>
           A change spec lives on the tracker issue and is built end to end by one command. The reviewer
           is a separate agent in a fresh context, and its verdict binds to the exact git tree it read —
-          the tree that ships must be that tree.
+          what ships is that tree, or a merge git alone made from it.
         </p>
         <ol class="steps"><li><span>spec</span></li><li><span>build</span></li><li><span>gate</span></li><li><span>review</span></li><li><span>ship</span></li></ol>
       </article>
@@ -321,7 +325,7 @@ Codex: ask to initialize Harness</pre>
         </p>
         <ul class="stages">
           <li>ruff</li><li>mypy</li><li>pytest + coverage floor</li><li>design-token drift</li>
-          <li>codex drift</li><li>marker write</li>
+          <li>marker write</li>
         </ul>
       </div>
       <div class="marker">
@@ -340,30 +344,31 @@ Codex: ask to initialize Harness</pre>
   <section class="section" id="surface">
     <h2>What the plugin installs</h2>
     <p class="lede">
-      The whole surface, as the repository carries it. Claude exposes lifecycle commands and agents;
-      Codex carries matching portable skills. Craft skills supply the depth, and hooks enforce the gate.
+      The whole surface, as the repository carries it. Both hosts read the same
+      <code>skills/</code> — the nine lifecycle workflows and the craft skills behind them — and hooks
+      enforce the gate.
     </p>
 
     <div class="grid2">
       <article class="card inv inv--commands">
-        <h3>Commands <span class="n">9</span></h3>
-        <p>Claude's entry points. Codex exposes the same workflows through <code>command-*</code> skills.</p>
+        <h3>Workflows <span class="n">9</span></h3>
+        <p>The entry points, on both hosts. Each ships once, as a skill; seven are operator-triggered only, and <code>/build</code> and <code>/review</code> stay model-invocable because the workflows compose.</p>
         <ul class="units">
-          <li class="unit" data-unit="command:build"><code>/build</code><span>Implement, verify, review, and ship a ticket — the one lifecycle driver.</span></li>
-          <li class="unit" data-unit="command:capture"><code>/capture</code><span>File an already-decided change straight to Todo.</span></li>
-          <li class="unit" data-unit="command:propose"><code>/propose</code><span>Work an idea before it becomes work; accepted proposals spawn tickets.</span></li>
-          <li class="unit" data-unit="command:review"><code>/review</code><span>Review the current branch, when a branch needs only that.</span></li>
-          <li class="unit" data-unit="command:routine"><code>/routine</code><span>One unattended cycle: discover the next ticket, build it, ship it.</span></li>
-          <li class="unit" data-unit="command:promote"><code>/promote</code><span>Move completed work toward release along the repo's role branches.</span></li>
-          <li class="unit" data-unit="command:digest"><code>/digest</code><span>The operator's console: report, then drain held decisions.</span></li>
-          <li class="unit" data-unit="command:assess"><code>/assess</code><span>Run a periodic whole-system health assessment.</span></li>
-          <li class="unit" data-unit="command:init"><code>/harness:init</code><span>Hydrate a repo — the one command that needs its prefix.</span></li>
+          <li class="unit" data-unit="skill:build"><code>/build</code><span>Implement, verify, review, and ship a ticket — the one lifecycle driver.</span></li>
+          <li class="unit" data-unit="skill:capture"><code>/capture</code><span>File an already-decided change straight to Todo.</span></li>
+          <li class="unit" data-unit="skill:propose"><code>/propose</code><span>Work an idea before it becomes work; accepted proposals spawn tickets.</span></li>
+          <li class="unit" data-unit="skill:review"><code>/review</code><span>Review the current branch, when a branch needs only that.</span></li>
+          <li class="unit" data-unit="skill:routine"><code>/routine</code><span>One unattended cycle: discover the next ticket, build it, ship it.</span></li>
+          <li class="unit" data-unit="skill:promote"><code>/promote</code><span>Move completed work toward release along the repo's role branches.</span></li>
+          <li class="unit" data-unit="skill:digest"><code>/digest</code><span>The operator's console: report, then drain held decisions.</span></li>
+          <li class="unit" data-unit="skill:assess"><code>/assess</code><span>Run a periodic whole-system health assessment.</span></li>
+          <li class="unit" data-unit="skill:init"><code>/harness:init</code><span>Hydrate a repo — the one command that needs its prefix.</span></li>
         </ul>
       </article>
 
       <article class="card inv inv--agents">
         <h3>Agents <span class="n">4</span></h3>
-        <p>Claude's roles. Codex carries the same procedures through <code>agent-*</code> skills.</p>
+        <p>Claude's roles. Codex dispatches the same four through its native adapters in <code>.codex/agents/</code>.</p>
         <ul class="units">
           <li class="unit" data-unit="agent:dev"><code>dev</code><span>Implementation — test-first, strictly in scope, verified before handoff.</span></li>
           <li class="unit" data-unit="agent:reviewer"><code>reviewer</code><span>The final gate before merge; records what actually shipped on PASS.</span></li>
@@ -371,13 +376,14 @@ Codex: ask to initialize Harness</pre>
           <li class="unit" data-unit="agent:steward"><code>steward</code><span>Periodic health assessment: the cross-file patterns no per-change review sees.</span></li>
         </ul>
 
-        <h3 style="margin-top:22px">Hooks <span class="n">5</span></h3>
-        <p>Three refuse, two advise. What a refusal rests on is evidence — a gate marker over the
+        <h3 style="margin-top:22px">Hooks <span class="n">6</span></h3>
+        <p>Four refuse, two advise. What a refusal rests on is evidence — a gate marker over the
           worked or pushed tree, or the shape of the command itself — never a branch name granting an
           exemption.</p>
         <ul class="units">
+          <li class="unit" data-unit="hook:test-lock-guard"><code>test-lock-guard</code><span>Refuses an edit to a test file while a run has declared its tests locked.<span class="verdict verdict--refuses">refuses</span></span></li>
           <li class="unit" data-unit="hook:gate-evidence-guard"><code>gate-evidence-guard</code><span>Refuses ending a turn that claims completion with no fresh marker over the worked tree.<span class="verdict verdict--refuses">refuses</span></span></li>
-          <li class="unit" data-unit="hook:push-target-guard"><code>push-target-guard</code><span>Refuses a push to a protected branch unless a fresh marker covers the pushed tree.<span class="verdict verdict--refuses">refuses</span></span></li>
+          <li class="unit" data-unit="hook:push-target-guard"><code>push-target-guard</code><span>Refuses a push to a protected branch unless a fresh marker covers the pushed tree, or git alone made it from one that is covered.<span class="verdict verdict--refuses">refuses</span></span></li>
           <li class="unit" data-unit="hook:git-push-guard"><code>git-push-guard</code><span>Refuses a history rewrite — <code>--force</code> in any spelling.<span class="verdict verdict--refuses">refuses</span></span></li>
           <li class="unit" data-unit="hook:prompt-guard"><code>prompt-guard</code><span>Flags injection-shaped content on write.<span class="verdict verdict--advises">advises</span></span></li>
           <li class="unit" data-unit="hook:workflow-guard"><code>workflow-guard</code><span>Flags a source edit made on the default branch or outside a worktree.<span class="verdict verdict--advises">advises</span></span></li>
@@ -386,8 +392,8 @@ Codex: ask to initialize Harness</pre>
     </div>
 
     <article class="card inv inv--skills" style="margin-top:20px">
-      <h3>Skills <span class="n">28</span></h3>
-      <p>Loaded by task, not all at once. Fifteen craft skills are shared directly; Codex also receives nine command workflows and four role procedures as portable skills.</p>
+      <h3>Craft skills <span class="n">15</span></h3>
+      <p>Loaded by task, not all at once — 15 of them, alongside the nine workflows above. Both hosts read the same files.</p>
       <ul class="units units--two">
         <li class="unit" data-unit="skill:engineering"><code>engineering</code><span>The build leg of the triad: durable principles, test-first method, scope, the gate.</span></li>
         <li class="unit" data-unit="skill:architecture"><code>architecture</code><span>The design leg: cross-cutting decisions, recorded in the spec they govern.</span></li>
@@ -404,19 +410,6 @@ Codex: ask to initialize Harness</pre>
         <li class="unit" data-unit="skill:writing-quality"><code>writing-quality</code><span>Plain prose; kill the predictable AI-writing patterns.</span></li>
         <li class="unit" data-unit="skill:github-issues"><code>github-issues</code><span>The GitHub provider recipes for reading and updating the queue.</span></li>
         <li class="unit" data-unit="skill:linear"><code>linear</code><span>The Linear provider recipes for the same backend-neutral contract.</span></li>
-        <li class="unit" data-unit="skill:command-assess"><code>command-assess</code><span>The Codex-native periodic assessment workflow.</span></li>
-        <li class="unit" data-unit="skill:command-build"><code>command-build</code><span>The Codex-native ticket build, review, and ship workflow.</span></li>
-        <li class="unit" data-unit="skill:command-capture"><code>command-capture</code><span>The Codex-native workflow for filing decided work.</span></li>
-        <li class="unit" data-unit="skill:command-digest"><code>command-digest</code><span>The Codex-native operator report and decision drain.</span></li>
-        <li class="unit" data-unit="skill:command-init"><code>command-init</code><span>The Codex-native repository hydration workflow.</span></li>
-        <li class="unit" data-unit="skill:command-promote"><code>command-promote</code><span>The Codex-native promotion workflow.</span></li>
-        <li class="unit" data-unit="skill:command-propose"><code>command-propose</code><span>The Codex-native proposal workflow.</span></li>
-        <li class="unit" data-unit="skill:command-review"><code>command-review</code><span>The Codex-native branch review workflow.</span></li>
-        <li class="unit" data-unit="skill:command-routine"><code>command-routine</code><span>The Codex-native unattended build cycle.</span></li>
-        <li class="unit" data-unit="skill:agent-architect"><code>agent-architect</code><span>The architect role procedure packaged for Codex.</span></li>
-        <li class="unit" data-unit="skill:agent-dev"><code>agent-dev</code><span>The implementation role procedure packaged for Codex.</span></li>
-        <li class="unit" data-unit="skill:agent-reviewer"><code>agent-reviewer</code><span>The independent reviewer procedure packaged for Codex.</span></li>
-        <li class="unit" data-unit="skill:agent-steward"><code>agent-steward</code><span>The whole-system assessment role packaged for Codex.</span></li>
       </ul>
     </article>
   </section>
@@ -438,7 +431,7 @@ Codex: ask to initialize Harness</pre>
         <h3>No runtime, nothing to install</h3>
         <p>
           There is no CLI and no service behind any of this. Python here is tooling only — the gate, the
-          token generator, the Codex compile step, the mutation instrument. Work moves
+          token generator, the mutation instrument. Work moves
           <code>dev → main</code>, and what lands on release is exactly the tree that was gated.
         </p>
       </article>
@@ -452,7 +445,7 @@ Codex: ask to initialize Harness</pre>
       The README is the canonical text; this page is its visual companion.
     </p>
     <p>
-      Every command, skill, agent, and hook named above is checked against the repository's own tracked
+      Every skill, agent, and hook named above is checked against the repository's own tracked
       tree by the gate — a name that stops resolving turns this page red before it reaches a reader.
     </p>
   </footer>

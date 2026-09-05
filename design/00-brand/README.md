@@ -27,7 +27,7 @@ behind it to theme, no tenant to re-skin, and no second screen.
    surface — not a pitch. A claim the page can't back with something real (a
    command, a file, a test) doesn't belong on it.
    `tests/unit/test_landing_page_inventory.py` holds the inventory half of
-   that rule mechanically: every command, skill, agent, and hook the page
+   that rule mechanically: every skill, agent, and hook the page
    names must be a unit the tracked tree carries, and every unit the tree
    carries must be named. The rest of the page's prose is unguarded and rests
    on this rule alone (#482).
@@ -43,8 +43,8 @@ behind it to theme, no tenant to re-skin, and no second screen.
 
    | Token family | Domain it marks | Where it appears |
    |---|---|---|
-   | `--build` | the gate and its evidence | the gate panel, its stage list, the fast lane, the no-runtime card |
-   | `--product` | the guidance surface | the spine card, the install steps, the commands and skills inventories, the ticket lane |
+   | `--build` | the gate and its evidence | the gate panel, its stage list, the fix lane, the no-runtime card |
+   | `--product` | the guidance surface | the spine card, the install steps, the workflow and skill inventories, the ticket lane |
    | `--strategy` | roles and deciding | the agents inventory, the proposal lane, the builder-≠-recorder card |
    | `--quality` | enforcement and health | the hooks inventory, the refuses badge, the dogfood card |
 
@@ -82,7 +82,7 @@ Held against any change to `docs/index.html`:
 - [ ] No new external resource request is introduced (fonts, scripts,
       images, iframes). Nothing enforces this — check it by reading the diff
       (rule 4).
-- [ ] Every skill, agent, command and hook the page names carries its
+- [ ] Every skill, agent and hook the page names carries its
       `data-unit` tag and resolves against the tracked tree
       (`tests/unit/test_landing_page_inventory.py`), and the surrounding
       counts were re-derived, not carried over.
