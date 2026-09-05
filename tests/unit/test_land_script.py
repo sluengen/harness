@@ -7,12 +7,17 @@ and these tests are the three cases plus the refusals.
 
 Two properties are load-bearing and are asserted here rather than described:
 
-* **It never pushes.** The script runs as one Bash command, so a push it made
-  internally would be invisible to `hooks/push-target-guard.js` — it would become
-  the way around the guard it exists to satisfy. Every verb prints the push for
-  the agent to run through the tool the hook can see, and
-  :func:`test_no_verb_ever_pushes` measures that with a git shim rather than
-  trusting the source.
+* **It never pushes a branch.** The script runs as one Bash command, so a branch
+  push it made internally would be invisible to `hooks/push-target-guard.js` — it
+  would become the way around the guard it exists to satisfy. `plan` and `finish`
+  print the push for the agent to run through the tool the hook can see. `done`
+  does push, and only `refs/harness/*`: a gate record and the green pointer,
+  neither of which moves a branch or authorises anything. So the invariant is
+  *no verb pushes a branch*, and :func:`test_no_verb_pushes_a_branch` measures it
+  over **every** verb with a git shim rather than trusting the source. The
+  absolute this sentence used to state was the stronger claim and the weaker
+  check: it left `done` — the one verb that reaches a remote — outside the guard
+  that named it.
 * **It never runs the gate.** Law 3 obliges the agent to run the gate and read
   its output; a script that swallowed the run would take the reading with it.
 
@@ -272,7 +277,7 @@ def test_an_unknown_subcommand_is_a_usage_error(repo: Path) -> None:
     assert code == 64, stderr
 
 
-# --- it never pushes, and never gates ----------------------------------------
+# --- it never pushes a branch, and never gates --------------------------------
 
 
 def test_no_verb_pushes_a_branch(repo: Path, tmp_path: Path) -> None:

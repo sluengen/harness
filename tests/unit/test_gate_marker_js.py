@@ -529,7 +529,8 @@ def test_writing_a_marker_before_the_first_commit_records_what_it_can(tmp_path: 
     green over it and still leave evidence.
 
     The commit and branch fields degrade to empty rather than failing the write:
-    they are diagnostics for a human reading the file, and no hook reads the body.
+    they are diagnostics for a human reading the file, and no hook reads *these*
+    fields — the one field a hook does read is `scope`, and it is absent here.
     Losing the whole marker over a field nobody consults would fail the gate
     closed on the one shape where the tree is least ambiguous.
     """

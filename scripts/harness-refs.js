@@ -90,7 +90,12 @@ const CLAIM_TTL_ENV = "HARNESS_CLAIM_TTL_SECONDS";
 const DEFAULT_RECORD_WINDOW = 200;
 const RECORD_WINDOW_ENV = "HARNESS_RECORD_WINDOW";
 
-const OID = /^[0-9a-f]{40}$/;
+//: A full object id, in either hash. `hooks/push-target-guard.js` already accepts
+//: both when it validates a recomputed tree, and a namespace that accepted only
+//: sha1 would refuse every record and every pointer advance in a repository
+//: initialised with `--object-format=sha256` — silently, since a refused publish
+//: is by design never an error.
+const OID = /^([0-9a-f]{40}|[0-9a-f]{64})$/;
 const OUTCOMES = new Set(["green", "red"]);
 
 /** Percent-encode `value` into a single, flat ref component.
@@ -261,7 +266,7 @@ function pruneGateRecords(remote, cwd, keepTree) {
  * statement about bytes, and a statement about bytes has no clock in it.
  */
 function publishGateRecord(options, cwd) {
-  if (!OID.test(options.tree || "")) refuse("--tree must be a full 40-character object id");
+  if (!OID.test(options.tree || "")) refuse("--tree must be a full object id (40 or 64 hex characters)");
   if (!OUTCOMES.has(options.outcome || "")) refuse("--outcome must be `green` or `red`");
   if (gitOut(["cat-file", "-t", options.tree], cwd) !== "tree") {
     refuse(`this repository has no tree object ${options.tree}`);
@@ -304,7 +309,7 @@ function gateList(options, cwd) {
   if (found === null) refuse(`could not read ${options.remote}`);
   const records = {};
   for (const suffix of [...found.keys()].sort()) {
-    const match = /^([0-9a-f]{40})-(green|red)$/.exec(suffix);
+    const match = /^([0-9a-f]{40}|[0-9a-f]{64})-(green|red)$/.exec(suffix);
     if (match) records[match[1]] = match[2];
   }
   if (options.json) {
@@ -352,7 +357,7 @@ function greenRef(cwd, remote) {
 
 /** Move the green pointer to ``commit``. Prints nothing. */
 function advanceGreenPointer(options, cwd) {
-  if (!OID.test(options.commit || "")) refuse("--commit must be a full 40-character object id");
+  if (!OID.test(options.commit || "")) refuse("--commit must be a full object id (40 or 64 hex characters)");
   if (gitOut(["cat-file", "-t", options.commit], cwd) !== "commit") {
     refuse(`this repository has no commit object ${options.commit}`);
   }

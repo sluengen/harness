@@ -397,3 +397,41 @@ def test_the_repo_operand_names_the_checkout(tmp_path: Path, remote: Path, alpha
     _ok(alpha, "gate-publish", "--tree", tree, "--outcome", "green")
     listed = _ok(elsewhere, "gate-list", "--repo", str(alpha))
     assert f"{tree} green" in listed.splitlines(), listed
+
+
+def test_a_sha256_repository_can_publish_and_read_a_record(tmp_path: Path) -> None:
+    """Object ids are 40 hex or 64, and this namespace has to accept both.
+
+    `hooks/push-target-guard.js` already validates a recomputed tree against
+    either width. A records namespace that took only sha1 would refuse every
+    publish and every pointer advance in a `--object-format=sha256` repository —
+    and refuse them **silently**, because a publish that the remote declines is
+    by design never an error. Found by review rather than by use: this repo is
+    sha1, so nothing here would ever have exercised it.
+
+    Deliberately **not** conditional on the host. `--object-format=sha256` has
+    existed since git 2.29 and this branch already needs `git merge-tree
+    --write-tree` from 2.38, so a git new enough for the feature under test is
+    new enough for the fixture. A skip here would be the suite quietly running
+    less than it claims on exactly the hosts where the widened predicate matters.
+    """
+    bare = tmp_path / "origin.git"
+    subprocess.run(
+        ["git", "init", "-q", "--bare", "--object-format=sha256", str(bare)], check=True
+    )
+    root = tmp_path / "wide"
+    root.mkdir()
+    _git(root, "init", "-q", "--object-format=sha256", "--initial-branch=dev")
+    _git(root, "config", "user.email", "t@example.com")
+    _git(root, "config", "user.name", "t")
+    _git(root, "remote", "add", "origin", str(bare))
+    _declare(root)
+    head = _commit(root, "a.txt", "one\n")
+    _git(root, "push", "-q", "origin", "dev")
+
+    tree = _git(root, "rev-parse", "HEAD^{tree}")
+    assert len(tree) == 64, f"the fixture is not sha256: {tree}"
+    _ok(root, "gate-publish", "--tree", tree, "--outcome", "green")
+    assert f"{tree} green" in _ok(root, "gate-list").splitlines()
+    _ok(root, "green-advance", "--commit", head)
+    assert _ok(root, "green-read") == head

@@ -22,11 +22,12 @@ The principle boundary this draws, and the rule that decides for the next file:
 
 The module type is pinned by `scripts/package.json` (`{"type": "commonjs"}`), the same one-key mechanism and the same reasoning as `hooks/package.json`: Node resolves a `.js` file's type from the nearest `package.json` walking up, and in a consuming repo that walk otherwise terminates at a root the harness does not control.
 
-### Marker-emission boundary (amended by #507, #510, and #513)
+### Marker-emission boundary (amended by #507, #510, #513, and #539)
 
 `gate-marker.js` exposes no direct successful write command. Its public `run`
-subcommand accepts no operands and resolves its gate command only from
-`commands.verify`, read by the one shared reader `scripts/harness-config.js` out
+subcommand accepts no operands other than `--scope <path>` (amended by #539,
+which added the scoped re-gate; see the 2026-09-05 amendment below) and resolves
+its gate command only from `commands.verify`, read by the one shared reader `scripts/harness-config.js` out
 of the first source present: `harness.yaml`, then `AGENTS.md`, `CLAUDE.md`, and
 legacy `CONTEXT.md`, using `bash scripts/verify.sh` only when none exists
 (amended by #537, which moved the configuration out of the spine's prose).

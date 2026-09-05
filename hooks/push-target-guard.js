@@ -808,8 +808,11 @@ function mergeAcceptance(dir, move, pushedTree, marker, remote) {
   const authored = changed.split("\u0000").filter(Boolean);
   if (authored.length === 0) return null;
   if (marker === null) return MERGE_DENIALS.authored;
-  const scope = marker.scope === null ? null : marker.scope;
-  if (scope === null) return null;
+  // A list, always: :func:`verdict` returns before calling this whenever the
+  // pushed tree's marker is unscoped, so there is no null arm here to write. An
+  // arm for it would be unreachable, and an unreachable `return null` on an
+  // enforcement path is an allow nobody can test.
+  const scope = marker.scope;
   const uncovered = authored.find(
     (candidate) => !scope.some((entry) => candidate === entry || candidate.startsWith(`${entry}/`))
   );
