@@ -62,7 +62,7 @@ gh project item-edit --id <item-id> --field-id <status-field-id> \
 gh issue view <number> --repo <owner>/<name> --json labels
 ```
 
-`<level>` is the level the filer chose per `spec-authoring` → *Choosing assurance* — this recipe maps a value, it never selects one. `gh issue create` **errors when the label does not exist in the repo**, which is the correct fail-closed behaviour and is exactly the incomplete filing the spine's filing contract names: report the identifier and URL, say the filing is incomplete, and stop. Step 4 is what turns "the command exited zero" into evidence that exactly one assurance label is on the issue.
+`<level>` is the level the filer chose per `authoring` → *Choosing assurance* — this recipe maps a value, it never selects one. `gh issue create` **errors when the label does not exist in the repo**, which is the correct fail-closed behaviour and is exactly the incomplete filing the spine's filing contract names: report the identifier and URL, say the filing is incomplete, and stop. Step 4 is what turns "the command exited zero" into evidence that exactly one assurance label is on the issue.
 
 **Quote titles; pass bodies as `--body-file`.** Issue text is frequently lifted from a report, a review finding, or a design section, and may carry backticks, `$(…)`, or newlines. A heredoc of tracker-derived text interpolated into a shell command is a command-injection boundary — the same rule as never using `shell=True` with untrusted input.
 

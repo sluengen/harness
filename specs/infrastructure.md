@@ -5,7 +5,7 @@ last_updated: 2026-08-19
 
 # Infrastructure
 
-The operational reality of the harness — repository, CI, packaging, and the credentials a run needs. The source of truth when making a deployment or configuration decision. A **reference spec** (`spec-authoring`): update it when the infrastructure changes, not per task.
+The operational reality of the harness — repository, CI, packaging, and the credentials a run needs. The source of truth when making a deployment or configuration decision. A **reference spec** (`authoring`): update it when the infrastructure changes, not per task.
 
 The harness is self-hosted developer infrastructure: it has **no end-users and no product hosting**. It runs on a contributor's machine and in GitHub Actions CI. Its one public network surface is a **static documentation page** — the repo-guide (`docs/index.html`) served via GitHub Pages (see Hosting / services). Rows that do not apply are marked N/A rather than invented.
 

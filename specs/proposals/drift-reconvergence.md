@@ -67,7 +67,7 @@ The current rule is defended by the observation that re-binds find real defects.
 
 1. **Six of the seven are counts in an as-built record.** The single exception is #435's, and the **gate** is what caught it — the ledger records both as test failures the merge surfaced.
 2. **No re-bind in this ledger has ever produced a judgment about the change under review.** Not one. The stage is defended as a second look at the work; its entire recorded yield is re-measurement.
-3. **Both drift-caused findings violated a rule this repo already has.** `skills/spec-authoring/SKILL.md:106`, shipped by #470 on 2026-08-17, forbids a bare present-tense quantity in an as-built record. #484 shipped one **two days after the rule landed**. Base drift has been acting as that rule's enforcement mechanism by accident.
+3. **Both drift-caused findings violated a rule this repo already has.** `skills/authoring/SKILL.md:106`, shipped by #470 on 2026-08-17, forbids a bare present-tense quantity in an as-built record. #484 shipped one **two days after the rule landed**. Base drift has been acting as that rule's enforcement mechanism by accident.
 
 ### The tally that defends the stage cannot fail
 
@@ -125,7 +125,7 @@ Taken by the operator on this proposal; each is carried into the breakdown item 
 1. **Instrument reconcile-after-verdict.** Record each occurrence with its cause (disjoint drift / textual conflict / monotonic collision) and the elapsed certification window, so `λ` and `W` become readable. Nothing else here should be decided on assumptions. — `simple` Filed as [#515](https://github.com/sluengen/harness/issues/515) — **closed unbuilt 2026-08-28**, see *Amendments*.
 2. **A drift-fragility rule in `engineering` and `spec-authoring`.** Name the shared-insertion-point class (single-block changelog, version field, barrel file, migration ordinal) and require new work to avoid creating one. This is #267's lesson generalised from a fix into guidance. — `simple` Filed as [#516](https://github.com/sluengen/harness/issues/516).
 3. **The mechanically-licensed re-bind** (Option D). Rewrite the build workflow's drift rule to carry the four conditions and the fallback. (Written against the pre-#537 tree, when the workflow existed twice and a generator held the copies in step; it now ships once, at `skills/build/SKILL.md`.) — `simple` Filed as [#517](https://github.com/sluengen/harness/issues/517).
-4. **Enforce the present-tense-quantity rule that already exists.** `spec-authoring:106` (shipped by #470) forbids the exact class both drift-caused findings belong to, and #484 violated it two days later. Nothing checks it. Give it a guard, or a reviewer-side check on the record-writing path. This is not new policy — it is an unenforced rule doing no work. — `simple` Filed as [#518](https://github.com/sluengen/harness/issues/518) — **rewritten 2026-08-28**, see *Amendments*.
+4. **Enforce the present-tense-quantity rule that already exists.** `authoring:106` (shipped by #470) forbids the exact class both drift-caused findings belong to, and #484 violated it two days later. Nothing checks it. Give it a guard, or a reviewer-side check on the record-writing path. This is not new policy — it is an unenforced rule doing no work. — `simple` Filed as [#518](https://github.com/sluengen/harness/issues/518) — **rewritten 2026-08-28**, see *Amendments*.
 5. **Landing serialization** (Option B) — *conditional on item 1's measurement.* Spine `landing:` key, the acquire/hold/release discipline in `/build`'s ship stage, lease expiry, and the wedged-holder path. — `complex`
 
 Items 1–4 were filed as #515, #516, #517 and #518. **Item 5 was never filed** — per D1 it waited on item 1's instrument, and item 1 has since been closed unbuilt, which changes how item 5 would be decided. See *Amendments*.
@@ -166,7 +166,7 @@ What the retrospective route does not recover: **which** merges were post-verdic
 
 ### Item 4 (#518) — rewritten, then partly overturned
 
-Rewritten to cut `spec-authoring:106` from three remedies to one — *an as-built record carries no counts*, with a derived escape — on the grounds that a guard over this predicate is unavailable (ADR 0017 D5, iron law 2 as amended by `5bd1660`, and #511's measured cost of attempting one). That diagnosis is correct and is not disputed.
+Rewritten to cut `authoring:106` from three remedies to one — *an as-built record carries no counts*, with a derived escape — on the grounds that a guard over this predicate is unavailable (ADR 0017 D5, iron law 2 as amended by `5bd1660`, and #511's measured cost of attempting one). That diagnosis is correct and is not disputed.
 
 The rewrite named its own reversal condition: a load-bearing count in `specs/features/plugin-surface.md` that the derived escape cannot cover. **Two exist**, at `:144` and `:145` — the three sweep shapes named outside the craft file, and the process filing split *stated seven times*, the latter existing so the next editor knows how many places to keep in step. Neither is derived, and `:146` of the same document states that neither can be: *"No test holds the assessment guidance recorded above… That is D5 working as written, not an oversight."*
 
@@ -174,7 +174,7 @@ The rewrite named its own reversal condition: a load-bearing count in `specs/fea
 
 **Settled position: two remedies — anchor or derive.** Drop *restate as the invariant*, which no violation ever needed. An anchored count is drift-proof by construction, so this delivers what the rewrite wanted without deleting what no guard can reconstruct.
 
-One further correction, of the same shape the reviewer flagged in its own rationale: the rewrite moved from *no guard is possible* (supported) to *no enforcement point is needed* (not). Amended law 2 says guidance is verified **by using it** — an enforcement mode, not an absence. #470's rule was already clear and was violated two days after landing, so clarity was never the binding constraint. The reviewer writes the as-built record on PASS (`skills/spec-authoring/SKILL.md:100`), which is the non-guard enforcement point.
+One further correction, of the same shape the reviewer flagged in its own rationale: the rewrite moved from *no guard is possible* (supported) to *no enforcement point is needed* (not). Amended law 2 says guidance is verified **by using it** — an enforcement mode, not an absence. #470's rule was already clear and was violated two days after landing, so clarity was never the binding constraint. The reviewer writes the as-built record on PASS (`skills/authoring/SKILL.md:100`), which is the non-guard enforcement point.
 
 ### Item 3 (#517) — unchanged, better evidenced
 

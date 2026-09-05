@@ -1,10 +1,12 @@
 ---
-name: spec-authoring
-description: Use when writing or revising any spec — a proposal, a change spec (the ticket), or a feature/reference spec — including its design and the decisions behind it. The craft of the spec; the lifecycle it serves is the spine's contract (AGENTS.md).
+name: authoring
+description: Use when writing anything a downstream agent or person will read and act on — a proposal, a change spec or ticket body, a design hand-off, an as-built or reference spec, a decision record, a review report, a commit body, a handoff. Covers both the shape of the artefact and the prose it is written in: what each spec type must contain, how to ground it in current reality, how to choose its assurance lane, and how to state it plainly. Not for code, structured data, or deciding whether the work should happen — that is the spine's lifecycle.
 ---
-# Spec Authoring
+# Authoring
 
-How to write a spec that is actionable, consistent, and complete — including the **design** and the **decisions** behind it. Specs come in two families: **lifecycle specs** that flow with a task, and **reference specs** that document a standing part of the system. the spine (`AGENTS.md`) is the lifecycle; this is the craft.
+How to write anything a downstream agent reads and acts on, so that it is actionable, consistent, and complete. Most of that is specs — including the **design** and the **decisions** behind them — and specs come in two families: **lifecycle specs** that flow with a task, and **reference specs** that document a standing part of the system. The spine (`AGENTS.md`) is the lifecycle; this is the craft.
+
+The same discipline governs the artefacts that are not specs — a ticket body is a prompt, a design hand-off is a brief, an as-built record is a report — which is why #547 folded `writing-quality` in here as [`references/prose.md`](references/prose.md). **Load that reference immediately before writing any substantial prose,** whatever the artefact.
 
 ## Lifecycle specs — three moments in a task's life
 
@@ -28,7 +30,7 @@ Some specs are not tied to a task. They document a stable part of the system and
 - **Actionable.** A reader can act without asking — a decider can decide on a proposal, an implementer can build a change spec test-first.
 - **Design, not just acceptance.** State *how* it works, not only *what* the user can do: the data model, the interface/contract, the behaviour in scenarios. Acceptance criteria check the outcome; the design says how the outcome is produced. A spec with criteria but no design pushes the hard decisions onto the implementer mid-build, where they are made fastest and worst.
 - **Evidence-fit.** Each acceptance criterion names what it protects and states the appropriate evidence from ADR 0019. Specify RED then GREEN for executable behaviour and mechanically enforceable invariants; a runtime floor needs its declaration plus functional execution on every supported environment. Prose is reviewed or used directly, never converted into a predicate or wording guard.
-- **Honest prose.** No TBDs standing in for decisions, no hedging. Follow `writing-quality`.
+- **Honest prose.** No TBDs standing in for decisions, no hedging. Follow [`references/prose.md`](references/prose.md).
 - **Scaled to size.** A one-line bug fix is one line. Depth earns its place; do not pad.
 
 ## Decisions live in the spec they govern

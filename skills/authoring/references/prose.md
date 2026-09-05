@@ -1,10 +1,8 @@
----
-name: writing-quality
-description: Use when writing prose for the repo — specs, designs, decisions, copy, commit bodies, handoffs (not code or structured data). Load to eliminate predictable AI writing patterns and state things plainly.
----
-# Writing Quality
+# Prose
 
-Eliminate predictable AI writing patterns from prose: specs, designs, decisions, copy, commit bodies, handoffs. Not code or structured data.
+**Load this immediately before writing any substantial prose** — a spec, a design, a decision, a ticket body, a review report, a handoff, a commit body. It was `writing-quality`, a skill of its own, until #547 folded it into `authoring`: the same discipline governs every artefact this skill covers, and a second skill that had to be triggered separately fired only when somebody remembered it.
+
+Eliminate predictable AI writing patterns from prose. Not code or structured data.
 
 **Core rule:** make the minimum effective edit. Preserve the author's terminology, cadence, and useful edge. State the point and trust the reader. Cut a sentence that carries no decision, constraint, evidence, action, or necessary context. Prefer a specific fact to generic importance; replace universal claims with the actual scope.
 

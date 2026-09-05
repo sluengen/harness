@@ -5,7 +5,7 @@ last_updated: YYYY-MM-DD
 
 # Infrastructure
 
-The operational reality of this system — domains, hosting, services, accounts. The source of truth when making a deployment or configuration decision. A **reference spec** (`spec-authoring`): update it when the infrastructure changes, not per task.
+The operational reality of this system — domains, hosting, services, accounts. The source of truth when making a deployment or configuration decision. A **reference spec** (`authoring`): update it when the infrastructure changes, not per task.
 
 ## Domains
 

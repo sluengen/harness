@@ -5,7 +5,7 @@ last_updated: 2026-08-31  # ADR 0019: purpose precedes proof
 
 # Architecture Principles
 
-How this system is built — the technical principles that govern design *here*. They extend the universal `engineering` skill with this repo's specifics, and they are where **cross-cutting decisions** are recorded (`spec-authoring`, `architecture`). A **reference spec**: update it when the architecture changes.
+How this system is built — the technical principles that govern design *here*. They extend the universal `engineering` skill with this repo's specifics, and they are where **cross-cutting decisions** are recorded (`authoring`, `architecture`). A **reference spec**: update it when the architecture changes.
 
 > Distinct from product principles (what we build and why). These define *how* we build it.
 

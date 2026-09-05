@@ -12,7 +12,7 @@ Usage: `/propose <idea>`
 
 **Tracker operations follow the spine's contract** (`AGENTS.md` → *Tracker dispatch* and *Filing*): the `tracker:` field names the backend, the matching provider skill (`github-issues` or `linear`) owns the API recipes, and `none` degrades to specs and session reports. Do not embed provider API calls here.
 
-Creates and works a **proposal spec** for an idea that is not yet confirmed work — it needs a decision, carries real unknowns, or is too big to be a single change. The proposal is where the thinking happens before build time is spent. Implements the proposal tier of `spec-authoring`.
+Creates and works a **proposal spec** for an idea that is not yet confirmed work — it needs a decision, carries real unknowns, or is too big to be a single change. The proposal is where the thinking happens before build time is spent. Implements the proposal tier of `authoring`.
 
 Use this when the idea is unconfirmed or large. A small, clear piece of work skips the proposal — `/capture` files it straight to Todo (and the smallest needs no ticket at all — the spine's fix lane).
 
@@ -22,15 +22,15 @@ Use this when the idea is unconfirmed or large. A small, clear piece of work ski
 Create `specs/proposals/<slug>.md` from `templates/proposal.md`. Slug from the idea.
 
 ### 2. Work it through
-Fill the proposal following `spec-authoring`:
+Fill the proposal following `authoring`:
 - Problem / motivation — why now.
 - Options with trade-offs — real alternatives, not one inevitable answer.
 - Recommendation — the proposed direction, tied to `engineering`.
-- Open decisions — what must be decided and by whom. Surface these to the user; a cross-cutting one is recorded in the architecture-principles spec, or in the repo's configured `paths.decisions` directory when it clears that bar (`spec-authoring`, `architecture`).
+- Open decisions — what must be decided and by whom. Surface these to the user; a cross-cutting one is recorded in the architecture-principles spec, or in the repo's configured `paths.decisions` directory when it clears that bar (`authoring`, `architecture`).
 - Breakdown — the change specs this would spawn, each shippable on its own.
 - Risks / unknowns.
 
-Write to the standard of `writing-quality`. Do not present an unresolved decision as settled.
+Write to the standard of `authoring` → *Prose*. Do not present an unresolved decision as settled.
 
 ### 3. Get a decision
 Bring the open decisions to the user. Set the proposal's `status` to the outcome:
@@ -40,7 +40,7 @@ Bring the open decisions to the user. Set the proposal's `status` to the outcome
 
 ### 4. On accepted, spin out the work
 - Record the decisions in the specs they govern (`architecture`, `templates/decision.md`).
-- Create an issue per item in the breakdown through the provider skill's `create` recipe — which sets queue placement explicitly, or the item is filed but invisible to the queue — each with a change spec (`templates/change.md`) and exactly one assurance level chosen per `spec-authoring` → *Choosing assurance*. Link them back to the proposal. Under `tracker: none` the breakdown stays in the proposal file and is reported to the operator.
+- Create an issue per item in the breakdown through the provider skill's `create` recipe — which sets queue placement explicitly, or the item is filed but invisible to the queue — each with a change spec (`templates/change.md`) and exactly one assurance level chosen per `authoring` → *Choosing assurance*. Link them back to the proposal. Under `tracker: none` the breakdown stays in the proposal file and is reported to the operator.
 
 ## Report
 Print the proposal path, its status, the open decisions (and how they resolved), any decisions recorded, and the issues created from the breakdown.

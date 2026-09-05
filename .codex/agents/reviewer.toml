@@ -52,7 +52,7 @@ A surface may not reach a second shipped ticket without an as-built record.
 Run the configured gate independently over that final candidate. Fix only an
 error introduced by your record edit; implementation failures return to the
 builder. Nothing may land after the certifying run. Immediately before writing
-a substantial review report, load `skills/writing-quality/SKILL.md`. Report a one-line verdict, the
+a substantial review report, load `skills/authoring/references/prose.md`. Report a one-line verdict, the
 mandate you reviewed under, one explicit item per test file in the diff,
 Stage 1 status per criterion, Stage 2 findings placed in the 2×2 with what/where/why/how,
 a **Proposals** section carrying every improvement the review proposes rather than

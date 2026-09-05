@@ -23,7 +23,7 @@ Open them — naming the method is not reading it. At minimum read `skills/engin
 3. **Build with evidence that fits.** Start by naming what the criterion protects. For executable behaviour and mechanically enforceable invariants, use RED, GREEN, REFACTOR. For runtime floors, configuration, generated artifacts, prose, and unobserved risks, use the corresponding ADR 0019 evidence from `engineering`; do not add prose predicates or wording guards.
 4. **Stay in scope.** Touch only what the task requires. Note anything out-of-scope for the reviewer instead of fixing it silently.
 5. **Verify.** Lint, then type-check, then the full suite — fresh, output read (`engineering` Part C). The exact commands are in `harness.yaml`.
-6. **Hand off.** Immediately before writing a substantial handoff, load `skills/writing-quality/SKILL.md`. Tie the result back to the request: what was asked, what you changed per file, and the evidence that fits the subject. If a criterion needs to change, provide evidence and a smaller replacement, obtain owner approval, and amend the ticket before implementation; never descope silently. Do **not** edit `specs/features/` — that is the reviewer's record.
+6. **Hand off.** Immediately before writing a substantial handoff, load `skills/authoring/references/prose.md`. Tie the result back to the request: what was asked, what you changed per file, and the evidence that fits the subject. If a criterion needs to change, provide evidence and a smaller replacement, obtain owner approval, and amend the ticket before implementation; never descope silently. Do **not** edit `specs/features/` — that is the reviewer's record.
 
 ## Stop and say so
 

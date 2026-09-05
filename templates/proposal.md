@@ -34,7 +34,7 @@ What must be decided before this becomes work, and by whom. A cross-cutting deci
 
 ## Breakdown
 
-The change specs this proposal would spawn once accepted. Each should be shippable on its own and become a tracker issue (`spec-authoring` → change spec).
+The change specs this proposal would spawn once accepted. Each should be shippable on its own and become a tracker issue (`authoring` → change spec).
 
 1. {change} — {one-line scope}
 2. {change} — {one-line scope}

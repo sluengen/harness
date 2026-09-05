@@ -57,7 +57,7 @@ The rule's home in the installed surface is `skills/code-quality/SKILL.md` Part 
 
 ## Amendment (2026-08-17, #470)
 
-**What changed.** Nothing in the decision. Two figures this record states — 26 behaviour modules, 675 test node ids — were written without the predicate that produced them, so no reader could re-run the count or tell whether it had drifted. #470 turned that into a rule in `skills/spec-authoring/SKILL.md` → *Feature spec*: an as-built record does not state a present-tense quantity on its own. This amendment applies the rule to the record that motivated it.
+**What changed.** Nothing in the decision. Two figures this record states — 26 behaviour modules, 675 test node ids — were written without the predicate that produced them, so no reader could re-run the count or tell whether it had drifted. #470 turned that into a rule in `skills/authoring/SKILL.md` → *Feature spec*: an as-built record does not state a present-tense quantity on its own. This amendment applies the rule to the record that motivated it.
 
 **The derivation.** This record never said which predicate it counted with, so what follows is reconstructed rather than recovered: of thirteen definitions tried, one reproduces both figures over `tests/unit/` at `5194fb3` and the other twelve do not (measured 2026-08-17; the nearest misses were `subprocess.run` at 24/624, `import subprocess` at 23/614, and `scripts/` at 29/669).
 

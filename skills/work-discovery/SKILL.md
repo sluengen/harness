@@ -88,7 +88,7 @@ reaching for the next.
 
 A ticket is **wholly actionable** when an agent can start it cold and know what
 done looks like: the goal is stated, the acceptance criteria are checkable, and
-nothing it depends on is still open. Judge it against `spec-authoring` — a change
+nothing it depends on is still open. Judge it against `authoring` — a change
 spec needs problem, approach, and acceptance criteria.
 
 - If it **is** actionable, hand it to the routine's build surface.

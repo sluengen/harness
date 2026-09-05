@@ -14,7 +14,7 @@ Before designing a surface, read what already constrains it — wherever `harnes
 
 - **Brand & mission** — and the things the product is deliberately *not* (its anti-pillars).
 - **Audience & context of use** — who is this person, what are they feeling, on what device, first-time or power user.
-- **Voice & tone** — microcopy is part of the experience (`writing-quality` for the prose craft itself).
+- **Voice & tone** — microcopy is part of the experience (`authoring` → *Prose* for the prose craft itself).
 - **The design system's own UX principles** — they win over anything below.
 - **Tokens, primitives, patterns** — the materials you build with (`design-system` for the discipline of using them).
 
@@ -81,7 +81,7 @@ Run before presenting work. Fix failures before showing anything.
 - [ ] Loading state is appropriate — skeleton for content, inline for action feedback, never blocking mid-task.
 - [ ] Empty state is useful, not just "no data found".
 - [ ] The flow handles edge cases (0, 1, many, missing).
-- [ ] Copy is clear, specific, and actionable (`writing-quality`).
+- [ ] Copy is clear, specific, and actionable (`authoring` → *Prose*).
 - [ ] On mobile it feels right one-handed, not merely "fits".
 - [ ] Values come from tokens and primitives, not bespoke markup (`design-system`).
 
