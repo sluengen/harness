@@ -1,6 +1,7 @@
 ---
 name: authoring
 description: Use when writing anything a downstream agent or person will read and act on — a proposal, a change spec or ticket body, a design hand-off, an as-built or reference spec, a decision record, a review report, a commit body, a handoff. Covers both the shape of the artefact and the prose it is written in: what each spec type must contain, how to ground it in current reality, how to choose its assurance lane, and how to state it plainly. Not for code, structured data, or deciding whether the work should happen — that is the spine's lifecycle.
+model: inherit
 ---
 # Authoring
 

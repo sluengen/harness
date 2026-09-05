@@ -1,6 +1,7 @@
 ---
 name: worktree-isolation
 description: Use when starting any multi-commit task — set it up on its own branch in its own git worktree, never on the default branch. Load before making changes, so work is isolated, resumable, and the default branch stays clean.
+model: inherit
 ---
 # Worktree Isolation
 

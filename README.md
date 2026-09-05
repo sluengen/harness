@@ -3,7 +3,7 @@
 📖 **[Read the one-page guide →](https://sluengen.github.io/harness/)** — the operating model at a glance. (This README stays the canonical text; the page is its visual companion.)
 
 **A spec-driven development process for agent-driven repos, shipped natively for
-Claude Code and Codex**: nine lifecycle workflows, the craft skills behind them, four agent
+Claude Code and Codex**: nine lifecycle workflows, the craft skills behind them, five agent
 roles, and enforcement hooks that make a green gate the only path to a shared
 branch.
 

@@ -1,6 +1,8 @@
 ---
 name: build
 description: "/build — implement, verify, review, and ship a ticket. Use when the operator invokes `/build` or asks to run that workflow. Invoked by the operator, and reachable by the model: `/routine` drives `/build`, and `/build` drives the review stage, so `disable-model-invocation` is deliberately not set here — it would break that composition (#537 AC-7)."
+model: inherit
+effort: high
 ---
 
 The portable plugin root is two directories above this SKILL.md. Resolve embedded paths beginning `skills/`, `agents/`, `templates/`, `hooks/`, or `.codex/` from that root; resolve repository artifacts from the workspace root.
@@ -53,7 +55,7 @@ Stage order is normative. The `authority` field names the system allowed to act 
   authority: tracker
 <!-- harness:build-lifecycle:end -->
 
-- Transition to In Review, then `git add -A && git write-tree` → `reviewed_tree`. Launch a **fresh reviewer per cycle** under `review-discipline`'s scoped mandate, with the packet and never this conversation. **The fix lane has none** — the gate and the push guard are its whole assurance (D2).
+- Transition to In Review, then `git add -A && git write-tree` → `reviewed_tree`. Launch a **fresh reviewer per cycle** under `review-discipline`'s scoped mandate, with the packet and never this conversation. **The lane picks which reviewer definition to dispatch** — `reviewer` in the change lane, `reviewer-feature` in the feature lane; the two carry the same mandate and differ in the model and effort their frontmatter sets, so the lane buys depth through the runtime rather than through prose an agent may not honour (ADR 0005). **The fix lane has none** — the gate and the push guard are its whole assurance (D2).
 - With no findings, the reviewer — never the builder — writes the as-built record into the candidate and reports **Ready for final binding**. That is an intermediate state, not a fourth verdict. The record is owed on a documented-behaviour change in any lane, or a deferral names why (D7).
 - Reconcile immediately before final binding: [`references/reconcile.md`](references/reconcile.md). A changed tree returns the delta to the reviewer and inherits no marker, identity or verdict.
 - Stage, capture `reviewed_tree`, run the complete verify command over that exact tree, and read all of it. Non-zero is a finding. The reviewer issues PASS over that tree only; PASS over any other tree is FAIL.

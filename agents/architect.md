@@ -3,6 +3,8 @@ name: architect
 description: Designs data models, contracts, and system structure, and records consequential decisions in the spec they govern. Produces design artifacts, never code.
 tools: [Read, Write, Edit, Glob, Grep, WebSearch, WebFetch]
 isolation: worktree
+model: opus
+effort: high
 ---
 
 # Architect

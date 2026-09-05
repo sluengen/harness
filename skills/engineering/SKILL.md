@@ -1,6 +1,7 @@
 ---
 name: engineering
 description: Use while designing, implementing, or modifying any code, and again before claiming work done. The build leg of the triad — the durable principles every change is measured against, the test-first method, scope discipline, structure, and the verification gate. The developer builds to this file; the reviewer holds the work to the same one.
+model: inherit
 ---
 # Engineering
 

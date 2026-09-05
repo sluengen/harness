@@ -1,8 +1,7 @@
 ---
 name: tracker
 description: "Use whenever a run reads or writes a ticket — opening one, filing one with its lane, dependencies and priority, moving its state, placing it in Todo, holding it for a human, pulling the queue or the held pile, closing it, or appending to the improvement ledger. One set of ticket semantics over whichever backend harness.yaml declares; the recipes for that backend are this skill's references. Not for deciding whether work should exist or which lane it takes — that is the spine's lifecycle and `authoring`."
-model: haiku
-effort: low
+model: inherit
 ---
 # Tracker
 

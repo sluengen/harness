@@ -186,7 +186,7 @@
     <ul class="counts">
       <li><b>9</b> workflows</li>
       <li><b>16</b> skills</li>
-      <li><b>4</b> agents</li>
+      <li><b>5</b> agents</li>
       <li><b>6</b> hooks</li>
       <li><b>1</b> gate</li>
     </ul>
@@ -367,11 +367,12 @@ Codex: ask to initialize Harness</pre>
       </article>
 
       <article class="card inv inv--agents">
-        <h3>Agents <span class="n">4</span></h3>
+        <h3>Agents <span class="n">5</span></h3>
         <p>Claude's roles. Codex dispatches the same four through its native adapters in <code>.codex/agents/</code>.</p>
         <ul class="units">
           <li class="unit" data-unit="agent:dev"><code>dev</code><span>Implementation — test-first, strictly in scope, verified before handoff.</span></li>
           <li class="unit" data-unit="agent:reviewer"><code>reviewer</code><span>The final gate before merge; records what actually shipped on PASS.</span></li>
+        <li class="unit" data-unit="agent:reviewer-feature"><code>reviewer-feature</code><span>The same reviewer at feature-lane depth: the lane picks the definition, the frontmatter sets the cost.</span></li>
           <li class="unit" data-unit="agent:architect"><code>architect</code><span>Data models, contracts, decisions — design artifacts, never code.</span></li>
           <li class="unit" data-unit="agent:steward"><code>steward</code><span>Periodic health assessment: the cross-file patterns no per-change review sees.</span></li>
         </ul>

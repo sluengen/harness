@@ -2,6 +2,8 @@
 name: digest
 description: "/digest — the operator's console: report, then drain. Use when the operator invokes `/digest` or asks to run that workflow. Operator-triggered only; the model does not fire it."
 disable-model-invocation: true
+model: inherit
+effort: medium
 ---
 
 The portable plugin root is two directories above this SKILL.md. Resolve embedded paths beginning `skills/`, `agents/`, `templates/`, `hooks/`, or `.codex/` from that root; resolve repository artifacts from the workspace root.
