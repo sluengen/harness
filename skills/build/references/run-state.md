@@ -21,7 +21,7 @@ so it never reaches the tree the verdict binds to.
 | `tests_locked` | boolean | strictly boolean. `false` at set-up, `true` in the same write that sets `stage: "implement"` |
 | `base_commit` | string | the commit the worktree branched from. The test lock asks this tree whether a test file is new |
 | `reviewed_tree` | string \| null | tree oid |
-| `gate_marker_tree` | string \| null | the tree the last read marker named |
+| `gate_marker_tree` | string \| null | the tree the last read marker named. The marker itself is the gate's, at the path the spine's *binding* contract gives; this field caches which tree it named and never stands in for reading it |
 | `verdict` | string \| null | `PASS` \| `FAIL` \| `DEFER` — transcribed from the reviewer's report, never authored |
 | `review_cycles` | integer | cycles **spent**, against `loop.max_review_cycles` |
 | `engine` | string | `claude` \| `codex` |
@@ -85,7 +85,7 @@ inventing a second one.
 | `implement` | rewrite `tests_locked: true` before the first edit — a resume re-arms, never assumes |
 | `in_review` `substantive_review` `delta_review` | on a tree match, launch the next cycle's fresh reviewer; on a mismatch, discard and restart substantive review |
 | `reconcile` | never resume mid-merge: `git merge --abort`, redo from the current tip, and the redo spends one of the two attempts |
-| `full_gate` | re-run the gate unless a fresh marker names the current tree |
+| `full_gate` | reachable only when the tree still equals `reviewed_tree` — a mismatch has already sent the run back to `substantive_review` by the rule above. From there, re-run the gate unless a fresh marker names the current tree |
 | `pass` | trust the verdict only on a tree match |
 | `tree_compare` `push` | check whether the push already landed (`git ls-remote`) before pushing again — the crash may have been *after* it succeeded |
 | `tracker_done` `reflect` `cleanup` | every step is idempotent by re-reading, never by assuming |

@@ -61,6 +61,12 @@ dropped:
   ticket has the authority to build it — but it does not stay silent either,
   because the whole value of an andon signal is that it reaches whoever is
   about to add work beside it.
+- **The cord still has to be actionable, and a cord that is not does not
+  release the line.** Judge it by Actionability below like any other pick. But
+  where an ordinary ticket that cannot be actioned is deferred and the loop
+  moves on to the next candidate, this one is deferred **and the tick stops** —
+  falling through to other work is the one thing a stopped line forbids, and it
+  is how an andon rule quietly becomes a ranking tweak.
 
 ## Ranking — pick the next most logical ticket
 
