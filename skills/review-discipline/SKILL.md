@@ -8,6 +8,42 @@ How to review any artifact (code, spec, design, copy) for spec compliance and qu
 
 The standards the reviewer applies are not separate from the ones the builder built to: structure, scope, and verification come from `engineering`; design values come from `engineering`. This file is the *method* and the *bar*, in one place, so the two sides cannot drift.
 
+## The mandate — what a review is for, and what it is not
+
+A review answers four questions and no others:
+
+1. **Is it correct?**
+2. **Does it meet the stated criteria?** — as they stand on the ticket now.
+3. **Does it cheat?** — the four categories below, which is the one thing a review is uniquely able to see.
+4. **Is every diff to a test file justified?** — one explicit item per test file, named, with the property that moved. Silence on a test file is not a pass.
+
+**A review does not hunt for improvements.** A reviewer prompted to find gaps
+reports some even when the work is sound, and every one it reports enlarges the
+diff, spends a cycle, and moves the finish line. The 2×2 below still routes an
+improvement the review *trips over* — that channel is not closed, and it never
+files anything — but going looking is out of scope, and a report padded with
+could-be-betters is a failure of this mandate rather than thoroughness.
+
+### The four cheat categories
+
+Measured across agent coding studies, these are how a green result gets
+manufactured. Check each against the diff by name:
+
+- **Modified tests** — a test changed so the implementation passes it. Over 79% of measured cheating is this one directly, which is why the spine's law 7 and the test-lock hook exist and why every test-file diff owes an item.
+- **Overloaded comparisons** — an assertion widened until it cannot fail: an equality relaxed to a membership, a bound relaxed to a truthiness, an exception swallowed by the assertion that was supposed to catch it.
+- **Hidden state** — a value smuggled past the interface under test: a global, a cached module, a fixture mutated by the code it exercises, an environment variable the test sets and the code reads.
+- **Special-cased inputs** — the implementation recognising the test's own data. A branch on a sentinel value, a literal from the fixture appearing in the source, a lookup table whose keys are the test cases.
+
+### Review-or-repair
+
+A finding that is **small, contained, and in scope** the reviewer repairs in
+place rather than returning — the builder's context is gone, and a round trip
+for a two-line fix is pure waiting. But a reviewer that repairs has reviewed its
+own work, so **a repaired candidate goes to a second fresh reviewer, and that
+one may certify only if it makes no repair of its own.** Repair, hand over,
+repeat; certification belongs to a reviewer that changed nothing. Anything not
+small, not contained, or out of scope goes back through the 2×2 unchanged.
+
 ## Two stages, in order
 
 Stage 1 must pass before Stage 2 begins. Quality is irrelevant if the artifact does not do what was asked.
@@ -99,10 +135,10 @@ Every entry point reads this list. No command, agent or report may act on a word
 ## Reviewer obligations
 
 - **Run the verification yourself.** Do not trust the builder's claim that tests pass. Fresh run, read the output (`engineering` → *Verification*).
-- **Record reality on PASS — the as-built-record gate.** When the diff touches a **user-facing surface** (a screen, route, endpoint, CLI command, or any behaviour the as-built record documents — matched from the changed paths the same way the *Architecture watchlist* reads `git diff --name-only`), the review must either fold the matching **as-built-record** update into this change or record an **explicit deferral naming the reason**. A shipped behaviour change to such a surface with **neither** a record update **nor** a recorded deferral is a **FAIL** — the canonical record silently rots otherwise, a drift no later per-change reviewer catches because no future change re-touches the gap. The as-built record is `specs/features/<feature>.md` where the `feature_specs` layer is on, otherwise the design doc / `SPEC.md`; the same gate applies to it. Recording reality is the reviewer's job, not the builder's, written from what the diff actually does. When a surface's as-built record does not exist yet, the first ticket touching that surface creates it; a surface is not permitted to accumulate more than one shipped ticket without one — the record is where a gap between tickets becomes visible, and it cannot do that job retroactively (the spine (`AGENTS.md`)).
+- **Record reality on PASS — the as-built-record gate.** The trigger is a **documented-behaviour change, in any lane** (a screen, route, endpoint, CLI command, or any behaviour the as-built record documents — matched from the changed paths the same way the *Architecture watchlist* reads `git diff --name-only`), and the review must either fold the matching **as-built-record** update into this change or record an **explicit deferral naming the reason**. The feature lane always reaches it, because a feature changes documented behaviour by definition; the fix lane never should, and a fix whose diff does reach it is not a fix — upgrade the lane rather than writing the record under it (D7). The record states no bare count: a figure names the commit it was measured at, or a guard derives it, or the record restates the invariant the number was evidence for. A shipped behaviour change to such a surface with **neither** a record update **nor** a recorded deferral is a **FAIL** — the canonical record silently rots otherwise, a drift no later per-change reviewer catches because no future change re-touches the gap. The as-built record is `specs/features/<feature>.md` where the `feature_specs` layer is on, otherwise the design doc / `SPEC.md`; the same gate applies to it. Recording reality is the reviewer's job, not the builder's, written from what the diff actually does. When a surface's as-built record does not exist yet, the first ticket touching that surface creates it; a surface is not permitted to accumulate more than one shipped ticket without one — the record is where a gap between tickets becomes visible, and it cannot do that job retroactively (the spine (`AGENTS.md`)).
 - **Sweep for twins — whatever is derived from, or is a copy of, what changed.** A mechanism in this tree often has a **twin**: a template shipped to consuming repos, a byte-identical mirror of a canonical document, a hook and the guard that measures it, a rule and the reference that renders its shape. When the diff changes such a mechanism, the twin is updated in the **same branch**, or the review records an explicit deferral naming the reason. Derive the question from the changed paths — what else in this tree is generated from, restates, or measures the thing that moved — rather than waiting to be told a twin exists. A stale twin ships green by construction: every guard over the original still passes, and the copy the next reader reaches is the one describing the behaviour that was retired.
 - **Close the candidate before you certify it — the final-evidence ordering rule.** The tree you verify and the tree your verdict covers are the tree that merges. So the as-built-record update goes **into the candidate first**: draft it from the diff, commit it onto the branch, and only then run the verify gate and decide. Nothing lands after that — a later commit, documentation included, is uncertified tree content and voids the pass. Order it the other way and the record edit is never gate-checked, which matters because a record is delivered tree content that a link, generated-doc, or drift guard can reject. Two consequences worth stating: on a **FAIL** there is nothing settled to record, so no record work is done — it is drafted fresh from the *next* diff; and when the certifying gate goes red **because of your own record edit**, you wrote it, so you fix it and re-run (bounded — two attempts, then FAIL carrying the gate output), never the implementation, which would make you the builder. A **deferral** is ordering-neutral: it lands in the report and the ticket, not the tree. **The verdict binds to a tree, not a commit.** The spine's contract states that equality once and this is the ordering that delivers it: report the `reviewed_tree`, git's tree object for the certified candidate (`git write-tree` prints it over a staged tree), and the flow that ships integrates only while the tree at HEAD still equals it. That is the object the gate's own evidence is named after, so an amend rewriting no bytes voids nothing. A report may also name the commit sha for a human reader; the shipping equality is tree to tree.
-- **Report:** a one-line verdict, Stage 1 result per criterion, Stage 2 findings each placed in the 2×2 (blocking or not, small or large) with the four parts and what happened to it (fixed / proposed / filed / FAIL), a **Proposals** section carrying every improvement this review proposes — one line each with its case, or the word `none`, never an omitted section, and each one also appended to the proposals ledger — the verification output, the `reviewed_tree` the verdict binds to, **whether visual evidence was consulted**, and a final PASS / FAIL / DEFER. The visual-evidence line reads `consulted`, naming the capture directory it read, or `not consulted` with exactly one reason: **not a user-facing change**, **not supplied**, or **not readable by this reviewer** (an engine with no image-returning read tool). A report that says nothing about visual evidence is incomplete, and a `not consulted` with no reason is that same silence wearing a label — neither is an answer.
+- **Report:** a one-line verdict, the **mandate** it was reviewed under, **one explicit item per test file in the diff** — the file, the property that moved, and why the change to it is justified, with the four cheat categories checked by name — Stage 1 result per criterion, Stage 2 findings each placed in the 2×2 (blocking or not, small or large) with the four parts and what happened to it (fixed / proposed / filed / FAIL), a **Proposals** section carrying every improvement this review proposes — one line each with its case, or the word `none`, never an omitted section, and each one also appended to the proposals ledger — the verification output, the `reviewed_tree` the verdict binds to, **whether visual evidence was consulted**, and a final PASS / FAIL / DEFER. The visual-evidence line reads `consulted`, naming the capture directory it read, or `not consulted` with exactly one reason: **not a user-facing change**, **not supplied**, or **not readable by this reviewer** (an engine with no image-returning read tool). A report that says nothing about visual evidence is incomplete, and a `not consulted` with no reason is that same silence wearing a label — neither is an answer.
 
 ## On a FAIL — the review→fix stop rule
 
