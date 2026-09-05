@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-17
-- **Source:** proposal `specs/proposals/plugin-shaped-guidance.md`; anchor ticket #481.
+- **Source:** proposal the `plugin-shaped-guidance` proposal (settled; removed from the tree by #547, kept in git history); anchor ticket #481.
 - **Amends:** [ADR 0003](0003-promotion-lifecycle.md) (branch topology becomes per-repo configuration). Retires the mechanism of [ADR 0004](0004-repo-guide-drift-guard.md)'s guidance-catalog guard (its data source, `registry.yaml`, is deleted; the design-token guard stands).
 
 ## Context

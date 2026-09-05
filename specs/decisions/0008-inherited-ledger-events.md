@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-30
-- **Source:** `specs/proposals/resume-earned-stages.md` (D1, D3)
+- **Source:** the `resume-earned-stages` proposal (settled; removed from the tree by #547, kept in git history) (D1, D3)
 
 ## Context
 

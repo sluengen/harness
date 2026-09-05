@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-03
-- **Source:** `specs/proposals/persistent-runtime-host.md`
+- **Source:** the `persistent-runtime-host` proposal (settled; removed from the tree by #547, kept in git history)
 
 ## Context
 

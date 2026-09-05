@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-16
-- **Source:** proposal `specs/proposals/local-promotion-steward.md` (Option C); CAL-1112.
+- **Source:** proposal the `local-promotion-steward` proposal (settled; removed from the tree by #547, kept in git history) (Option C); CAL-1112.
 
 This records the promotion **design** before any `harness promote` mechanics exist. The CLI surface (CAL-1113), the ledger and JSON contracts (CAL-1114), the worktree/merge mechanics (CAL-1115), the gate evidence (CAL-1116), PR creation (CAL-1117), and escalation (CAL-1118) are implemented against this record — not decided in it. No CLI, no local-inference adapter, and no PR mechanics land with this ADR.
 
@@ -103,7 +103,7 @@ Option C wins: promotion becomes an audited lifecycle the harness owns, with a n
 
 ### Amended 2026-07-23 — the caller is a versioned command, and the topology is named by role
 
-*Source: `specs/proposals/promote-and-decision-commands.md`.*
+*Source: the `promote-and-decision-commands` proposal (settled; removed from the tree by #547, kept in git history).*
 
 As accepted, this ADR fixed the **verb** surface and left the **caller** to prose
 in `RUNBOOK.md` — unversioned, repo-local, and uninstalled anywhere else. The

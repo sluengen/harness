@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-04
-- **Source:** `specs/proposals/changelog-from-commits.md`
+- **Source:** the `changelog-from-commits` proposal (settled; removed from the tree by #547, kept in git history)
 - **Amends:** [ADR 0010](0010-rebased-tree-recertification.md) — its conflict-removal decision is preserved; the mechanism it chose is replaced.
 
 ## Context

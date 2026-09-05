@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-01 (revised 2026-07-02, CAL-930)
-- **Source:** proposal `specs/proposals/harden-loop-layer.md` (WS3); CAL-908, corrected by CAL-930.
+- **Source:** proposal the `harden-loop-layer` proposal (settled; removed from the tree by #547, kept in git history) (WS3); CAL-908, corrected by CAL-930.
 
 This is the first record in `specs/decisions/`. Design docs still live in `specs/`; this directory holds discrete architecture decisions from here on.
 

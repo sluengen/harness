@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-25
-- **Source:** `specs/proposals/design-verb.md`
+- **Source:** the `design-verb` proposal (settled; removed from the tree by #547, kept in git history)
 
 ## Context
 
@@ -57,7 +57,7 @@ Four resolved dimensions:
 > it is refused with `design_not_usable`. What is unchanged is why the stage
 > exists (context segmentation, Opus, the artifact is the change spec's Design
 > section) and that `review` is where it is enforced. The reasoning is in
-> `specs/proposals/assurance-led-lifecycle.md`; the as-built policy is in
+> the `assurance-led-lifecycle` proposal (settled; removed from the tree by #547, kept in git history); the as-built policy is in
 > `specs/features/verb-model.md`, and the vocabulary lives in one module,
 > `harness/assurance.py`.
 >
