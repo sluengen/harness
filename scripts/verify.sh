@@ -108,8 +108,8 @@ echo "=== ruff ==="
 uv run --extra dev ruff check .
 
 echo "=== mypy ==="
-# `scripts` is the only Python tree left: v5 chunk 3 moved the Codex compile
-# step out of `templates/`, which now holds markdown templates alone.
+# `scripts` is the only Python tree left, and smaller since #537 retired the
+# Codex compile step entirely; `templates/` holds markdown and yaml templates.
 uv run --extra dev mypy scripts
 
 echo "=== pytest ==="
@@ -132,12 +132,6 @@ echo "=== design-token drift guard ==="
 # narrowed (#243): the guidance catalog above stays guarded and hand-authored;
 # this block is mechanical, generated content instead.
 uv run --extra dev python scripts/build_design_tokens.py --check
-
-echo "=== codex drift guard ==="
-# Fail the gate if the committed AGENTS.md or .codex/ has drifted from a
-# regeneration off CLAUDE.md, agents/, commands/, and skills/ — the Codex
-# surface is compiled, never hand-edited (ADR 0017; v5 chunk 3).
-uv run --extra dev python scripts/generate_codex_artifacts.py --check
 
 echo ""
 echo "All checks passed."

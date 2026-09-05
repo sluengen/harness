@@ -1,7 +1,9 @@
 """#487 AC-2 — a ``branches:`` declaration the hook cannot read says so, once.
 
-Both enforcement hooks parse the spine's ``branches:`` block with a line scanner
-and substitute ``FALLBACK_PROTECTED`` when the parse comes back empty. For any
+Both enforcement hooks resolve the ``branches:`` block through the one shared
+reader (``scripts/harness-config.js`` since #537, which reads ``harness.yaml``
+first and the markdown spines behind it) and substitute ``FALLBACK_PROTECTED``
+when nothing readable comes back. For any
 repo using conventional branch names — most repos — that makes an **unreadable**
 declaration byte-identical in effect to a readable one: the guards look healthy
 right up until the repo's declaration diverges from the fallback, at which point
@@ -57,6 +59,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -771,7 +774,28 @@ def test_the_notice_does_not_claim_a_fallback_that_is_not_in_force(tmp_path: Pat
     assert _TOKEN in proc.stderr, (
         f"the unreadable spine went unreported: {proc.stderr!r}"
     )
-    assert "conservative" not in proc.stderr.lower(), (
-        "the notice claims the conservative fallback set is in force while the deny "
-        f"above proves CONTEXT.md's declaration is what protected the branch: {proc.stderr!r}"
+    # Anchored on the **claim**, not on one word of it. Until #537 this asserted
+    # only that `conservative` was absent, so rewording the sentence to "using the
+    # fallback set" satisfied it while saying the same false thing — the shape
+    # `craft.md` calls a prose obligation anchored on a noun phrase, which reads
+    # the same inverted. The claim is falsifiable in one direction: the notice may
+    # not say that the fallback, by any of its names, is what is in force, because
+    # the deny above proves it is not.
+    fallback = _fallback()
+    assert fallback, "the fallback set could not be read, so this assertion is vacuous"
+    said = proc.stderr.lower()
+    claimed = [w for w in ("conservative", "fallback", "default") if w in said]
+    assert not claimed, (
+        f"the notice claims the {claimed} set is in force while the deny above proves "
+        f"CONTEXT.md's declaration is what protected the branch: {proc.stderr!r}"
     )
+    # Whole words only, and only in the sentence *after* the path: the notice
+    # echoes a filesystem path, and a checkout under a directory called `dev`
+    # would otherwise redden a perfectly correct notice.
+    claim = proc.stderr.rsplit(": ", 1)[-1]
+    named = sorted(name for name in fallback if re.search(rf"\b{re.escape(name)}\b", claim))
+    assert not named, (
+        f"the notice names {named} — members of the fallback set — while the branch "
+        f"actually protected came from CONTEXT.md: {proc.stderr!r}"
+    )
+

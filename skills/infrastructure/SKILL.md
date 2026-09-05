@@ -4,11 +4,11 @@ description: Use when moving work between environments or role branches — prom
 ---
 # Infrastructure
 
-How work moves through environments here — the discipline `/promote` and the release automation follow. This is the *how*; the *what* — this repo's actual branch topology, environments, domains, and services — is the repo-owned infrastructure reference spec (`paths` in `CLAUDE.md`, conventionally `specs/infrastructure.md`), seeded by `/harness:init` and updated when the infrastructure changes, not per task.
+How work moves through environments here — the discipline `/promote` and the release automation follow. This is the *how*; the *what* — this repo's actual branch topology, environments, domains, and services — is the repo-owned infrastructure reference spec (`paths` in `harness.yaml`, conventionally `specs/infrastructure.md`), seeded by `/harness:init` and updated when the infrastructure changes, not per task.
 
 ## Roles, not names
 
-`CLAUDE.md` → `branches:` declares the repo's role branches. The common roles: **integration** (feature branches base from it and merge back to it), optionally **staging** (a stabilized candidate, meaningful only where something deploys to a staging environment), and **release** (the intentional release line). Topology is per-repo configuration (ADR 0003 as amended): a repo with staging environments runs three roles; a repo that deploys nothing runs integration → release. The hooks protect every branch named in the block, whatever its role.
+`harness.yaml` → `branches:` declares the repo's role branches. The common roles: **integration** (feature branches base from it and merge back to it), optionally **staging** (a stabilized candidate, meaningful only where something deploys to a staging environment), and **release** (the intentional release line). Topology is per-repo configuration (ADR 0003 as amended): a repo with staging environments runs three roles; a repo that deploys nothing runs integration → release. The hooks protect every branch named in the block, whatever its role.
 
 ## The gate decides, at every boundary
 

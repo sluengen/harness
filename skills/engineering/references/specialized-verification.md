@@ -28,7 +28,7 @@ The same rule governs the guard's **matching predicate**. A derived subject set 
 
 ### Re-deriving what another layer owns is an auditable choice, not a default
 
-When a change adds code that aggregates — averages, sums, counts, groups — over a collection it fetched from a layer that already owns that domain (*Structure* — layer boundaries; `CLAUDE.md` names the layers this repo declares), the change spec must name why the owning layer does not own the aggregate, or reference the ticket that moves it. The reviewer **rejects** a re-derivation that names neither.
+When a change adds code that aggregates — averages, sums, counts, groups — over a collection it fetched from a layer that already owns that domain (*Structure* — layer boundaries; `harness.yaml` names the layers this repo declares), the change spec must name why the owning layer does not own the aggregate, or reference the ticket that moves it. The reviewer **rejects** a re-derivation that names neither.
 
 This is the duplication that review is least equipped to catch, because nothing is wrong yet when it lands. A re-derivation is correct in isolation and its change looks complete: the numbers agree on the day it ships. It turns into a defect only once a sibling surface renders the owning layer's number for the same quantity beside it — and then the two contradict each other while neither change is wrong on its face. The contradiction lives in the accumulation, so neither reviewer was positioned to see it, and it surfaces in an assessment pass long after both shipped. Spec time is the one point where a single person is looking at both layers, which is why the justification is owed there and not at review.
 

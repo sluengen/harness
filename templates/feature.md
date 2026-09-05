@@ -48,4 +48,4 @@ A cross-cutting decision the repo filed in its configured `paths.decisions` dire
 
 ---
 
-**Editing rule.** This file is written by the **reviewer**, not the builder, when a tracker issue touching the feature lands — based on what the diff actually does, and committed into the candidate *before* the certifying gate and the verdict, so the review covers it (`review-discipline`'s *final-evidence ordering* rule). The builder may draft a rewrite hint in the change spec, but the canonical version here is the reviewer's record. The agent that promises is not the agent that records delivery (the spine (`CLAUDE.md`)).
+**Editing rule.** This file is written by the **reviewer**, not the builder, when a tracker issue touching the feature lands — based on what the diff actually does, and committed into the candidate *before* the certifying gate and the verdict, so the review covers it (`review-discipline`'s *final-evidence ordering* rule). The builder may draft a rewrite hint in the change spec, but the canonical version here is the reviewer's record. The agent that promises is not the agent that records delivery (the spine (`AGENTS.md`)).

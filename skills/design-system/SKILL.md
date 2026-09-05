@@ -4,16 +4,16 @@ description: Use when doing frontend work in a repo whose design-system layer is
 ---
 # Design System
 
-How to do frontend work without degrading the design system. Applies only when the repo's `design_system` layer is on; the system itself (tokens, primitives, principles) lives at the path in `CLAUDE.md`, often a dedicated subpackage or repo. This skill is routing and discipline, not a copy of the rules.
+How to do frontend work without degrading the design system. Applies only when the repo's `design_system` layer is on; the system itself (tokens, primitives, principles) lives at the path in `harness.yaml`, often a dedicated subpackage or repo. This skill is routing and discipline, not a copy of the rules.
 
 **This is the *don't degrade the system* half.** Designing or mocking up a *new* surface — deciding what it should be, not just conforming an existing one — starts with `ux-design` (the human, psychology, flow, and states). Use that to shape the surface, then this skill to materialize it in real tokens and primitives.
 
 ## Before any visual change — two-stage lookup
 
-1. **Find the principle.** What does the design system say should be true here? (Its brand/UX principles, named in `CLAUDE.md`.)
+1. **Find the principle.** What does the design system say should be true here? (Its brand/UX principles, named in `harness.yaml`.)
 2. **Find the materialization.** Where is that principle expressed in code — the token definitions, the primitive components? Use those.
 
-**No system yet — stand one up.** If `CLAUDE.md` `paths.design_system` is unset, or names a location with nothing at it, the repo has not stood its system up — the state every repo starts in. Build it from `templates/design-system.md`, the scaffold contract, and set `paths.design_system` to where it landed; then run the lookup above against it. An external package you have yet to install is not a missing system. A missing system is a gap to fill, not a licence to hardcode — do not hand-author visual values in the meantime.
+**No system yet — stand one up.** If `harness.yaml` `paths.design_system` is unset, or names a location with nothing at it, the repo has not stood its system up — the state every repo starts in. Build it from `templates/design-system.md`, the scaffold contract, and set `paths.design_system` to where it landed; then run the lookup above against it. An external package you have yet to install is not a missing system. A missing system is a gap to fill, not a licence to hardcode — do not hand-author visual values in the meantime.
 
 If you are about to write a visual value by hand, stop and do this lookup first.
 

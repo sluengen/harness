@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from tests._gitutil import indexed_text
 
-_EXPECTED = {".evidence/", ".worktrees/", ".claude/worktrees/"}
+_EXPECTED = {".evidence/", ".worktrees/", ".claude/worktrees/", ".harness/"}
 
 
 def _block(path: str, prefix: str) -> set[str]:
@@ -33,7 +33,7 @@ def test_hydration_and_source_gitignore_carry_the_same_complete_gate_ignore_set(
     shared omission from making that comparison vacuous.
     """
     source = _block(".gitignore", "#")
-    hydration = _block("commands/init.md", "<!--")
+    hydration = _block("skills/init/SKILL.md", "<!--")
 
     assert source == _EXPECTED
     assert hydration == source

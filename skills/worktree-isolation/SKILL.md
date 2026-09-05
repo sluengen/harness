@@ -12,11 +12,14 @@ Any multi-commit task runs on its own branch in its own git worktree. This keeps
 
 ## Creating the worktree
 
-From the repo root, branch off the integration branch named in `CLAUDE.md` (commonly `dev` or `main`):
+Branch off the **last integration commit known green**, not off the tip. Concurrent runs land on the integration branch continuously, and its tip may be carrying a defect nobody has met yet; starting there means your first gate run is red for somebody else's reason. The green pointer names that commit:
 
 ```bash
-git worktree add ../<repo>-<task-id> -b <task-id> <integration-branch>
+BASE="$(node <plugin-root>/scripts/harness-refs.js green-read)"
+git worktree add ../<repo>-<task-id> -b <task-id> "${BASE:-<integration-branch>}"
 ```
+
+Empty output means no pointer has been published yet — branch off the integration branch named in `harness.yaml` (commonly `dev` or `main`) and say so. Either way, **report the base you took**: which commit, and whether it came from the pointer. A run that does not say where it started cannot tell a red base from a red change.
 
 Work inside that directory for the whole task. The branch name should identify the task (its ticket id is ideal).
 
@@ -26,7 +29,7 @@ A fresh worktree does not have your gitignored local state (dependencies, env fi
 
 ```bash
 SHARED_ROOT="$(git rev-parse --path-format=absolute --git-common-dir)"; SHARED_ROOT="${SHARED_ROOT%/.git}"
-# Link what this repo needs — see CLAUDE.md (e.g. the env file, the deps dir):
+# Link what this repo needs — see harness.yaml (e.g. the env file, the deps dir):
 ln -sfn "$SHARED_ROOT/<env-file>"  "<worktree>/<env-file>"
 ln -sfn "$SHARED_ROOT/<deps-dir>"  "<worktree>/<deps-dir>"
 ```

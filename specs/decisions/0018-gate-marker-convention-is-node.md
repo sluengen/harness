@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-25
-- **Source:** tickets #500 and #507; consumer migration follow-up #501.
+- **Source:** tickets #500 and #507; consumer migration follow-up #501; amended by #537.
 
 ## Context
 
@@ -22,13 +22,18 @@ The principle boundary this draws, and the rule that decides for the next file:
 
 The module type is pinned by `scripts/package.json` (`{"type": "commonjs"}`), the same one-key mechanism and the same reasoning as `hooks/package.json`: Node resolves a `.js` file's type from the nearest `package.json` walking up, and in a consuming repo that walk otherwise terminates at a root the harness does not control.
 
-### Marker-emission boundary (amended by #507, #510, and #513)
+### Marker-emission boundary (amended by #507, #510, #513, and #539)
 
 `gate-marker.js` exposes no direct successful write command. Its public `run`
-subcommand accepts no operands and resolves its gate command only from
-`commands.verify` in `CLAUDE.md`; it consults legacy `CONTEXT.md` only when
-`CLAUDE.md` is absent, then uses `bash scripts/verify.sh` only when neither
-spine exists. A present spine with a missing, empty, duplicate, malformed, or
+subcommand accepts no operands other than `--scope <path>` (amended by #539,
+which added the scoped re-gate; see the 2026-09-05 amendment below) and resolves
+its gate command only from `commands.verify`, read by the one shared reader `scripts/harness-config.js` out
+of the first source present: `harness.yaml`, then `AGENTS.md`, `CLAUDE.md`, and
+legacy `CONTEXT.md`, using `bash scripts/verify.sh` only when none exists
+(amended by #537, which moved the configuration out of the spine's prose).
+**The boundary is unchanged and is what matters here:** no per-invocation value —
+an operand, argv, or an environment variable, including one naming the directory
+the reader is loaded from — may decide that command. A present spine with a missing, empty, duplicate, malformed, or
 unreadable selected field is infrastructure (exit 3), not a fallback. Three
 spellings are refused rather than read: a value opening with a yaml indicator
 (`|`, `>`, `&`, `*`, `{`, `[`), whose line-reader answer is the indicator
@@ -104,3 +109,9 @@ contract and does not redefine the marker interface.
 - **The internal-mode variable is inherited by everything the gate starts, and it is now read back.** `run` sets `HARNESS_GATE_MARKER_RUNNER=1` on the declared gate's whole environment, so every descendant of that gate carries it — a test suite included — and the re-entry refusal above therefore refuses *any* nested public `run` beneath a running gate, not only a gate that calls the runner on purpose. Measured in this repository when the refusal landed: 57 tests that drive `run` as a public entry failed under `bash scripts/verify.sh` while passing under a bare `pytest`. The remedy is one fixture in `tests/conftest.py` that drops the inherited variable, so the suite means the same thing however it is launched; a consumer whose gate builds a sub-project that runs its own gate is in the same position with the same remedy. No opt-out is offered: an environment variable that switched this check off would be exactly the per-invocation control over the runner that the boundary above exists to refuse.
 - **#520 reverses the hydration documentation-guard exception from #510.** The three functions that read `commands/init.md` collected as eight test cases, including six suffix variants, but never exercised hydration or an executable invariant. They occupied 107 lines of guard code plus 31 lines of dedicated constants. The tests therefore could reject a valid rewrite of the instructions while providing no behavioral evidence. ADR 0017 D5 now requires criteria that need a document-meaning guard to be rewritten for executable behavior or review. The hydration instructions remain subject to downstream use and review; no documentation guard discharges #510's AC-5 or AC-6.
 - **One behaviour deliberately departs from the writer being replaced.** Python's `prune` documented itself as best-effort and was not: it sorted markers by `Path.stat().st_mtime`, so a marker unlinked by a concurrent gate run in another worktree between the sort and the loop raised — and because the prune runs *after* the marker is written, that race turned a green gate red with the evidence already on disk. The Node prune skips a file that has vanished. This is a fix, not a port, and it is recorded here so it is not mistaken for one.
+
+## Amended 2026-09-05 (#539)
+
+The marker payload gains `scope`, `started_at`, and an atomic write, and `hooks/push-target-guard.js` reads the body — for one decision only. The filename remains the whole claim for every unscoped marker, which is every marker written before this change; a marker carrying `scope` authorises no push on its own, and a body that cannot be parsed, or whose `scope` is not a list of paths, authorises nothing at all. `hooks/gate-evidence-guard.js` keeps the filename-only contract, so the two readers now differ on one field; the equivalence `tests/unit/test_gate_marker_contract.py` holds — the marker path and the freshness parse — is untouched. The write became atomic in the same change because a torn body is a decision input now rather than diagnostics, and two gate runs over one tree in two worktrees is routine.
+
+**The provenance boundary is restated, not relaxed.** An operand may select among *checked-in* commands and may supply *data*; it may never supply a command. `gate-marker.js run --scope <path>` selects the checked-in `commands.test_scoped` where a repo declares one and otherwise runs `commands.verify`, and the paths reach that command through a NUL-delimited file named by an environment variable — so the line `sh -c` receives is still exactly the declared scalar, character for character. Concatenating operand-supplied paths into that scalar was rejected: it is hand-rolled quoting in the one helper allowed to mint gate evidence, and a path beginning `-` survives every quoting to be read as an *option* by the runner, which is an operand changing what the gate does.

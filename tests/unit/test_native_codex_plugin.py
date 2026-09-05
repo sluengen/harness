@@ -59,10 +59,22 @@ def test_every_portable_skill_resolves_its_plugin_asset_references() -> None:
     asset = re.compile(
         r"`((?:commands|skills|agents|templates|hooks|\.codex)/[^`\s]+)`"
     )
-    generated = sorted((REPO_ROOT / "skills").glob("command-*/SKILL.md")) + sorted(
-        (REPO_ROOT / "skills").glob("agent-*/SKILL.md")
+    # #537 collapsed the generated ``command-*`` mirrors into the nine workflow
+    # skills themselves, so that is where the portability note has to be. The set
+    # is **derived from the frontmatter, not listed**: a workflow skill is one
+    # whose description opens with the slash trigger it answers to, so a tenth
+    # workflow added tomorrow is caught without anyone editing a list here. The
+    # craft skills are excluded because they are read *in* a session that already
+    # resolved them, never dispatched by a trigger.
+    trigger = re.compile(r"^description:\s*[\"']?/", re.MULTILINE)
+    generated = sorted(
+        skill
+        for skill in (REPO_ROOT / "skills").glob("*/SKILL.md")
+        if trigger.search(skill.read_text(encoding="utf-8"))
     )
-    assert generated
+    assert len(generated) >= 9, (
+        f"expected the nine workflow skills, found {[s.parent.name for s in generated]}"
+    )
 
     for skill in generated:
         text = skill.read_text(encoding="utf-8")

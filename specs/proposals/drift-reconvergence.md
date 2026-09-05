@@ -7,11 +7,11 @@ related: [rebase-stable-certification, plugin-surface]
 
 # Proposal: a slow gate turns base drift from a cost into an exponential
 
-> `commands/build.md`'s post-verdict drift rule re-enters reconciliation, delta review, the full gate and the final verdict every time the integration branch moves underneath a candidate. In this repo that is cheap and rare. In consuming repos with a slow gate and concurrent agents it is neither: the expected cost to land goes exponential in the product of gate duration and the rate at which other agents push.
+> The build workflow's post-verdict drift rule re-enters reconciliation, delta review, the full gate and the final verdict every time the integration branch moves underneath a candidate. In this repo that is cheap and rare. In consuming repos with a slow gate and concurrent agents it is neither: the expected cost to land goes exponential in the product of gate duration and the rate at which other agents push.
 
 ## Problem / motivation
 
-The rule is one sentence, `commands/build.md:131`:
+The rule is one sentence, in the build workflow (the file at the time; `skills/build/SKILL.md` since #537):
 
 > **Post-verdict drift:** if the integration branch moves again and the push loses the race, re-enter reconciliation (its bound counts the attempt), delta review, the complete gate, and the final verdict before trying again. No evidence or verdict follows the old tree into that cycle.
 
@@ -105,7 +105,7 @@ The sequencing is the same discipline `rebase-stable-certification` applied and 
 
 | Decision | Who decides | Recorded in |
 |---|---|---|
-| Does D's record re-derivation violate iron law 4 (*the builder does not write the as-built record*)? The position taken here is that re-measuring an existing claim against a new tree is not authorship, and that the run report naming the drift range keeps it falsifiable — but the law is the operator's to interpret | user | `CLAUDE.md` spine, `commands/build.md` |
+| Does D's record re-derivation violate iron law 4 (*the builder does not write the as-built record*)? The position taken here is that re-measuring an existing claim against a new tree is not authorship, and that the run report naming the drift range keeps it falsifiable — but the law is the operator's to interpret | user | the spine, `skills/build/SKILL.md` |
 | Is landing serialization something the plugin **prescribes**, or something it **requires the repo to declare**? A merge queue is server-side infrastructure the guidance cannot install | user / architect | `specs/decisions/`, spine `branches:` block |
 | Does the spine gain a `landing:` key (`free` \| `queued` \| `locked`) so `/build` can read the repo's strategy rather than assume one? | architect | spine config, `plugin-surface.md` |
 | Does a scoped re-gate leave the marker meaning anything? Blocks C entirely | — | [#513](https://github.com/sluengen/harness/issues/513) |
@@ -116,7 +116,7 @@ Taken by the operator on this proposal; each is carried into the breakdown item 
 
 **D1 — the sequencing stands.** A and D proceed now, item 1 instruments the rate, and Option B is not bought until that instrument reports. Items 1–4 are filed; **item 5 is deliberately unfiled**. This repeats the ordering `rebase-stable-certification` was vindicated on, and the reversal condition is the same: item 1 reporting a residue the cheap fixes did not remove.
 
-**D2 — re-measuring is not authoring; iron law 4 is not engaged.** Under Option D the reviewer still writes every sentence of the as-built record. The builder re-runs only the measurements those sentences cite, against the merged tree, and changes a numeral or removes the claim. It may not add, reframe, or reinterpret — any edit beyond re-deriving an existing measurement returns the record to the reviewer. Item 3 carries this distinction into `commands/build.md` in that wording; a re-bind that cannot be closed by re-derivation alone falls back to today's path.
+**D2 — re-measuring is not authoring; iron law 4 is not engaged.** Under Option D the reviewer still writes every sentence of the as-built record. The builder re-runs only the measurements those sentences cite, against the merged tree, and changes a numeral or removes the claim. It may not add, reframe, or reinterpret — any edit beyond re-deriving an existing measurement returns the record to the reviewer. Item 3 carries this distinction into the build workflow in that wording; a re-bind that cannot be closed by re-derivation alone falls back to today's path.
 
 **D3 — gate duration is an input, not a target.** The affected repos' gates are slow for reasons that will not move, so no ticket is filed against the duration itself and no option here is scored on its ability to shorten it. Recorded so a later reader does not mistake the omission for an oversight.
 
@@ -124,7 +124,7 @@ Taken by the operator on this proposal; each is carried into the breakdown item 
 
 1. **Instrument reconcile-after-verdict.** Record each occurrence with its cause (disjoint drift / textual conflict / monotonic collision) and the elapsed certification window, so `λ` and `W` become readable. Nothing else here should be decided on assumptions. — `simple` Filed as [#515](https://github.com/sluengen/harness/issues/515) — **closed unbuilt 2026-08-28**, see *Amendments*.
 2. **A drift-fragility rule in `engineering` and `spec-authoring`.** Name the shared-insertion-point class (single-block changelog, version field, barrel file, migration ordinal) and require new work to avoid creating one. This is #267's lesson generalised from a fix into guidance. — `simple` Filed as [#516](https://github.com/sluengen/harness/issues/516).
-3. **The mechanically-licensed re-bind** (Option D). Rewrite `commands/build.md:131` to carry the four conditions and the fallback, and regenerate `skills/command-build/SKILL.md` (generated by `scripts/generate_codex_artifacts.py`, held by the gate's codex drift stage). — `simple` Filed as [#517](https://github.com/sluengen/harness/issues/517).
+3. **The mechanically-licensed re-bind** (Option D). Rewrite the build workflow's drift rule to carry the four conditions and the fallback. (Written against the pre-#537 tree, when the workflow existed twice and a generator held the copies in step; it now ships once, at `skills/build/SKILL.md`.) — `simple` Filed as [#517](https://github.com/sluengen/harness/issues/517).
 4. **Enforce the present-tense-quantity rule that already exists.** `spec-authoring:106` (shipped by #470) forbids the exact class both drift-caused findings belong to, and #484 violated it two days later. Nothing checks it. Give it a guard, or a reviewer-side check on the record-writing path. This is not new policy — it is an unenforced rule doing no work. — `simple` Filed as [#518](https://github.com/sluengen/harness/issues/518) — **rewritten 2026-08-28**, see *Amendments*.
 5. **Landing serialization** (Option B) — *conditional on item 1's measurement.* Spine `landing:` key, the acquire/hold/release discipline in `/build`'s ship stage, lease expiry, and the wedged-holder path. — `complex`
 

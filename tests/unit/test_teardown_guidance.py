@@ -33,7 +33,7 @@ def test_isolation_guidance_names_task_teardown_and_its_resource_classes() -> No
 
 def test_build_delegates_successful_task_cleanup_to_the_isolation_contract() -> None:
     """The shipping path cannot omit the cleanup contract after it pushes."""
-    build = indexed_text("commands/build.md")
+    build = indexed_text("skills/build/SKILL.md")
 
     assert "worktree-isolation" in build
     assert "cleanup procedure" in build

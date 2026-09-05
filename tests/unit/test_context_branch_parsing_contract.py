@@ -22,10 +22,18 @@ directions:
 * the Stop hook skips a worktree the push guard would refuse to publish from, so
   a claim of completion goes unchallenged on a branch that matters.
 
-This module therefore compares **protected sets, never return values**. The
-differing shapes are deliberate and are not unified here; an equivalence test is
-the drift control the no-shared-lib decision asks for, and unlike an extraction
-it adds no new failure mode.
+This module therefore compares **protected sets, never return values**.
+
+**#537 extracted the parser, so this module's subject changed.** Both hooks now
+delegate to ``scripts/harness-config.js``, which makes the equivalence true by
+construction — exactly what #436 said a shared module would do to a drift
+control. That is the reason for the extraction rather than an argument against
+it: two copies wrong *identically* is what let #488 hide from this very test, so
+equivalence could never have caught it. What survives here is the arm a shared
+reader cannot make vacuous — that each hook's protected set is really derived
+from the declaration rather than from its fallback, over a corpus of the
+spellings a real repo produces. ``test_harness_config_reader.py`` carries the
+parser's own behaviour and the fail-open floor #436 asked for.
 
 The corpus is the three variants the ticket names plus two that separate the
 parser from its fallback: a declared block, no file at all, a malformed block, an
@@ -738,11 +746,22 @@ def test_the_expressions_match_the_call_sites_they_stand_in_for() -> None:
         "declaredConfig at both call sites, so this module's expression for "
         "it is stale"
     )
+    # #537 moved *which files are read, and in what order* out of both hooks and
+    # into the one shared reader, so that is where this half of the pin now
+    # anchors. The hooks are pinned to routing through it instead: a hook that
+    # resolved its own source again would restore the duplication #537 removed
+    # and leave the preference tests below measuring a path production no longer
+    # takes.
+    reader = (REPO_ROOT / "scripts" / "harness-config.js").read_text(encoding="utf-8")
+    for name in ("harness.yaml", "AGENTS.md", "CLAUDE.md", "CONTEXT.md"):
+        assert name in reader, (
+            f"the shared reader no longer reads {name}, so the preference tests "
+            "below measure a path that is not the production one"
+        )
     for hook_name, source in ((_PUSH_HOOK, push), (_STOP_HOOK, stop)):
-        assert 'CLAUDE.md' in source and 'CONTEXT.md' in source, (
-            f"{hook_name} no longer reads the spine first with the CONTEXT.md "
-            "fallback, so the preference tests below measure a path that is "
-            "not the production one"
+        assert "loadConfigReader()" in source, (
+            f"{hook_name} no longer resolves its declaration through the shared "
+            "reader, so this module's expressions for it are stale"
         )
 
 

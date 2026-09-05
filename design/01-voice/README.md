@@ -37,7 +37,7 @@ token change, and vice versa.
 
 ## Terms that are fixed
 
-The page's commands, skills, agents, and hooks are identified by `data-unit`
+The page's skills, agents, and hooks are identified by `data-unit`
 tags. Their visible names and identifiers come from the tracked tree. The
 inventory test verifies that correspondence; reviewers check the surrounding
 narrative directly rather than pinning sentence wording.
