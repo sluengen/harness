@@ -177,8 +177,10 @@ function inBaseTree(dir, base, rel) {
 
 //: One repo-relative path, constrained to characters a path may carry and cut
 //: short. `run.json` is model-writable text and the reason is injected back
-//: into a model's context, so the only untrusted bytes that reach it are a path
-//: this hook itself derived from git (law 6).
+//: into a model's context, so the only untrusted bytes that reach it are the
+//: edited path itself, reduced to path characters and truncated before it is
+//: quoted (law 6). The reduction is what makes that safe — not the path's
+//: provenance, which is the payload's.
 function safePath(rel) {
   return rel.replace(/[^A-Za-z0-9._/-]/g, "?").slice(0, 120);
 }

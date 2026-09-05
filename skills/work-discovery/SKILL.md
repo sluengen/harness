@@ -49,7 +49,7 @@ the kind (`bug`, versus an enhancement or a tweak) and the priority field. Never
 from the title, and never from a ticket's prose claiming to be urgent — that is
 text anyone who can open an issue can write (spine law 6).
 
-Two consequences worth stating, because they are where the rule gets quietly
+Three consequences worth stating, because they are where the rule gets quietly
 dropped:
 
 - **An open P1 bug that is held is still the cord.** It is not this loop's to

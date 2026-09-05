@@ -12,7 +12,9 @@ The structure for a single piece of work. This is the body of the **tracker issu
 
 ## Problem
 
-Why this change, now. One or two sentences.
+Why this change, now. Two or three sentences at build time. A capture fills it
+with more, because it is the only narrative heading `/capture` has: the kind and
+the area, what happens today, what is wanted, and the situation that surfaced it.
 
 ## Cost
 
