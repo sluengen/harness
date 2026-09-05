@@ -77,8 +77,9 @@ _BACKTICKED = re.compile(r"`([^`\n]+)`")
 _LOCATION_SUFFIX = re.compile(r":\d+(?:-\d+)?$")
 
 #: The supersession banner's opening line, and nothing else. Both live house
-#: styles are admitted — the blockquote form ``specs/retired/`` uses and the
-#: italicised form the proposals carry — each pinned to the literal word plus an
+#: styles are admitted — the blockquote form (which `specs/retired/` used before
+#: #547 removed that directory, and which a consuming repo may still write) and
+#: the italicised form the proposals carry — each pinned to the literal word plus an
 #: ISO date, so ordinary prose *about* supersession cannot open an exemption.
 #: Anchoring to line start is the counterfeited-delimiter remedy in ``craft.md``.
 _BANNER_OPENER = re.compile(
@@ -228,7 +229,13 @@ def test_the_directory_derivation_over_an_empty_input_is_empty() -> None:
 # The paired samples — the guard's teeth
 # ---------------------------------------------------------------------------
 
-_TRACKED_SAMPLE = {"scripts/verify.sh", "specs/proposals/design-verb.md"}
+#: The synthetic "tracked" operand the samples below are judged against. Both
+#: members are *made up*, and deliberately so (#547): naming a real proposal
+#: here coupled this module to a file the tree is free to retire, and when
+#: `design-verb.md` was settled and removed the samples broke for a reason
+#: that had nothing to do with the predicate. The real corpus is reached by
+#: the paired splice below, which is the only place that needs real bytes.
+_TRACKED_SAMPLE = {"scripts/verify.sh", "specs/proposals/a-tracked-proposal.md"}
 _TRACKED_DIRS_SAMPLE = {"scripts", "specs", "specs/proposals"}
 
 
@@ -354,7 +361,14 @@ def test_the_predicate_reads_real_proposal_text() -> None:
     """
     tracked = _tracked_paths()
     dirs = _tracked_dirs(tracked)
-    real = (REPO_ROOT / "specs/proposals/design-verb.md").read_text()
+    corpus = sorted(
+        path for path in tracked_files_under("specs/proposals") if path.suffix == ".md"
+    )
+    assert corpus, (
+        "specs/proposals holds no tracked markdown, so this splice would run over "
+        "nothing — the derivation stopped reading the tree"
+    )
+    real = corpus[0].read_text()
     spliced = "harness/cli/a-path-this-repo-never-had.py"
     before = dead_path_cites(real, tracked, dirs)
     after = dead_path_cites(f"{real}\n\nSee `{spliced}`.\n", tracked, dirs)

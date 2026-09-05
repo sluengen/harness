@@ -16,7 +16,8 @@ never resolve a conflict.
 The step's logic lives in ``scripts/promotion-step.sh``, and what that logic
 *does* is proven by executing it against a stubbed ``git`` in
 ``tests/unit/test_promotion_step_script.py`` — the instrument swap of
-``specs/proposals/promotion-guard-instrument.md``, whose rule is recorded in
+the `promotion-guard-instrument` proposal (settled, and removed from the tree
+by #547; git history keeps it), whose rule is recorded in
 ``specs/architecture-principles.md`` (*CI logic lives in a script, not in a
 `run:` block*). Four tickets of regex (#390, #391, #393, #394) derived call sites
 out of shell text here; none of that survives, because a text guard could only
