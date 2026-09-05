@@ -7,7 +7,7 @@ review→fix cycle.
 Return the blocking findings to the builder and re-review. How many times that
 may happen is **one policy, owned here**. Every other agent and command points
 at the core skill's *On a FAIL* section, which routes here, rather than
-restating it; the numbers it names live in `CLAUDE.md` → `loop:` so a repo
+restating it; the numbers it names live in `harness.yaml` → `loop:` so a repo
 tunes its own budget without forking the rule.
 
 A run may spend `loop.max_review_cycles` review→fix cycles in total. Three windows:

@@ -12,7 +12,7 @@ over time for accumulated patterns that a per-change reviewer cannot see. Do
 not change production code or fix findings.
 
 `/assess <scope>` selects the surface and owns the operational workflow. Always
-read `CLAUDE.md`, load `assessment-craft`, and load only the selected scope's
+read `AGENTS.md`, load `assessment-craft`, and load only the selected scope's
 domain standards:
 
 - `code`: `engineering` and `architecture`; add `design-system` only when its

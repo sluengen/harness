@@ -34,11 +34,14 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
+
+from tests._gitutil import indexed_text, tracked_files_under
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 READER = REPO_ROOT / "scripts" / "harness-config.js"
@@ -183,6 +186,51 @@ def test_every_declared_source_is_read(tmp_path: Path, filename: str) -> None:
     assert json.loads(proc.stdout) == {"integration": "dev", "release": "main"}
 
 
+def test_a_declaration_outside_any_fence_is_reported_not_silently_skipped(
+    tmp_path: Path,
+) -> None:
+    """The one case the fenced narrowing can hide.
+
+    Markdown sources are read only inside ` ```yaml ` fences, because the three
+    parsers this reader replaces scanned whole files and a prose example could
+    decide the protected set. The cost of that narrowing is a spine declaring
+    ``branches:`` outside a fence: the extraction is empty, so the caller falls
+    back — and without this, with nothing on stderr. That silence is the #487
+    harm the unreadable notice exists to prevent, so the narrowing has to be
+    audible. The declaration is *noticed*, never parsed.
+    """
+    repo = _repo(tmp_path, "unfenced", "# Spine\n\nbranches:\n  integration: trunk\n",
+                 filename="CLAUDE.md")
+    proc = _run_node(
+        "const c = require(process.env.READER);"
+        "const r = c.declaredBranches(process.cwd(), (f) => process.stderr.write('NOTICE ' + f));"
+        "process.stdout.write(JSON.stringify(r));",
+        repo,
+        {"READER": str(READER)},
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert json.loads(proc.stdout) == {}, "an unfenced declaration must not be parsed"
+    assert "NOTICE" in proc.stderr, (
+        "an unfenced declaration fell back to the conservative set silently — "
+        "indistinguishable from a repo that declares nothing"
+    )
+
+
+def test_a_source_that_declares_nothing_is_not_reported(tmp_path: Path) -> None:
+    """The other side of the same predicate. Without it, a reader that reported
+    every source would pass the test above while making every unadopted repo
+    chatter on every tool call."""
+    repo = _repo(tmp_path, "quiet", "# Spine\n\nNo configuration here.\n", filename="CLAUDE.md")
+    proc = _run_node(
+        "const c = require(process.env.READER);"
+        "c.declaredBranches(process.cwd(), (f) => process.stderr.write('NOTICE ' + f));",
+        repo,
+        {"READER": str(READER)},
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "NOTICE" not in proc.stderr, "an honest absence must stay silent"
+
+
 def test_harness_yaml_wins_over_a_stale_fenced_block(tmp_path: Path) -> None:
     """A migrated repo keeps its prose spine. If the stale fenced block could
     still win, the migration would be a no-op nobody noticed."""
@@ -259,8 +307,18 @@ PARSER_TOKENS = (
 #: scan shape ``test_hooks_fail_open_is_loud`` uses, and the reason #537 put the
 #: shared reader in ``scripts/`` rather than in a ``hooks/lib/`` those scans
 #: cannot see.
-def _js_modules() -> list[Path]:
-    return sorted([*HOOKS.glob("*.js"), *(REPO_ROOT / "scripts").glob("*.js")])
+def _js_modules() -> list[str]:
+    """The tracked modules, by repo-relative path.
+
+    Read through the index rather than the working tree, which is what
+    `.claude/rules/scripts.md` requires of a guard: a guard over the working tree
+    passes on bytes that are not the bytes that ship.
+    """
+    return sorted(
+        path.relative_to(REPO_ROOT).as_posix()
+        for path in tracked_files_under("hooks") | tracked_files_under("scripts")
+        if path.suffix == ".js"
+    )
 
 
 @pytest.mark.parametrize("token", PARSER_TOKENS)
@@ -270,9 +328,7 @@ def test_no_module_but_the_shared_reader_carries_a_parser(token: str) -> None:
     parser is what removes that class, so the guard is on the *count* of parsers,
     not on their agreement."""
     homes = sorted(
-        path.relative_to(REPO_ROOT).as_posix()
-        for path in _js_modules()
-        if token in path.read_text()
+        name for name in _js_modules() if token in indexed_text(name)
     )
     assert set(homes) <= {"scripts/harness-config.js"}, f"{token} is also declared in {homes}"
 
@@ -280,7 +336,7 @@ def test_no_module_but_the_shared_reader_carries_a_parser(token: str) -> None:
 def test_the_shared_reader_really_is_the_parser() -> None:
     """The anti-vacuity half. Without it, deleting the reader outright would turn
     every parametrisation above green."""
-    text = (REPO_ROOT / "scripts" / "harness-config.js").read_text()
+    text = indexed_text("scripts/harness-config.js")
     owned = ("FLOW_PAIR", "INDICATOR", "withoutComment")
     missing = [token for token in owned if token not in text]
     assert not missing, f"the shared reader carries no {missing}"
@@ -299,12 +355,24 @@ def test_no_environment_variable_can_redirect_the_reader() -> None:
     An earlier draft of this ticket shipped exactly that variable, to make the
     test above possible. The test was rewritten to copy the hook instead.
     """
-    for module in [*HOOKS.glob("*.js"), *(REPO_ROOT / "scripts").glob("*.js")]:
-        text = module.read_text()
-        for line in text.splitlines():
-            if "harness-config.js" not in line and "harness-config" not in line:
+    require_call = re.compile(r"require\s*\(([^)]*)\)")
+    for name in _js_modules():
+        text = indexed_text(name)
+        for expression in require_call.findall(text):
+            if "harness-config" not in expression:
                 continue
-            assert "process.env" not in line, (
-                f"{module.name} resolves the shared reader through an environment "
-                f"variable: {line.strip()}"
+            # The expression itself, and every identifier feeding it. A guard that
+            # only read the `require` line passed a two-line resolution —
+            # `const dir = process.env.X;` then `require(path.join(dir, …))` —
+            # because neither line carried both tokens. The subject is the
+            # syntactic position a per-invocation value can occupy, not one line.
+            operands = set(re.findall(r"[A-Za-z_$][\w$]*", expression))
+            reachable = expression
+            for line in text.splitlines():
+                declared = re.match(r"\s*(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=(.*)$", line)
+                if declared and declared.group(1) in operands:
+                    reachable += "\n" + declared.group(2)
+            assert "process.env" not in reachable and "argv" not in reachable, (
+                f"{name} resolves the shared reader through a per-invocation value: "
+                f"{expression.strip()}"
             )

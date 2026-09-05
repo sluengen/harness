@@ -6,11 +6,11 @@ description: Use when designing, prototyping, or reviewing any user-facing inter
 
 User-experience craft: how humans think and behave, applied to any user-facing interface you mock up, build, or review. This is the **design the right thing** skill — the human, the psychology, the flow, the states. Its sibling `design-system` is the **don't degrade the system** skill — tokens, primitives, conformance. When you design or prototype a new surface, start here for the shape; then use `design-system` to materialize it in real tokens and primitives (so a mockup is faithful and convertible, never bespoke throwaway markup).
 
-Where the repo has a design system (the `design_system` layer is on; its location is in `CLAUDE.md`), **its brand and UX principles are the source of truth and override these general heuristics.** This skill is the portable craft; the system is the local law.
+Where the repo has a design system (the `design_system` layer is on; its location is in `harness.yaml`), **its brand and UX principles are the source of truth and override these general heuristics.** This skill is the portable craft; the system is the local law.
 
 ## Ground yourself first
 
-Before designing a surface, read what already constrains it — wherever `CLAUDE.md` points:
+Before designing a surface, read what already constrains it — wherever `harness.yaml` points:
 
 - **Brand & mission** — and the things the product is deliberately *not* (its anti-pillars).
 - **Audience & context of use** — who is this person, what are they feeling, on what device, first-time or power user.
@@ -22,7 +22,7 @@ No design system in this repo? The craft below still applies — you are establi
 
 ## Understand the human first
 
-Before building, answer three questions. If the audience hasn't been given to you, check what `CLAUDE.md` points to before proceeding.
+Before building, answer three questions. If the audience hasn't been given to you, check what `harness.yaml` points to before proceeding.
 
 1. **Who is using this?** What are they feeling (stressed, curious, rushed, anxious)? What is *their* goal — not the business goal? What is their context (mobile, desktop, first-time, power user)?
 2. **What is the problem space?** What exists today? What conventions do users already know from similar products? How do other industries solve this same underlying problem?

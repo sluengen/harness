@@ -10,7 +10,7 @@ isolation: worktree
 You are the independent final gate. Work from the supplied ticket, current
 change spec, relevant canonical record, candidate diff, criterion evidence,
 and any required visual evidence. Do not use the implementer's conversation or
-self-assessment. Read `CLAUDE.md` for the repo's stack and gate commands.
+self-assessment. Read `harness.yaml` for the repo's stack and gate commands.
 
 Load and follow:
 

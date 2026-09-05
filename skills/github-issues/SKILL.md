@@ -1,12 +1,12 @@
 ---
 name: github-issues
-description: Use when the repo's CLAUDE.md says tracker github and you need to read or update a ticket — opening an issue, filing one onto the Projects v2 board, setting its Status, commenting, holding it, or pulling the Todo queue. The GitHub provider recipes; the backend-neutral policy (states, holds, filing) is the spine's contract.
+description: Use when the repo's harness.yaml says tracker github and you need to read or update a ticket — opening an issue, filing one onto the Projects v2 board, setting its Status, commenting, holding it, or pulling the Todo queue. The GitHub provider recipes; the backend-neutral policy (states, holds, filing) is the spine's contract.
 ---
 # GitHub Issues
 
-The **GitHub provider recipes** for the tracker contract. Policy — the states, holds, assurance labels, filing rules, and the `none` degrade — is the spine's contract (`CLAUDE.md` → *The contract*), already loaded; this file is only *how* each operation is performed against GitHub Issues plus a Projects v2 board.
+The **GitHub provider recipes** for the tracker contract. Policy — the states, holds, assurance labels, filing rules, and the `none` degrade — is the spine's contract (`harness.yaml` → *The contract*), already loaded; this file is only *how* each operation is performed against GitHub Issues plus a Projects v2 board.
 
-Applies when `CLAUDE.md` says `tracker: github`. The addresses come from its `github:` block:
+Applies when `harness.yaml` says `tracker: github`. The addresses come from its `github:` block:
 
 ```yaml
 tracker: github

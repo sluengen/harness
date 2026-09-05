@@ -8,7 +8,7 @@ How code gets built here: the principles every change is measured against, the t
 
 ## The principles
 
-Universal. A repo extends them in `CLAUDE.md` and records consequential choices as decisions in the spec they govern (`architecture`); a repo principle never contradicts one here without a recorded decision saying so.
+Universal. A repo extends them in `AGENTS.md` and records consequential choices as decisions in the spec they govern (`architecture`); a repo principle never contradicts one here without a recorded decision saying so.
 
 **Simplicity over cleverness.** The reader is the constraint, not the writer. Prefer the boring solution understood in one pass.
 
@@ -74,7 +74,7 @@ Bug fixes follow the same loop — the reproducing test written first is the reg
 
 ## Structure
 
-Defaults; a repo overrides numbers in `CLAUDE.md`, the principles do not change.
+Defaults; a repo overrides numbers in `harness.yaml`, the principles do not change.
 
 | Unit | Soft | Hard |
 |---|---|---|
@@ -93,7 +93,7 @@ For fetches of URLs derived from user input or page-declared content, load [`ref
 
 **No completion claim without fresh evidence** — the spine's third law, operationalised:
 
-1. Identify the command that proves the claim (`CLAUDE.md` commands). 2. Execute it *now* — "I ran it earlier" is not evidence, you have changed code since. 3. Read the full output. 4. Verify the output supports the claim — "5 passed, 1 skipped" means explain the skip. 5. Then claim. Lint before types before tests; do not run the slow gate on code the fast gate rejects.
+1. Identify the command that proves the claim (`harness.yaml` commands). 2. Execute it *now* — "I ran it earlier" is not evidence, you have changed code since. 3. Read the full output. 4. Verify the output supports the claim — "5 passed, 1 skipped" means explain the skip. 5. Then claim. Lint before types before tests; do not run the slow gate on code the fast gate rejects.
 
 | Claim | Required evidence |
 |---|---|

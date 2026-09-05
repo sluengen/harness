@@ -1,10 +1,10 @@
 ---
 name: spec-authoring
-description: Use when writing or revising any spec — a proposal, a change spec (the ticket), or a feature/reference spec — including its design and the decisions behind it. The craft of the spec; the lifecycle it serves is the spine's contract (CLAUDE.md).
+description: Use when writing or revising any spec — a proposal, a change spec (the ticket), or a feature/reference spec — including its design and the decisions behind it. The craft of the spec; the lifecycle it serves is the spine's contract (AGENTS.md).
 ---
 # Spec Authoring
 
-How to write a spec that is actionable, consistent, and complete — including the **design** and the **decisions** behind it. Specs come in two families: **lifecycle specs** that flow with a task, and **reference specs** that document a standing part of the system. the spine (`CLAUDE.md`) is the lifecycle; this is the craft.
+How to write a spec that is actionable, consistent, and complete — including the **design** and the **decisions** behind it. Specs come in two families: **lifecycle specs** that flow with a task, and **reference specs** that document a standing part of the system. the spine (`AGENTS.md`) is the lifecycle; this is the craft.
 
 ## Lifecycle specs — three moments in a task's life
 
@@ -18,10 +18,10 @@ They flow: a **proposal** (when needed) is decided and broken into one or more *
 
 ## Reference specs — standing documentation
 
-Some specs are not tied to a task. They document a stable part of the system and are updated when that part changes. A reference spec *is* a spec — held to the same bar (actionable, honest, current). Two recognised types (paths in `CLAUDE.md`):
+Some specs are not tied to a task. They document a stable part of the system and are updated when that part changes. A reference spec *is* a spec — held to the same bar (actionable, honest, current). Two recognised types (paths in `AGENTS.md`):
 
 - **Infrastructure spec** (`templates/infrastructure.md`) — the operational reality: domains, hosting, services, deployment, accounts. The source of truth when making a deployment or configuration decision.
-- **Architecture-principles spec** (`templates/architecture.md`) — how the system is built: the technical principles that govern design *here*, extending the universal `engineering` with this repo's specifics. A repo with rich architecture conventions keeps them in this spec; a small repo keeps a brief version in `CLAUDE.md` and skips the file.
+- **Architecture-principles spec** (`templates/architecture.md`) — how the system is built: the technical principles that govern design *here*, extending the universal `engineering` with this repo's specifics. A repo with rich architecture conventions keeps them in this spec; a small repo keeps a brief version in `AGENTS.md` and skips the file.
 
 ## What every spec shares
 
@@ -40,11 +40,11 @@ Some specs are not tied to a task. They document a stable part of the system and
 
 Why embedded: someone reading the feature spec sees the decision and its reasoning *in place*, not in a separate file they have to find and correlate. Superseding an embedded decision means updating it in-place in its spec, with a dated note on what changed and why (*"Superseded YYYY-MM-DD: previously X; changed to Y because Z."*) — not a new numbered file — then updating the code, comments, and specs that relied on the old choice; where a repo declares `paths.decisions`, its own architecture index owns supersession for the records filed there. (See `architecture` for when a choice is decision-worthy.)
 
-**A repo may configure a decision directory, and that configuration is the only switch.** Where a repo declares `paths.decisions` in its `CLAUDE.md`, that directory is the home for its architecture decision records; a repo that declares none has no `decisions/` folder and no standalone ADRs — embedded, exclusively. There is no separate strategy setting to keep in step: the optional path is the whole signal.
+**A repo may configure a decision directory, and that configuration is the only switch.** Where a repo declares `paths.decisions` in its `harness.yaml`, that directory is the home for its architecture decision records; a repo that declares none has no `decisions/` folder and no standalone ADRs — embedded, exclusively. There is no separate strategy setting to keep in step: the optional path is the whole signal.
 
 A configured directory holds only decisions that are **cross-cutting, consequential, and expensive to reverse** — branch topology, tracker architecture, security posture, certification invariants. A decision that merely touches **several files** does not clear that bar, and one that governs a single feature never does; both stay embedded. Each qualifying decision has **one canonical record**: the feature specs it affects link to it and must not restate its reasoning, so superseding the record leaves them correct.
 
-Placement, numbering, and supersession *inside* that directory are the repo's own convention — defer to its **architecture index** (the architecture-principles spec, or the decisions index in `CLAUDE.md`) rather than assuming one. Universal guidance names the `paths.decisions` key and stops there.
+Placement, numbering, and supersession *inside* that directory are the repo's own convention — defer to its **architecture index** (the architecture-principles spec, or the decisions index in `harness.yaml`) rather than assuming one. Universal guidance names the `paths.decisions` key and stops there.
 
 ## Proposal spec
 
@@ -67,7 +67,7 @@ A single, concrete piece of work. The tracker issue is its home (`tracker`). Sec
 
 **Grounding (before the change spec).** Ground the spec in current reality before writing it: verify every fact it will rest on that names a **file / function / flag / version / decision** against the code as it is *now* — not as memory or a system-reminder recalls it (a recalled fact reflects what was true when it was written). Record what you find as a **`Grounding`** section in the change spec (`templates/change.md`): verified facts each anchored to a `path:line` (or a current version / flag value), any decision the ticket assumed settled that is actually open or already superseded (surface it now, not mid-build), and open questions. Where a sub-agent host is available, a host-native read-only sub-agent produces this brief in its own context and the executor records it verbatim; where none is available, the executor self-grounds inline — the fallback. Grounding always happens, scaled to size: a one-line fix gets a one-line grounding ("verified `foo.py:rename_flag` still exists"), not a research essay. The recorded section makes grounding auditable and pulls decisions forward to creation time — its honest limit is that it evidences the step was *recorded*, not that grounding was genuinely performed.
 
-**Watchlist trigger (conditional).** Before writing the change spec, check the files this change will touch against the repo's `architecture_watchlist.files` in `CLAUDE.md` (a repo that has not opted in has no watchlist — skip this). When the planned diff intersects the watchlist, add a **`Watchlist trigger`** section recording one of the two valid outcomes: a small behavior-preserving seam extraction, or an explicit deferral with a reason. The mechanism — the trigger, the two outcomes, the no-op when a repo does not opt in — lives in `architecture` → *Architecture watchlist*; the change spec is where its result is recorded.
+**Watchlist trigger (conditional).** Before writing the change spec, check the files this change will touch against the repo's `architecture_watchlist.files` in `harness.yaml` (a repo that has not opted in has no watchlist — skip this). When the planned diff intersects the watchlist, add a **`Watchlist trigger`** section recording one of the two valid outcomes: a small behavior-preserving seam extraction, or an explicit deferral with a reason. The mechanism — the trigger, the two outcomes, the no-op when a repo does not opt in — lives in `architecture` → *Architecture watchlist*; the change spec is where its result is recorded.
 
 **How deep the Design section goes.** Write it to the depth the *decision* needs and no further. The ticket's **assurance** level, not your judgment while writing, decides whether the work earns a separate design pass at build time: only work labelled for the highest level does, and everything unlabelled resolves to the level that requires none. So a thin Design section is right on a change whose design was never going to be the hard part, and wrong on one carrying a real decision. *Which* level the ticket carries is a different question, and *Choosing assurance* below is where it is answered.
 
@@ -87,7 +87,7 @@ Every ticket carries **exactly one** `assurance:<level>` label, chosen when it i
 
 | Level | Choose it when |
 |---|---|
-| `trivial` | The expected diff falls inside the repo's configured allowlist (`CLAUDE.md` → `assurance.trivial_certify`) and the work carries no unresolved design or public-contract decision. |
+| `trivial` | The expected diff falls inside the repo's configured allowlist (`harness.yaml` → `assurance.trivial_certify`) and the work carries no unresolved design or public-contract decision. |
 | `simple` | The default: a normal change, a bug, a missing detail. |
 | `complex` | The work carries a consequential architecture, data-model, interface, or security decision, or spans more than one interacting lifecycle contract. |
 
@@ -99,7 +99,7 @@ Two rules carry the weight.
 
 ## Feature spec
 
-The canonical, as-built record of what the product does today, plus the decisions that shaped it (Decision blocks). Written by the **reviewer** on PASS, from the diff — never by the builder (the spine (`CLAUDE.md`)). See `templates/feature.md`. It answers "how does X work, and why is it that way?", grouped by user-visible behaviour, with the data model and interface surface that back it.
+The canonical, as-built record of what the product does today, plus the decisions that shaped it (Decision blocks). Written by the **reviewer** on PASS, from the diff — never by the builder (the spine (`AGENTS.md`)). See `templates/feature.md`. It answers "how does X work, and why is it that way?", grouped by user-visible behaviour, with the data model and interface surface that back it.
 
 An as-built record must not enumerate a set the code owns — a class family, a command surface, or a reason vocabulary. Name the module that owns it and stop; or, where the list genuinely aids the reader, pair it with a guard that derives the set from the code and fails when the two disagree. A prose list with no derivation is a claim nothing measures, and it goes stale at the commit that adds the next member.
 

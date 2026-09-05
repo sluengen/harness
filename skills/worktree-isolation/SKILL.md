@@ -12,7 +12,7 @@ Any multi-commit task runs on its own branch in its own git worktree. This keeps
 
 ## Creating the worktree
 
-From the repo root, branch off the integration branch named in `CLAUDE.md` (commonly `dev` or `main`):
+From the repo root, branch off the integration branch named in `harness.yaml` (commonly `dev` or `main`):
 
 ```bash
 git worktree add ../<repo>-<task-id> -b <task-id> <integration-branch>
@@ -26,7 +26,7 @@ A fresh worktree does not have your gitignored local state (dependencies, env fi
 
 ```bash
 SHARED_ROOT="$(git rev-parse --path-format=absolute --git-common-dir)"; SHARED_ROOT="${SHARED_ROOT%/.git}"
-# Link what this repo needs — see CLAUDE.md (e.g. the env file, the deps dir):
+# Link what this repo needs — see harness.yaml (e.g. the env file, the deps dir):
 ln -sfn "$SHARED_ROOT/<env-file>"  "<worktree>/<env-file>"
 ln -sfn "$SHARED_ROOT/<deps-dir>"  "<worktree>/<deps-dir>"
 ```

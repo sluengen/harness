@@ -160,8 +160,13 @@ function plainScalar(raw) {
  * are read: the three parsers this module replaces scanned the whole file, so a
  * ``branches:`` line in a prose example could decide the protected set. Every
  * spine the guidance has ever written fences the block, so nothing real loses a
- * declaration by this; a spine that does not is reported unreadable, and the
- * caller's conservative fallback applies.
+ * declaration by this.
+ *
+ * A spine that declares a key **outside** any fence is the case that would go
+ * silent: the extraction is empty, so the caller falls back with nothing on
+ * stderr — the exact #487 harm the unreadable notice exists to prevent.
+ * :func:`unfencedDeclaration` is what stops that, and :func:`readMap` reports
+ * through it. The narrowing is still right; it just has to be audible.
  */
 function configText(source, text) {
   if (/\.ya?ml$/i.test(source)) return text;
@@ -177,6 +182,23 @@ function configText(source, text) {
     if (open) blocks.push(line);
   }
   return blocks.join("\n");
+}
+
+/** True when ``text`` declares ``name`` at the top level somewhere the fenced
+ * extraction did not reach — a markdown source whose configuration is outside any
+ * ``yaml`` fence. Read from the **raw** text, and asked only when the fenced
+ * extraction found nothing, so it can never widen what is parsed: its whole job
+ * is to tell a silent miss from an honest absence.
+ */
+function unfencedDeclaration(text, name) {
+  const KEY = topLevelKey(name);
+  const FLOW = flowMapping(name);
+  return text
+    .split("\n")
+    .some((raw) => {
+      const line = raw.replace(/\r$/, "");
+      return KEY.test(line) || FLOW.test(line.trim());
+    });
 }
 
 /** Every top-level mapping declared under ``name``, as ``{key: value}``.
@@ -272,14 +294,15 @@ function configSources(top) {
       fs.lstatSync(source);
     } catch (err) {
       if (err && err.code === "ENOENT") continue;
-      present.push({ source, text: null });
+      present.push({ source, text: null, raw: null });
       continue;
     }
     try {
-      present.push({ source, text: configText(name, fs.readFileSync(source, "utf8")) });
+      const raw = fs.readFileSync(source, "utf8");
+      present.push({ source, text: configText(name, raw), raw });
     } catch (err) {
       void err;
-      present.push({ source, text: null });
+      present.push({ source, text: null, raw: null });
     }
   }
   return present;
@@ -328,6 +351,12 @@ function readMap(top, name, onUnreadable) {
       continue;
     }
     if (Object.keys(map).length) return map;
+    // Nothing was found. That is ordinary for a source carrying no such block —
+    // and a silent miss for one that declares it outside a fence, which is the
+    // one case the fenced narrowing can hide.
+    if (selected.raw !== null && unfencedDeclaration(selected.raw, name)) {
+      if (onUnreadable) onUnreadable(selected.source);
+    }
   }
   return {};
 }

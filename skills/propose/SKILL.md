@@ -10,7 +10,7 @@ The portable plugin root is two directories above this SKILL.md. Resolve embedde
 
 Usage: `/propose <idea>`
 
-**Tracker operations follow the spine's contract** (`CLAUDE.md` → *Tracker dispatch* and *Filing*): the `tracker:` field names the backend, the matching provider skill (`github-issues` or `linear`) owns the API recipes, and `none` degrades to specs and session reports. Do not embed provider API calls here.
+**Tracker operations follow the spine's contract** (`harness.yaml` → *Tracker dispatch* and *Filing*): the `tracker:` field names the backend, the matching provider skill (`github-issues` or `linear`) owns the API recipes, and `none` degrades to specs and session reports. Do not embed provider API calls here.
 
 Creates and works a **proposal spec** for an idea that is not yet confirmed work — it needs a decision, carries real unknowns, or is too big to be a single change. The proposal is where the thinking happens before build time is spent. Implements the proposal tier of `spec-authoring`.
 
