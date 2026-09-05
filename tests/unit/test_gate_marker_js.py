@@ -63,6 +63,7 @@ SURVIVED with no defect):
 from __future__ import annotations
 
 import ast
+import datetime
 import json
 import os
 import shutil
@@ -210,6 +211,12 @@ def _tree(repo: Path) -> str:
     assert len(oid) == 40, f"expected a tree oid, got {oid!r}"
     return oid
 
+
+def _instant(stamp: str) -> float:
+    """Seconds since the epoch for a marker's ``...Z`` instant."""
+    return datetime.datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ").replace(
+        tzinfo=datetime.timezone.utc
+    ).timestamp()
 
 def _marker_path(repo: Path, tree: str) -> Path:
     proc = _cli(repo, "path", "--tree", tree)
@@ -1084,3 +1091,220 @@ def test_nothing_imports_the_retired_python_writer() -> None:
         "these tracked sources still import the retired Python writer, which "
         f"ADR 0018 deletes: {offenders}"
     )
+
+
+# --- gate duration (#539, AC-7) -----------------------------------------------
+
+
+def test_the_marker_records_when_the_gate_started_and_finished(repo: Path) -> None:
+    """Both ends of the measurement, and the span is the gate's own duration.
+
+    The bound is what makes this a measuring test rather than a presence check:
+    a writer that stamped ``started_at`` beside ``finished_at`` at the end of the
+    run would satisfy every field-exists assertion while recording a duration of
+    zero for every gate the repo will ever run. The fixture gate sleeps, so the
+    recorded span has to reproduce a number the writer cannot get from one clock
+    read (#458 — pin the derivation, not the derived answer).
+    """
+    scripts = repo / "scripts"
+    scripts.mkdir(exist_ok=True)
+    (scripts / "verify.sh").write_text(
+        "#!/usr/bin/env sh\n"
+        'test "${HARNESS_GATE_MARKER_RUNNER:-}" = "1"\n'
+        "sleep 1.2\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    proc = _cli(repo, "run")
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(Path(proc.stdout.split("->", 1)[1].strip()).read_text(encoding="utf-8"))
+
+    assert "started_at" in payload, f"the marker records no start: {sorted(payload)}"
+    assert "finished_at" in payload
+    started = _instant(payload["started_at"])
+    finished = _instant(payload["finished_at"])
+    assert finished >= started
+    assert finished - started >= 1.0, (
+        "the recorded span must be the gate's duration, not two reads of one "
+        f"clock: {payload['started_at']} .. {payload['finished_at']}"
+    )
+    assert payload["started_at"].endswith("Z") and "." not in payload["started_at"], (
+        f"same instant format as finished_at: {payload['started_at']!r}"
+    )
+
+
+def test_the_start_is_taken_before_the_gate_runs_not_after(repo: Path) -> None:
+    """A red gate writes no marker, so the ordering is measured against the clock.
+
+    ``started_at`` must precede the moment the gate was launched. Reading the
+    wall clock here and requiring the recorded start to fall before the sleep has
+    elapsed distinguishes "stamped on entry" from "stamped on success", which the
+    span test alone cannot: a writer that recorded ``finished_at - duration``
+    after the fact would produce an identical span.
+    """
+    scripts = repo / "scripts"
+    scripts.mkdir(exist_ok=True)
+    (scripts / "verify.sh").write_text(
+        "#!/usr/bin/env sh\n"
+        'test "${HARNESS_GATE_MARKER_RUNNER:-}" = "1"\n'
+        "sleep 2\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    before = time.time()
+    proc = _cli(repo, "run")
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(Path(proc.stdout.split("->", 1)[1].strip()).read_text(encoding="utf-8"))
+    started = _instant(payload["started_at"])
+    assert before - 1.0 <= started < before + 1.5, (
+        "the start belongs to the moment the run began, not to the moment it "
+        f"succeeded: observed {started}, run entered at {before}"
+    )
+
+
+# --- the scoped re-gate (#539, AC-4) ------------------------------------------
+
+
+def _declare_scoped(repo: Path, command: str) -> None:
+    (repo / "harness.yaml").write_text(
+        f"commands:\n  test_scoped: {command}\n", encoding="utf-8"
+    )
+
+
+def _echo_scope(repo: Path) -> str:
+    """A declared scoped command that records exactly what it was handed."""
+    runner = repo / "scoped.sh"
+    runner.write_text(
+        "#!/usr/bin/env sh\n"
+        'test "${HARNESS_GATE_MARKER_RUNNER:-}" = "1" || exit 9\n'
+        'xargs -0 -n1 printf "%s\\n" < "$HARNESS_GATE_SCOPE_FILE" >> run.log\n'
+        'printf "count=%s\\n" "$HARNESS_GATE_SCOPE_COUNT" >> run.log\n',
+        encoding="utf-8",
+    )
+    runner.chmod(0o755)
+    return "sh scoped.sh"
+
+
+def _run_scoped(repo: Path, *paths: str) -> dict[str, object]:
+    args = ["run"]
+    for p in paths:
+        args += ["--scope", p]
+    proc = _cli(repo, *args)
+    assert proc.returncode == 0, f"{args}: {proc.stderr}"
+    marker = Path(proc.stdout.split("->", 1)[1].strip())
+    return dict(json.loads(marker.read_text(encoding="utf-8")))
+
+
+def test_a_scoped_run_records_exactly_the_paths_it_was_given(repo: Path) -> None:
+    """The marker names the scope, so it never asserts coverage the run lacked.
+
+    The third path is the control: a fixture whose scope is everything the run
+    can see cannot tell "records its scope" from "records every path there is".
+    """
+    _declare_scoped(repo, _echo_scope(repo))
+    payload = _run_scoped(repo, "src/one.py", "src/two.py")
+    assert payload["scope"] == ["src/one.py", "src/two.py"], payload.get("scope")
+    handed = (repo / "run.log").read_text(encoding="utf-8").split()
+    assert handed == ["src/one.py", "src/two.py", "count=2"], (
+        f"the declared command must receive the scope it was run for: {handed}"
+    )
+    assert "src/three.py" not in payload["scope"]
+
+
+def test_a_repo_declaring_no_scoped_command_writes_an_unscoped_marker(repo: Path) -> None:
+    """Undeclared, the conflict path runs the full gate — so it claims full cover.
+
+    A marker carrying a partial ``scope`` here would understate a run that
+    verified everything, and the push guard would then refuse a landing the gate
+    had earned.
+    """
+    _write_internal_gate(repo)
+    payload = _run_scoped(repo, "src/one.py")
+    assert "scope" not in payload, (
+        f"an undeclared repo ran the full gate, so the marker may not be scoped: {payload}"
+    )
+
+
+def test_the_declared_scoped_command_line_is_the_checked_in_scalar_verbatim(repo: Path) -> None:
+    """ADR 0018: an operand supplies data, never a command.
+
+    The paths reach the command through a NUL-delimited file, so the line
+    ``sh -c`` receives is character for character what the tree declares. A
+    marker recording a command line the tree does not contain would be the
+    boundary crossing itself, visible in the evidence.
+    """
+    declaration = _echo_scope(repo)
+    _declare_scoped(repo, declaration)
+    payload = _run_scoped(repo, "src/one.py")
+    assert payload["gate"] == declaration, payload["gate"]
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "-x",
+        "/etc/passwd",
+        "../outside.py",
+        "a/../../outside.py",
+        "",
+    ],
+)
+def test_a_scope_path_that_is_not_a_plain_relative_path_is_refused(repo: Path, path: str) -> None:
+    """Refused before anything runs, so no gate result exists to record.
+
+    ``-x`` is the one that quoting would not have saved: a runner reads it as an
+    option, and an operand that changes what the gate does is the boundary
+    however it is delivered.
+    """
+    _declare_scoped(repo, _echo_scope(repo))
+    proc = _cli(repo, "run", "--scope", path)
+    assert proc.returncode == 64, f"{path!r}: rc={proc.returncode} {proc.stderr}"
+    assert not (repo / "run.log").exists(), "the gate ran before the scope was checked"
+
+
+def test_a_scoped_path_never_reaches_the_shell_as_syntax(repo: Path) -> None:
+    """Git hands back whatever bytes a filename holds; none of them are command."""
+    _declare_scoped(repo, _echo_scope(repo))
+    nasty = "a b'; touch pwned #"
+    payload = _run_scoped(repo, nasty)
+    assert not (repo / "pwned").exists(), "a scoped path reached the shell as syntax"
+    assert payload["scope"] == [nasty]
+    assert nasty in (repo / "run.log").read_text(encoding="utf-8")
+
+
+def test_two_scoped_declarations_refuse_rather_than_pick_one(repo: Path) -> None:
+    """Ambiguity fails closed, as ``commands.verify`` already does.
+
+    A scoped marker authorises landing resolution bytes nobody reviewed, so the
+    command that produces it may not be chosen by which declaration came first.
+    """
+    (repo / "harness.yaml").write_text(
+        "commands:\n  test_scoped: /bin/true\ncommands:\n  test_scoped: /bin/false\n",
+        encoding="utf-8",
+    )
+    proc = _cli(repo, "run", "--scope", "a.txt")
+    assert proc.returncode != 0, proc.stdout
+    assert "test_scoped" in proc.stderr, proc.stderr
+
+
+def test_a_red_scoped_gate_writes_no_marker(repo: Path) -> None:
+    """The control for the whole scoped path: red still means no evidence."""
+    _declare_scoped(repo, "false")
+    proc = _cli(repo, "run", "--scope", "a.txt")
+    assert proc.returncode != 0
+    assert not list((repo / ".git" / "harness" / "gate").glob("*.json")), "a red run left evidence"
+    green = _cli(repo, "run", "--scope", "a.txt")
+    assert green.returncode != 0, "the fixture cannot tell red from green"
+
+
+def test_the_scope_file_does_not_survive_the_run(repo: Path) -> None:
+    """It lives under the git common directory and is removed either way.
+
+    Left behind it would accumulate one file per conflicted landing, in the same
+    directory the markers are pruned from — and a scope file is not a marker, so
+    nothing would ever sweep it.
+    """
+    _declare_scoped(repo, _echo_scope(repo))
+    _run_scoped(repo, "src/one.py")
+    scope_dir = repo / ".git" / "harness" / "scope"
+    assert not scope_dir.exists() or not list(scope_dir.iterdir()), list(scope_dir.iterdir())

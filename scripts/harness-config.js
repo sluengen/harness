@@ -394,7 +394,7 @@ function declaredCommands(top, onUnreadable) {
 /** A source declares no usable field. */
 class ConfigDeclarationError extends Error {}
 
-/** The one ``commands.verify`` scalar ``text`` declares.
+/** The one ``commands.<name>`` scalar ``text`` declares.
  *
  * Deliberately stricter than :func:`blockMap`, and deliberately not sharing its
  * first-declaration-wins rule. The value chosen here decides which command may
@@ -405,8 +405,14 @@ class ConfigDeclarationError extends Error {}
  * aborts the scan, so a mention above the real declaration cannot make the gate
  * permanently unrunnable. And two declarations are an *ambiguity* rather than a
  * race the first one wins.
+ *
+ * ``optional`` splits *absent* from *ambiguous* for a key a repo need not
+ * declare at all (#539's ``commands.test_scoped``). Absent returns ``null`` and
+ * the caller falls back to the full gate; ambiguous or malformed still refuses,
+ * because a command that mints a **scoped** marker authorises landing bytes no
+ * reviewer saw, and may not be chosen by which declaration came first.
  */
-function declaredVerify(text, source) {
+function declaredCommand(text, source, name, optional) {
   const COMMANDS_KEY = topLevelKey("commands");
   const values = [];
   let inBlock = false;
@@ -436,7 +442,7 @@ function declaredVerify(text, source) {
     if (entryIndent === -1) entryIndent = lead;
     if (lead !== entryIndent) continue;
     const pair = PAIR.exec(line);
-    if (pair === null || pair[1] !== "verify") continue;
+    if (pair === null || pair[1] !== name) continue;
     const scalar = withoutComment(pair[2]);
     if (scalar.malformed) {
       sawMalformedQuoting = true;
@@ -445,6 +451,7 @@ function declaredVerify(text, source) {
     }
     values.push(plainScalar(pair[2]));
   }
+  if (optional && values.length === 0 && !sawMalformedQuoting) return null;
   if (values.length !== 1 || values[0] === null) {
     let hint = "";
     if (values.length === 0 && sawScalarCommandsKey) {
@@ -453,10 +460,20 @@ function declaredVerify(text, source) {
       hint = "; a quoted value must be one whole enclosing quoted scalar";
     }
     throw new ConfigDeclarationError(
-      `${source}: commands.verify must be one non-empty scalar${hint}`
+      `${source}: commands.${name} must be one non-empty scalar${hint}`
     );
   }
   return values[0];
+}
+
+/** The one ``commands.verify`` scalar ``text`` declares. */
+function declaredVerify(text, source) {
+  return declaredCommand(text, source, "verify", false);
+}
+
+/** The ``commands.test_scoped`` scalar ``text`` declares, or ``null``. */
+function declaredScopedTest(text, source) {
+  return declaredCommand(text, source, "test_scoped", true);
 }
 
 /** The gate command the repo at ``top`` declares, as ``{command, legacy}``.
@@ -475,6 +492,18 @@ function gateCommand(top) {
   return { command: declaredVerify(selected.text, selected.source), legacy: false };
 }
 
+/** The scoped test command the repo at ``top`` declares, or ``null``.
+ *
+ * D3: one optional command, no strategy key. Declared, the conflict path runs
+ * scoped; undeclared, it runs the full gate — so an absent source and an absent
+ * key are the same answer, and neither is an error.
+ */
+function scopedTestCommand(top) {
+  const selected = configSource(top);
+  if (selected === null || selected.text === null) return null;
+  return declaredScopedTest(selected.text, selected.source);
+}
+
 // The public surface: what a caller uses, plus what a test names. Nothing else
 // is exported — an export with neither is a maintenance obligation for a
 // contract nobody has.
@@ -485,5 +514,7 @@ module.exports = {
   declaredLoop,
   declaredCommands,
   declaredVerify,
+  declaredScopedTest,
   gateCommand,
+  scopedTestCommand,
 };

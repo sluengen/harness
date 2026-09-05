@@ -84,10 +84,10 @@ const { spawnSync } = require("node:child_process");
 //: Bumped when the payload shape changes. The hooks do not read it — they do not
 //: read the body at all — so this is for a human reading a marker, and for a
 //: future writer that needs to tell two shapes apart.
-const SCHEMA = 1;
+const SCHEMA = 2;
 
 //: Recorded in the payload so a marker names what produced it.
-const WRITER = "gate-marker.js@0.1.0";
+const WRITER = "gate-marker.js@0.2.0";
 
 //: The freshness bound, in seconds. Its purpose is **toolchain drift under an
 //: unchanged tree** — the venv is not in the tree, `uv.lock` is — not session
@@ -402,8 +402,18 @@ function branchOf(cwd) {
 /** Record a measured successful gate completion over `cwd`'s current tree.
  *
  * Called only on green. The body is diagnostics for a human; the *filename* is
- * the claim the hooks read. */
-function emitSuccessfulMarker(cwd, measuredExit, gate) {
+ * the claim the hooks read.
+ *
+ * `startedAt` is the epoch-millisecond instant the runner launched the gate, so
+ * `finished_at - started_at` is the gate's own duration rather than the span
+ * between two reads of one clock. #539 records both ends because a duration
+ * nobody measures from week one is a duration nobody ever has: `/assess` reports
+ * the median across a repo's markers, and a field added later has no history. */
+function instant(when) {
+  return new Date(when).toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+
+function emitSuccessfulMarker(cwd, measuredExit, gate, startedAt, scope) {
   if (measuredExit !== 0) {
     throw new Error("gate-marker: refusing to emit evidence for a non-zero gate result");
   }
@@ -418,12 +428,35 @@ function emitSuccessfulMarker(cwd, measuredExit, gate) {
     worktree: canonical(git(["rev-parse", "--show-toplevel"], cwd)),
     gate,
     exit: measuredExit,
-    finished_at: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
+    started_at: instant(startedAt === undefined ? Date.now() : startedAt),
+    finished_at: instant(Date.now()),
     epoch: Math.floor(Date.now() / 1000),
     host: os.hostname(),
     writer: WRITER,
   };
-  fs.writeFileSync(target, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  //: Present **only** when the run verified less than the whole tree. Absent is
+  //: the claim "everything", which is what every marker before #539 meant and
+  //: what an undeclared repo's conflict path still earns by running the full
+  //: gate. `hooks/push-target-guard.js` reads this one field and nothing else:
+  //: a marker carrying a scope never authorises a push on its own, only a merge
+  //: whose authored paths it contains.
+  if (scope !== undefined && scope !== null) payload.scope = scope;
+  //: Atomically, since #539: `hooks/push-target-guard.js` now parses this body
+  //: for one decision, and a torn write reads as a marker whose scope is
+  //: unusable — which denies. Two gate runs over one tree in two worktrees is
+  //: routine here, so the race is live rather than theoretical. `prune` globs
+  //: `*.json`, so the temp name deliberately does not end in it.
+  const scratch = `${target}.${process.pid}-${crypto.randomBytes(6).toString("hex")}.tmp`;
+  try {
+    fs.writeFileSync(scratch, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+    fs.renameSync(scratch, target);
+  } finally {
+    try {
+      fs.rmSync(scratch, { force: true });
+    } catch (err) {
+      void err;
+    }
+  }
   prune(path.dirname(target), { maxAge: maxAgeSeconds(), keep: KEEP });
   return target;
 }
@@ -480,6 +513,47 @@ function fromConfig(read) {
   }
 }
 
+/** The declared **scoped** gate, in the same shape as :func:`gateCommand`, or null.
+ *
+ * Returns the whole record rather than the scalar so that `runGate` assigns its
+ * command from a *call* and never from a literal it composed: ADR 0018's guard
+ * (`test_gate_command_declaration_contract.py`) reads the assignment, and that
+ * reading is the point — a command assembled at the call site is exactly what
+ * the boundary forbids, whether or not this particular assembly was innocent.
+ */
+function scopedGate(cwd) {
+  const scoped = fromConfig((config) => config.scopedTestCommand(cwd));
+  return scoped === null ? null : { command: scoped, legacy: false, scope: null };
+}
+
+/** The one gate this run will launch, and the scope its marker may claim.
+ *
+ * D3 — one optional command, no strategy key. A repo that declares
+ * `commands.test_scoped` and a run that names a scope get the scoped command and
+ * a marker that says so; anything else gets the full gate and a marker that
+ * claims everything, because that is what it earned.
+ *
+ * The selection lives in **one function returning the whole record** so that
+ * `runGate` assigns the command it spawns from a single call and never from a
+ * literal, a ternary, or a reassignment. ADR 0018's guard
+ * (`test_gate_command_declaration_contract.py`) reads those assignments, and the
+ * reading is the point: a command assembled at the spawn site is what the
+ * boundary forbids, however innocent this particular assembly.
+ */
+function selectedGate(cwd, scope) {
+  const wanted = Boolean(scope && scope.length);
+  if (wanted) {
+    const scoped = scopedGate(cwd);
+    if (scoped !== null) return { command: scoped.command, legacy: false, scope: scope.slice() };
+    process.stderr.write(
+      "gate-marker: no `commands.test_scoped` is declared, so this run covers the " +
+        "whole tree and its marker claims no scope\n"
+    );
+  }
+  const full = gateCommand(cwd);
+  return { command: full.command, legacy: full.legacy, scope: null };
+}
+
 /** Return the one ``commands.verify`` scalar a spine declares. */
 function declaredVerify(text, source) {
   return fromConfig((config) => config.declaredVerify(text, source));
@@ -490,14 +564,73 @@ function gateCommand(cwd) {
   return fromConfig((config) => config.gateCommand(cwd));
 }
 
+//: The environment a declared scoped command reads its paths from. A file, not
+//: a variable holding the list: a scope can be long, and a NUL-delimited file is
+//: the one encoding a path cannot escape from. A portable consumer redirects
+//: rather than using `xargs -a`, which BSD `xargs` does not have:
+//:
+//:     commands:
+//:       test_scoped: 'xargs -0 uv run pytest < "$HARNESS_GATE_SCOPE_FILE"'
+
+const SCOPE_FILE_ENV = "HARNESS_GATE_SCOPE_FILE";
+const SCOPE_COUNT_ENV = "HARNESS_GATE_SCOPE_COUNT";
+
+//: Where a run's scope file lives, under the git common directory beside the
+//: markers, for the same reason: it cannot be tracked by construction, so it can
+//: never perturb the tree the run is about to record.
+const SCOPE_SUBDIR = ["harness", "scope"];
+
+/** Refuse a scope entry that is not a plain relative path.
+ *
+ * The paths come from a **merge**, so git will hand back whatever bytes a
+ * filename holds, and this helper is the one process allowed to mint gate
+ * evidence. Nothing here is ever concatenated into a command — that is the
+ * point — but three shapes are still refused before anything runs:
+ *
+ * - a leading ``-``, because quoting does not stop a test runner reading an
+ *   operand as an *option*, and an operand that changes what the gate does is
+ *   the ADR 0018 boundary however it is delivered;
+ * - an absolute path or a ``..`` segment, because a scope entry is a claim about
+ *   *this* tree;
+ * - a NUL or a newline, which no delimiter can carry unambiguously.
+ *
+ * Deliberately **not** refused: a path git does not track. A conflict resolved
+ * by deleting a file yields an authored path that is legitimately untracked, and
+ * that is the resolution shape most likely to need a scoped marker.
+ */
+function invalidScopeEntry(entry) {
+  if (typeof entry !== "string" || entry === "") return "an empty scope path";
+  if (entry.includes("\u0000") || entry.includes("\n")) return "a scope path carrying NUL or newline";
+  if (entry.startsWith("-")) return `a scope path a runner would read as an option: ${entry}`;
+  if (entry.startsWith("/")) return `an absolute scope path: ${entry}`;
+  if (entry.split("/").includes("..")) return `a scope path leaving the tree: ${entry}`;
+  return null;
+}
+
+/** Write ``scope`` NUL-delimited and return the file, for the declared command. */
+function writeScopeFile(cwd, scope) {
+  const common = git(["rev-parse", "--path-format=absolute", "--git-common-dir"], cwd);
+  if (common === null) throw new Error("gate-marker: no git common directory for the scope file");
+  const dir = path.join(common, ...SCOPE_SUBDIR);
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `${process.pid}-${crypto.randomBytes(6).toString("hex")}`);
+  fs.writeFileSync(file, scope.map((entry) => `${entry}\u0000`).join(""), "utf8");
+  return file;
+}
+
 /** Run the one trusted gate whose green result may produce a marker.
  *
  * The command is fixed by the checked-in spine rather than by an operand or
  * environment variable.  A fixed ``sh -c`` entry preserves commands such as
  * ``npm run verify`` while keeping per-invocation callers unable to mint
  * success for an arbitrary process.
+ *
+ * `scope`, when non-empty, selects the repo's declared **scoped** command
+ * instead and records the paths on the marker. ADR 0018's boundary is intact:
+ * the command still comes from a file the tree carries, and the invocation
+ * supplies only quoted path operands.
  */
-function runGate(cwd) {
+function runGate(cwd, scope) {
   // A declared gate that reaches this verb again would re-run the whole gate at
   // every level and — worse — an inner level that exits zero writes a marker for
   // the tree while the outer stages are still running, minting evidence for a
@@ -511,23 +644,54 @@ function runGate(cwd) {
     );
     return EXIT_RUNNER_UNAVAILABLE;
   }
+  //: D3 — one optional command, no strategy key. A repo that declares
+  //: `commands.test_scoped` runs it over the conflicted paths and earns a marker
+  //: that says so; a repo that declares nothing runs its whole gate and earns an
+  //: unscoped one. The *command* still comes from a file the tree carries
+  //: (ADR 0018); only the path operands come from the invocation, and they are
+  //: quoted rather than interpolated.
   let gate;
   try {
-    gate = gateCommand(cwd);
+    gate = selectedGate(cwd, scope);
   } catch (err) {
     process.stderr.write(`gate-marker: ${err.message}\n`);
     return EXIT_RUNNER_UNAVAILABLE;
   }
+  const recordedScope = gate.scope;
   const legacyGate = path.join(cwd, "scripts", "verify.sh");
   if (gate.legacy && !fs.existsSync(legacyGate)) {
     process.stderr.write(`gate-marker: could not launch fixed gate: ${legacyGate} does not exist\n`);
     return EXIT_RUNNER_UNAVAILABLE;
   }
-  const result = spawnSync("sh", ["-c", gate.command], {
-    cwd: String(cwd),
-    encoding: "utf8",
-    env: Object.assign({}, process.env, { [RUNNER_ENV]: "1" }),
-  });
+  let scopeFile = null;
+  const environment = Object.assign({}, process.env, { [RUNNER_ENV]: "1" });
+  if (recordedScope !== null) {
+    try {
+      scopeFile = writeScopeFile(cwd, recordedScope);
+    } catch (err) {
+      process.stderr.write(`gate-marker: ${err.message}\n`);
+      return EXIT_RUNNER_UNAVAILABLE;
+    }
+    environment[SCOPE_FILE_ENV] = scopeFile;
+    environment[SCOPE_COUNT_ENV] = String(recordedScope.length);
+  }
+  const startedAt = Date.now();
+  let result;
+  try {
+    result = spawnSync("sh", ["-c", gate.command], {
+      cwd: String(cwd),
+      encoding: "utf8",
+      env: environment,
+    });
+  } finally {
+    if (scopeFile !== null) {
+      try {
+        fs.rmSync(scopeFile, { force: true });
+      } catch (err) {
+        void err;
+      }
+    }
+  }
   if (result.stdout) process.stdout.write(String(result.stdout));
   if (result.stderr) process.stderr.write(String(result.stderr));
   if (result.error || result.status === null) {
@@ -537,7 +701,7 @@ function runGate(cwd) {
   }
   if (result.status !== 0) return result.status;
 
-  const target = emitSuccessfulMarker(cwd, result.status, gate.command);
+  const target = emitSuccessfulMarker(cwd, result.status, gate.command, startedAt, recordedScope);
   process.stdout.write(`gate marker: ${path.basename(target, ".json")} -> ${target}\n`);
   return 0;
 }
@@ -545,9 +709,25 @@ function runGate(cwd) {
 function usage(message) {
   process.stderr.write(
     `gate-marker: usage: ${message}\n` +
-      "  gate-marker.js preflight | run | tree | path --tree <oid> | status\n"
+      "  gate-marker.js preflight | run [--scope <path>]... | tree | " +
+      "path --tree <oid> | status\n"
   );
   return EXIT_USAGE;
+}
+
+/** The `--scope <path>` operands of a `run`, or null if anything else is there.
+ *
+ * Repeated rather than comma-separated: a path may contain a comma, and a
+ * separator that a legal path can carry is a parser that silently splits one
+ * scope entry into two. */
+function scopeArguments(argv) {
+  const scope = [];
+  for (let i = 0; i < argv.length; i += 1) {
+    if (argv[i] !== "--scope" || argv[i + 1] === undefined) return null;
+    scope.push(argv[i + 1]);
+    i += 1;
+  }
+  return scope;
 }
 
 /** The `--tree <oid>` operand, in either spelling argparse accepted. */
@@ -567,8 +747,13 @@ function main(argv) {
     if (command === "preflight") {
       preflight(cwd);
     } else if (command === "run") {
-      if (argv.length !== 1) return usage("run accepts no operands");
-      return runGate(cwd);
+      const scope = scopeArguments(argv.slice(1));
+      if (scope === null) return usage("run accepts only `--scope <path>` operands");
+      for (const entry of scope) {
+        const refusal = invalidScopeEntry(entry);
+        if (refusal !== null) return usage(refusal.slice(0, 200));
+      }
+      return runGate(cwd, scope);
     } else if (command === "write") {
       return usage("write is retired; run the canonical verification gate instead");
     } else if (command === "tree") {
