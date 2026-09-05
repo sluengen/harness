@@ -11,7 +11,7 @@ The portable plugin root is two directories above this SKILL.md. Resolve embedde
 
 Usage: `/build <TICKET-ID> [--engine codex]`
 
-The one lifecycle driver, attended or unattended, and a thin one: the lane vocabulary is the spine's, choosing a lane is `authoring`'s, review standards and the cycle stop rule are `review-discipline`'s, isolation is `worktree-isolation`'s, implementation is `engineering`'s, and every tracker call goes through the provider skill. It has no wall-clock budget — it stops where `review-discipline` says to stop, and holds the ticket rather than quietly starting a fresh loop.
+The one lifecycle driver, attended or unattended, and a thin one: the lane vocabulary is the spine's, choosing a lane is `authoring`'s, review standards and the cycle stop rule are `review-discipline`'s, isolation is `worktree-isolation`'s, implementation is `engineering`'s, and every tracker call goes through `tracker`. It has no wall-clock budget — it stops where `review-discipline` says to stop, and holds the ticket rather than quietly starting a fresh loop.
 
 ## 1. Set up
 

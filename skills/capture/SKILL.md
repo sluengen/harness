@@ -42,7 +42,7 @@ A clear capture proceeds; there is no bespoke confirm gate. Where this step and 
 
 **5 — fill the capture sections.** Immediately before authoring the change spec, load `authoring` → *Prose*. Fill the headings `templates/change.md` actually carries: **Problem** — the kind, the area, what happens today, what is wanted, and the situation that surfaced it — then **Cost**, **Approach**, **Lane**, **Acceptance criteria** (specific outcomes that name what they protect), **Assumptions**, **Protected areas**, and **Out of scope**. Grounding and Design stay empty; `/build` fills them at build time.
 
-**6 — file it.** The title is **verb + where**. Then the UTF-8 body file and exactly one assurance level — chosen per `authoring` → *Choosing assurance*, never restated here — through the provider skill's `create` recipe, with the twin search and the mandatory explicit Todo placement the spine's Filing contract owns. If the provider reports a partial creation, surface the identifier and URL and stop; never retry by creating a duplicate.
+**6 — file it.** The title is **verb + where**. Then the UTF-8 body file and exactly one assurance level — chosen per `authoring` → *Choosing assurance*, never restated here — through `tracker`'s `create` operation, with the twin search and the mandatory explicit Todo placement the spine's Filing contract owns. If the provider reports a partial creation, surface the identifier and URL and stop; never retry by creating a duplicate.
 
 ## Report
 
