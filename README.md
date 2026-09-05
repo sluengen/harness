@@ -92,7 +92,7 @@ accept both hosts' payload and output contracts.
 | `/assess` | Periodic whole-system health assessment |
 | `/harness:init` | Hydrate a repo (the one command that needs its prefix spoken) |
 
-Small fixes need no command and no ticket: the fast lane is the same isolation
+Small fixes need no command and no ticket: the fix lane is the same isolation
 and the same gate, invoked by asking.
 
 ## The triad

@@ -43,7 +43,7 @@ behind it to theme, no tenant to re-skin, and no second screen.
 
    | Token family | Domain it marks | Where it appears |
    |---|---|---|
-   | `--build` | the gate and its evidence | the gate panel, its stage list, the fast lane, the no-runtime card |
+   | `--build` | the gate and its evidence | the gate panel, its stage list, the fix lane, the no-runtime card |
    | `--product` | the guidance surface | the spine card, the install steps, the workflow and skill inventories, the ticket lane |
    | `--strategy` | roles and deciding | the agents inventory, the proposal lane, the builder-≠-recorder card |
    | `--quality` | enforcement and health | the hooks inventory, the refuses badge, the dogfood card |
