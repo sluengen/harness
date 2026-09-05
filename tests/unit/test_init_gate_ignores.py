@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from tests._gitutil import indexed_text
 
-_EXPECTED = {".evidence/", ".worktrees/", ".claude/worktrees/"}
+_EXPECTED = {".evidence/", ".worktrees/", ".claude/worktrees/", ".harness/"}
 
 
 def _block(path: str, prefix: str) -> set[str]:
