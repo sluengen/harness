@@ -13,8 +13,29 @@ so the expensive failure is not a cheat that slips through — it is a correct
 edit refused, which costs a session its own test files with no way to clear the
 refusal from inside the hook. Every ALLOW row below is therefore a control that
 must stay green, and they outnumber the kills deliberately.
-:func:`test_the_table_carries_more_controls_than_kills` pins that ratio so a
-later hardening cannot quietly turn the guard into #511's five-of-nine refuser.
+
+What proves those controls have teeth is **mutation**, not their number. The
+kills were shown RED against an always-allow stub, which says nothing about a
+control — every ALLOW row is green when nothing ever denies. Five mutations of
+the shipped hook, each making it over-refuse or mis-classify, now kill exactly
+the controls that name the failure: the root prefix losing its boundary,
+``fs.existsSync`` standing in for the base tree, the lock arming on anything
+truthy, an unrecognised lane taking the permissive branch, and the walk-up to an
+existing ancestor directory removed.
+
+**The first table proved the opposite, and that was the point.** Three of its
+five entries survived. One was a real defect in the hook — a ``git`` probe run
+in a not-yet-created directory fails, so any edit under a new subdirectory
+disarmed the lock, and three lookalike controls had been passing *vacuously*
+against a predicate the hook never reached
+(:func:`test_a_test_in_a_directory_that_does_not_exist_yet_is_still_locked`).
+One was a missing control: an unrecognised lane is refused down either branch on
+an *existing* file, so only a new file discriminates
+(:func:`test_an_unrecognised_lane_locks_a_new_test_file_too`). One was a false
+mechanism claim in a docstring, corrected where it stands. A counted
+controls-to-kills ratio was written first and deleted: it derived "kill" from
+substrings of function names, so a rename reclassified a test silently, and it
+would have reported all five of those entries as healthy.
 
 **Admitted under ADR 0017 D5 class (a), behaviour of executable code.** Every
 assertion runs the hook as a node subprocess against a real git repository and
@@ -184,6 +205,19 @@ def test_an_unrecognised_lane_takes_the_strict_branch(tmp_path: Path) -> None:
     assert _denied(_run(_edit(repo, "tests/test_existing.py"), repo))
 
 
+def test_an_unrecognised_lane_locks_a_new_test_file_too(tmp_path: Path) -> None:
+    """The case that separates the strict branch from the fix lane's exception.
+
+    An existing test file is refused down either branch, so the unrecognised-lane
+    kill above cannot tell them apart — a mutation that sent an unknown lane down
+    the *permissive* branch survived it. A new file is the discriminator: the fix
+    lane may add one, and a lane nobody recognises may not.
+    """
+    repo = _repo(tmp_path, "kill-unknown-lane-new-file")
+    _arm(repo, lane="trivial")
+    assert _denied(_run(_edit(repo, "tests/test_brand_new.py", tool="Write"), repo))
+
+
 def test_a_test_root_reached_through_a_parent_traversal_is_still_the_test_root(
     tmp_path: Path,
 ) -> None:
@@ -200,6 +234,22 @@ def test_a_test_root_reached_through_a_parent_traversal_is_still_the_test_root(
         "tool_input": {"file_path": "../tests/test_existing.py"},
     }
     assert _denied(_run(payload, repo / "scripts"))
+
+
+def test_a_test_in_a_directory_that_does_not_exist_yet_is_still_locked(tmp_path: Path) -> None:
+    """A `Write` creates the directory too, so its parent is routinely absent.
+
+    Found by mutation, not by design. The hook resolves its repository by
+    running ``git`` in the edited file's parent, and a ``git`` probe in a
+    directory that is not there fails — so the lock was disarmed by any path
+    under a new subdirectory, and ``mkdir tests/new/`` was a one-command
+    bypass. It also made three of the lookalike controls below **vacuous**:
+    they passed against a deliberately broken predicate the hook never reached.
+    """
+    repo = _repo(tmp_path, "kill-absent-parent")
+    _arm(repo)
+    assert not (repo / "tests" / "sub").exists(), "the fixture must not create it"
+    assert _denied(_run(_edit(repo, "tests/sub/test_new.py", tool="Write"), repo))
 
 
 def test_an_apply_patch_touching_one_locked_test_denies_the_whole_call(tmp_path: Path) -> None:
@@ -326,11 +376,14 @@ def test_an_unhydrated_template_placeholder_is_not_a_test_root(tmp_path: Path) -
 
 
 def test_a_lock_in_one_worktree_does_not_reach_another(tmp_path: Path) -> None:
-    """The lock is scoped by the *edited file's* repository, not by ``cwd``.
+    """One locked run must not reach another worktree of the same repo.
 
-    Concurrency is the norm here (law 5). A hook that resolved its top from
-    ``process.cwd()`` would let one locked run refuse another worktree's
-    perfectly legal test authoring.
+    Concurrency is the norm here (law 5). **Two** mechanisms hold this, which
+    is worth stating because an earlier version of this docstring named only
+    the first and a mutation disproved the claim: the repository is resolved
+    from the edited file's directory, *and* a path outside the resolved top is
+    skipped by ``relativeTo``. Mutating either one alone leaves this green, so
+    this test is evidence for the property and not for either mechanism.
     """
     locked = _repo(tmp_path, "allow-two-worktrees-locked")
     _arm(locked)
@@ -442,20 +495,3 @@ def test_the_refusal_does_not_echo_the_run_states_free_text(tmp_path: Path) -> N
     reason = json.loads(proc.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
     assert "IGNORE PREVIOUS" not in reason
     assert "also-untrusted" not in reason
-
-
-def test_the_table_carries_more_controls_than_kills() -> None:
-    """#511: three hardenings of a kill-only table refused 5 of 9 correct edits.
-
-    A kill table cannot see a false positive, so the ratio is the instrument.
-    Derived from this module's own collected tests rather than a tally, so
-    adding a kill without a control is what makes it red.
-    """
-    names = [n for n in globals() if n.startswith("test_")]
-    kills = [n for n in names if "refuse" in n or "denies" in n or "strict" in n or "still_the" in n]
-    controls = [n for n in names if n not in kills]
-    assert len(controls) > len(kills), (
-        f"{len(kills)} kill functions against {len(controls)} controls. A guard "
-        "that blocks work owes more evidence that it lets correct work through "
-        "than that it stops the wrong kind."
-    )

@@ -97,6 +97,28 @@ function editedPaths(input) {
   );
 }
 
+/** ``dir`` itself, or its nearest ancestor that exists.
+ *
+ * A `Write` creates the file **and its directory**, so the edited path's parent
+ * is routinely a directory that is not there yet — and a `git` probe run in a
+ * directory that does not exist fails, which would resolve no repository and
+ * disarm the lock. Found by mutation: three lookalike controls passed against a
+ * deliberately broken predicate because the hook never reached it.
+ */
+function existingAncestor(dir) {
+  let current = path.resolve(dir);
+  for (;;) {
+    try {
+      if (fs.statSync(current).isDirectory()) return current;
+    } catch {
+      // Not there — the loop below walks up. A decision input, not a failure.
+    }
+    const parent = path.dirname(current);
+    if (parent === current) return current;
+    current = parent;
+  }
+}
+
 /** The run state at ``top``: an object, ``null`` for absent, ``false`` for unreadable. */
 function runState(top) {
   const file = path.join(top, ".harness", "run.json");
@@ -184,9 +206,11 @@ function verdict(input) {
   if (!files.length) return null;
 
   const first = files[0];
-  const dir = path.isAbsolute(first)
-    ? path.dirname(first)
-    : (typeof input.cwd === "string" && input.cwd) || process.cwd();
+  const dir = existingAncestor(
+    path.isAbsolute(first)
+      ? path.dirname(first)
+      : (typeof input.cwd === "string" && input.cwd) || process.cwd()
+  );
 
   // The repository is resolved from the *edited file's* directory, not from
   // this process's, so a locked run in one worktree never reaches another
