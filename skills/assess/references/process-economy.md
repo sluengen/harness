@@ -1,8 +1,6 @@
----
-name: process-economy
-description: Use when auditing what a repo spends to prove itself — vacuous tests, guards no occurrence justifies, ceremony that proves a stage ran rather than the property it protects, and gate or CI waste. The domain standard for the `/assess process` scope; load for that pass, not for routine task work.
----
 # Process Economy
+
+**Load this for a `/assess process` pass, alongside [`finding-bar.md`](finding-bar.md).** It was the `process-economy` skill until #547 folded it in here, for the same reason.
 
 The domain standard for `/assess process`. The other scopes ask whether the system is right; this one asks **what the assurance machinery costs and what it buys**. Its subject is not the product but the apparatus around it — the test suite, the guards, the gate stages, the CI steps, the process steps every change pays, and the artifacts they generate. `assessment-craft` still owns the finding bar, the 2×2, and the insight test; this file is the lens, not the method.
 

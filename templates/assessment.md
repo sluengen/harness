@@ -1,6 +1,6 @@
 # Assessment report (the steward's output format)
 
-The shape of a `/assess` report. The steward writes one dated file per pass; `assessment-craft` holds the *craft* (the finding bar, how a finding is placed on the 2×2, the insight-vs-finding test), this holds the *format*. Drop sections a pass does not need; never pad to fill them.
+The shape of a `/assess` report. The steward writes one dated file per pass; `skills/assess/references/finding-bar.md` holds the *craft* (the finding bar, how a finding is placed on the 2×2, the insight-vs-finding test), this holds the *format*. Drop sections a pass does not need; never pad to fill them.
 
 **Filename.** `assessments/<YYYY-MM-DD>-<scope>.md` — e.g. `assessments/2026-06-15-code.md`. The dated `assessments/` directory is the convention; do **not** write `steward-<domain>-<date>.md` at the repo root.
 
@@ -50,7 +50,7 @@ An `/assess architecture` pass writes the *same* dated file (`assessments/<YYYY-
 - **Verdict** — the one- or two-paragraph headline: is the system shape still right for the product, and where does the risk concentrate?
 - **System map / current shape** — the boundaries and major components as they actually stand, so a reader can place everything that follows.
 - **What is working** — the positive bets to preserve and the trade-offs worth keeping. **These are not findings and are not filed as tickets** — recording them is the point of a holistic review.
-- **Architectural risks** — the actionable concerns, each with the four parts (`assessment-craft`), IDs prefixed `ARCH-`. These *are* filed.
+- **Architectural risks** — the actionable concerns, each with the four parts (`skills/assess/references/finding-bar.md`), IDs prefixed `ARCH-`. These *are* filed.
 - **Watchlist / triggers** — files or boundaries to add to the repo's `architecture_watchlist` (`skills/architecture/SKILL.md`) so the next change there trips a conditional refactor.
 - **Recommended actions** — the concrete changes the risks imply, ordered by leverage.
 - **Findings / tickets to file** — the subset above that becomes tracker issues: the actionable risks and recommendations only.
@@ -65,7 +65,7 @@ An `/assess architecture` pass writes the *same* dated file (`assessments/<YYYY-
 An `/assess process` pass writes the same dated file (`assessments/<YYYY-MM-DD>-process.md`) in a **subtractive** shape. Most of its content is candidates for removal, which go to the ledger rather than the queue (`skills/assess/SKILL.md`), so the report — not the tracker — is where they are read. Sections:
 
 - **Verdict** — what the assurance machinery costs and whether that is buying anything, in a paragraph.
-- **Baseline** — the three numbers and the delta against the previous process report (`process-economy` → *The baseline*). Put this near the top; it is what a reader compares first.
+- **Baseline** — the three numbers and the delta against the previous process report (`skills/assess/references/process-economy.md` → *The baseline*). Put this near the top; it is what a reader compares first.
 
   | Measure | This pass | Previous | Δ |
   |---|---|---|---|

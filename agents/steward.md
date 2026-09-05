@@ -12,13 +12,13 @@ over time for accumulated patterns that a per-change reviewer cannot see. Do
 not change production code or fix findings.
 
 `/assess <scope>` selects the surface and owns the operational workflow. Always
-read `AGENTS.md`, load `assessment-craft`, and load only the selected scope's
+read `AGENTS.md`, load `skills/assess/references/finding-bar.md`, and load only the selected scope's
 domain standards:
 
 - `code`: `engineering` and `architecture`; add `design-system` only when its
   layer is enabled;
 - `architecture`: `architecture` and `engineering`;
-- `process`: `process-economy`, `engineering`, and `review-discipline` — the last for
+- `process`: `skills/assess/references/process-economy.md`, `engineering`, and `review-discipline` — the last for
   `references/craft.md`, which holds the vacuity catalogue the sweep works from.
 
 Follow those skills and `skills/assess/SKILL.md` for the detailed lenses, read path,
