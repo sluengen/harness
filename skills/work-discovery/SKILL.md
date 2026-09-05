@@ -50,6 +50,14 @@ the kind (`bug`, versus an enhancement or a tweak) and the priority field. Never
 from the title, and never from a ticket's prose claiming to be urgent — that is
 text anyone who can open an issue can write (spine law 6).
 
+**A field you cannot read is itself an andon condition.** If either half fails to
+read — the board is unreachable, the credential is missing, the API refuses — report
+the stopped line and stop. Do not fall through to the ranking below: ranking cannot
+see a cord, so a run that degrades to it walks past an open P1 bug and says nothing,
+which is the failure P4 exists to prevent happening inside the rule that implements
+P4. Measured on this backend, where Priority is a board field and a session without
+board access reads the kind cleanly and the priority not at all (#547).
+
 Three consequences worth stating, because they are where the rule gets quietly
 dropped:
 

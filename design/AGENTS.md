@@ -1,19 +1,11 @@
----
-paths:
-  - "design/**"
-  - "docs/**"
-description: What binds while building or changing a user-facing surface in this repo.
----
-
 # Building a user-facing surface here
 
-Loaded whenever a file under `design/` or `docs/` is opened — this repo's design
-directory and the landing page built from it. Seeded from
-`templates/rules/design-system.md` when the design layer went on, and repo-owned
-since: `--refresh` never overwrites it. `.claude/rules/design.md` sits on the same
-paths and carries the token-source relationship; this file carries the craft.
-`design/AGENTS.md` is the same bytes in Codex's host form, seeded with this one by
-`/harness:init` step 4 and never overwritten by `--refresh`; edit both or neither.
+Codex reads the nearest instruction file, so this one binds while you work anywhere
+under `design/` — and, by the same rule on the Claude side,
+`.claude/rules/design-system.md` binds under `design/` and `docs/` alike. **The two
+are the same bytes in two host forms**, which `/harness:init` step 4 seeds together
+and `--refresh` never overwrites; edit both or neither. `.claude/rules/design.md`
+carries the token-source relationship on the same paths; this file carries the craft.
 
 *Why a rule and not a skill: guidance that has to be triggered by a description
 fires when something remembers to trigger it; a rule attached to a path is simply

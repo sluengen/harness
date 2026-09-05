@@ -26,6 +26,8 @@ cheaper rung that catches the mistake earlier.
 | `hooks/git-push-guard.js` | An agent will push to a shared branch on evidence that covers a different tree — a stale marker, or a tree an amend changed. | A release where no run attempts a push the guard refuses for a stale or absent marker. This is also the control of record's local half; retire only with server-side enforcement that reads the same marker. |
 | `hooks/push-target-guard.js` | An agent under pressure will reach for `--force` to make a rejected push succeed. | No force-push attempt in a release's recorded runs. Weakest candidate for retirement: the cost of being wrong is rewritten history on a shared branch. |
 | `hooks/test-lock-guard.js` | Instruction does not stop test modification: over 79% of measured agent cheating is editing the test directly, despite an explicit rule (ImpossibleBench). | A published benchmark showing test-editing under an explicit instruction at the noise floor. Known gap today: the matcher is `Write`/`Edit`/`apply_patch`, so a `Bash` heredoc or `sed -i` is not seen — measured on this ticket's own run, where every edit went through `Bash` and the hook never fired. |
+| `hooks/hooks.json` | The two hosts will not register six hooks per repo by hand, and a hook registered in one repo and not another is a control nobody can rely on. | The host registers a plugin's hooks from the plugin manifest without a second file. Not a model assumption. |
+| `hooks/package.json` | Node's module resolution needs the declaration beside the hooks, and `test_hooks_module_type.py` holds it. | Not a model assumption. |
 | `hooks/prompt-guard.js` | An agent will act on instructions embedded in content it is writing or has fetched. | Advisory and warn-only. This repo's own standing test for a warn-and-pass guard: **it has not been shown to run until it has fired once for the real reason.** It has not. Retire at the next `/assess process` unless it fires first. |
 | `hooks/workflow-guard.js` | An agent will edit source outside a worktree, on a shared branch. | Native worktree isolation confirmed on both hosts (the accepted proposal names this one for retirement already). Advisory; same warn-and-pass test as above. |
 
@@ -84,13 +86,17 @@ test: a host that scopes both fields to the skill rather than the turn.
 | `agents/architect` | Design produced inside an implementation context follows the implementation rather than leading it. | T5's delta. |
 | `agents/steward` | Cross-file cumulative patterns are invisible to per-change review, whatever the reviewer's quality. | A per-change review that surfaces accumulation. |
 
-## Carried, not proven — the residual from #547
+## Carried, with an owner — the residual from #547
 
-Two things ship on evidence weaker than the rest, recorded so they are not
+Four things ship on evidence weaker than the rest, recorded so they are not
 mistaken for exercised behaviour.
 
-| What | Why it is not proven | What would prove it |
+Each names **who** produces the missing evidence and **when** — a criterion that
+names its owner and its moment does not block a PASS (the operator's rule, 2026-09-06).
+
+| What | Why it is carried | Owner, and the moment |
 |---|---|---|
-| The board writes in `skills/tracker/references/github.md` (item-add, Status, Priority) | Projects v2 is GraphQL-only, and the session that wrote this file had GraphQL disabled (`HTTP 403`, PR-review operations only). The recipes moved verbatim from `github-issues`, where they were exercised. | One `create` on a repo with board access, re-reading the item's Status and Priority. |
-| Every recipe in `skills/tracker/references/linear.md` | No Linear transport and no Linear repo were reachable. The recipes moved verbatim from the `linear` skill. | The AC-3 exercise on a Linear repo: create, transition, hold, Todo placement, ledger append. |
-| Pinning an official MCP transport plugin | The marketplace entries for `github` and `linear` carry no version, so there is nothing to pin to; confirming it by installing one is the operator's call and was not taken. | Install the official plugin and inspect the resolved install for a version to pin. |
+| The board writes in `skills/tracker/references/github.md` (item-add, Status, Priority) | Projects v2 is GraphQL-only, and the agent proxy in front of this container refuses every GraphQL query before GitHub sees it — proven not to be a token or scope problem: `gh auth token` returns the same proxy sentinel as `$GH_TOKEN`, and a raw `curl` of `viewer { login }` is refused identically. The recipes moved verbatim from `github-issues`, where they were exercised. | **The operator**, or CI — any session with unrestricted GraphQL. One `create`, re-reading the item's Status and Priority. |
+| Every recipe in `skills/tracker/references/linear.md` | No Linear transport and no Linear repo are reachable from this environment. The recipes moved verbatim from the `linear` skill. | **The first consumer update — calibrate**, which has a Linear workspace. Create, transition, hold, Todo placement, ledger append, recorded on #547 then. |
+| The `/assess` drain marking every entry done, folded or dropped | `skills/assess/SKILL.md` step 5 forbids an unattended run from draining: the slate needs somebody to answer it. The recipe's correctness is reviewed by reading. | **The operator**, at the first attended `/assess` drain after this lands. |
+| Pinning an official MCP transport plugin | The marketplace entries for `github` and `linear` carry no version, so there is nothing to pin to; confirming it by installing one is the operator's call and was not taken. | **The operator**, whenever the transport swap is re-asked at a release. |

@@ -2,7 +2,7 @@
 
 **Load this for a `/assess process` pass, alongside [`finding-bar.md`](finding-bar.md).** It was the `process-economy` skill until #547 folded it in here, for the same reason.
 
-The domain standard for `/assess process`. The other scopes ask whether the system is right; this one asks **what the assurance machinery costs and what it buys**. Its subject is not the product but the apparatus around it — the test suite, the guards, the gate stages, the CI steps, the process steps every change pays, and the artifacts they generate. `assessment-craft` still owns the finding bar, the 2×2, and the insight test; this file is the lens, not the method.
+The domain standard for `/assess process`. The other scopes ask whether the system is right; this one asks **what the assurance machinery costs and what it buys**. Its subject is not the product but the apparatus around it — the test suite, the guards, the gate stages, the CI steps, the process steps every change pays, and the artifacts they generate. [`finding-bar.md`](finding-bar.md) beside it owns the finding bar, the 2×2, and the insight test; this file is the lens, not the method.
 
 A pass here is **subtractive**. Most of what it yields is a deletion or a simplification, which inverts the usual reading of a finding: the question is not "what else should we check?" but "what are we checking that nobody can justify?" Assurance grows monotonically by default — every piece of it was added for a reason that sounded good at the time, and nothing in a per-change review is positioned to see the total. That total is this pass's subject, and reading it is only useful if it happens again: leanness is a tracked quantity or it is a mood.
 

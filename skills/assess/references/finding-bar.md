@@ -2,7 +2,7 @@
 
 **Load this at the start of every `/assess` pass, whatever the scope.** It was the `assessment-craft` skill until #547 folded it in here: `/assess` is its only caller, and guidance that has to be triggered by description fires only when somebody remembers it.
 
-Shared knowledge for the `steward` whenever it periodically audits a codebase. Defines the finding bar, how a finding is placed on the blocking×size 2×2, and the insight-vs-finding test. The methodology for every `/assess` scope; the per-scope domain standards live in their own skills — the code-domain skills for `code`, `architecture` and `engineering` for `architecture`, `process-economy` for `process`.
+Shared knowledge for the `steward` whenever it periodically audits a codebase. Defines the finding bar, how a finding is placed on the blocking×size 2×2, and the insight-vs-finding test. The methodology for every `/assess` scope; the per-scope domain standards are named by the scope table in `skills/assess/SKILL.md` — `engineering` and `architecture` for the `code` and `architecture` scopes, and [`process-economy.md`](process-economy.md) beside this file for `process`.
 
 ## Posture — signal, not noise
 
