@@ -394,6 +394,29 @@ def test_a_scope_disjoint_from_the_authored_set_is_denied(repo: Path) -> None:
     _denied_because(repo, "outside the scope")
 
 
+def test_a_merge_over_a_parent_covered_only_by_a_scoped_marker_is_denied(repo: Path) -> None:
+    """The certified parent's marker must claim the **whole** tree, not a scope.
+
+    This is the second attempt shape: a run that resolved a conflict and re-gated
+    over the conflicted paths, then found the tip had moved again. Its own tree is
+    covered by a scoped marker, which authorised the merge that produced it and
+    nothing further — carrying it into a *second* merge would let a scope granted
+    for two files stand as coverage of everything. The allow before the tip moves
+    is the control: the deny below belongs to the second merge, not to the fixture.
+    """
+    conflicted = _conflict_fixture(repo)
+    _marker(repo, *conflicted)
+    _allowed(repo)
+
+    _git(repo, "checkout", "-q", "-B", "later", "origin/main")
+    _commit(repo, "later.txt", "moved again\n")
+    _git(repo, "push", "-q", "-f", "origin", "later:main")
+    _git(repo, "fetch", "-q", "origin")
+    _git(repo, "checkout", "-q", "work")
+    _git(repo, "merge", "--no-ff", "--no-edit", "origin/main")
+    _denied_because(repo, "first parent")
+
+
 # --- the marker body is now parsed, so its failures are decisions -------------
 
 

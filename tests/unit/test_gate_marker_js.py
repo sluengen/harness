@@ -215,7 +215,7 @@ def _tree(repo: Path) -> str:
 def _instant(stamp: str) -> float:
     """Seconds since the epoch for a marker's ``...Z`` instant."""
     return datetime.datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ").replace(
-        tzinfo=datetime.timezone.utc
+        tzinfo=datetime.UTC
     ).timestamp()
 
 def _marker_path(repo: Path, tree: str) -> Path:
@@ -1327,7 +1327,7 @@ def _seed_marker(repo: Path, name: str, seconds: int | None) -> None:
     payload: dict[str, object] = {"schema": 2, "tree": name}
     if seconds is not None:
         payload["started_at"] = "2026-09-05T10:00:00Z"
-        finished = datetime.datetime(2026, 9, 5, 10, 0, 0, tzinfo=datetime.timezone.utc)
+        finished = datetime.datetime(2026, 9, 5, 10, 0, 0, tzinfo=datetime.UTC)
         finished += datetime.timedelta(seconds=seconds)
         payload["finished_at"] = finished.strftime("%Y-%m-%dT%H:%M:%SZ")
     (directory / f"{name}.json").write_text(json.dumps(payload), encoding="utf-8")

@@ -137,9 +137,8 @@ def _clone(tmp_path: Path, remote: Path, name: str) -> Path:
 
 def _objects(repo: Path) -> int:
     """Loose plus packed objects, as ``git count-objects`` reports them."""
-    fields = dict(
-        line.split(": ", 1) for line in _git(repo, "count-objects", "-v").splitlines() if ": " in line
-    )
+    reported = _git(repo, "count-objects", "-v").splitlines()
+    fields = dict(line.split(": ", 1) for line in reported if ": " in line)
     return int(fields["count"]) + int(fields["in-pack"])
 
 
@@ -199,9 +198,9 @@ def test_reading_the_records_is_one_ls_remote(tmp_path: Path, remote: Path, alph
     (shim_dir / "git").write_text(
         "#!/usr/bin/env sh\n"
         'for a in "$@"; do\n'
-        '  if [ "$a" = "ls-remote" ]; then printf x >> "%s"; break; fi\n'
+        f'  if [ "$a" = "ls-remote" ]; then printf x >> "{tally}"; break; fi\n'
         "done\n"
-        'exec %s "$@"\n' % (tally, real),
+        f'exec {real} "$@"\n',
         encoding="utf-8",
     )
     (shim_dir / "git").chmod(0o755)
