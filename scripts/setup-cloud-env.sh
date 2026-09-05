@@ -161,7 +161,7 @@ else
 fi
 
 # --- gh — harness.yaml declares tracker: github; /build and /routine read and
-# write tickets through it via the github-issues skill. Not required for the
+# write tickets through it via the `tracker` skill. Not required for the
 # verify gate itself, so its absence is a warning, not a failure. ------------
 if ! command -v gh >/dev/null 2>&1; then
   echo "--- installing gh ---"

@@ -94,7 +94,7 @@ resolver is what changes, not the command.
 A stopped hop is a normal outcome, not an error. Report it: the source and
 target branches, the conflicting files or the gate output tail, and the branch
 and worktree left in place to inspect. Where the repo has a tracker, file that
-report as a ticket through the provider skill so it is not lost when the
+report as a ticket through `tracker` so it is not lost when the
 session ends, carrying exactly one assurance level chosen per `authoring`
 → *Choosing assurance*. Where it does not, the report to the operator is the
 record.

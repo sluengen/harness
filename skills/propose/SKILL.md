@@ -10,7 +10,7 @@ The portable plugin root is two directories above this SKILL.md. Resolve embedde
 
 Usage: `/propose <idea>`
 
-**Tracker operations follow the spine's contract** (`AGENTS.md` → *Tracker dispatch* and *Filing*): the `tracker:` field names the backend, the matching provider skill (`github-issues` or `linear`) owns the API recipes, and `none` degrades to specs and session reports. Do not embed provider API calls here.
+**Tracker operations follow the spine's contract** (`AGENTS.md` → *Tracker dispatch* and *Filing*): the `tracker:` field names the backend, `tracker` owns the semantics and its matching transport reference owns the API recipes, and `none` degrades to specs and session reports. Do not embed provider API calls here.
 
 Creates and works a **proposal spec** for an idea that is not yet confirmed work — it needs a decision, carries real unknowns, or is too big to be a single change. The proposal is where the thinking happens before build time is spent. Implements the proposal tier of `authoring`.
 
@@ -40,7 +40,7 @@ Bring the open decisions to the user. Set the proposal's `status` to the outcome
 
 ### 4. On accepted, spin out the work
 - Record the decisions in the specs they govern (`architecture`, `templates/decision.md`).
-- Create an issue per item in the breakdown through the provider skill's `create` recipe — which sets queue placement explicitly, or the item is filed but invisible to the queue — each with a change spec (`templates/change.md`) and exactly one assurance level chosen per `authoring` → *Choosing assurance*. Link them back to the proposal. Under `tracker: none` the breakdown stays in the proposal file and is reported to the operator.
+- Create an issue per item in the breakdown through `tracker`'s `create` operation — which sets queue placement explicitly, or the item is filed but invisible to the queue — each with a change spec (`templates/change.md`) and exactly one assurance level chosen per `authoring` → *Choosing assurance*. Link them back to the proposal. Under `tracker: none` the breakdown stays in the proposal file and is reported to the operator.
 
 ## Report
 Print the proposal path, its status, the open decisions (and how they resolved), any decisions recorded, and the issues created from the breakdown.
