@@ -5,7 +5,7 @@
 plugin host reads it and runs the commands it names. Measured at base ``bfa36e8``,
 before this module existed, ``git grep "hooks/hooks.json"`` named the path outside
 the manifest itself in exactly these files, and not one of them *opens* it:
-``commands/init.md``, telling an operator the plugin needs no per-repo wiring; a
+``skills/init/SKILL.md``, telling an operator the plugin needs no per-repo wiring; a
 comment in ``scripts/session-start-bootstrap.sh`` explaining why the
 ``SessionStart`` hook is *not* in the manifest; a docstring in
 ``tests/unit/test_marketplace_provenance.py`` explaining why this repo deliberately

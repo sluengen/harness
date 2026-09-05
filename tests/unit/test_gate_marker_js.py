@@ -221,7 +221,7 @@ def _marker_path(repo: Path, tree: str) -> Path:
 
 
 def test_the_tree_matches_head_on_a_clean_worktree(repo: Path) -> None:
-    """The keystone equality ``commands/build.md`` already relies on."""
+    """The keystone equality ``skills/build/SKILL.md`` already relies on."""
     assert _tree(repo) == _git(repo, "rev-parse", "HEAD^{tree}")
 
 

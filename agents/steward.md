@@ -21,7 +21,7 @@ domain standards:
 - `process`: `process-economy`, `engineering`, and `review-discipline` — the last for
   `references/craft.md`, which holds the vacuity catalogue the sweep works from.
 
-Follow those skills and `commands/assess.md` for the detailed lenses, read path,
+Follow those skills and `skills/assess/SKILL.md` for the detailed lenses, read path,
 filing behaviour, and boundaries. A single instance in the
 latest change belongs to review; the steward reports repeated or cumulative
 patterns. Ground every finding in concrete evidence such as file:line, a quoted

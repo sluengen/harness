@@ -4,8 +4,12 @@ __pycache__/
 *$py.class
 *.egg-info/
 .eggs/
-build/
-!prompts/build/
+# Anchored to the repo root. Unanchored, `build/` matches a directory of that
+# name at any depth — which silently swallowed `skills/build/` when #537 gave the
+# `/build` workflow a skill of its own, so the plugin would have shipped without
+# its main lifecycle command and nothing would have said so. The pre-existing
+# `!prompts/build/` negation was the same bug already worked around once.
+/build/
 dist/
 .venv
 .venv/

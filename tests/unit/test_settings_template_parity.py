@@ -4,7 +4,7 @@
 ``settings/harness.json`` is the tracked settings template — the tree's own name
 for it is *the installed-surface template* (``tests/unit/test_git_push_guard_hook.py``)
 — and ``.claude/settings.json`` is this repo's installed settings. What the template
-is *for* in v5 is deliberately not decided here: ``commands/init.md`` never names it,
+is *for* in v5 is deliberately not decided here: ``skills/init/SKILL.md`` never names it,
 and #489 scopes the question out, recording only which properties must correspond.
 Nothing has held the two together since v5, and the drift the unguarded interval
 accumulated was found by hand at grounding time:

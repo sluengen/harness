@@ -19,7 +19,7 @@
  *
  * **The marker is the authorisation.** ``scripts/verify.sh`` writes
  * ``<git-common-dir>/harness/gate/<tree-oid>.json`` on green, named after the git
- * tree object it verified. ``commands/build.md`` already refuses to integrate
+ * tree object it verified. ``skills/build/SKILL.md`` already refuses to integrate
  * unless ``git rev-parse HEAD^{tree}`` equals the tree its gate ran over, so the
  * tree the gate covered and the tree a push carries are the same object by the
  * process's own rule. This hook checks that equality mechanically.

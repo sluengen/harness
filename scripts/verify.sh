@@ -133,11 +133,5 @@ echo "=== design-token drift guard ==="
 # this block is mechanical, generated content instead.
 uv run --extra dev python scripts/build_design_tokens.py --check
 
-echo "=== codex drift guard ==="
-# Fail the gate if the committed AGENTS.md or .codex/ has drifted from a
-# regeneration off CLAUDE.md, agents/, commands/, and skills/ — the Codex
-# surface is compiled, never hand-edited (ADR 0017; v5 chunk 3).
-uv run --extra dev python scripts/generate_codex_artifacts.py --check
-
 echo ""
 echo "All checks passed."

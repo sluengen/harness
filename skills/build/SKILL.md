@@ -1,3 +1,10 @@
+---
+name: build
+description: "/harness:build — implement, verify, review, and ship a ticket. Use when the operator invokes `/harness:build` or asks to run that workflow. Invoked by the operator, and reachable by the model: `/routine` drives `/build`, and `/build` drives the review stage, so `disable-model-invocation` is deliberately not set here — it would break that composition (#537 AC-7)."
+---
+
+The portable plugin root is two directories above this SKILL.md. Resolve embedded paths beginning `skills/`, `agents/`, `templates/`, `hooks/`, or `.codex/` from that root; resolve repository artifacts from the workspace root.
+
 # /build — implement, verify, review, and ship a ticket
 
 Usage: `/build <TICKET-ID> [--engine codex]`

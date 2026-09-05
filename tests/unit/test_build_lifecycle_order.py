@@ -20,7 +20,7 @@ _EXPECTED = (
 
 
 def _lifecycle() -> list[tuple[str, str]]:
-    text = indexed_text("commands/build.md")
+    text = indexed_text("skills/build/SKILL.md")
     begin = "<!-- harness:build-lifecycle:begin -->"
     end = "<!-- harness:build-lifecycle:end -->"
     assert text.count(begin) == 1 and text.count(end) == 1

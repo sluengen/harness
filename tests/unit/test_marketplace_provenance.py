@@ -9,7 +9,7 @@ commands, no skills, and no enforcement hooks — with no error naming what was
 missing. The failure is silent in exactly the fresh-clone case where enforcement
 matters most.
 
-**Why this shape, and not a check on ``commands/init.md``.** The ticket asked
+**Why this shape, and not a check on ``skills/init/SKILL.md``.** The ticket asked
 for a test that the init command's *instructions name* the declaration. That is a
 restatement pin on prose, and ADR 0017 D5 admits no such class. What is
 admissible is class **(e)** tree-consistency, with class **(b)** supplying one

@@ -2,7 +2,7 @@
 
 A rolling one-line record of every **superseded** assessment report — those
 folded out of `assessments/` under the retention convention
-(`templates/assessment.md`, `commands/assess.md`). The directory itself keeps
+(`templates/assessment.md`, `skills/assess/SKILL.md`). The directory itself keeps
 only the **latest report per scope** plus **any report with an open finding**;
 when a report is neither, it folds into a line here and its file is removed, so
 `assessments/` stays a live index rather than a growing pile.

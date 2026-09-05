@@ -184,8 +184,8 @@
     </p>
     <p class="creed">Let the agent do the judgement work; make the repo own the evidence.</p>
     <ul class="counts">
-      <li><b>9</b> commands</li>
-      <li><b>28</b> skills</li>
+      <li><b>9</b> workflows</li>
+      <li><b>24</b> skills</li>
       <li><b>4</b> agents</li>
       <li><b>5</b> hooks</li>
       <li><b>1</b> gate</li>
@@ -346,24 +346,24 @@ Codex: ask to initialize Harness</pre>
 
     <div class="grid2">
       <article class="card inv inv--commands">
-        <h3>Commands <span class="n">9</span></h3>
-        <p>Claude's entry points. Codex exposes the same workflows through <code>command-*</code> skills.</p>
+        <h3>Workflows <span class="n">9</span></h3>
+        <p>The entry points, on both hosts. Each ships once, as a skill; seven are operator-triggered only, and <code>/build</code> and <code>/review</code> stay model-invocable because the workflows compose.</p>
         <ul class="units">
-          <li class="unit" data-unit="command:build"><code>/build</code><span>Implement, verify, review, and ship a ticket — the one lifecycle driver.</span></li>
-          <li class="unit" data-unit="command:capture"><code>/capture</code><span>File an already-decided change straight to Todo.</span></li>
-          <li class="unit" data-unit="command:propose"><code>/propose</code><span>Work an idea before it becomes work; accepted proposals spawn tickets.</span></li>
-          <li class="unit" data-unit="command:review"><code>/review</code><span>Review the current branch, when a branch needs only that.</span></li>
-          <li class="unit" data-unit="command:routine"><code>/routine</code><span>One unattended cycle: discover the next ticket, build it, ship it.</span></li>
-          <li class="unit" data-unit="command:promote"><code>/promote</code><span>Move completed work toward release along the repo's role branches.</span></li>
-          <li class="unit" data-unit="command:digest"><code>/digest</code><span>The operator's console: report, then drain held decisions.</span></li>
-          <li class="unit" data-unit="command:assess"><code>/assess</code><span>Run a periodic whole-system health assessment.</span></li>
-          <li class="unit" data-unit="command:init"><code>/harness:init</code><span>Hydrate a repo — the one command that needs its prefix.</span></li>
+          <li class="unit" data-unit="skill:build"><code>/build</code><span>Implement, verify, review, and ship a ticket — the one lifecycle driver.</span></li>
+          <li class="unit" data-unit="skill:capture"><code>/capture</code><span>File an already-decided change straight to Todo.</span></li>
+          <li class="unit" data-unit="skill:propose"><code>/propose</code><span>Work an idea before it becomes work; accepted proposals spawn tickets.</span></li>
+          <li class="unit" data-unit="skill:review"><code>/review</code><span>Review the current branch, when a branch needs only that.</span></li>
+          <li class="unit" data-unit="skill:routine"><code>/routine</code><span>One unattended cycle: discover the next ticket, build it, ship it.</span></li>
+          <li class="unit" data-unit="skill:promote"><code>/promote</code><span>Move completed work toward release along the repo's role branches.</span></li>
+          <li class="unit" data-unit="skill:digest"><code>/digest</code><span>The operator's console: report, then drain held decisions.</span></li>
+          <li class="unit" data-unit="skill:assess"><code>/assess</code><span>Run a periodic whole-system health assessment.</span></li>
+          <li class="unit" data-unit="skill:init"><code>/harness:init</code><span>Hydrate a repo — the one command that needs its prefix.</span></li>
         </ul>
       </article>
 
       <article class="card inv inv--agents">
         <h3>Agents <span class="n">4</span></h3>
-        <p>Claude's roles. Codex carries the same procedures through <code>agent-*</code> skills.</p>
+        <p>Claude's roles. Codex dispatches the same four through its native adapters in <code>.codex/agents/</code>.</p>
         <ul class="units">
           <li class="unit" data-unit="agent:dev"><code>dev</code><span>Implementation — test-first, strictly in scope, verified before handoff.</span></li>
           <li class="unit" data-unit="agent:reviewer"><code>reviewer</code><span>The final gate before merge; records what actually shipped on PASS.</span></li>
@@ -386,8 +386,8 @@ Codex: ask to initialize Harness</pre>
     </div>
 
     <article class="card inv inv--skills" style="margin-top:20px">
-      <h3>Skills <span class="n">28</span></h3>
-      <p>Loaded by task, not all at once. Fifteen craft skills are shared directly; Codex also receives nine command workflows and four role procedures as portable skills.</p>
+      <h3>Craft skills <span class="n">15</span></h3>
+      <p>Loaded by task, not all at once — 15 of them, alongside the nine workflows above. Both hosts read the same files.</p>
       <ul class="units units--two">
         <li class="unit" data-unit="skill:engineering"><code>engineering</code><span>The build leg of the triad: durable principles, test-first method, scope, the gate.</span></li>
         <li class="unit" data-unit="skill:architecture"><code>architecture</code><span>The design leg: cross-cutting decisions, recorded in the spec they govern.</span></li>
@@ -404,19 +404,6 @@ Codex: ask to initialize Harness</pre>
         <li class="unit" data-unit="skill:writing-quality"><code>writing-quality</code><span>Plain prose; kill the predictable AI-writing patterns.</span></li>
         <li class="unit" data-unit="skill:github-issues"><code>github-issues</code><span>The GitHub provider recipes for reading and updating the queue.</span></li>
         <li class="unit" data-unit="skill:linear"><code>linear</code><span>The Linear provider recipes for the same backend-neutral contract.</span></li>
-        <li class="unit" data-unit="skill:command-assess"><code>command-assess</code><span>The Codex-native periodic assessment workflow.</span></li>
-        <li class="unit" data-unit="skill:command-build"><code>command-build</code><span>The Codex-native ticket build, review, and ship workflow.</span></li>
-        <li class="unit" data-unit="skill:command-capture"><code>command-capture</code><span>The Codex-native workflow for filing decided work.</span></li>
-        <li class="unit" data-unit="skill:command-digest"><code>command-digest</code><span>The Codex-native operator report and decision drain.</span></li>
-        <li class="unit" data-unit="skill:command-init"><code>command-init</code><span>The Codex-native repository hydration workflow.</span></li>
-        <li class="unit" data-unit="skill:command-promote"><code>command-promote</code><span>The Codex-native promotion workflow.</span></li>
-        <li class="unit" data-unit="skill:command-propose"><code>command-propose</code><span>The Codex-native proposal workflow.</span></li>
-        <li class="unit" data-unit="skill:command-review"><code>command-review</code><span>The Codex-native branch review workflow.</span></li>
-        <li class="unit" data-unit="skill:command-routine"><code>command-routine</code><span>The Codex-native unattended build cycle.</span></li>
-        <li class="unit" data-unit="skill:agent-architect"><code>agent-architect</code><span>The architect role procedure packaged for Codex.</span></li>
-        <li class="unit" data-unit="skill:agent-dev"><code>agent-dev</code><span>The implementation role procedure packaged for Codex.</span></li>
-        <li class="unit" data-unit="skill:agent-reviewer"><code>agent-reviewer</code><span>The independent reviewer procedure packaged for Codex.</span></li>
-        <li class="unit" data-unit="skill:agent-steward"><code>agent-steward</code><span>The whole-system assessment role packaged for Codex.</span></li>
       </ul>
     </article>
   </section>

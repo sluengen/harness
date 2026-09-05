@@ -1,3 +1,11 @@
+---
+name: init
+description: "/harness:init — hydrate a repo. Use when the operator invokes `/harness:init` or asks to run that workflow. Operator-triggered only; the model does not fire it."
+disable-model-invocation: true
+---
+
+The portable plugin root is two directories above this SKILL.md. Resolve embedded paths beginning `skills/`, `agents/`, `templates/`, `hooks/`, or `.codex/` from that root; resolve repository artifacts from the workspace root.
+
 # /harness:init — hydrate a repo
 
 Usage: `/harness:init` (first-time setup) · `/harness:init --refresh` (after a plugin update)

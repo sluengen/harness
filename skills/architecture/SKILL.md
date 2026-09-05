@@ -67,7 +67,7 @@ If the integration branch is unknown or unavailable — a detached checkout, or 
 
 ## Architecture assessment
 
-The steward loads this section for `/assess architecture` (`agents/steward.md`, the `architecture` scope). Where a design decision (above) shapes *one* change, an architecture assessment steps back and judges the *whole* system shape periodically: **is the shape still right for the product, and what should we preserve, change, or watch?** It is a holistic judgement, not a finding sweep — its output is a verdict and a narrative (`templates/assessment.md`, the architecture report shape), and only the *actionable* risks become tickets (`assessment-craft`: a report may carry non-ticket narrative; `commands/assess.md`: file only actionable architecture risks).
+The steward loads this section for `/assess architecture` (`agents/steward.md`, the `architecture` scope). Where a design decision (above) shapes *one* change, an architecture assessment steps back and judges the *whole* system shape periodically: **is the shape still right for the product, and what should we preserve, change, or watch?** It is a holistic judgement, not a finding sweep — its output is a verdict and a narrative (`templates/assessment.md`, the architecture report shape), and only the *actionable* risks become tickets (`assessment-craft`: a report may carry non-ticket narrative; `skills/assess/SKILL.md`: file only actionable architecture risks).
 
 Assess against these lenses — each grounded in `engineering` and this repo's architecture-principles spec:
 

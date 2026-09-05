@@ -6,7 +6,7 @@ load.
 
 The #302 mechanism, applied to a second directory. Node resolves a ``.js`` file's
 module type from the **nearest** ``package.json`` walking up from the file. The
-harness ships ``scripts/gate-marker.js`` as bare ``.js``, and ``commands/init.md``
+harness ships ``scripts/gate-marker.js`` as bare ``.js``, and ``skills/init/SKILL.md``
 copies it into a consuming repo's ``scripts/``, so without a manifest that walk
 terminates at *that repo's root* — a root the harness does not control. Where it
 declares ``"type": "module"`` (any modern TS/Vite/ESM repo), Node parses the

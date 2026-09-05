@@ -867,7 +867,6 @@ def test_the_gate_command_can_only_come_from_a_file_the_tree_carries() -> None:
     # — the required path must be built from ``__dirname`` and string literals
     # alone, so no per-invocation value chooses *which module* answers, and the
     # module it names must be the thing that reads a checked-in file.
-    reachable = dict(source=source, spans=spans)
     required = REQUIRED_SIBLING.findall(source)
     for expression in required:
         assert "process.env" not in expression and "argv" not in expression, (
@@ -881,7 +880,7 @@ def test_the_gate_command_can_only_come_from_a_file_the_tree_carries() -> None:
         if sibling.exists():
             sibling_text += sibling.read_text(encoding="utf-8")
 
-    bodies = [reachable["source"][spans[name][0] : spans[name][1]] for name in sorted(closure)]
+    bodies = [source[spans[name][0] : spans[name][1]] for name in sorted(closure)]
     assert any(FILE_READ in body for body in bodies) or FILE_READ in sibling_text, (
         f"neither {sorted(closure)} nor the module they require reads a file, so the "
         "command this guard calls checked-in has no checked-in origin"

@@ -227,7 +227,8 @@ def test_an_unloadable_reader_leaves_both_hooks_protecting(tmp_path: Path, hook:
     shutil.copy(HOOKS / "package.json", stage / "package.json")
     assert not (tmp_path / "stage" / "scripts").exists()
     proc = _run_node(
-        f"const h = require(process.env.HOOK_PATH); process.stdout.write(String({PROTECTED[hook]}));",
+        "const h = require(process.env.HOOK_PATH);"
+        f"process.stdout.write(String({PROTECTED[hook]}));",
         repo,
         {"HOOK_PATH": str(stage / hook)},
     )
@@ -280,7 +281,8 @@ def test_the_shared_reader_really_is_the_parser() -> None:
     """The anti-vacuity half. Without it, deleting the reader outright would turn
     every parametrisation above green."""
     text = (REPO_ROOT / "scripts" / "harness-config.js").read_text()
-    missing = [token for token in PARSER_TOKENS if token in ("FLOW_PAIR", "INDICATOR", "withoutComment") and token not in text]
+    owned = ("FLOW_PAIR", "INDICATOR", "withoutComment")
+    missing = [token for token in owned if token not in text]
     assert not missing, f"the shared reader carries no {missing}"
 
 

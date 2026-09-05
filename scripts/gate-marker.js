@@ -11,7 +11,7 @@
  * Two Claude Code hooks read that file from opposite sides of one equality:
  * `hooks/gate-evidence-guard.js` (Stop) asks *does a marker cover the tree this
  * turn is claiming is finished?*, and `hooks/push-target-guard.js` (PreToolUse)
- * asks *does a marker cover the tree this push carries?*. `commands/build.md`
+ * asks *does a marker cover the tree this push carries?*. `skills/build/SKILL.md`
  * already makes those the same object — its ship step refuses to integrate
  * unless `git rev-parse HEAD^{tree}` equals the tree the gate ran over — so one
  * marker authorises both.
@@ -238,7 +238,7 @@ let scratchIndexSerial = 0;
  * in a `finally`.
  *
  * Side effect worth naming: this writes blobs and trees into the object database
- * (loose, gc-able). `commands/build.md` already does the same thing in the
+ * (loose, gc-able). `skills/build/SKILL.md` already does the same thing in the
  * *real* index when it computes `certified_tree`. */
 function currentTree(cwd) {
   const dir = markerDir(cwd);
