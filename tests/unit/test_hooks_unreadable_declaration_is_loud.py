@@ -57,6 +57,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -778,7 +779,7 @@ def test_the_notice_does_not_claim_a_fallback_that_is_not_in_force(tmp_path: Pat
     # the same inverted. The claim is falsifiable in one direction: the notice may
     # not say that the fallback, by any of its names, is what is in force, because
     # the deny above proves it is not.
-    fallback = _fallback_protected()
+    fallback = _fallback()
     assert fallback, "the fallback set could not be read, so this assertion is vacuous"
     said = proc.stderr.lower()
     claimed = [w for w in ("conservative", "fallback", "default") if w in said]
@@ -786,29 +787,13 @@ def test_the_notice_does_not_claim_a_fallback_that_is_not_in_force(tmp_path: Pat
         f"the notice claims the {claimed} set is in force while the deny above proves "
         f"CONTEXT.md's declaration is what protected the branch: {proc.stderr!r}"
     )
-    named = sorted(name for name in fallback if name in proc.stderr)
+    # Whole words only, and only in the sentence *after* the path: the notice
+    # echoes a filesystem path, and a checkout under a directory called `dev`
+    # would otherwise redden a perfectly correct notice.
+    claim = proc.stderr.rsplit(": ", 1)[-1]
+    named = sorted(name for name in fallback if re.search(rf"\b{re.escape(name)}\b", claim))
     assert not named, (
         f"the notice names {named} — members of the fallback set — while the branch "
         f"actually protected came from CONTEXT.md: {proc.stderr!r}"
     )
 
-
-def _fallback_protected() -> set[str]:
-    """``FALLBACK_PROTECTED`` as the shipped hook exports it.
-
-    Read from the module rather than restated, so the assertion above is driven by
-    the real set and a name added to it is covered without anyone editing a list.
-    """
-    proc = subprocess.run(
-        [
-            _node(),
-            "-e",
-            "process.stdout.write(require(process.env.HOOK).FALLBACK_PROTECTED.join(String.fromCharCode(10)))",
-        ],
-        capture_output=True,
-        text=True,
-        timeout=60,
-        env={**os.environ, "HOOK": str(_HOOKS_DIR / "push-target-guard.js")},
-    )
-    assert proc.returncode == 0, proc.stderr
-    return {name for name in proc.stdout.split("\n") if name}

@@ -35,7 +35,7 @@ Each finding is a level-3 heading carrying its ID, a one-line title, and (when d
 
 ## Systemic insights
 
-Up to **three**. An insight is a single concrete edit to a skill, agent, command, hook, or template that stops a *class* of findings from recurring. Each names the exact file and edit and cites at least one finding as evidence. Zero insights is legitimate — write "no insights this cycle" rather than inventing one. An insight is an improvement, so it is **not filed as a ticket**: it is appended to the proposals ledger and decided at the drain (`skills/assess/SKILL.md`).
+Up to **three**. An insight is a single concrete edit to a skill, agent, hook, or template that stops a *class* of findings from recurring. Each names the exact file and edit and cites at least one finding as evidence. Zero insights is legitimate — write "no insights this cycle" rather than inventing one. An insight is an improvement, so it is **not filed as a ticket**: it is appended to the proposals ledger and decided at the drain (`skills/assess/SKILL.md`).
 
 ### {SCOPE}-INSIGHT-{n} — {one-line title}
 

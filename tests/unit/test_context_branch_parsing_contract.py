@@ -753,7 +753,7 @@ def test_the_expressions_match_the_call_sites_they_stand_in_for() -> None:
     # and leave the preference tests below measuring a path production no longer
     # takes.
     reader = (REPO_ROOT / "scripts" / "harness-config.js").read_text(encoding="utf-8")
-    for name in ("harness.yaml", "CLAUDE.md", "CONTEXT.md"):
+    for name in ("harness.yaml", "AGENTS.md", "CLAUDE.md", "CONTEXT.md"):
         assert name in reader, (
             f"the shared reader no longer reads {name}, so the preference tests "
             "below measure a path that is not the production one"

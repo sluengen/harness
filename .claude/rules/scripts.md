@@ -31,8 +31,10 @@ other task.
   own bug wedges every tool call in the session, which is worse than one that approves. A
   silent fail-open is the #302 defect: indistinguishable from a deliberate pass-through.
 - Failing open never means failing to an **empty** protected set. When the shared reader
-  cannot be loaded, degrade to the conservative fallback — the state an unadopted repo is
-  in — because an empty set approves a push to the integration branch.
+  cannot be **loaded**, degrade to the conservative fallback — the state an unadopted repo
+  is in — because an empty set approves a push to the integration branch. A throw from
+  inside a read takes the hook's ordinary outer catch instead; the guarantee is scoped to
+  the load, and saying otherwise would be a claim no test holds.
 - Configuration is read through `scripts/harness-config.js` and nowhere else. Three
   hand-rolled copies of that parser produced #487, #488 and #510, and holding two of them
   *equivalent to each other* could not see #488, because both were wrong identically.

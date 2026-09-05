@@ -796,7 +796,7 @@ function main() {
       `This turn claims the work is finished, but no gate marker covers the current ` +
         `tree ${verdict.tree.slice(0, 12)} in ${where}. ${scope}The gate has not been ` +
         `run green over these exact bytes — a marker from before the last edit is not ` +
-        `evidence about them. Run the repo verify command (commands.verify in the spine, CLAUDE.md) ` +
+        `evidence about them. Run the repo verify command (commands.verify in harness.yaml) ` +
         `in ${where}, read its output, and name the test that proves each acceptance ` +
         `criterion; then say you are done. Expected marker: ${reportable(verdict.marker)}. ` +
         `If the gate is red and you cannot fix it, say so plainly instead of claiming ` +

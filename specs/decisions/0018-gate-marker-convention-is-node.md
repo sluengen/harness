@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-25
-- **Source:** tickets #500 and #507; consumer migration follow-up #501.
+- **Source:** tickets #500 and #507; consumer migration follow-up #501; amended by #537.
 
 ## Context
 
@@ -26,9 +26,13 @@ The module type is pinned by `scripts/package.json` (`{"type": "commonjs"}`), th
 
 `gate-marker.js` exposes no direct successful write command. Its public `run`
 subcommand accepts no operands and resolves its gate command only from
-`commands.verify` in `CLAUDE.md`; it consults legacy `CONTEXT.md` only when
-`CLAUDE.md` is absent, then uses `bash scripts/verify.sh` only when neither
-spine exists. A present spine with a missing, empty, duplicate, malformed, or
+`commands.verify`, read by the one shared reader `scripts/harness-config.js` out
+of the first source present: `harness.yaml`, then `AGENTS.md`, `CLAUDE.md`, and
+legacy `CONTEXT.md`, using `bash scripts/verify.sh` only when none exists
+(amended by #537, which moved the configuration out of the spine's prose).
+**The boundary is unchanged and is what matters here:** no per-invocation value —
+an operand, argv, or an environment variable, including one naming the directory
+the reader is loaded from — may decide that command. A present spine with a missing, empty, duplicate, malformed, or
 unreadable selected field is infrastructure (exit 3), not a fallback. Three
 spellings are refused rather than read: a value opening with a yaml indicator
 (`|`, `>`, `&`, `*`, `{`, `[`), whose line-reader answer is the indicator

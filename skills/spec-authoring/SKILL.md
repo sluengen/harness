@@ -18,7 +18,7 @@ They flow: a **proposal** (when needed) is decided and broken into one or more *
 
 ## Reference specs — standing documentation
 
-Some specs are not tied to a task. They document a stable part of the system and are updated when that part changes. A reference spec *is* a spec — held to the same bar (actionable, honest, current). Two recognised types (paths in `AGENTS.md`):
+Some specs are not tied to a task. They document a stable part of the system and are updated when that part changes. A reference spec *is* a spec — held to the same bar (actionable, honest, current). Two recognised types (paths in `harness.yaml`):
 
 - **Infrastructure spec** (`templates/infrastructure.md`) — the operational reality: domains, hosting, services, deployment, accounts. The source of truth when making a deployment or configuration decision.
 - **Architecture-principles spec** (`templates/architecture.md`) — how the system is built: the technical principles that govern design *here*, extending the universal `engineering` with this repo's specifics. A repo with rich architecture conventions keeps them in this spec; a small repo keeps a brief version in `AGENTS.md` and skips the file.

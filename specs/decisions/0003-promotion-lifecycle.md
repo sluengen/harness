@@ -107,7 +107,8 @@ Option C wins: promotion becomes an audited lifecycle the harness owns, with a n
 
 As accepted, this ADR fixed the **verb** surface and left the **caller** to prose
 in `RUNBOOK.md` — unversioned, repo-local, and uninstalled anywhere else. The
-caller is now `commands/promote.md`, a version-stamped universal command, and
+caller is now the `promote` workflow (`skills/promote/SKILL.md` since #537
+collapsed each workflow into one artefact), version-stamped and universal, and
 `RUNBOOK.md` §promotion reduces to a pointer. Two clarifications follow from it:
 
 - **Hops are named by role, not by branch.** `/promote dev to staging` resolves

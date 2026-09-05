@@ -42,9 +42,16 @@ const path = require("node:path");
 //: The configuration sources, in precedence order. ``harness.yaml`` is where
 //: #537 moves the block to; the three markdown spines are read behind it because
 //: consuming repos have not migrated and their hooks must keep working on the
-//: day this lands. The first source that *exists* decides — falling through from
-//: a present-but-unreadable source would let a broken ``harness.yaml`` silently
-//: select a stale fenced block.
+//: day this lands.
+//:
+//: **The two readers walk this list differently, deliberately.**
+//: :func:`gateCommand` takes the first source that *exists* and refuses if it
+//: does not declare a usable command, because the value decides what may mint
+//: evidence and must fail closed. :func:`readMap` searches on until a source
+//: *declares* the key, because a missing ``branches:`` block falls back to a
+//: conservative set and a repo mid-migration has its declaration in a later
+//: file. Each function's own docstring states its rule; this list is only the
+//: order.
 const SOURCES = ["harness.yaml", "AGENTS.md", "CLAUDE.md", "CONTEXT.md"];
 
 //: The two quote characters, written as escapes rather than as themselves. The

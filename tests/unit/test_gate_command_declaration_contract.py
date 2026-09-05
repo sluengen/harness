@@ -147,19 +147,20 @@ def _spine(*lines: str, newline: str = "\n") -> str:
 # --- the floor: this repository's own spine files ------------------------------
 
 
-# #537: the gate command is declared in ``harness.yaml``. The two spines are
-# still read *by the reader* for repos that have not migrated; what this pins is
-# that **this** repo's declaration resolves, wherever it lives.
-@pytest.mark.parametrize("spine", ["harness.yaml"])
-def test_the_repositorys_own_spine_declares_the_gate_it_runs(spine: str) -> None:
+def test_the_repositorys_own_declaration_resolves() -> None:
     """The subject's own file is the first corpus (#484/#487).
 
-    Both are real, both are large, and ``AGENTS.md`` is the generated Codex
-    mirror — so a parser that only survives a hand-written five-line fixture
-    fails here. Read from the git **index**: the tree the gate certifies is the
-    staged one (#482).
+    Until #537 this ran over two large markdown spines, one of them the generated
+    Codex mirror of the other. The configuration now lives in one place, so the
+    corpus is one file — but it is still the real one: ``harness.yaml`` carries
+    comments after keys, quoted values, and a comment on the very line the
+    parser has to decide is a block opener, which is the spelling that broke at
+    #488. A parser surviving only a hand-written five-line fixture fails here.
+
+    Read from the git **index**: the tree the gate certifies is the staged one
+    (#482), and this is the declaration that decides what may mint its marker.
     """
-    assert _value(indexed_text(spine)) == OWN_GATE
+    assert _value(indexed_text("harness.yaml")) == OWN_GATE
 
 
 # --- one fixture per legal spelling --------------------------------------------

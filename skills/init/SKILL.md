@@ -12,8 +12,9 @@ Usage: `/harness:init` (first-time setup) · `/harness:init --refresh` (after a 
 
 Turns a repository into one this process can run in. The native plugin carries
 the skills, role procedures, and hooks; this workflow writes the files that must
-be **repo-owned**: both host spines, the Codex role adapters, the specs scaffold,
-the infrastructure record, and the gate's ignore rule. In Claude Code, always
+be **repo-owned**: `harness.yaml`, the spine (`AGENTS.md`) and its `CLAUDE.md`
+pointer, the path-scoped rules, the Codex role adapters, the specs scaffold, the
+infrastructure record, and the gate's ignore rule. In Claude Code, always
 invoke it with its plugin prefix because bare `/init` is the host's own command.
 In Codex, ask to initialize Harness; it reads the same `init` workflow from `skills/`.
 

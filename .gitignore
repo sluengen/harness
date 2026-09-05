@@ -75,7 +75,7 @@ gate.log
 # Visual evidence a build loop renders for review (#434). Captures and their
 # manifest land at `.evidence/<TICKET-ID>/` in the run worktree — the one
 # documented location, so `/review` can hand the reviewer a directory
-# (`commands/build.md`). Two failure directions, same rule: untracked, each
+# (`skills/build/SKILL.md`). Two failure directions, same rule: untracked, each
 # capture reads as a dirty worktree to any gate that counts untracked files;
 # swept up, `/build`'s `git add -A` in *Independent review* and in *Ship*
 # publishes binary captures of seeded state into permanent history of a public
