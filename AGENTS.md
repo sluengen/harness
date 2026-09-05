@@ -74,4 +74,5 @@ Configuration: `harness.yaml`. Path-scoped rules under `.claude/rules/` carry wh
 - What this repo is and is not: ADR 0015 (v4), ADR 0017 (v5).
 - Promotion policy: ADR 0003 as amended — topology is per-repo configuration.
 - Proving a guard can fail: `scripts/mutate.py`; usage is documented in `CONTRIBUTING.md`.
+- What every component assumes the model cannot do, and the test that would retire it: `specs/harness-assumptions.md`. Read at every model or host release.
 - Unconfirmed ideas: `specs/proposals/`. In-flight work: the GitHub repo and Projects board.
