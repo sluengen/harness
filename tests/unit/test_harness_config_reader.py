@@ -191,6 +191,7 @@ def test_every_declared_source_is_read(tmp_path: Path, filename: str) -> None:
     [
         ("declaredLoop", "loop:\n  max_review_cycles: 3\n", {"max_review_cycles": "3"}),
         ("declaredCommands", 'commands:\n  verify: "bash x.sh"\n', {"verify": "bash x.sh"}),
+        ("declaredPaths", "paths:\n  tests: tests/\n", {"tests": "tests/"}),
     ],
 )
 def test_every_map_the_criterion_names_is_readable(

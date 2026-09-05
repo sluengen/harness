@@ -17,7 +17,7 @@ this host alone.
   `disable-model-invocation: true` and are yours to trigger; `build` and `review`
   stay model-invocable because `/routine` drives `/build` and `/build` drives the
   review stage, and the flag would break that composition.
-- **Hooks.** `hooks/hooks.json` registers the five guards at install; no per-repo
+- **Hooks.** `hooks/hooks.json` registers the six guards at install; no per-repo
   wiring. Permissions and the unattended authorisations live in
   `settings/harness.json`.
 - **Sub-agents.** `agents/` defines the four roles Claude Code dispatches. Codex

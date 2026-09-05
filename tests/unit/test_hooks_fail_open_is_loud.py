@@ -142,6 +142,8 @@ _EXPECTED_CLASS_A = {
     # readStdin + the main() wrapper (#436) + the shared reader's load (#537)
     "push-target-guard.js": 3,
     "gate-evidence-guard.js": 3,
+    # readStdin + the main() wrapper + the shared reader's load (#538)
+    "test-lock-guard.js": 3,
 }
 
 #: Which hooks carry Class B sites at all, so the silence half of AC-4 is
@@ -154,6 +156,9 @@ _EXPECTED_CLASS_A = {
 #: legitimately swallowed, and each must stay silent or every tool call in a
 #: repo without a CONTEXT.md would chatter.
 _HOOKS_WITH_CLASS_B = {
+    # The git probes and the run-state read are decision inputs: "no repo",
+    # "no run", "not in the base tree" are the answers it exists to act on.
+    "test-lock-guard.js",
     "workflow-guard.js",
     "push-target-guard.js",
     "gate-evidence-guard.js",
