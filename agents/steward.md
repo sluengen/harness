@@ -32,5 +32,5 @@ Write the dated `templates/assessment.md` report at
 scope IDs (`CODE-`, `ARCH-`, or `PROC-`), and up to three systemic insights.
 Zero findings is valid. Report what was not assessed and never invent findings
 to fill the template. The `/assess` command, not this role, files the findings,
-appends each insight to the proposals ledger — an insight is an improvement, so
+appends each insight to the improvement ledger — an insight is an improvement, so
 it is proposed rather than filed — and commits the report.

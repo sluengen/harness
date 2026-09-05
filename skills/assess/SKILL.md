@@ -12,7 +12,7 @@ Usage: `/assess <scope>` — `code`, `architecture`, or `process` (e.g. `/assess
 
 **Tracker operations follow the spine's contract** (`AGENTS.md` → *Tracker dispatch* and *Filing*): the `tracker:` field names the backend, `tracker` owns the semantics and its matching transport reference owns the API recipes, and `none` degrades to specs and session reports. Do not embed provider API calls here.
 
-Runs the `steward` over the codebase, produces a dated report, files its findings as tickets, and drains the repo's proposals ledger. This is the periodic-review loop: it catches what accumulates across many changes, which no per-change review can see.
+Runs the `steward` over the codebase, produces a dated report, files its findings as tickets, and drains the repo's improvement ledger. This is the periodic-review loop: it catches what accumulates across many changes, which no per-change review can see.
 
 ## One steward, scope selects the standards
 
@@ -40,13 +40,21 @@ Structure and tests stay *lenses inside* `code` — folding them keeps the surfa
 ### 1. Run the steward
 Dispatch the `steward` for the scope; it pulls the scope's domain skills just-in-time. It writes a dated report following [`references/finding-bar.md`](references/finding-bar.md): a summary, findings (each with the four parts and its blocking call), and up to three systemic insights. Zero findings is a valid result.
 
-### 1b. Derive the gate's cost
-Before filing anything, run `node <plugin-root>/scripts/gate-marker.js durations` in the repo and put its median in the report. Every gate run since #539 records when it started and when it finished, and the median across the markers this clone still holds is the one number that says what the assurance machinery costs per change — the quantity `process-economy` audits against and the one a `verify:` change is judged by. Report `count` beside it: a median over three runs is a different claim from a median over three hundred, and a count of zero means this clone has run no gate since the field existed, not that the gate is instant.
+### 1b. Derive the three standing measurements
+Before filing anything, derive all three and put them in the report. They are the series [`references/process-economy.md`](references/process-economy.md) audits against, and a pass that skips them has skipped the point — the value comes from the trend, not the run.
+
+| Measurement | Derivation | What it says |
+|---|---|---|
+| **Gate duration** | `node <plugin-root>/scripts/gate-marker.js durations` — the median, and the `count` beside it | What the assurance machinery costs per change, and what a `verify:` change is judged by. Every gate run since #539 records when it started and finished |
+| **Module count** | the number of test modules under `paths.tests`, and the number of gate stages `commands.verify` runs | How much machinery exists to be maintained. The v5 cull took this repo from 151 modules to 25, and it was back to 45 a fortnight later |
+| **Guard : deliverable** | lines under `paths.tests` against lines of the product the repo ships (here `scripts` + `hooks`), by `wc -l` | What proving the work costs against the work. `21,065 : 9,417` on 2026-09-04 is the starting line |
+
+A `count` of zero durations means this clone has run no gate since the field existed, not that the gate is instant — say which. A median over three runs is a different claim from a median over three hundred, which is why the count travels with it.
 
 ### 2. File the findings
 For every finding, create an issue through `tracker` **in the Todo state**, with the repo's Build project attached (a project is mandatory when filing), labelled by source (`review-finding`), and carrying exactly one assurance level chosen per `authoring` → *Choosing assurance*. Whether a finding blocks and how much verification its fix must buy are different axes: neither where the finding lands on the 2×2 nor how long it reads decides its assurance level. Filing to Todo — not Backlog — is deliberate: a finding is confirmed work, so a later unattended Build tick may pick one up without a human in between; the guards on that self-feeding loop are the assessment's finding bar at filing time and the merge-time review gate before anything ships. Triage happens in the tracker, not at report time. **If this repo has no tracker** (`harness.yaml` `tracker: none`): skip filing, keep the dated report, and surface the findings to the user directly — the report is the deliverable.
 
-**A systemic insight is not filed.** An insight proposes an edit to the guidance to prevent a class of findings, which makes it an improvement rather than something the tree already contradicts (`review-discipline` → *bugs are filed; improvements are proposed*). Append each one to the repo's proposals ledger instead, in the entry shape `review-discipline` → *The proposal channel* defines, and let step 5 decide it alongside everything else the loop proposed. This is the steward's own output going through the same door it asks every other agent to use; a role that reports on the queue's growth cannot be exempt from the rule that bounds it.
+**A systemic insight is not filed.** An insight proposes an edit to the guidance to prevent a class of findings, which makes it an improvement rather than something the tree already contradicts (`review-discipline` → *bugs are filed; improvements are proposed*). Append each one to the improvement ledger instead, in the entry shape `review-discipline` → [`references/improvement-ledger.md`](../review-discipline/references/improvement-ledger.md) defines, and let step 5 decide it alongside everything else the loop proposed. This is the steward's own output going through the same door it asks every other agent to use; a role that reports on the queue's growth cannot be exempt from the rule that bounds it.
 
 **The `process` scope files the contradictions and proposes the rest.** Which result goes through which door is [`references/process-economy.md`](references/process-economy.md) → *Filing*; its deletion and efficiency candidates carry their measurement to the ledger and are decided at step 5. They are **exempt from the three-insight cap** (`references/finding-bar.md`) — they are the pass's ordinary output rather than guidance edits, and capping them would hide the accumulation the pass exists to measure.
 
@@ -60,8 +68,16 @@ A report is advisory evidence, not a code change, so it needs no merge gate. Com
 ### 4. Apply retention
 After committing the report, prune `assessments/` per the retention rule (`templates/assessment.md`): keep the latest report per scope plus any report with an open finding, and fold every superseded report into a one-line entry in the rolling `assessments/LOG.md`. This runs each pass so the directory stays a live index — the latest verdict per scope plus the open-finding tail — instead of accumulating a point-in-time file per run (at up to seven files a day, ~700 a year) whose findings are already fixed or ticketed. Never fold away a report with an open finding. Commit the compaction in the same step as the report.
 
-### 5. Drain the proposals ledger
-The ledger accumulates every improvement the loop proposed and nothing in it expires, so this pass is what clears it — the drain, and the only one. Read the accumulation (the provider skill owns how the ledger is found), then turn it into something answerable: **group** entries whose suggested home is the same file or surface, **abstract** several small ones into the pattern-level candidate they are really evidence for, **prioritise** what survives by the cost of leaving it, and present a short **slate** — what the operator can decide in one sitting, each with its case — rather than the raw list. Record every **verdict** back on the ledger thread as a comment, declines included with their reason, so the next drain does not re-present an answered entry. A promoted proposal becomes an operator-promoted ticket: create it through the provider skill in the Todo state, with the Build project attached and exactly one assurance level chosen per `authoring` → *Choosing assurance*.
+### 5. Drain the improvement ledger
+The ledger accumulates every improvement the loop proposed and nothing in it expires, so this pass is what clears it — the drain, and the only one. Read the accumulation (the provider skill owns how the ledger is found), then turn it into something answerable: **group** entries whose suggested home is the same file or surface, **abstract** several small ones into the pattern-level candidate they are really evidence for, **prioritise** what survives by the cost of leaving it, and present a short **slate** — what the operator can decide in one sitting, each with its case — rather than the raw list. **Every entry leaves the drain marked, in exactly one of three ways** — this is what makes it a drain rather than a review of a list that keeps growing:
+
+| Outcome | Means | What happens |
+|---|---|---|
+| **done** | the entry is already satisfied — the tree changed since it was written, or another ticket carried it | record which change satisfied it |
+| **folded** | it becomes work | create the ticket through `tracker` in the Todo state, with the Build project attached and exactly one assurance level chosen per `authoring` → *Choosing assurance*; record the ticket id |
+| **dropped** | it will not be done | record the reason. A drop is a decision and is written down; an entry that quietly stops being mentioned is the inventory this drain exists to clear |
+
+Record the outcomes back on the ledger thread as a comment, so the next drain does not re-present an answered entry, and **an entry not promoted at this drain is dropped, not carried** (the accepted proposal's D8): carrying it forward unmarked is how a ledger becomes a backlog nobody drains. An entry the operator wants to keep thinking about is a `folded` ticket in Backlog — a state with an owner — not a ledger line with none.
 
 The slate needs somebody to answer it, so an unattended run does **not** drain: note the ledger's size in the report and stop there. Draining without an operator would mean the pass deciding its own proposals, which is the grant the whole split exists to close.
 

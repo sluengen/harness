@@ -13,7 +13,7 @@ concrete shape where the wrong thing read as green. The example is the
 load-bearing half; read it to recognise the shape in the diff in front of you.
 
 Additions to this file are raised as a **proposal** for an operator call — an
-entry here is an improvement, so it is appended to the proposals ledger with
+entry here is an improvement, so it is appended to the improvement ledger with
 `craft.md` as its suggested home and decided when `/assess` drains it, never
 self-filed. The entry bar here is *a defect class
 that reads as green*, which is a standing incentive to grow the file, and every

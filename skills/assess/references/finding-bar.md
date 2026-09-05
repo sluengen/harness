@@ -43,7 +43,7 @@ Rules:
 - **Name a specific file and the exact edit.** Not "update the skill" — "add a section to `engineering` stating X, so the developer catches Y before review."
 - **Cite at least one finding as evidence.** No insight without a pattern behind it.
 - **Zero insights is legitimate.** Say "no insights this cycle" rather than inventing one.
-- **An insight is proposed, not filed.** It is an improvement — an edit that would make the guidance better, not a place the tree contradicts itself today — so it goes to the proposals ledger and is decided when `/assess` drains it (`review-discipline` → *bugs are filed; improvements are proposed*). The cap above still binds what you write; the ledger decides what is built.
+- **An insight is proposed, not filed.** It is an improvement — an edit that would make the guidance better, not a place the tree contradicts itself today — so it goes to the improvement ledger and is decided when `/assess` drains it (`review-discipline` → *bugs are filed; improvements are proposed*). The cap above still binds what you write; the ledger decides what is built.
 
 ## When a report is not just a finding list
 
@@ -59,4 +59,4 @@ When unjustified complexity *is* a finding, the `code` scope names it with the `
 
 ## Output
 
-Write a dated report in the `templates/assessment.md` format. The `assess` command files the **findings** and nothing else — an insight is an improvement, so it is appended to the proposals ledger instead of being filed (above). For each finding use an ID prefixed by the steward's domain (`CODE-`, `ARCH-`, `PROC-`); insights append `-INSIGHT`. Zero findings is a legitimate, stated outcome — do not invent findings to fill the report.
+Write a dated report in the `templates/assessment.md` format. The `assess` command files the **findings** and nothing else — an insight is an improvement, so it is appended to the improvement ledger instead of being filed (above). For each finding use an ID prefixed by the steward's domain (`CODE-`, `ARCH-`, `PROC-`); insights append `-INSIGHT`. Zero findings is a legitimate, stated outcome — do not invent findings to fill the report.
