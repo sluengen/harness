@@ -16,10 +16,12 @@ What each test here is for:
   real fetch of the same refs), because "no objects arrived" and "nothing
   happened at all" compare equal otherwise.
 * **AC-3** — two concurrent claim creates yield exactly one winner, and a
-  **rotated** bucket admits a new one. The rotation is measured by letting a real
-  clock pass a real (tiny) TTL rather than by injecting a "now", because a
-  per-invocation source for the current time is one more thing that decides an
-  outcome from outside the tree.
+  **rotated** bucket admits a new one. Both are measured against an **injected**
+  instant (`--now`), which is what the criterion asks for: a bucket is a tumbling
+  window, so against the wall clock the assertion passed or failed on which side
+  of a second two claims happened to land. Safe to inject because a claim is
+  advisory coordination — nothing that authorises a landing reads it, and a caller
+  who lies about the time can only take a claim it could have taken by waiting.
 * **AC-6** (the ref half) — the green pointer names a commit and only ever moves
   forward; the landing behaviour that advances it is measured in
   ``test_land_script.py``.

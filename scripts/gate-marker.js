@@ -643,8 +643,11 @@ function writeScopeFile(cwd, scope) {
  *
  * `scope`, when non-empty, selects the repo's declared **scoped** command
  * instead and records the paths on the marker. ADR 0018's boundary is intact:
- * the command still comes from a file the tree carries, and the invocation
- * supplies only quoted path operands.
+ * the command still comes from a file the tree carries, and the paths reach it as
+ * **data on the environment** — a NUL-delimited file named by
+ * `HARNESS_GATE_SCOPE_FILE` — so the line `sh -c` receives is the declared scalar
+ * character for character. Nothing here quotes an operand, because nothing here
+ * concatenates one.
  */
 function runGate(cwd, scope) {
   // A declared gate that reaches this verb again would re-run the whole gate at
@@ -664,8 +667,8 @@ function runGate(cwd, scope) {
   //: `commands.test_scoped` runs it over the conflicted paths and earns a marker
   //: that says so; a repo that declares nothing runs its whole gate and earns an
   //: unscoped one. The *command* still comes from a file the tree carries
-  //: (ADR 0018); only the path operands come from the invocation, and they are
-  //: quoted rather than interpolated.
+  //: (ADR 0018); the path operands come from the invocation and reach that
+  //: command as data on the environment, never on its command line.
   let gate;
   try {
     gate = selectedGate(cwd, scope);

@@ -166,13 +166,14 @@ function conflictedPaths(cwd) {
   return out === null ? [] : out.split(NUL).filter(Boolean);
 }
 
-/** Quote one operand for `sh -c`, as `scripts/gate-marker.js` does.
+/** Quote one operand for the shell command `plan` prints.
  *
- * Duplicated rather than shared: these two files ship together but the sibling's
- * copy is inside the one helper allowed to mint gate evidence, and a `require`
- * across that boundary for four lines of string handling buys a coupling neither
- * wants. Held equivalent by nothing, and nothing depends on their being equal —
- * each quotes its own operands for its own shell.
+ * The only place in the shipped set that needs this, and there is no sibling copy
+ * to share with: `scripts/gate-marker.js` assembles no command *from operands* —
+ * the string it hands `sh -c` is the declared scalar verbatim, and the paths go
+ * as data on the environment, which is what ADR 0018's amendment records. This
+ * file is different because its output *is* a command line, meant for an agent to
+ * run through Bash, and its operands are filenames git chose.
  */
 function shellQuote(operand) {
   return `'${String(operand).split("'").join(`'\\''`)}'`;
