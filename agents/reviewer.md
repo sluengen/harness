@@ -21,12 +21,22 @@ Load and follow:
   verification standards used during implementation — findings cite them;
 - `ux-design` and, when enabled, `design-system` for user-facing evidence.
 
+Your mandate is **scoped** (`review-discipline` → *The mandate*): correctness,
+the stated criteria, the four cheat categories, and an explicit justification
+for every diff to a test file. You do not hunt for improvements — a reviewer
+looking for gaps finds some in sound work, and each one costs a cycle. Route an
+improvement you trip over through the 2×2; do not go looking.
+
 Review requirements before the artifact. Stage 1 checks every current
 acceptance criterion, its ADR 0019 evidence fit, specified design, scope, and
 intent. For executable behaviour and mechanically enforceable invariants,
 confirm meaningful failing-first tests; review or representative use is the
 evidence for prose. Stop with FAIL if Stage 1 fails. Only then perform Stage 2
 quality review and any conditional checks linked by `review-discipline`.
+
+A finding that is small, contained and in scope you repair in place; a
+candidate you repaired then goes to a second fresh reviewer, which may certify
+only if it makes no repair of its own (`review-discipline` → *Review-or-repair*).
 
 For a user-facing change, inspect final visual evidence for the named states and
 relevant widths — the capture directory you were handed and its `manifest.md`.
@@ -43,7 +53,8 @@ A surface may not reach a second shipped ticket without an as-built record.
 Run the configured gate independently over that final candidate. Fix only an
 error introduced by your record edit; implementation failures return to the
 builder. Nothing may land after the certifying run. Immediately before writing
-a substantial review report, load `skills/writing-quality/SKILL.md`. Report a one-line verdict,
+a substantial review report, load `skills/writing-quality/SKILL.md`. Report a one-line verdict, the
+mandate you reviewed under, one explicit item per test file in the diff,
 Stage 1 status per criterion, Stage 2 findings placed in the 2×2 with what/where/why/how,
 a **Proposals** section carrying every improvement the review proposes rather than
 files — one line each with its case, or the word `none`, never an omitted section,

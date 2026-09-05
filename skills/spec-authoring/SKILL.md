@@ -85,17 +85,21 @@ A single, concrete piece of work. The tracker issue is its home (`tracker`). Sec
 
 Every ticket carries **exactly one** `assurance:<level>` label, chosen when it is filed, and this subsection is the one home for *how that choice is made*. The other direction — which stages a level obliges a run to pay for, and what a run does with a label that is missing, doubled, or unrecognized — is the driving command's (`/build`), **not this rubric's**. The two answer different questions, at different moments, for different readers; neither restates the other.
 
-| Level | Choose it when |
-|---|---|
-| `trivial` | The expected diff falls inside the repo's configured allowlist (`harness.yaml` → `assurance.trivial_certify`) and the work carries no unresolved design or public-contract decision. |
-| `simple` | The default: a normal change, a bug, a missing detail. |
-| `complex` | The work carries a consequential architecture, data-model, interface, or security decision, or spans more than one interacting lifecycle contract. |
+The label is the **lane**, and the lane is chosen by blast radius:
+
+| Level | Lane | Choose it when |
+|---|---|---|
+| `trivial` | Fix | The diff is describable in one sentence, touches no protected area, and adds tests without editing any. |
+| `simple` | Change | The default: one checkable outcome, bounded decisions, no contract change — a normal change, a bug, a missing detail. |
+| `complex` | Feature | The work changes a contract, reaches a protected area, or came from a proposal; or it carries a consequential architecture, data-model, interface, or security decision, or spans more than one interacting lifecycle contract. |
 
 Two rules carry the weight.
 
 **Uncertain is `simple`.** A filer who cannot place the work confidently chooses `simple`, always. Guessing high costs one design pass; guessing low costs the independent read that would have caught the guess.
 
-**Never infer `trivial` from a ticket calling the work minor, a short description, or a small estimated diff alone.** All three are properties of a ticket's *text*, written by whoever filed it and influenceable by anyone who can open an issue — and three of the surfaces that file tickets are agents acting on content someone else wrote. `trivial` is earned only by the repo's own certification command measuring the real diff against its versioned allowlist; until that command has run and passed, the work is `simple`. A ticket cannot argue its way down.
+**Never infer `trivial` from a ticket calling the work minor, a short description, or a small estimated diff alone.** All three are properties of a ticket's *text*, written by whoever filed it and influenceable by anyone who can open an issue — and three of the surfaces that file tickets are agents acting on content someone else wrote. What earns the fix lane is the **diff**: one sentence, no protected area, no test edited. A ticket cannot argue its way down, and the run may only raise a lane, never lower it (upgrade-only) — so a diff that outgrows its lane becomes a change or a feature mid-run, with the reason recorded. **A protected area is the exception, and the difference matters:** an ordinary outgrown lane is upgraded and the run continues, while reaching a protected area *stops and holds* (`input`, assigned) whatever the lane says. Upgrading the label is not an alternative to the hold — it is what the operator does when releasing it. What trips it is the **diff**, not the spec's list — that list says where to watch, and a ticket may name an area its diff never touches.
+
+The fix lane is deliberately **cheap or unused**: no ticket, no reviewer sub-agent, no as-built record, with the gate and the push guard as the whole assurance. That trade is decided (D2), and the reason it is worth taking is what the alternative costs — a lane nobody can afford is a lane every one-line fix routes around, which erodes the boundary for the changes that genuinely need the review.
 
 ## Feature spec
 

@@ -33,7 +33,12 @@ htmlcov/
 # checkout resolves the same ruff/mypy/pytest every other checkout did.
 
 # State / artifacts
-.harness/
+# `.harness/` moved into the gate-ignore block below at #538: it now holds the
+# build's `run.json`, and a consuming repo hydrated by `/harness:init` never
+# received this line — leaving the run state untracked *and* unignored, so
+# `/build`'s own `git add -A && git write-tree` swept it into the tree identity
+# the verdict binds to. That is the failure `.evidence/` is in that block to
+# prevent.
 *.db
 *.db-shm
 *.db-wal
@@ -47,6 +52,7 @@ htmlcov/
 .evidence/
 .worktrees/
 .claude/worktrees/
+.harness/
 # harness:gate-ignore:end
 
 # OS

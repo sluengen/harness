@@ -58,6 +58,7 @@ In Codex, ask to initialize Harness; it reads the same `init` workflow from `ski
    .evidence/
    .worktrees/
    .claude/worktrees/
+   .harness/
    ```
    <!-- harness:gate-ignore:end -->
 

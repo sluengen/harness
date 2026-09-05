@@ -14,7 +14,7 @@ Usage: `/propose <idea>`
 
 Creates and works a **proposal spec** for an idea that is not yet confirmed work — it needs a decision, carries real unknowns, or is too big to be a single change. The proposal is where the thinking happens before build time is spent. Implements the proposal tier of `spec-authoring`.
 
-Use this when the idea is unconfirmed or large. A small, clear piece of work skips the proposal — `/capture` files it straight to Todo (and the smallest needs no ticket at all — the spine's fast lane).
+Use this when the idea is unconfirmed or large. A small, clear piece of work skips the proposal — `/capture` files it straight to Todo (and the smallest needs no ticket at all — the spine's fix lane).
 
 ## Steps
 

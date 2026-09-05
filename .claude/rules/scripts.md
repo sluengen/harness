@@ -16,7 +16,7 @@ other task.
 
 - Python under `scripts/` is **standard library only**, and `mypy --strict` passes with
   no ignores.
-- The shipped JavaScript — the five hooks, `scripts/gate-marker.js`,
+- The shipped JavaScript — the six hooks, `scripts/gate-marker.js`,
   `scripts/harness-config.js`, `scripts/harness-refs.js`, and `scripts/land.js` — has **no
   dependencies at all**, not even dev ones. It runs from a plugin cache with no install
   step, so a `require` of anything but a Node builtin or a sibling in the same shipped set

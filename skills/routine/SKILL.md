@@ -14,7 +14,7 @@ One tick of the unattended build loop: discover the next actionable ticket, buil
 
 ## Steps
 
-1. **Discover.** Invoke the `work-discovery` skill against this repo's Build queue and pick the next wholly actionable ticket. If nothing is actionable, report that in one line and stop — an empty queue is a clean outcome, not a failure.
+1. **Discover.** Invoke the `work-discovery` skill against this repo's Build queue and pick the next wholly actionable ticket. Its **Andon** rule runs first and can decide the pick on its own: while an open P1 bug exists, that bug is the only ticket this tick may start, and where it is held, the tick reports the stopped line and stops rather than reaching past it (spine P4). If nothing is actionable, report that in one line and stop — an empty queue is a clean outcome, not a failure.
 2. **Build.** Run `/build <TICKET>` on the pick.
 3. **Ship.** Build in the ticket's own worktree branched from the **integration branch** (`branches:` role `integration`), then integrate exactly as `harness.yaml`'s branch model declares and close the ticket. The model is the whole instruction: a direct push where it allows one, a PR where it requires one — and where the PR needs a human to merge it, that is a hold, not a failure. Do not substitute a merge mechanism this command names for the one the repo declares.
 

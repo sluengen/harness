@@ -23,8 +23,7 @@ branches:
   release: {main}
   # staging: only where something deploys to a staging environment (ADR 0003 as amended)
 loop:
-  max_review_cycles: 5
-  unconditional_review_cycles: 3
+  max_review_cycles: 3
 layers:
   design_system: false
   feature_specs: true

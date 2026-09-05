@@ -25,7 +25,7 @@ it; it does not *enable* the plugin, and ``.claude/settings.json`` carries no
 ``enabledPlugins``. ``.claude/hooks`` is a symlink to the plugin's own
 ``hooks/`` and that settings file wires those files directly, so enabling
 ``harness@harness`` here would register ``hooks/hooks.json`` on top of the same
-five hooks and fire each of them twice. The declaration is the half that costs
+set of hooks and fire each of them twice. The declaration is the half that costs
 nothing and the half a fresh clone needs, so this guard asserts the declaration
 and claims nothing about an enablement.
 

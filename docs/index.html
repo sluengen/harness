@@ -187,7 +187,7 @@
       <li><b>9</b> workflows</li>
       <li><b>24</b> skills</li>
       <li><b>4</b> agents</li>
-      <li><b>5</b> hooks</li>
+      <li><b>6</b> hooks</li>
       <li><b>1</b> gate</li>
     </ul>
   </header>
@@ -276,7 +276,7 @@ Codex: ask to initialize Harness</pre>
     </p>
     <div class="grid3">
       <article class="lane lane--fast">
-        <h3>Fast lane</h3>
+        <h3>The fix lane</h3>
         <p class="role">No ticket · ask and it ships</p>
         <p>
           A small fix needs no command and no ticket. It still runs on its own branch, in its own
@@ -376,11 +376,12 @@ Codex: ask to initialize Harness</pre>
           <li class="unit" data-unit="agent:steward"><code>steward</code><span>Periodic health assessment: the cross-file patterns no per-change review sees.</span></li>
         </ul>
 
-        <h3 style="margin-top:22px">Hooks <span class="n">5</span></h3>
-        <p>Three refuse, two advise. What a refusal rests on is evidence — a gate marker over the
+        <h3 style="margin-top:22px">Hooks <span class="n">6</span></h3>
+        <p>Four refuse, two advise. What a refusal rests on is evidence — a gate marker over the
           worked or pushed tree, or the shape of the command itself — never a branch name granting an
           exemption.</p>
         <ul class="units">
+          <li class="unit" data-unit="hook:test-lock-guard"><code>test-lock-guard</code><span>Refuses an edit to a test file while a run has declared its tests locked.<span class="verdict verdict--refuses">refuses</span></span></li>
           <li class="unit" data-unit="hook:gate-evidence-guard"><code>gate-evidence-guard</code><span>Refuses ending a turn that claims completion with no fresh marker over the worked tree.<span class="verdict verdict--refuses">refuses</span></span></li>
           <li class="unit" data-unit="hook:push-target-guard"><code>push-target-guard</code><span>Refuses a push to a protected branch unless a fresh marker covers the pushed tree, or git alone made it from one that is covered.<span class="verdict verdict--refuses">refuses</span></span></li>
           <li class="unit" data-unit="hook:git-push-guard"><code>git-push-guard</code><span>Refuses a history rewrite — <code>--force</code> in any spelling.<span class="verdict verdict--refuses">refuses</span></span></li>

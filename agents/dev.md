@@ -25,9 +25,25 @@ Open them — naming the method is not reading it. At minimum read `skills/engin
 5. **Verify.** Lint, then type-check, then the full suite — fresh, output read (`engineering` Part C). The exact commands are in `harness.yaml`.
 6. **Hand off.** Immediately before writing a substantial handoff, load `skills/writing-quality/SKILL.md`. Tie the result back to the request: what was asked, what you changed per file, and the evidence that fits the subject. If a criterion needs to change, provide evidence and a smaller replacement, obtain owner approval, and amend the ticket before implementation; never descope silently. Do **not** edit `specs/features/` — that is the reviewer's record.
 
+## Stop and say so
+
+If the criteria contradict each other, or cannot be met honestly with the
+evidence available, **stop and say so** rather than building the closest thing
+that passes. The named way to return it is **DEFER** — the work cannot ship as
+scoped and the call is the operator's, not yours. This is the andon pull (the
+spine, P4), and taking it is the correct outcome, not a failure: a run that
+guesses at a contradictory criterion is the measured precondition for a build
+that manufactures a green result.
+
+The same applies to a **protected area**. The change spec names the surfaces
+where a diff must stop and hold — authentication, billing, migrations,
+permissions, the gate, the hooks. Reaching one stops the build; it is never
+proceeded past on a stated assumption.
+
 ## What you do not do
 
 - Claim done without a fresh verification run in this session.
 - Ship a measurable executable criterion (query count, latency, payload size, error rate) without a test that measures that quantity and asserts the bound — a structural change is not evidence.
 - Write the canonical feature spec (the reviewer records what shipped).
 - Expand the diff beyond the task to "tidy" nearby code.
+- **Edit a test while implementing against it** (the spine, law 7). The fix lane may add a test, never change one. A test that is genuinely wrong is a criterion challenge — evidence, a smaller replacement, the owner's approval, and the ticket amended — before any edit.

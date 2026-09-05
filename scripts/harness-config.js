@@ -391,6 +391,17 @@ function declaredCommands(top, onUnreadable) {
   return readMap(top, "commands", onUnreadable);
 }
 
+/** The ``paths:`` map the repo at ``top`` declares — the tree's named directories.
+ *
+ * Read by ``hooks/test-lock-guard.js`` for ``paths.tests``, which is the only
+ * thing that tells the test lock which files it governs. Guessing that set
+ * instead would make the hook a false-deny factory, so an undeclared ``paths:``
+ * leaves the lock inactive rather than protecting a directory nobody named.
+ */
+function declaredPaths(top, onUnreadable) {
+  return readMap(top, "paths", onUnreadable);
+}
+
 /** A source declares no usable field. */
 class ConfigDeclarationError extends Error {}
 
@@ -513,6 +524,7 @@ module.exports = {
   declaredBranches,
   declaredLoop,
   declaredCommands,
+  declaredPaths,
   declaredVerify,
   declaredScopedTest,
   gateCommand,
