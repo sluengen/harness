@@ -461,6 +461,15 @@ TAINTED = ("process.env", "process.argv", "argv")
 #: while proving nothing (#467 — a sweep needs a floor on its corpus).
 FILE_READ = "readFileSync"
 
+#: A ``require`` of a sibling module, captured whole so the expression that
+#: chooses it can be inspected. #537 split the read out of this helper into
+#: ``scripts/harness-config.js``; a guard that only ever looked inside this one
+#: file would have gone quietly green on a helper that no longer reads anything.
+REQUIRED_SIBLING = re.compile(r"require\(([^)]*)\)")
+
+#: The string literals inside such an expression — the module it can name.
+MODULE_NAME = re.compile(r"\"[^\"]+\"|\'[^\']+\'")
+
 
 def _blank(source: str) -> str:
     """Blank comment and string-literal *contents*, preserving every offset.
@@ -847,11 +856,32 @@ def test_the_gate_command_can_only_come_from_a_file_the_tree_carries() -> None:
     assert len(entries) == 1, f"expected exactly one shell entry to constrain, got {entries}"
     assert offenders == []
     assert closure, "the command's producer chain is empty, so nothing was scanned"
-    assert any(
-        FILE_READ in source[spans[name][0] : spans[name][1]] for name in sorted(closure)
-    ), (
-        f"no function in {sorted(closure)} reads a file, so the command this guard "
-        "calls checked-in has no checked-in origin"
+
+    # #537 moved the read itself into ``scripts/harness-config.js``, the one
+    # reader the hooks and this helper now share. The guard follows it rather
+    # than going blind: a precondition that lives in the caller dies the moment
+    # the work moves to a callee (#510). Two things are required of the crossing
+    # — the required path must be built from ``__dirname`` and string literals
+    # alone, so no per-invocation value chooses *which module* answers, and the
+    # module it names must be the thing that reads a checked-in file.
+    reachable = dict(source=source, spans=spans)
+    required = REQUIRED_SIBLING.findall(source)
+    for expression in required:
+        assert "process.env" not in expression and "argv" not in expression, (
+            f"the shared reader is chosen by a per-invocation value: {expression}"
+        )
+    sibling_text = ""
+    for name in {
+        match.strip("\"'") for expression in required for match in MODULE_NAME.findall(expression)
+    }:
+        sibling = REPO_ROOT / "scripts" / name
+        if sibling.exists():
+            sibling_text += sibling.read_text(encoding="utf-8")
+
+    bodies = [reachable["source"][spans[name][0] : spans[name][1]] for name in sorted(closure)]
+    assert any(FILE_READ in body for body in bodies) or FILE_READ in sibling_text, (
+        f"neither {sorted(closure)} nor the module they require reads a file, so the "
+        "command this guard calls checked-in has no checked-in origin"
     )
 
 

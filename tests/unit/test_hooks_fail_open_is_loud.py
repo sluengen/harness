@@ -114,9 +114,23 @@ _REPORTS = re.compile(r"\bfailOpen\s*\(")
 #: lower-level call that the narrower pattern would miss.
 _ANY_STDERR = re.compile(r"\bfailOpen\s*\(|console\.error\b|process\.stderr\b")
 
-#: A Class A ``try`` body: it reads stdin (file descriptor 0) or runs ``main()``.
-#: Everything else is Class B. This is the derived rule AC-4 asks for.
-_CLASS_A_TRY = re.compile(r"readFileSync\s*\(\s*0\b|\bmain\s*\(\s*\)")
+#: A Class A ``try`` body: it reads stdin (file descriptor 0), runs ``main()``, or
+#: **loads one of the hook's own modules**. Everything else is Class B. This is
+#: the derived rule AC-4 asks for.
+#:
+#: The third arm arrived with #537, which replaced three hand-rolled config
+#: parsers with one shared reader the hooks ``require``. A module that fails to
+#: load is not a decision input — in a correctly installed plugin it cannot
+#: happen, and there is no answer to act on. It is precisely #302: ``prompt-guard``
+#: swallowed its own load failure and reported success for an unknown length of
+#: time while the install record still said the scanner was there. So a load
+#: failure reports, like every other failure of the hook's own machinery.
+#:
+#: ``require`` of a Node builtin is not matched, because those are resolved at
+#: module scope and never sit inside a ``try`` in these files; the sibling-parser
+#: load in ``push-target-guard.js`` reaches the same posture by a different route
+#: (``existsSync`` then ``failOpen``) and is already correct.
+_CLASS_A_TRY = re.compile(r"readFileSync\s*\(\s*0\b|\bmain\s*\(\s*\)|\brequire\s*\(")
 
 #: What each hook's Class A sites are in the shipped tree — the floor under the
 #: classifier. Pinned counts, not line numbers: moving a site does not touch this,
@@ -125,8 +139,9 @@ _EXPECTED_CLASS_A = {
     "prompt-guard.js": 2,          # readStdin + the main() wrapper it gained in #303
     "git-push-guard.js": 2,        # readStdin + the main() wrapper
     "workflow-guard.js": 1,        # the main() wrapper (stdin is read inside main)
-    "push-target-guard.js": 2,     # readStdin + the main() wrapper (#436)
-    "gate-evidence-guard.js": 2,   # ditto
+    # readStdin + the main() wrapper (#436) + the shared reader's load (#537)
+    "push-target-guard.js": 3,
+    "gate-evidence-guard.js": 3,
 }
 
 #: Which hooks carry Class B sites at all, so the silence half of AC-4 is

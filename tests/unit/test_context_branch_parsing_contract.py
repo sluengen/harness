@@ -738,11 +738,22 @@ def test_the_expressions_match_the_call_sites_they_stand_in_for() -> None:
         "declaredConfig at both call sites, so this module's expression for "
         "it is stale"
     )
+    # #537 moved *which files are read, and in what order* out of both hooks and
+    # into the one shared reader, so that is where this half of the pin now
+    # anchors. The hooks are pinned to routing through it instead: a hook that
+    # resolved its own source again would restore the duplication #537 removed
+    # and leave the preference tests below measuring a path production no longer
+    # takes.
+    reader = (REPO_ROOT / "scripts" / "harness-config.js").read_text(encoding="utf-8")
+    for name in ("harness.yaml", "CLAUDE.md", "CONTEXT.md"):
+        assert name in reader, (
+            f"the shared reader no longer reads {name}, so the preference tests "
+            "below measure a path that is not the production one"
+        )
     for hook_name, source in ((_PUSH_HOOK, push), (_STOP_HOOK, stop)):
-        assert 'CLAUDE.md' in source and 'CONTEXT.md' in source, (
-            f"{hook_name} no longer reads the spine first with the CONTEXT.md "
-            "fallback, so the preference tests below measure a path that is "
-            "not the production one"
+        assert "loadConfigReader()" in source, (
+            f"{hook_name} no longer resolves its declaration through the shared "
+            "reader, so this module's expressions for it are stale"
         )
 
 
