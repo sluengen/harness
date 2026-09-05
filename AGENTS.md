@@ -30,7 +30,7 @@ One obligation each, every change, enforced by a hook wherever one can hold it. 
 
 Work arrives three ways, by weight:
 
-- **Fast lane.** A small fix takes the same isolation and the same gate, and ships without a ticket. No command carries it — "fix X" is the whole invocation. File a ticket instead when the work changes documented behaviour, spans commits, or needs independent review.
+- **A fix.** A small fix takes the same isolation and the same gate, and ships without a ticket. No command carries it — "fix X" is the whole invocation. It is the fix lane below. File a ticket instead when the work changes documented behaviour, spans commits, or needs independent review.
 - **A ticket** (`/capture` to file one) is the unit of tracked work: a change spec on the tracker issue, built by `/build` — worktree, test-first build, gate, independent review, reconcile with the integration branch, ship, close. `/review` runs the review stage alone when a branch needs only that.
 - **A proposal** (`/propose`) decides the unconfirmed or the large before build time is spent. Accepted proposals spawn tickets.
 
@@ -42,7 +42,7 @@ The vocabulary every agent and command shares. Nothing below is restated elsewhe
 
 - **Ticket states:** Todo · In Progress · In Review · Done · Backlog · Canceled. Only Todo is pulled into work. Backlog holds work whose *existence* is uncertain; blocked-but-confirmed work stays in Todo, held.
 - **Holds:** a ticket assigned to a human is held — the unattended loop never picks it, in any state. The label says why: `input` (the operator must supply an answer, credential, or judgment) or `operator` (needs a hands-on session). Hold = comment + label + assignment, always all three.
-- **Assurance levels:** `trivial` · `simple` · `complex`, exactly one per ticket, carried as an `assurance:<level>` label. The level sets the review shape; choosing it is `spec-authoring`'s job.
+- **Lanes:** one per ticket, chosen at filing, carried as the `assurance:<level>` label, and **upgrade-only**. **Fix** (`trivial`) — a diff describable in one sentence that touches no protected area and adds tests without editing one; no ticket, no reviewer, no as-built record, the gate and the push guard are the whole assurance. **Change** (`simple`) — the default: one checkable outcome, a spec, tests locked during implementation, one fresh review. **Feature** (`complex`) — a contract change, a protected area, or anything a proposal spawned: a design first, and an as-built record. A diff that reaches a **protected area** (auth, billing, migrations, permissions, the gate, the hooks) stops and holds rather than proceeding on an assumption. `spec-authoring` chooses the lane; `build` and `review-discipline` price it.
 - **Verdicts:** a review ends **PASS** (ship it), **FAIL** (blocking findings return to the builder; cycles are bounded by `loop:` in `harness.yaml`, policy in `review-discipline`), or **DEFER** (cannot ship as scoped — needs the operator; hold the ticket).
 - **The binding:** a verdict binds to the git **tree oid** it reviewed. The tree that ships must equal the tree the verdict covered — an amend with an identical tree passes, one more edit does not. The gate marker (`<git-common-dir>/harness/gate/<tree>.json`) is the machine half of the same claim, and `review-discipline` owns the ordering that keeps final evidence last.
 - **Configuration:** `harness.yaml` at the repo root declares the branch roles, commands, loop settings, layers, and paths. It is the one source; hooks, the marker helper, and the skills read it through `scripts/harness-config.js`. Never restate a value from it in prose.
@@ -51,7 +51,7 @@ The vocabulary every agent and command shares. Nothing below is restated elsewhe
 
 ## Enforcement
 
-Three hooks refuse; two advise. A Stop hook refuses ending a turn that claims completion with no fresh marker over the worked tree. A push guard refuses any push to a branch named under `branches:` in `harness.yaml` unless a fresh marker covers the pushed tree — there is no exemption for any command; the gated tree is the authorisation. A second push guard refuses history rewrites (`--force` in any spelling) outright. The advisory pair flag injection-shaped content on write and source edits outside a worktree. Hooks are evidence plumbing, not authority: the controls of record are server-side branch protection and gate output in CI.
+Four hooks refuse; two advise. A Stop hook refuses ending a turn that claims completion with no fresh marker over the worked tree. A PreToolUse hook refuses an edit to a test file while a run has declared its tests locked, which is what makes law 7 an obligation rather than a request. A push guard refuses any push to a branch named under `branches:` in `harness.yaml` unless a fresh marker covers the pushed tree — there is no exemption for any command; the gated tree is the authorisation. A second push guard refuses history rewrites (`--force` in any spelling) outright. The advisory pair flag injection-shaped content on write and source edits outside a worktree. Hooks are evidence plumbing, not authority: the controls of record are server-side branch protection and gate output in CI.
 
 <!-- spine:generated:end -->
 

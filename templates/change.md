@@ -28,16 +28,17 @@ How the change lands — the shape of the solution at a glance.
 
 *Record current reality for the facts this change rests on — every one that names a file / function / flag / version / decision — verified against the code as it is now, not recalled from memory. State what was checked with a `path:line` anchor (or a current version / flag value), surface any decision the ticket assumed settled that is actually open or superseded, and list open questions. Where a sub-agent host is available this is a host-native read-only sub-agent's brief, recorded here verbatim; otherwise the executor self-grounds inline (the fallback). Always present, scaled to size — a one-line fix gets one line ("verified `foo.py:rename_flag` still exists"). See `spec-authoring` → Grounding.*
 
-## Assurance
+## Lane
 
-`trivial` | `simple` | `complex`
+`trivial` (fix) | `simple` (change) | `complex` (feature)
 
 *Choose exactly one before build, per `spec-authoring` → *Choosing assurance* —
-the one home for how that choice is made. What each level then obliges the run to
-pay for: `trivial` requires the repo's conservative allowlist certification;
-`simple` requires an independent review; `complex` requires an independent design
-and review. Missing, conflicting, or unknown values default to `simple`. The run
-may upgrade this value with a recorded reason but may not downgrade it.*
+the one home for how that choice is made. What each lane then obliges the run to
+pay for: the **fix** lane ships on the gate and the push guard alone, with no
+reviewer and no as-built record; **change** requires an independent review;
+**feature** requires an independent design and review. Missing, conflicting, or
+unknown values default to `simple`. The run may upgrade this value with a
+recorded reason but may never downgrade it.*
 
 ## Design
 
