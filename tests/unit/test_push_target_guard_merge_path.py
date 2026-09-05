@@ -326,15 +326,20 @@ def _declare_scoped(repo: Path) -> None:
     )
 
 
-def _conflict_fixture(repo: Path) -> list[str]:
+def _conflict_fixture(repo: Path, prefix: str = "") -> list[str]:
     """Two files conflicting, a third changed cleanly by one side only.
 
     The third file is what makes the authored set a real measurement: if every
     path in the fixture conflicted, "records the conflicted paths" and "records
     every path the merge touched" would be the same answer.
+
+    ``prefix`` puts the three under a directory, for the one test that measures
+    containment by path prefix rather than by exact name.
     """
     _declare_scoped(repo)
-    for name in ("x.txt", "y.txt", "z.txt"):
+    if prefix:
+        (repo / prefix.rstrip("/")).mkdir(parents=True, exist_ok=True)
+    for name in (f"{prefix}x.txt", f"{prefix}y.txt", f"{prefix}z.txt"):
         _write(repo, name, "base\n")
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "shared base")
@@ -342,26 +347,26 @@ def _conflict_fixture(repo: Path) -> list[str]:
     _git(repo, "fetch", "-q", "origin")
 
     _git(repo, "checkout", "-q", "-B", "moved", "origin/main")
-    _write(repo, "x.txt", "theirs\n")
-    _write(repo, "y.txt", "theirs\n")
-    _write(repo, "z.txt", "theirs only\n")
+    _write(repo, f"{prefix}x.txt", "theirs\n")
+    _write(repo, f"{prefix}y.txt", "theirs\n")
+    _write(repo, f"{prefix}z.txt", "theirs only\n")
     _git(repo, "commit", "-qam", "their side")
     _git(repo, "push", "-q", "-f", "origin", "moved:main")
     _git(repo, "fetch", "-q", "origin")
 
     _git(repo, "checkout", "-q", "work")
-    _write(repo, "x.txt", "ours\n")
-    _write(repo, "y.txt", "ours\n")
+    _write(repo, f"{prefix}x.txt", "ours\n")
+    _write(repo, f"{prefix}y.txt", "ours\n")
     _git(repo, "commit", "-qam", "our side")
     _marker(repo)
 
     merged = _try_git(repo, "merge", "--no-ff", "--no-edit", "origin/main")
     assert merged.returncode != 0, "the fixture did not conflict"
-    for name in ("x.txt", "y.txt"):
+    for name in (f"{prefix}x.txt", f"{prefix}y.txt"):
         _write(repo, name, "resolved\n")
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "--no-edit")
-    return ["x.txt", "y.txt"]
+    return [f"{prefix}x.txt", f"{prefix}y.txt"]
 
 
 def test_a_resolved_conflict_lands_under_a_marker_naming_the_resolved_paths(
@@ -384,6 +389,23 @@ def test_a_scope_missing_one_authored_path_is_denied(repo: Path) -> None:
     conflicted = _conflict_fixture(repo)
     _marker(repo, conflicted[0])
     _denied_because(repo, "outside the scope")
+
+
+def test_a_scope_naming_a_directory_covers_the_paths_beneath_it(repo: Path) -> None:
+    """Containment is by path prefix, not only by exact name.
+
+    A repo whose scoped command is directory-granular — ``pytest tests/unit`` —
+    can only describe what it ran as a directory, and a guard that understood
+    exact filenames alone would force that scope to be dishonest. Found because a
+    mutation of the containment predicate survived every fixture: every scope in
+    them was a list of exact files, so the prefix branch was never reached.
+    """
+    conflicted = _conflict_fixture(repo, prefix="nested/")
+    assert conflicted == ["nested/x.txt", "nested/y.txt"]
+    _marker(repo, "elsewhere")
+    _denied_because(repo, "outside the scope")
+    _marker(repo, "nested")
+    _allowed(repo)
 
 
 def test_a_scope_disjoint_from_the_authored_set_is_denied(repo: Path) -> None:
