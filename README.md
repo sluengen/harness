@@ -67,13 +67,13 @@ custom gate wiring and unsafe JavaScript module contexts untouched, with a
 path-specific report for the operator.
 
 Codex installs a native `.codex-plugin/plugin.json` package. Its `skills/`
-directory contains the portable native plugin skills, including compiled command
-and role procedures. The repository-owned `.codex/agents/*.toml` files are Codex
-role adapters for named-agent workflows; `/harness:init` hydrates them into a
-consumer repository. Codex also runs the plugin hooks; the scripts accept both
-hosts' payload and output contracts.
-`scripts/generate_codex_artifacts.py --check` keeps the portable skills,
-`AGENTS.md`, and `.codex/agents/` in sync.
+directory contains every skill both hosts read, the nine lifecycle workflows
+among them — each ships once, not as a mirror of a command file. The
+repository-owned `.codex/agents/*.toml` files are Codex role adapters for
+named-agent workflows; `/harness:init` hydrates them into a consumer repository,
+and `tests/unit/test_codex_agent_adapters.py` holds each one in correspondence
+with its `agents/*.md` counterpart. Codex also runs the plugin hooks; the scripts
+accept both hosts' payload and output contracts.
 
 ## The nine commands
 
@@ -104,7 +104,7 @@ sides.
 ## This repo
 
 The plugin's source, dogfooding itself. Three parts: the guidance surface
-(`commands/`, `skills/`, `agents/`, `hooks/`), the gate (`scripts/verify.sh`:
+(`skills/`, `agents/`, `hooks/`), the gate (`scripts/verify.sh`:
 ruff, mypy, pytest under a coverage floor, drift guards, marker write), and the
 guards (`tests/unit/`, admitted by ADR 0017's rule — behaviour of executable
 code, properties of the spine, integrity of shipped assets, frontmatter). There

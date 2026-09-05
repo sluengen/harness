@@ -64,9 +64,9 @@ Configuration: `harness.yaml`. Path-scoped rules under `.claude/rules/` carry wh
 ### Repo principles
 
 - Commits are atomic and leave the gate green; format `type(scope): description` (feat / fix / chore / docs / refactor / test / spec).
-- `scripts/` is stdlib-only for Python; `mypy --strict` passes with no ignores. The shipped JavaScript — the hooks and `scripts/harness-config.js`, `scripts/gate-marker.js` — has no dependencies at all, because it runs from a plugin cache with no install step.
 - Never `eval`/`exec`/`pickle` untrusted data, string-formatted SQL, `shell=True` with user input, or unvalidated paths. Secrets come from the environment and are never logged or committed.
-- Coverage measures `scripts/`. Long gate output: capture to a file and read the tail.
+- Long gate output: capture to a file and read the tail.
+- Language rules, dependency rules, the hook posture, and what makes a guard evidence are in `.claude/rules/scripts.md`; the design layer's are in `.claude/rules/design.md`. Both load when a file they scope is opened, so they are narrower than this list, not weaker than it.
 - Cross-cutting, expensive-to-reverse decisions are ADRs in `specs/decisions/`, indexed in `specs/architecture-principles.md`; everything smaller is a Decision block in the spec it governs.
 
 ### Where deeper truth lives
