@@ -20,5 +20,5 @@ this host alone.
 - **Hooks.** `hooks/hooks.json` registers the six guards at install; no per-repo
   wiring. Permissions and the unattended authorisations live in
   `settings/harness.json`.
-- **Sub-agents.** `agents/` defines the four roles Claude Code dispatches. Codex
+- **Sub-agents.** `agents/` defines the five roles Claude Code dispatches. Codex
   reads its own equivalents from `.codex/agents/`.

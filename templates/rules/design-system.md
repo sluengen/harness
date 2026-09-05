@@ -13,6 +13,12 @@ turned on, filling the globs above from `harness.yaml`. **It is yours now** —
 `--refresh` never overwrites it, so edit it to match how this repo actually works,
 and delete anything below that does not.
 
+Where Codex is also in use, `init` seeded the same rule as `AGENTS.md` inside the
+design directory, since Codex reads the nearest instruction file rather than a
+path-scoped one. Everything from the first `##` heading down is identical in both,
+and that is the region to keep in step; only this preamble and the `paths:`
+frontmatter differ, because they name a host mechanism.
+
 *Why a rule and not a skill: guidance that has to be triggered by a description
 fires when something remembers to trigger it; a rule attached to a path is simply
 present every time a matching file is opened. Measured at 53% against 100%

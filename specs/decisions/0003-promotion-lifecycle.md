@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-16
-- **Source:** proposal the `local-promotion-steward` proposal (settled; removed from the tree by #547, kept in git history) (Option C); CAL-1112.
+- **Source:** the `local-promotion-steward` proposal (settled; removed from the tree by #547, kept in git history) (Option C); CAL-1112.
 
 This records the promotion **design** before any `harness promote` mechanics exist. The CLI surface (CAL-1113), the ledger and JSON contracts (CAL-1114), the worktree/merge mechanics (CAL-1115), the gate evidence (CAL-1116), PR creation (CAL-1117), and escalation (CAL-1118) are implemented against this record — not decided in it. No CLI, no local-inference adapter, and no PR mechanics land with this ADR.
 

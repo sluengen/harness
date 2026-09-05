@@ -2,10 +2,15 @@
 
 Codex reads the nearest instruction file, so this one binds while you work anywhere
 under `design/` — and, by the same rule on the Claude side,
-`.claude/rules/design-system.md` binds under `design/` and `docs/` alike. **The two
-are the same bytes in two host forms**, which `/harness:init` step 4 seeds together
-and `--refresh` never overwrites; edit both or neither. `.claude/rules/design.md`
-carries the token-source relationship on the same paths; this file carries the craft.
+`.claude/rules/design-system.md` binds under `design/` and `docs/` alike. `/harness:init`
+step 4 seeds the two together and `--refresh` never overwrites either.
+Everything from the first `##` heading down is identical in both, and that is the
+region to keep in step; the preamble above it differs because it names a host
+mechanism, and the Claude form carries `paths:` frontmatter the Codex form has no
+use for. Nothing holds the shared region byte-equal today — edit both or neither.
+
+`.claude/rules/design.md` carries the token-source relationship on the same paths; this
+file carries the craft.
 
 *Why a rule and not a skill: guidance that has to be triggered by a description
 fires when something remembers to trigger it; a rule attached to a path is simply

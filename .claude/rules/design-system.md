@@ -12,8 +12,12 @@ directory and the landing page built from it. Seeded from
 `templates/rules/design-system.md` when the design layer went on, and repo-owned
 since: `--refresh` never overwrites it. `.claude/rules/design.md` sits on the same
 paths and carries the token-source relationship; this file carries the craft.
-`design/AGENTS.md` is the same bytes in Codex's host form, seeded with this one by
-`/harness:init` step 4 and never overwritten by `--refresh`; edit both or neither.
+`design/AGENTS.md` is the Codex host form of this rule, seeded with it by
+`/harness:init` step 4 and never overwritten by `--refresh`.
+Everything from the first `##` heading down is identical in both, and that is the
+region to keep in step; the preamble above it differs because it names a host
+mechanism, and the Claude form carries `paths:` frontmatter the Codex form has no
+use for. Nothing holds the shared region byte-equal today — edit both or neither.
 
 *Why a rule and not a skill: guidance that has to be triggered by a description
 fires when something remembers to trigger it; a rule attached to a path is simply

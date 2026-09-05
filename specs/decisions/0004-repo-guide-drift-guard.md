@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-22 (#169)
-- **Source:** #169 (this decision, ported from CAL-1202); proposal [`repo-guide-landing-page.md`](../proposals/repo-guide-landing-page.md) (accepted 2026-07-20), which recorded this as an open decision to be settled in `specs/decisions/` if the guard was adopted.
+- **Source:** #169 (this decision, ported from CAL-1202); the `repo-guide-landing-page` proposal (settled; removed from the tree by #547, kept in git history), accepted 2026-07-20, which recorded this as an open decision to be settled in `specs/decisions/` if the guard was adopted.
 
 ## Context
 

@@ -38,7 +38,7 @@ Note what the exponent implies. Halving the reviewer's share of `W` moves `P` fr
 
 ### This is the revisit condition a prior decision named
 
-[`rebase-stable-certification`](rebase-stable-certification.md) worked this exact problem in the v3 runtime era — `close`'s `reviewed_sha` gate, `harness review --since`, delta-scoped re-certification. It shipped two cheap cause-removals and **closed the re-certification item unbuilt on measurement**: after #266 (stop prescribing a rebase) and #267 (fragment the shared `CHANGELOG.md` append point), the stale-review rate went to zero and every excess-pass run had a cause one of those two fixes removed.
+the `rebase-stable-certification` proposal (settled; removed from the tree by #547, kept in git history) worked this exact problem in the v3 runtime era — `close`'s `reviewed_sha` gate, `harness review --since`, delta-scoped re-certification. It shipped two cheap cause-removals and **closed the re-certification item unbuilt on measurement**: after #266 (stop prescribing a rebase) and #267 (fragment the shared `CHANGELOG.md` append point), the stale-review rate went to zero and every excess-pass run had a cause one of those two fixes removed.
 
 That decision named what would put the work back on the queue. One of its own stated risks:
 
