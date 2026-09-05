@@ -223,9 +223,9 @@ The harness is ahead of the published state of the art on these, and the reset k
 
 ## Breakdown
 
-Five tickets, filed on acceptance through `/propose`, each carrying the brief below as its change spec. The first two change the machinery that would otherwise review them, so their assurance concentrates at the operator's review of the merge, as v5 did; the rest go through the lanes as any change does. Every criterion names its evidence, and every number here is derived in this document or names the command that derives it. A builder who finds a criterion already met by the tree closes it by observation on the ticket rather than rebuilding it.
+Filed on 2026-09-05 as twelve issues on the board, each carrying the brief below as its change spec, with native blocked-by dependencies and a Priority: T1 #537 · T2 #538 · T3 as #539, #540, #541, #542, #543, #544, #545, #546 · T4 #547 · T5 #548. The first two change the machinery that would otherwise review them, so their assurance concentrates at the operator's review of the merge, as v5 did; the rest go through the lanes as any change does. Every criterion names its evidence, and every number here is derived in this document or names the command that derives it. A builder who finds a criterion already met by the tree closes it by observation on the ticket rather than rebuilding it.
 
-### T1 — Spine and configuration
+### T1 — Spine and configuration (#537)
 
 *Lane:* feature. *Serves:* P1, P3. *Spends against:* nothing; this ticket only deletes.
 
@@ -242,7 +242,7 @@ Five tickets, filed on acceptance through `/propose`, each carrying the brief be
 
 **Out of scope.** Any lifecycle semantic (T2), the landing posture (T3), skill content (T5). **Protected areas:** `hooks/` beyond the reader swap; a diff that changes what a hook refuses stops and holds.
 
-### T2 — Lanes, intake, build state, and the scoped review
+### T2 — Lanes, intake, build state, and the scoped review (#538)
 
 *Lane:* feature. *Serves:* P4, P5, P6. *Spends against:* P3, by one hook and one JSON file; each named with what it retires.
 
@@ -259,11 +259,11 @@ Five tickets, filed on acceptance through `/propose`, each carrying the brief be
 
 **Out of scope.** Landing (T3). The visual-evidence rules move to a stage-loaded reference under `review-discipline` unchanged in substance. **Protected areas:** `hooks/push-target-guard.js` and `hooks/gate-evidence-guard.js`; a diff reaching them stops and holds.
 
-### T3 — Landing posture
+### T3 — Landing posture (#539 to #546)
 
 *Lane:* feature, as eight tickets already broken down on 2026-09-04 and unchanged: the push-guard second acceptance path; the spine restatement of law 3 in authored-tree terms; the gate-record protocol; the claim protocol; the scoped re-gate on the conflict path; the `/build` stages; the green pointer; cost/benefit at creation. Their criteria stand as written in *The first instance* below. Two additions from this revision: the four-step re-bind path ships as a script under `scripts/` with the command file explaining only when it applies; and the marker gains `started_at`, so gate duration is measured from the first week. *Serves:* P1, P2, P5.
 
-### T4 — Prune
+### T4 — Prune (#547)
 
 *Lane:* feature. *Serves:* P1, P3. *Spends against:* nothing.
 
@@ -278,7 +278,7 @@ Five tickets, filed on acceptance through `/propose`, each carrying the brief be
 
 **Out of scope.** Rewriting the content of kept skills (T5). **Protected areas:** none new; deletions are the whole diff.
 
-### T5 — Skills and agent content remediation
+### T5 — Skills and agent content remediation (#548)
 
 *Lane:* feature. *Serves:* P1 (delete what the model already does), P3, P6 (guidance verified by use). *Spends against:* P3, by adding *evals/* directories; bounded below. *Depends on:* T4, so the set being refined is the set being kept.
 
