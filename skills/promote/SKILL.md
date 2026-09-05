@@ -73,6 +73,19 @@ resolver is what changes, not the command.
      branch, never the target directly, and open a PR into the target carrying
      the commit range and the gate evidence. A human merges it.
 
+   A protected target that can only advance through a pull request cannot be
+   fast-forwarded: a merged PR always writes a commit the source does not
+   carry. Assert the property fast-forwarding was protecting instead — **the
+   tree that lands equals the tree the gate certified** — on the merge the API
+   returns, and record in the repo's infrastructure spec that you did.
+
+5. **Back-merge after the release hop.** When the release branch gains commits
+   the integration branch does not have — the merge commit, a release-time
+   version bump, a hotfix — merge release back into integration promptly.
+   Skipping it makes every later promotion carry a phantom divergence that
+   surfaces as a conflict on somebody else's ticket. The back-merge is part of
+   the release, not housekeeping to remember afterwards.
+
 ## What this command must never do
 
 - **Push the release branch directly.** This command never direct-pushes the
@@ -93,7 +106,12 @@ resolver is what changes, not the command.
 
 A stopped hop is a normal outcome, not an error. Report it: the source and
 target branches, the conflicting files or the gate output tail, and the branch
-and worktree left in place to inspect. Where the repo has a tracker, file that
+and worktree left in place to inspect. A red gate on a candidate is a finding
+against the **source** branch — fix it there and re-promote; never patch the
+candidate. An **infrastructure** failure (a missing toolchain, absent
+credentials, an unclean base) is a different outcome from a red tree: the gate
+reserves an exit code for it, and it stops the run without filing blame against
+the code. Where the repo has a tracker, file that
 report as a ticket through `tracker` so it is not lost when the
 session ends, carrying exactly one assurance level chosen per `authoring`
 → *Choosing assurance*. Where it does not, the report to the operator is the
