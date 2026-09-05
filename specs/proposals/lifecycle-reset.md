@@ -408,6 +408,20 @@ Eight probes against `sluengen/calibrate-coffee`, private, no server-side config
 
 **D5 — pruning rides on a write that already happens.** When a builder publishes a gate record it also deletes records whose tree has left the integration branch's recent history.
 
+### Decisions — 2026-09-05, taken while building #539
+
+The shape above survived contact; these five are what building it settled. The two that are cross-cutting and expensive to reverse are [ADR 0020](../decisions/0020-authored-tree-binding.md) and the dated amendment to [ADR 0018](../decisions/0018-gate-marker-convention-is-node.md).
+
+**D12 — every `refs/harness/*` key is one flat, percent-encoded component.** Probe 6 recorded a directory/file conflict the moment a key nested beneath an existing key, and a branch named `release/1.0` or a ticket named `team/42` would reintroduce it. Every byte outside `[A-Za-z0-9_]` is percent-encoded, which is wider than the `/` and `%` the hazard strictly needs: encoding `.` as well makes a leading dot and a trailing `.lock` — both refused by git's ref grammar — unrepresentable without a second rule. *Rejected:* encoding only the two characters that cause the D/F conflict, which leaves a legal branch name that cannot be pointed at.
+
+**D13 — records and claims point at blobs; the green pointer points at a commit.** A blob update is never a fast-forward, so an existing claim rejects every non-forced update and first-writer-wins holds with no lock and no lease (probe 4). The pointer has the opposite requirement — it must advance — so it is a commit and moves only where git will fast-forward it. A record's body is deterministic (the tree and the outcome, no timestamp), so republishing one is the same blob and git reports it as up to date rather than as a rejected update. *Rejected:* one object kind for all three, which makes either the claim stealable by a descendant or the pointer unmovable.
+
+**D14 — publishing a record is never a gate stage.** `scripts/verify.sh` does not publish; `scripts/land.js` does. A record push inside the gate would put a network round trip in every gate run, fail offline, and — worse — let a failure *after* the marker was written turn a green result red. The publish verb therefore exits non-zero only for a caller error and reports a refused remote in its result. This is the argument `scripts/gate-marker.js` already makes about dependencies, applied to the network.
+
+**D15 — the prune window is the integration branch's last 200 commits** (`--window`, `HARNESS_RECORD_WINDOW`). D5 said pruning rides on a write that already happens; this is what "has left the integration branch's recent history" means mechanically. It is coherent because a composite tree that *lands* becomes an integration-branch tree, so what ages out is exactly the trees that never landed. Records are a cache with the standing of the local marker directory, not a revived run ledger (ADR 0015).
+
+**D16 — the landing script decides and merges; it never pushes, and never runs the gate.** It is invoked as one Bash command, so a `git push` it made internally would be invisible to `hooks/push-target-guard.js` — the script would become the way around the guard it exists to satisfy. It prints the push for the agent to run through the tool the hook can see, so there is one adjudicator and it stays the hook. It does not run the gate either: law 3 obliges the agent to run it and read the output, and a script that swallowed the run would take the reading with it. *Rejected:* a single `land` verb that carries a landing end to end, which would have to resolve a conflict — a judgment, not a decision a script can make.
+
 ### Modelled
 
 Carried from `drift-reconvergence` with its inputs unchanged, still assumptions: exposure window 15 min falls to about 5 s, collision probability at λ≈8/hr falls from 87% to 1.1%, expected attempts to land fall from 7.4 to about 1.01.

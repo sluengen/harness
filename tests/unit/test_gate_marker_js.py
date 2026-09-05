@@ -1308,3 +1308,92 @@ def test_the_scope_file_does_not_survive_the_run(repo: Path) -> None:
     _run_scoped(repo, "src/one.py")
     scope_dir = repo / ".git" / "harness" / "scope"
     assert not scope_dir.exists() or not list(scope_dir.iterdir()), list(scope_dir.iterdir())
+
+
+# --- gate duration, derived (#539, AC-7) --------------------------------------
+
+
+def _seed_marker(repo: Path, name: str, seconds: int | None) -> None:
+    """A marker file standing in for a past run, with a known span.
+
+    Hand-authored deliberately and only here: the subject is arithmetic over a
+    *corpus* of markers, and producing forty of them through the runner would
+    measure the runner forty times and the median once. The shape it writes is
+    the shape the runner writes, which
+    :func:`test_the_durations_corpus_matches_what_the_runner_records` holds.
+    """
+    directory = repo / ".git" / "harness" / "gate"
+    directory.mkdir(parents=True, exist_ok=True)
+    payload: dict[str, object] = {"schema": 2, "tree": name}
+    if seconds is not None:
+        payload["started_at"] = "2026-09-05T10:00:00Z"
+        finished = datetime.datetime(2026, 9, 5, 10, 0, 0, tzinfo=datetime.timezone.utc)
+        finished += datetime.timedelta(seconds=seconds)
+        payload["finished_at"] = finished.strftime("%Y-%m-%dT%H:%M:%SZ")
+    (directory / f"{name}.json").write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _durations(repo: Path) -> dict[str, object]:
+    proc = _cli(repo, "durations")
+    assert proc.returncode == 0, proc.stderr
+    return dict(json.loads(proc.stdout))
+
+
+def test_the_median_gate_duration_is_reported_for_an_odd_corpus(repo: Path) -> None:
+    for index, seconds in enumerate([10, 90, 30]):
+        _seed_marker(repo, f"{index:040d}", seconds)
+    assert _durations(repo) == {
+        "count": 3,
+        "median_seconds": 30,
+        "min_seconds": 10,
+        "max_seconds": 90,
+    }
+
+
+def test_the_median_of_an_even_corpus_is_the_mean_of_the_middle_two(repo: Path) -> None:
+    """The parity that ``sorted[n // 2]`` gets wrong, and every odd fixture hides."""
+    for index, seconds in enumerate([10, 20, 40, 90]):
+        _seed_marker(repo, f"{index:040d}", seconds)
+    assert _durations(repo)["median_seconds"] == 30
+
+
+def test_a_marker_with_no_start_is_not_counted_as_a_zero_second_gate(repo: Path) -> None:
+    """Every marker written before #539 has no ``started_at``.
+
+    Reading one as a zero-second run would drag the median toward zero for weeks
+    and the number would look like an improvement.
+    """
+    _seed_marker(repo, f"{0:040d}", 60)
+    _seed_marker(repo, f"{1:040d}", None)
+    assert _durations(repo) == {
+        "count": 1,
+        "median_seconds": 60,
+        "min_seconds": 60,
+        "max_seconds": 60,
+    }
+
+
+def test_an_empty_corpus_reports_no_median_rather_than_zero(repo: Path) -> None:
+    assert _durations(repo) == {"count": 0, "median_seconds": None}
+
+
+def test_the_durations_corpus_matches_what_the_runner_records(repo: Path) -> None:
+    """The one link between the seeded shape above and the shipped writer.
+
+    Without it the arithmetic tests agree with a fixture the runner may have
+    stopped producing, and the median would be computed over an empty corpus in
+    every real repo while every test here stayed green.
+    """
+    scripts = repo / "scripts"
+    scripts.mkdir(exist_ok=True)
+    (scripts / "verify.sh").write_text(
+        "#!/usr/bin/env sh\n"
+        'test "${HARNESS_GATE_MARKER_RUNNER:-}" = "1"\n'
+        "sleep 1.2\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    assert _cli(repo, "run").returncode == 0
+    reported = _durations(repo)
+    assert reported["count"] == 1, reported
+    assert reported["median_seconds"] >= 1, reported

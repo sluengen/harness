@@ -36,7 +36,6 @@ import json
 import os
 import shutil
 import subprocess
-import time
 from pathlib import Path
 
 import pytest
@@ -266,9 +265,17 @@ def test_a_publish_to_an_unreachable_remote_does_not_fail(alpha: Path, tmp_path:
 
 
 def test_two_concurrent_claims_yield_one_winner(tmp_path: Path, remote: Path, alpha: Path) -> None:
+    """Both claims computed from one instant, so the bucket is not the variable.
+
+    Sequential, and this says so: a genuinely simultaneous race is not
+    reproducible, and asserting one would be a claim the instrument cannot make.
+    What is measured is that the *second* create is refused, which is the
+    property — first-writer-wins comes from git rejecting a non-fast-forward,
+    not from timing.
+    """
     beta = _clone(tmp_path, remote, "beta")
-    first = _cli(alpha, "claim", "--ticket", "539")
-    second = _cli(beta, "claim", "--ticket", "539")
+    first = _cli(alpha, "claim", "--ticket", "539", "--now", "1757000000")
+    second = _cli(beta, "claim", "--ticket", "539", "--now", "1757000000")
     outcomes = sorted([first.returncode, second.returncode])
     assert outcomes == [0, 3], (
         "exactly one create wins and the loser reports contention (exit 3): "
@@ -278,16 +285,19 @@ def test_two_concurrent_claims_yield_one_winner(tmp_path: Path, remote: Path, al
 
 
 def test_a_rotated_bucket_admits_a_new_claim(tmp_path: Path, remote: Path, alpha: Path) -> None:
-    """Rotation, measured against a real clock passing a real TTL.
+    """The clock is advanced, not waited out — a tumbling window has a boundary.
 
-    The loser inside the same bucket is the control: without it a claim verb that
-    simply always succeeded would pass the rotation half on its own.
+    Against the wall clock this passed or failed on which side of a second the
+    first two claims landed. The loser inside the *same* bucket is the control:
+    without it a claim verb that simply always succeeded would pass the rotation
+    half on its own.
     """
-    env = {"HARNESS_CLAIM_TTL_SECONDS": "1"}
-    assert _cli(alpha, "claim", "--ticket", "539", env=env).returncode == 0
-    assert _cli(alpha, "claim", "--ticket", "539", env=env).returncode == 3
-    time.sleep(2.2)
-    rotated = _cli(alpha, "claim", "--ticket", "539", env=env)
+    env = {"HARNESS_CLAIM_TTL_SECONDS": "3600"}
+    inside = "1757000000"
+    later = str(1757000000 + 3600)
+    assert _cli(alpha, "claim", "--ticket", "539", "--now", inside, env=env).returncode == 0
+    assert _cli(alpha, "claim", "--ticket", "539", "--now", inside, env=env).returncode == 3
+    rotated = _cli(alpha, "claim", "--ticket", "539", "--now", later, env=env)
     assert rotated.returncode == 0, (
         f"a rotated bucket must admit a new claim: {rotated.stdout} {rotated.stderr}"
     )
@@ -370,3 +380,19 @@ def test_the_records_report_themselves_as_json_when_asked(alpha: Path) -> None:
     _ok(alpha, "gate-publish", "--tree", tree, "--outcome", "green")
     payload = json.loads(_ok(alpha, "gate-list", "--json"))
     assert payload == {tree: "green"}, payload
+
+
+def test_the_repo_operand_names_the_checkout(tmp_path: Path, remote: Path, alpha: Path) -> None:
+    """It ships from the plugin root, so it needs a way to say which checkout.
+
+    Run from a directory that is not a repository at all: without ``--repo`` this
+    is the refusal, so a version that quietly used the process's own working
+    directory could not pass both halves.
+    """
+    elsewhere = tmp_path / "not-a-repo"
+    elsewhere.mkdir()
+    assert _cli(elsewhere, "gate-list").returncode != 0
+    tree = _git(alpha, "rev-parse", "HEAD^{tree}")
+    _ok(alpha, "gate-publish", "--tree", tree, "--outcome", "green")
+    listed = _ok(elsewhere, "gate-list", "--repo", str(alpha))
+    assert f"{tree} green" in listed.splitlines(), listed

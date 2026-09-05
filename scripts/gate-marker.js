@@ -47,10 +47,19 @@
  * `.gitignore` change anywhere, and disappears with the clone.
  *
  * **Why the filename carries the claim.** The decision predicate is
- * `exists(path)` plus its mtime. No hook parses the body, which is diagnostics.
- * That removes a class of parse-failure ambiguity from two enforcement paths,
- * and it is honest: anyone who can write the file can write valid JSON, so
- * parsing buys nothing.
+ * `exists(path)` plus its mtime, which removes a class of parse-failure
+ * ambiguity from the enforcement paths; it is honest, too, because anyone who
+ * can write the file can write valid JSON, so parsing buys nothing.
+ *
+ * One field is the exception, and it earns it (#539). A **scoped** marker
+ * records the paths a re-gate covered, and `hooks/push-target-guard.js` reads
+ * `scope` — only that, and only to decide whether a merge's authored bytes fall
+ * inside it. The rule keeps the honesty: a marker carrying a scope authorises no
+ * push by itself, and a body that cannot be read authorises nothing at all. The
+ * Stop hook still decides on the filename alone, and the filename still carries
+ * the whole claim for every unscoped marker, which is every marker written
+ * before that change. The write is atomic for the same reason: a torn body is a
+ * decision input now, not just diagnostics.
  *
  * **What this is not.** Evidence plumbing, not an authority. Any process with
  * write access to the repository can create a marker by hand, and the hooks run
@@ -64,6 +73,7 @@
  *     node scripts/gate-marker.js tree               # the tree oid of the current worktree
  *     node scripts/gate-marker.js path --tree <oid>  # where that tree's marker would live
  *     node scripts/gate-marker.js status             # {tree, marker, max_age_seconds}
+ *     node scripts/gate-marker.js durations          # {count, median_seconds, …}
  *
  * Node standard library only — no npm dependency, no transpiler, no TypeScript:
  * a gate that needs a dependency to run is a gate that can fail for reasons
@@ -710,9 +720,62 @@ function usage(message) {
   process.stderr.write(
     `gate-marker: usage: ${message}\n` +
       "  gate-marker.js preflight | run [--scope <path>]... | tree | " +
-      "path --tree <oid> | status\n"
+      "path --tree <oid> | durations | status\n"
   );
   return EXIT_USAGE;
+}
+
+/** Every completed gate span the marker directory still holds, in seconds.
+ *
+ * `/assess` reports the median from this rather than reading the JSON by eye:
+ * a number an operator decides from is derived by something that can be wrong in
+ * one place and tested there. A marker with no `started_at` — every marker
+ * written before #539 — is **skipped**, not counted as a zero-second run, which
+ * would drag the median toward zero for weeks and read as an improvement.
+ */
+function gateDurations(cwd) {
+  const directory = markerDir(cwd);
+  let entries;
+  try {
+    entries = fs.readdirSync(directory);
+  } catch (err) {
+    void err;
+    return [];
+  }
+  const spans = [];
+  for (const entry of entries) {
+    if (!entry.endsWith(".json")) continue;
+    let payload;
+    try {
+      payload = JSON.parse(fs.readFileSync(path.join(directory, entry), "utf8"));
+    } catch (err) {
+      void err;
+      continue;
+    }
+    if (!payload || typeof payload !== "object") continue;
+    const started = Date.parse(payload.started_at);
+    const finished = Date.parse(payload.finished_at);
+    if (!Number.isFinite(started) || !Number.isFinite(finished)) continue;
+    const seconds = (finished - started) / 1000;
+    // A negative span is a clock that stepped between the two reads, not a gate
+    // that finished before it began.
+    if (seconds < 0) continue;
+    spans.push(seconds);
+  }
+  return spans.sort((a, b) => a - b);
+}
+
+/** The median of a sorted list, or null when there is nothing to take one of.
+ *
+ * Even lengths take the mean of the middle two. `sorted[n / 2 | 0]` is right for
+ * every odd corpus and wrong for every even one, which is exactly the defect an
+ * odd-length fixture cannot show.
+ */
+function median(sorted) {
+  if (sorted.length === 0) return null;
+  const middle = sorted.length / 2;
+  if (sorted.length % 2 === 1) return sorted[Math.floor(middle)];
+  return (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
 /** The `--scope <path>` operands of a `run`, or null if anything else is there.
@@ -762,6 +825,15 @@ function main(argv) {
       const tree = treeArgument(argv.slice(1));
       if (tree === null || tree === "") return usage("path requires --tree <oid>");
       process.stdout.write(`${markerPath(tree, cwd)}\n`);
+    } else if (command === "durations") {
+      if (argv.length !== 1) return usage("durations accepts no operands");
+      const spans = gateDurations(cwd);
+      const summary = { count: spans.length, median_seconds: median(spans) };
+      if (spans.length) {
+        summary.min_seconds = spans[0];
+        summary.max_seconds = spans[spans.length - 1];
+      }
+      process.stdout.write(`${JSON.stringify(summary)}\n`);
     } else if (command === "status") {
       // Three facts and no verdict. `scripts/mutate.py`'s gate lock composes
       // them into its own three refusal messages, which is where the

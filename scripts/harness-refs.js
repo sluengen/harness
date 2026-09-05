@@ -47,7 +47,10 @@
  *     harness-refs.js green-advance --commit <oid>
  *     harness-refs.js green-read
  *
- * Every subcommand takes an optional `--remote <name>` (default `origin`).
+ * Every subcommand takes an optional `--remote <name>` (default `origin`) and an
+ * optional `--repo <dir>` (default the working directory): this file ships from
+ * the plugin root and is not materialized into a consumer repo, so it needs a way
+ * to name the checkout it is acting on.
  *
  * Node standard library only, CommonJS, for the reasons `scripts/gate-marker.js`
  * records: `scripts/package.json` pins this directory's module type, and a
@@ -250,7 +253,14 @@ function pruneGateRecords(remote, cwd, keepTree) {
   return { pruned: result.ok ? doomed : [], reason: result.ok ? null : result.stderr.trim() };
 }
 
-function gatePublish(options, cwd) {
+/** Publish one record and prune the departed ones. Prints nothing.
+ *
+ * The record body is **deterministic** — the tree and the outcome, no timestamp
+ * — so republishing the same outcome for the same tree is the same blob, which
+ * git reports as up to date rather than as a rejected update. A record is a
+ * statement about bytes, and a statement about bytes has no clock in it.
+ */
+function publishGateRecord(options, cwd) {
   if (!OID.test(options.tree || "")) refuse("--tree must be a full 40-character object id");
   if (!OUTCOMES.has(options.outcome || "")) refuse("--outcome must be `green` or `red`");
   if (gitOut(["cat-file", "-t", options.tree], cwd) !== "tree") {
@@ -258,26 +268,34 @@ function gatePublish(options, cwd) {
   }
   const ref = `${NAMESPACE}/gate/${options.tree}-${options.outcome}`;
   const blob = writeBlob(
-    `${JSON.stringify({ tree: options.tree, outcome: options.outcome, at: new Date().toISOString() })}\n`,
+    `${JSON.stringify({ tree: options.tree, outcome: options.outcome })}\n`,
     cwd
   );
   const pushed = pushRef(blob, ref, options.remote, cwd);
   if (!pushed.ok) {
-    // Already published by another session is the same outcome as publishing it,
-    // and both are the same non-event as an unreachable remote: the record is a
-    // courtesy, so nothing here may fail the run that produced the evidence.
-    process.stdout.write(`gate record: not published (${pushed.stderr.trim().split("\n").pop()})\n`);
-    return 0;
+    // An unreachable remote and a record another session already wrote are the
+    // same non-event: the record is a courtesy to the next builder, so nothing
+    // here may fail the run that produced the evidence it is sharing.
+    return { published: false, ref, pruned: [], reason: pushed.stderr.trim().split("\n").pop() };
   }
-  process.stdout.write(`gate record: ${ref}\n`);
   let pruned = { pruned: [], reason: null };
   try {
     pruned = pruneGateRecords(options.remote, cwd, options.tree);
   } catch (err) {
     pruned = { pruned: [], reason: String((err && err.message) || err) };
   }
-  for (const ref of pruned.pruned) process.stdout.write(`pruned: ${ref}\n`);
-  if (pruned.reason) process.stderr.write(`harness-refs: prune skipped (${pruned.reason})\n`);
+  return { published: true, ref, pruned: pruned.pruned, reason: pruned.reason };
+}
+
+function gatePublish(options, cwd) {
+  const result = publishGateRecord(options, cwd);
+  if (!result.published) {
+    process.stdout.write(`gate record: not published (${result.reason})\n`);
+    return 0;
+  }
+  process.stdout.write(`gate record: ${result.ref}\n`);
+  for (const ref of result.pruned) process.stdout.write(`pruned: ${ref}\n`);
+  if (result.reason) process.stderr.write(`harness-refs: prune skipped (${result.reason})\n`);
   return 0;
 }
 
@@ -302,7 +320,17 @@ function gateList(options, cwd) {
 function claim(options, cwd) {
   if (!options.ticket) refuse("--ticket is required");
   const ttl = positiveEnv(CLAIM_TTL_ENV, DEFAULT_CLAIM_TTL_SECONDS);
-  const bucket = Math.floor(Date.now() / 1000 / ttl);
+  //: `--now` names the instant the bucket is computed from. It exists because a
+  //: tumbling window has a boundary, and a test that raced two claims against
+  //: the wall clock passed or failed on which side of a second they landed —
+  //: which is a flake, not a measurement. Safe to expose because a claim is
+  //: **advisory coordination, not evidence**: a caller who lies about the time
+  //: can only take a claim it could have taken by waiting, or fail to take one.
+  //: Nothing that authorises a landing reads it. (ADR 0018's boundary is about
+  //: the gate command, and this is not one.)
+  const now = options.now === undefined ? Date.now() / 1000 : Number(options.now);
+  if (!Number.isFinite(now)) refuse("--now must be an epoch in seconds");
+  const bucket = Math.floor(now / ttl);
   const ref = `${NAMESPACE}/claim/${encodeKey(options.ticket)}-${bucket}`;
   const blob = writeBlob(
     `${JSON.stringify({ ticket: options.ticket, bucket, at: new Date().toISOString() })}\n`,
@@ -322,21 +350,27 @@ function greenRef(cwd, remote) {
   return `${NAMESPACE}/green/${encodeKey(integrationBranch(cwd))}`;
 }
 
-function greenAdvance(options, cwd) {
+/** Move the green pointer to ``commit``. Prints nothing. */
+function advanceGreenPointer(options, cwd) {
   if (!OID.test(options.commit || "")) refuse("--commit must be a full 40-character object id");
   if (gitOut(["cat-file", "-t", options.commit], cwd) !== "commit") {
     refuse(`this repository has no commit object ${options.commit}`);
   }
   const ref = greenRef(cwd, options.remote);
   const pushed = pushRef(options.commit, ref, options.remote, cwd);
-  if (pushed.ok) {
+  // Not forced, ever: a pointer that cannot fast-forward is one another session
+  // already advanced past, and overwriting it would name an *older* tree as the
+  // last known-good base for every worktree created next.
+  return { advanced: pushed.ok, ref, reason: pushed.ok ? null : pushed.stderr.trim() };
+}
+
+function greenAdvance(options, cwd) {
+  const result = advanceGreenPointer(options, cwd);
+  if (result.advanced) {
     process.stdout.write(`${options.commit}\n`);
     return 0;
   }
-  // Not forced, ever: a pointer that cannot fast-forward is one another session
-  // already advanced past, and overwriting it would name a *older* tree as the
-  // last known-good base for every worktree created next.
-  process.stderr.write(`harness-refs: the green pointer did not advance: ${pushed.stderr.trim()}\n`);
+  process.stderr.write(`harness-refs: the green pointer did not advance: ${result.reason}\n`);
   return EXIT_CONTENDED;
 }
 
@@ -358,7 +392,7 @@ function parse(argv) {
       options.json = true;
       continue;
     }
-    const match = /^--(tree|outcome|remote|ticket|commit)$/.exec(token);
+    const match = /^--(tree|outcome|remote|ticket|commit|repo|now)$/.exec(token);
     if (!match) return null;
     i += 1;
     if (i >= argv.length) return null;
@@ -391,7 +425,7 @@ function main(argv) {
   const options = parse(argv.slice(1));
   if (options === null) return usage("unreadable options");
   try {
-    return VERBS[verb](options, process.cwd());
+    return VERBS[verb](options, options.repo || process.cwd());
   } catch (err) {
     if (err instanceof Refused) {
       process.stderr.write(`harness-refs: ${err.message}\n`);
@@ -405,11 +439,40 @@ if (require.main === module) {
   process.exitCode = main(process.argv.slice(2));
 }
 
+/** Publish a green or red record for ``tree``; true iff the remote took it.
+ *
+ * The in-process entry point `scripts/land.js` uses, so a landing does not spawn
+ * a second node to write one ref. Same body as the CLI verb and the same
+ * promise: a remote that refused is `false`, never a throw, because a record is
+ * a courtesy to the next session and may not fail the run that produced the
+ * evidence it is sharing.
+ */
+function publishGate(options, cwd) {
+  try {
+    return publishGateRecord(Object.assign({ remote: "origin" }, options), cwd).published;
+  } catch (err) {
+    process.stderr.write(`harness-refs: ${(err && err.message) || err}\n`);
+    return false;
+  }
+}
+
+/** Advance the green pointer to ``commit``; true iff it moved. */
+function advanceGreen(options, cwd) {
+  try {
+    return advanceGreenPointer(Object.assign({ remote: "origin" }, options), cwd).advanced;
+  } catch (err) {
+    process.stderr.write(`harness-refs: ${(err && err.message) || err}\n`);
+    return false;
+  }
+}
+
 module.exports = {
   EXIT_REFUSED,
   EXIT_CONTENDED,
   EXIT_USAGE,
   NAMESPACE,
   encodeKey,
+  publishGate,
+  advanceGreen,
   main,
 };

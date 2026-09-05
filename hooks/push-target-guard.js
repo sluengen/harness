@@ -24,6 +24,26 @@
  * tree the gate covered and the tree a push carries are the same object by the
  * process's own rule. This hook checks that equality mechanically.
  *
+ * **A second acceptance path, and exactly one (#539).** The integration branch
+ * moves while the gate runs, and under strict equality every move sent a run back
+ * through reconcile, review, the gate, the verdict and the push — each opening a
+ * new window of the same width. So a push may also carry a **merge git alone
+ * produced** over a gated tree: two parents, the first carrying a fresh unscoped
+ * marker, the second already on the branch being pushed, exactly one merge base,
+ * and ``git merge-tree --write-tree`` reproducing the pushed tree from the two.
+ * Where it does not reproduce it, the differing paths are bytes somebody
+ * *authored*, and they are authorised only by a marker over the pushed tree whose
+ * ``scope`` contains every one of them. :func:`mergeAcceptance` is the whole of
+ * it, and it states what it proves and what it does not.
+ *
+ * **Why recomputation and not observation.** The decided list of facts — a clean
+ * index and worktree, no staged resolution — names three things this hook cannot
+ * measure: by the time a ``git push`` is intercepted the merge is committed and
+ * the index, the worktree and any resolution are gone. ``merge-tree`` replays the
+ * merge from the two parents instead, which is checkable after the fact. Where it
+ * is unavailable (git < 2.38) the path is simply absent and the strict deny
+ * stands; there is no new fallback.
+ *
  * **No command-based exemption, and none is needed.** ``/build``, ``/routine``
  * and ``/promote`` all push a tree the gate has already covered, so they
  * authorise themselves by the only evidence a hook can actually verify. A hook
@@ -189,6 +209,27 @@ function git(dir, args) {
   }
 }
 
+/** Like :func:`git`, but for the call sites where a non-zero status is an answer.
+ *
+ * ``git()`` collapses every non-zero status to ``null``, which is right for a
+ * probe whose failure is a decision input. It is wrong for exactly two commands
+ * here: ``git merge-tree --write-tree`` exits **1** when the recomputed merge
+ * conflicts — the case the scoped path exists for — and reading that as "git
+ * said no" would deny every conflicted merge while every *deny* test still
+ * passed. Raw stdout, not trimmed: the caller splits NUL-delimited paths, and a
+ * filename may legitimately begin or end with a space.
+ */
+function gitAllowing(dir, args, statuses) {
+  try {
+    const res = spawnSync("git", args, { cwd: dir, encoding: "utf8" });
+    if (res.error || !statuses.includes(res.status)) return null;
+    return String(res.stdout);
+  } catch (err) {
+    void err;
+    return null;
+  }
+}
+
 /** The freshness bound, or the default. An unusable value reads as *unset*:
  * "never fresh" would wedge every push behind a gate run that can never satisfy
  * it, and "always fresh" would disarm the bound. Strict digits only, so this
@@ -220,17 +261,59 @@ function markerPath(tree, cwd) {
   return path.join(real, ...MARKER_SUBDIR, `${tree}.json`);
 }
 
-/** True iff a marker for ``tree`` exists in ``dir``'s repository and is fresh. */
-function hasFreshMarker(tree, dir) {
+/** The fresh marker covering ``tree``, as ``{scope}``, or ``null`` if there is none.
+ *
+ * **This hook reads the marker body; the Stop hook still does not.** ADR 0018
+ * made the filename the whole claim because no reader parsed the body, and that
+ * stays true for every marker written before #539 and every marker a repo
+ * without ``commands.test_scoped`` will ever write: no ``scope`` key means the
+ * gate covered the whole tree, which is what the filename always meant.
+ *
+ * What the body adds is one field and one rule. ``scope`` present means the run
+ * verified *less* than the tree, so **the marker authorises no push on its own**
+ * — only a merge whose authored paths it contains. Reading it here rather than
+ * inventing a second filename keeps ``hooks/gate-evidence-guard.js`` (a
+ * protected area) and ``test_gate_marker_contract.py``'s equivalence — the
+ * marker path and the freshness parse — untouched.
+ *
+ * Every way of failing to read it resolves to ``{scope: []}``: fresh, and
+ * containing nothing, so it authorises nothing. That is state 2's rule (a fact
+ * the guard could not establish closes), and it is cheap to clear — one gate
+ * run. The write is atomic since #539, so the one routine way to see a torn body
+ * is gone.
+ *
+ * Returns:
+ *   ``null`` — no marker, or older than the bound.
+ *   ``{scope: null}`` — fresh and unscoped: today's authority, unchanged.
+ *   ``{scope: [...]}`` — fresh and scoped: authorises only a contained merge.
+ */
+function markerFor(tree, dir) {
   const marker = markerPath(tree, dir);
-  if (marker === null) return false;
+  if (marker === null) return null;
+  let body;
   try {
-    return Date.now() - fs.statSync(marker).mtimeMs < maxAgeSeconds() * 1000;
+    if (Date.now() - fs.statSync(marker).mtimeMs >= maxAgeSeconds() * 1000) return null;
+    body = fs.readFileSync(marker, "utf8");
   } catch (err) {
     // A missing marker is the decision this guard exists to make, not an error.
     void err;
-    return false;
+    return null;
   }
+  let payload;
+  try {
+    payload = JSON.parse(body);
+  } catch (err) {
+    void err;
+    return { scope: [] };
+  }
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
+    return { scope: [] };
+  }
+  if (payload.scope === undefined || payload.scope === null) return { scope: null };
+  if (Array.isArray(payload.scope) && payload.scope.every((entry) => typeof entry === "string")) {
+    return { scope: payload.scope };
+  }
+  return { scope: [] };
 }
 
 /** The shared configuration reader, or ``null`` when it cannot be loaded.
@@ -390,6 +473,11 @@ function parsePush(rawTokens, parser) {
   return {
     dir,
     namesGitDir,
+    //: The repository operand, or null for a bare ``git push``. The acceptance
+    //: path needs it to ask whether the second parent is already on the branch
+    //: being pushed, and that question is only answerable against a
+    //: remote-tracking ref.
+    remote: operands.length ? operands[0] : null,
     refspecs: operands.slice(1),
     isDelete,
     mirrors,
@@ -617,6 +705,121 @@ function movements(push, dir, parser) {
   return moves;
 }
 
+//: The reasons the second acceptance path can refuse. Each names one condition,
+//: because a shared message would make two routes to the same verdict
+//: indistinguishable to the operator clearing it and to the test measuring it.
+const MERGE_DENIALS = {
+  notAMerge:
+    "the commit it carries is not a two-parent merge, so there is no merge for " +
+    "git to recompute",
+  firstParent:
+    "its first parent carries no fresh, unscoped gate marker. Git's own " +
+    "convention makes the first parent the branch you were on, which is the " +
+    "commit that received the verdict",
+  secondParent:
+    "its second parent is not already on the branch being pushed. Only bytes " +
+    "the shared branch already carries may enter a merge this way",
+  ambiguousBase: "its two parents have more than one merge base, so which merge git would have made is not decidable",
+  notRecomputable:
+    "the merge could not be recomputed (`git merge-tree --write-tree` is " +
+    "unavailable or gave no tree)",
+  authored: "it carries authored bytes and no gate marker covers the tree they are in",
+};
+
+/** The remote-tracking ref for the branch this push moves, or null.
+ *
+ * Null wherever the question cannot be answered — a push by URL, an unknown
+ * remote, a bare push with no upstream — and the acceptance path is then simply
+ * absent. That is fail-closed: the ordinary deny still stands and one gate run
+ * clears it.
+ */
+function trackingRef(dir, remote, target) {
+  if (remote === null) {
+    const upstream = git(dir, ["rev-parse", "--symbolic-full-name", "@{upstream}"]);
+    if (upstream === null || !upstream.startsWith("refs/remotes/")) return null;
+    return upstream;
+  }
+  const ref = `refs/remotes/${remote}/${target}`;
+  return git(dir, ["rev-parse", "--verify", "--quiet", ref]) === null ? null : ref;
+}
+
+/** Null to allow this merge, or the reason it is refused.
+ *
+ * The second acceptance path, and the whole of what it claims: **git alone
+ * produced these bytes**. Five facts, all read from git after the fact, because
+ * by push time the index, the worktree and any resolution are gone — which is
+ * why the decided list of four ("a clean index and worktree, no staged
+ * resolution") could not be the instrument.
+ *
+ * Not claimed, and stated so nobody builds on it: *these bytes were gated*. A
+ * clean merge of two individually green changes can be wrong, and a
+ * ``merge=union`` or custom driver in ``.gitattributes`` is honoured by both
+ * ``git merge`` and ``merge-tree``, so it can produce a file whose bytes are in
+ * neither parent with an empty authored set. Both are the class D2 accepted, and
+ * the next builder's composite gate is the named backstop.
+ */
+function mergeAcceptance(dir, move, pushedTree, marker, remote) {
+  const commit = git(dir, ["rev-parse", "--verify", `${move.source}^{commit}`]);
+  if (commit === null) return MERGE_DENIALS.notAMerge;
+  const parentList = git(dir, ["rev-parse", `${commit}^@`]);
+  const parents = parentList === null ? [] : parentList.split("\n").filter(Boolean);
+  if (parents.length !== 2) return MERGE_DENIALS.notAMerge;
+  const [certifiedCommit, incoming] = parents;
+
+  const certifiedTree = git(dir, ["rev-parse", "--verify", `${certifiedCommit}^{tree}`]);
+  const certified = certifiedTree === null ? null : markerFor(certifiedTree, dir);
+  if (certified === null || certified.scope !== null) return MERGE_DENIALS.firstParent;
+
+  const tracking = trackingRef(dir, remote, move.target);
+  if (tracking === null) return MERGE_DENIALS.secondParent;
+  if (git(dir, ["merge-base", "--is-ancestor", incoming, tracking]) === null) {
+    return MERGE_DENIALS.secondParent;
+  }
+
+  const bases = git(dir, ["merge-base", "--all", certifiedCommit, incoming]);
+  if (bases === null || bases.split("\n").filter(Boolean).length !== 1) {
+    return MERGE_DENIALS.ambiguousBase;
+  }
+
+  // Status 1 is `merge-tree` reporting conflicts, which is an answer: it still
+  // writes a tree, and the paths where the pushed tree differs from it are
+  // exactly the bytes somebody authored.
+  const recomputed = gitAllowing(
+    dir,
+    ["merge-tree", "--write-tree", certifiedCommit, incoming],
+    [0, 1]
+  );
+  if (recomputed === null) return MERGE_DENIALS.notRecomputable;
+  const firstLine = recomputed.split("\n", 1)[0].trim();
+  if (!/^[0-9a-f]{40}$|^[0-9a-f]{64}$/.test(firstLine)) return MERGE_DENIALS.notRecomputable;
+
+  // Tree-oid equality, not a diff: exact, and independent of every `diff.*` and
+  // rename setting a repository might carry.
+  if (firstLine === pushedTree) return null;
+
+  // `--no-renames`, because rename detection reports one path per pair and would
+  // under-report the set the containment check below consumes.
+  const changed = gitAllowing(
+    dir,
+    ["diff-tree", "-r", "-z", "--name-only", "--no-renames", firstLine, pushedTree],
+    [0]
+  );
+  if (changed === null) return MERGE_DENIALS.notRecomputable;
+  const authored = changed.split("\u0000").filter(Boolean);
+  if (authored.length === 0) return null;
+  if (marker === null) return MERGE_DENIALS.authored;
+  const scope = marker.scope === null ? null : marker.scope;
+  if (scope === null) return null;
+  const uncovered = authored.find(
+    (candidate) => !scope.some((entry) => candidate === entry || candidate.startsWith(`${entry}/`))
+  );
+  if (uncovered === undefined) return null;
+  return (
+    `it authored ${JSON.stringify(uncovered.slice(0, MAX_REPORTED_PATH))}, which falls ` +
+    "outside the scope its gate marker records"
+  );
+}
+
 function deny(reason) {
   process.stdout.write(
     JSON.stringify({
@@ -712,14 +915,21 @@ function verdict(push, parser) {
         "so there is nothing to check evidence against."
       );
     }
-    if (!hasFreshMarker(tree, dir)) {
+    // Path one, unchanged since #436 for every marker that exists: a fresh
+    // marker over the exact pushed tree, claiming the whole of it.
+    const marker = markerFor(tree, dir);
+    if (marker !== null && marker.scope === null) continue;
+    // Path two (#539): git alone produced this merge over a gated parent.
+    const refusal = mergeAcceptance(dir, move, tree, marker, push.remote);
+    if (refusal !== null) {
       return (
         `Blocked a push to the protected branch ${JSON.stringify(move.target)}. No ` +
         `gate marker covers tree ${tree.slice(0, 12)} — the gate has not been run ` +
-        `green over the exact bytes this push carries (looked for ` +
-        `${markerPath(tree, dir)}). Run the repo verify gate in ${dir}, then push ` +
-        "again. The gated tree is the authorisation; there is no exemption for a " +
-        "particular command."
+        "green over the exact bytes this push carries — and this push does not take " +
+        `the merge path either: ${refusal} (looked for ${markerPath(tree, dir)}). ` +
+        `Run the repo verify gate in ${dir}, then push again. The authorisation is ` +
+        "a gated tree, or a merge git alone made over one; there is no exemption " +
+        "for a particular command."
       );
     }
   }

@@ -16,14 +16,17 @@ other task.
 
 - Python under `scripts/` is **standard library only**, and `mypy --strict` passes with
   no ignores.
-- The shipped JavaScript — the five hooks, `scripts/gate-marker.js`, and
-  `scripts/harness-config.js` — has **no dependencies at all**, not even dev ones. It runs
-  from a plugin cache with no install step, so a `require` of anything but a Node builtin
-  or a sibling in the same shipped set is a runtime failure in a consumer's repo, not a
-  build error here.
+- The shipped JavaScript — the five hooks, `scripts/gate-marker.js`,
+  `scripts/harness-config.js`, `scripts/harness-refs.js`, and `scripts/land.js` — has **no
+  dependencies at all**, not even dev ones. It runs from a plugin cache with no install
+  step, so a `require` of anything but a Node builtin or a sibling in the same shipped set
+  is a runtime failure in a consumer's repo, not a build error here.
 - `scripts/gate-marker.js` and `scripts/harness-config.js` are **materialized into consumer
-  repos** by `/harness:init`, as a pair. A change to either that assumes this repo's layout
-  ships broken; a change that adds a third file to the set is a change to `init`.
+  repos** by `/harness:init`, as a pair, because `verify.sh` invokes the marker helper
+  locally. A change to either that assumes this repo's layout ships broken; a change that
+  adds a third file to that set is a change to `init`. `harness-refs.js` and `land.js` are
+  deliberately **not** in it: they run from the plugin root, like the hooks, and take
+  `--repo <dir>` where they need to name a checkout.
 
 ## Hooks
 

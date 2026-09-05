@@ -93,6 +93,7 @@ Every numbered record, in one place. `AGENTS.md` → *Repo principles* states th
 - [0017 — harness v5: the guidance ships as a plugin; the package manager is retired](decisions/0017-harness-v5-plugin-shaped-guidance.md)
 - [0018 — the gate-marker convention is implemented once, in Node](decisions/0018-gate-marker-convention-is-node.md) — the writer joins the two hook readers in the runtime the host imposes; `scripts/gate_marker.py` is deleted, `scripts/` stays Python for everything else
 - [0019 — purpose precedes proof](decisions/0019-purpose-before-proof.md) — requirements and checks name the outcome or risk they protect before Harness chooses the cheapest adequate evidence
+- [0020 — the verdict binds to the authored tree](decisions/0020-authored-tree-binding.md) — a push carries the gated tree, or a merge git alone made over one; `git merge-tree` recomputation is the proof, and a conflicted merge re-gates over the conflicted paths under a scoped marker
 
 ### Decision: Invert the orchestration boundary — harness becomes verbs, the agent orchestrates
 

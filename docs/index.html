@@ -291,7 +291,7 @@ Codex: ask to initialize Harness</pre>
         <p>
           A change spec lives on the tracker issue and is built end to end by one command. The reviewer
           is a separate agent in a fresh context, and its verdict binds to the exact git tree it read —
-          the tree that ships must be that tree.
+          what ships is that tree, or a merge git alone made from it.
         </p>
         <ol class="steps"><li><span>spec</span></li><li><span>build</span></li><li><span>gate</span></li><li><span>review</span></li><li><span>ship</span></li></ol>
       </article>
@@ -382,7 +382,7 @@ Codex: ask to initialize Harness</pre>
           exemption.</p>
         <ul class="units">
           <li class="unit" data-unit="hook:gate-evidence-guard"><code>gate-evidence-guard</code><span>Refuses ending a turn that claims completion with no fresh marker over the worked tree.<span class="verdict verdict--refuses">refuses</span></span></li>
-          <li class="unit" data-unit="hook:push-target-guard"><code>push-target-guard</code><span>Refuses a push to a protected branch unless a fresh marker covers the pushed tree.<span class="verdict verdict--refuses">refuses</span></span></li>
+          <li class="unit" data-unit="hook:push-target-guard"><code>push-target-guard</code><span>Refuses a push to a protected branch unless a fresh marker covers the pushed tree, or git alone made it from one that is covered.<span class="verdict verdict--refuses">refuses</span></span></li>
           <li class="unit" data-unit="hook:git-push-guard"><code>git-push-guard</code><span>Refuses a history rewrite — <code>--force</code> in any spelling.<span class="verdict verdict--refuses">refuses</span></span></li>
           <li class="unit" data-unit="hook:prompt-guard"><code>prompt-guard</code><span>Flags injection-shaped content on write.<span class="verdict verdict--advises">advises</span></span></li>
           <li class="unit" data-unit="hook:workflow-guard"><code>workflow-guard</code><span>Flags a source edit made on the default branch or outside a worktree.<span class="verdict verdict--advises">advises</span></span></li>
