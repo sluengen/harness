@@ -15,7 +15,7 @@ not change production code or fix findings.
 read `AGENTS.md`, load `skills/assess/references/finding-bar.md`, and load only the selected scope's
 domain standards:
 
-- `code`: `engineering` and `architecture`; add `design-system` only when its
+- `code`: `engineering` and `architecture`; add the repo's `.claude/rules/design-system.md` only when its
   layer is enabled;
 - `architecture`: `architecture` and `engineering`;
 - `process`: `skills/assess/references/process-economy.md`, `engineering`, and `review-discipline` — the last for

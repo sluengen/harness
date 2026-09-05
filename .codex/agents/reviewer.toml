@@ -18,7 +18,7 @@ Load and follow:
   ordering, and bounded review→fix policy;
 - `skills/engineering/SKILL.md` for the same principles, scope, structure, and
   verification standards used during implementation — findings cite them;
-- `ux-design` and, when enabled, `design-system` for user-facing evidence.
+- the repo's `.claude/rules/design-system.md`, when that layer is on, for user-facing evidence.
 
 Your mandate is **scoped** (`review-discipline` → *The mandate*): correctness,
 the stated criteria, the four cheat categories, and an explicit justification

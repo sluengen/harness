@@ -1,7 +1,7 @@
 # Design-system scaffold (reference contract)
 
 The contract for **standing up** a layered design system, not a copy of one.
-Its counterpart is `skills/design-system/SKILL.md` — the discipline for *using*
+Its counterpart is the repo-owned `.claude/rules/design-system.md` — the discipline for *using*
 a system once it exists, routing to `harness.yaml` `paths.design_system` for
 where the result lives. This doc is what goes at that path when nothing does
 yet.
@@ -51,7 +51,7 @@ style preference.
 ## The frontmatter contract
 
 Every entry file in the tree carries five fields. This is what makes the tree
-agent-readable — an agent doing the two-stage lookup (`skills/design-system`:
+agent-readable — an agent doing the two-stage lookup (`.claude/rules/design-system.md`:
 find the principle, then find its materialization) reads frontmatter, not
 filenames. It is not decoration.
 

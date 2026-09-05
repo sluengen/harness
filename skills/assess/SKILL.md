@@ -20,7 +20,7 @@ There is **one** `steward` agent — the *process*. The scope you pass names the
 
 | Scope | Domain skills (pulled JIT) | Audits |
 |---|---|---|
-| `code` | `engineering`, `architecture` (+ `design-system` when the layer is on) | The codebase: size/structure drift, duplication, dead code, stale TODOs, test health, cross-cutting security, architecture drift, dependencies, test-coverage quantity, design-system adherence (layer-gated), and spec/doc coherence. |
+| `code` | `engineering`, `architecture` (+ the repo's `.claude/rules/design-system.md` when the layer is on) | The codebase: size/structure drift, duplication, dead code, stale TODOs, test health, cross-cutting security, architecture drift, dependencies, test-coverage quantity, design-system adherence (layer-gated), and spec/doc coherence. |
 | `architecture` | `architecture`, `engineering` | The system *shape*: purpose fit, boundary integrity, domain-model coherence, change ergonomics, operational/efficiency fit, verification architecture, spec-record health, watchlist recommendations. A **holistic** judgement — a verdict plus what to preserve, change, or watch — not a finding sweep. |
 | `process` | [`references/process-economy.md`](references/process-economy.md), `engineering`, `review-discipline` (for `references/craft.md`, the vacuity catalogue) | The **assurance machinery**, not the product: vacuous checks, guards no occurrence justifies, ceremony that proves a stage ran rather than the property it protects, and measured gate/CI waste. **Subtractive** — most of what it yields is a deletion, and it closes on a baseline the next pass measures against. |
 

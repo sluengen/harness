@@ -85,7 +85,7 @@ Only after Stage 1 passes.
 - **Clarity** — an implementer could build it without asking. (And it reads cleanly: `authoring` → *Prose*.)
 - **Consistency** — no contradiction with existing specs or recorded decisions.
 
-**For frontend code, additionally:** design-system adoption and accessibility (`design-system`), and that the surface handles all its states — empty, loading, error, and edge cases (0 / 1 / many / missing), not just the happy path (`ux-design`).
+**For frontend code, additionally:** design-system adoption and accessibility, and that the surface handles all its states — empty, loading, error, and edge cases (0 / 1 / many / missing), not just the happy path. The repo's `.claude/rules/design-system.md` is the standard for all three, and it loads on the same paths the diff touches.
 
 ## Findings — the 2×2 (ADR 0015)
 

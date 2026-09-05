@@ -20,7 +20,7 @@ Identify the branch, its ticket, the change spec, and the canonical spec(s) in `
 Reflect the handoff on the board.
 
 ### 3. Run the reviewer
-Dispatch the `reviewer` agent in a fresh context. Supply the ticket, change spec, design artifact for `complex` work, diff, verification output, and — for a user-facing change — the visual evidence: the capture directory `.evidence/<TICKET-ID>/` and its `manifest.md` (`skills/build/references/visual-evidence.md` owns what lands there); do not supply the implementer's conversation. It performs the two-stage review, runs the verification gate independently (it does not trust the build's claim), and returns a verdict with findings. The **fix** lane has no reviewer at all — the gate and the push guard are its whole assurance (the spine's lane contract); a diff that outgrows the lane is upgraded rather than shipped under it.
+Dispatch the `reviewer` agent in a fresh context. Supply the ticket, change spec, design artifact for `complex` work, diff, verification output, and — for a user-facing change — the visual evidence: the capture directory `.evidence/<TICKET-ID>/` and its `manifest.md` (the repo's `.claude/rules/design-system.md` owns what lands there); do not supply the implementer's conversation. It performs the two-stage review, runs the verification gate independently (it does not trust the build's claim), and returns a verdict with findings. The **fix** lane has no reviewer at all — the gate and the push guard are its whole assurance (the spine's lane contract); a diff that outgrows the lane is upgraded rather than shipped under it.
 
 ### 4. Act on the verdict
 The three verdicts are `review-discipline`'s *The verdict vocabulary* — PASS, FAIL, DEFER — and this step handles all three.
