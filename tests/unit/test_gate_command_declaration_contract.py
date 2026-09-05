@@ -153,11 +153,14 @@ def test_the_repositorys_own_declaration_resolves() -> None:
     Until #537 this ran over two large markdown spines, one of them the generated
     Codex mirror of the other. The configuration now lives in one place, so the
     corpus is one file — but it is still the real one, and what it carries is
-    worth stating exactly rather than approximately: comments after **values**,
-    both plain (``language: Python 3.11+   # tooling only``) and quoted
-    (``bootstrap: "bash scripts/setup-cloud-env.sh"   # provisions uv``), several
-    of them inside the very ``commands:`` block this reader walks. A parser
-    surviving only a hand-written five-line fixture fails here.
+    worth stating exactly rather than approximately: five comments after
+    **values**, plain (``language: Python 3.11+   # tooling only``) and quoted
+    (``bootstrap: "bash scripts/setup-cloud-env.sh"   # provisions uv``), of
+    which **exactly one** — that ``bootstrap`` line — sits inside the
+    ``commands:`` block this reader walks. The ``verify:`` line it actually reads
+    carries no comment, so the comment path inside that block is exercised on a
+    sibling entry rather than on the value returned. A parser surviving only a
+    hand-written five-line fixture still fails here.
 
     What this file does **not** carry is a comment on a top-level key line —
     ``branches:   # the shared ones``, the spelling that broke at #488 by making

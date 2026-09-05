@@ -14,10 +14,11 @@ for a test that the init command's *instructions name* the declaration. That is 
 restatement pin on prose, and ADR 0017 D5 admits no such class. What is
 admissible is class **(e)** tree-consistency, with class **(b)** supplying one
 operand: two tracked, machine-readable artifacts must correspond. The harness
-repo publishes a marketplace (``.claude-plugin/marketplace.json``) and its spine
-names the GitHub repository that marketplace is fetched from
-(``CLAUDE.md`` → ``github.repo``). The declaration in ``.claude/settings.json``
-must agree with both. Nothing here reads what any sentence means.
+repo publishes a marketplace (``.claude-plugin/marketplace.json``) and its
+configuration names the GitHub repository that marketplace is fetched from
+(``harness.yaml`` → ``github.repo``, moved out of the spine's prose by #537).
+The declaration in ``.claude/settings.json`` must agree with both. Nothing
+here reads what any sentence means.
 
 **What this repo is, and is not.** It publishes the marketplace and declares
 it; it does not *enable* the plugin, and ``.claude/settings.json`` carries no

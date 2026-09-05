@@ -190,8 +190,8 @@ def test_the_installed_operand_is_live_and_is_the_other_file() -> None:
 def test_the_readers_follow_the_index_not_the_disk() -> None:
     """The operands are staged blobs, and this is the sample that says so.
 
-    ``CLAUDE.md`` → *a guard asserts a property of the tracked tree, never the
-    working directory*. :func:`test_both_settings_documents_are_tracked` does not
+    ``.claude/rules/scripts.md`` → *a guard asserts a property of the tracked
+    tree, never the working directory*. :func:`test_both_settings_documents_are_tracked` does not
     reach this: it asserts the **paths** are in the index and says nothing about the
     bytes read. Measured at the #482 review on the sibling module, a tree staging a
     wrong file passed 12/12 while ``git write-tree`` reported an oid whose content

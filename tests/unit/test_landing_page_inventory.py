@@ -183,8 +183,8 @@ def test_the_page_is_tracked() -> None:
 def test_the_reader_follows_the_index_not_the_disk() -> None:
     """The operand is the staged blob, and this is the sample that says so.
 
-    ``CLAUDE.md`` → *a guard asserts a property of the tracked tree, never the
-    working directory*. :func:`test_the_page_is_tracked` does not reach this: it
+    ``.claude/rules/scripts.md`` → *a guard asserts a property of the tracked
+    tree, never the working directory*. :func:`test_the_page_is_tracked` does not reach this: it
     asserts the page's **path** is in the index and says nothing about the bytes
     read. Measured at review, before this test existed, a tree that staged a page
     with `skill:linear` deleted — with the correct page restored on disk, unstaged
