@@ -34,6 +34,13 @@ Acceptance criteria, and the shape of each test:
   and a disjoint scope denies. Without the last two an implementation reading
   "the sets intersect" would pass.
 
+#560 adds a criterion about the **words** rather than the decision: a marker file
+that exists and cannot be used must not be refused as an absent one. Its cases
+sit under *an unusable body is not an absent one*, each asserting the reason and
+each carrying the deny as a control, because the verdict was always right and
+only the sentence was wrong. The discriminator there — a valid ``{"scope": []}``
+— is what stops the fix from libelling a correct writer.
+
 **Two traps this module is built around.** A fail-open reads exactly like an
 allow — the hook prints ``{"continue": true}`` and a ``fail-open:`` line on
 stderr — so every allow here asserts stderr carries no such line; without that a
@@ -442,18 +449,40 @@ def test_a_merge_over_a_parent_covered_only_by_a_scoped_marker_is_denied(repo: P
 # --- the marker body is now parsed, so its failures are decisions -------------
 
 
+def _marker_path(repo: Path, tree: str) -> Path:
+    """Where the **production** writer says this tree's marker lives.
+
+    The path is half the contract under test, so a test that built it from a
+    literal would agree with itself. Extracted at #560, which needed a third copy
+    of the same five lines.
+    """
+    return Path(
+        subprocess.run(
+            [_node(), str(WRITER), "path", "--tree", tree],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+    )
+
+
+def _corrupt(repo: Path, tree: str, body: str) -> Path:
+    """Replace a real marker's **body**, leaving its path and mtime the writer's.
+
+    This is the #560 shape exactly: a consumer's own writer emitted the file, at
+    the path this convention specifies, freshly, with a body 6.0.1's reader
+    cannot use. Only the bytes inside are foreign.
+    """
+    path = _marker_path(repo, tree)
+    path.write_text(body, encoding="utf-8")
+    return path
+
+
 def test_an_unparseable_marker_body_authorises_nothing(repo: Path) -> None:
     _gate_and_merge(repo)
     _allowed(repo)
-    certified = _git(repo, "rev-parse", "HEAD^1^{tree}")
-    path = subprocess.run(
-        [_node(), str(WRITER), "path", "--tree", certified],
-        cwd=repo,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-    Path(path).write_text('{"tree": "trunc', encoding="utf-8")
+    _corrupt(repo, _git(repo, "rev-parse", "HEAD^1^{tree}"), '{"tree": "trunc')
     _denied_because(repo, "first parent")
 
 
@@ -461,17 +490,112 @@ def test_a_scope_that_is_not_a_list_of_paths_authorises_nothing(repo: Path) -> N
     """Distinct from an unparseable body: this one is valid JSON and still unusable."""
     conflicted = _conflict_fixture(repo)
     tree = _marker(repo, *conflicted)
-    path = subprocess.run(
-        [_node(), str(WRITER), "path", "--tree", tree],
-        cwd=repo,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    payload = json.loads(_marker_path(repo, tree).read_text(encoding="utf-8"))
     payload["scope"] = "x.txt"
-    Path(path).write_text(json.dumps(payload), encoding="utf-8")
+    _corrupt(repo, tree, json.dumps(payload))
     _denied_because(repo, "outside the scope")
+
+
+# --- #560: an unusable body is not an absent one, and must not say it is ------
+#
+# The reader resolves *file absent* and *file present, body unusable* to the same
+# `null`-shaped outcome for the caller, and the caller printed one sentence for
+# both: "No gate marker covers tree X … Run the repo verify gate, then push
+# again." For the second case that remedy cannot work — the gate already ran, and
+# running it again rewrites the same body — so a downstream repo on 6.0.1 whose
+# legacy writer emitted `scope` as a diagnostic string had every push to every
+# protected branch refused over a green gate, by a message pointing away from the
+# cause. Each case below asserts the *reason*, never the bare decision: the deny
+# is unchanged and was never the defect.
+
+
+def _reason(repo: Path) -> str:
+    decision, reason, stderr = _hook(PUSH, repo)
+    assert "fail-open:" not in stderr, f"the hook crashed rather than deciding: {stderr}"
+    assert decision == "deny", f"an unusable marker body must still refuse: {reason}"
+    return reason
+
+
+def _refuses_as_unusable(repo: Path, tree: str, body: str, fault: str) -> None:
+    """The whole claim, in one place: still a deny, and now for the right stated reason."""
+    path = _corrupt(repo, tree, body)
+    reason = _reason(repo)
+    assert "authorises nothing" in reason, (
+        f"the refusal must say the marker was read and authorises nothing: {reason}"
+    )
+    assert fault in reason, f"the refusal must name which fault it is: {reason}"
+    assert str(path) in reason, f"the refusal must name the file it read: {reason}"
+    assert "Run the repo verify gate" not in reason, (
+        "the refusal must not prescribe the one remedy that provably cannot clear "
+        f"it — the gate already ran over this tree: {reason}"
+    )
+
+
+def test_a_scope_string_on_an_ordinary_push_names_the_body_not_a_missing_marker(
+    repo: Path,
+) -> None:
+    """The reported defect, reproduced: `"scope": ""`, an ordinary single-parent push.
+
+    ``""`` is the value the reporting consumer's writer emitted for a whole-tree
+    run, under a docstring assumption that was true through 6.0.0 — *diagnostics
+    only, no hook reads the body*. #539 made the body load-bearing without that
+    writer changing, so the field silently became a deny-everything.
+    """
+    tree = _marker(repo)
+    _refuses_as_unusable(repo, tree, json.dumps({"scope": ""}), "is a string")
+
+
+def test_a_body_that_is_not_json_says_so(repo: Path) -> None:
+    tree = _marker(repo)
+    _refuses_as_unusable(repo, tree, '{"tree": "trunc', "not JSON")
+
+
+def test_a_body_that_is_json_but_not_an_object_says_so(repo: Path) -> None:
+    """A bare array parses, so the JSON fault and the shape fault are two facts."""
+    tree = _marker(repo)
+    _refuses_as_unusable(repo, tree, "[]", "not a JSON object")
+
+
+def test_a_valid_empty_scope_is_not_reported_as_an_unusable_body(repo: Path) -> None:
+    """The discriminator, and the reason the fault is a *separate* field.
+
+    ``{"scope": []}`` reaches the same authorises-nothing outcome by a legitimate
+    route: an empty list is a scope, honestly recorded, that happens to contain no
+    path. Reporting it as a malformed body would send an operator to fix a writer
+    that is behaving correctly — the same misdirection this ticket is about, one
+    layer down. Without this case an implementation that stamped every non-`null`
+    scope as unusable would pass every other test here.
+    """
+    tree = _marker(repo)
+    _corrupt(repo, tree, json.dumps({"scope": []}))
+    reason = _reason(repo)
+    assert "authorises nothing" not in reason, (
+        f"an empty scope is a valid scope, not an unreadable body: {reason}"
+    )
+    assert "No gate marker covers tree" in reason, (
+        f"it takes the ordinary uncovered-tree refusal, unchanged: {reason}"
+    )
+
+
+def test_an_unusable_marker_on_the_certified_parent_says_so_too(repo: Path) -> None:
+    """The same conflation one level down, on the shape this repo's own loop makes.
+
+    ``mergeAcceptance`` reads the *first parent's* marker to decide whether the
+    merge sits over a certified tree, and collapsed an unusable body into the
+    generic ``first parent`` reason — which reads as *that parent was never
+    gated*, when it was gated and its evidence is unreadable. The merge push is
+    what ``/build`` produces after a reconcile, so this is the path a downstream
+    landing actually takes.
+    """
+    _gate_and_merge(repo)
+    _allowed(repo)
+    _corrupt(repo, _git(repo, "rev-parse", "HEAD^1^{tree}"), json.dumps({"scope": 7}))
+    reason = _reason(repo)
+    assert "first parent" in reason, f"it is still the first-parent rule refusing: {reason}"
+    assert "authorises nothing" in reason, (
+        f"and it must say the parent's marker was read, not that it is missing: {reason}"
+    )
+    assert "is a number" in reason, f"naming the fault, as the pushed-tree arm does: {reason}"
 
 
 # --- shapes git alone did not produce ----------------------------------------
