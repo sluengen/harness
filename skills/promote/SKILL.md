@@ -69,19 +69,43 @@ resolver is what changes, not the command.
 4. **On green, publish.** The hop selects the mechanism:
    - `<dst>` is an **intermediate** branch (e.g. `staging`): push the merged
      tree directly to the target ref. No PR — the gate already made the call.
-   - `<dst>` is the **release** branch (e.g. `main`): push only the promotion
-     branch, never the target directly, and open a PR into the target carrying
-     the commit range and the gate evidence. A human merges it.
+   - `<dst>` is the **release** branch (e.g. `main`): a protected release
+     branch's required check commonly comes from a `push`-triggered run on a
+     named branch or a `pull_request`-triggered run scoped to particular base
+     branches — not from an arbitrary PR head. Check whether the merge is
+     **content-trivial**: `<dst>`, relative to its merge base with `<src>`,
+     contributes no content, so the merge's tree equals `<src>`'s own tip tree.
+     - **Content-trivial:** open the PR with **head `<src>` itself** and push
+       nothing new. `<src>` is already pushed, so its tip already carries
+       whatever check its own `push` trigger raised, and the PR inherits that
+       check by head-SHA association. A synthetic promotion branch's head
+       commit was never pushed anywhere on its own; if the target repo's CI
+       does not *also* run `pull_request` checks based on `<dst>`, that head
+       gets no check run at all, and a branch that requires the check blocks
+       the PR permanently, not just slowly.
+     - **Not content-trivial** (`<dst>` carries commits `<src>` does not):
+       `<src>`'s own tip no longer stands in for what will land. Push the
+       merge to a promotion branch and open the PR from it, but first confirm
+       the target repo's CI actually raises the required check for a PR
+       shaped that way (a `pull_request` trigger whose base matches `<dst>`,
+       or a `push` trigger matching the promotion branch's name). If it does
+       not, treat it as the same stop condition as an unrunnable gate: do not
+       open a PR nothing can ever check — stop and report instead.
+
+     Either way, the PR body carries the commit range and the gate evidence,
+     and a human merges it — this command never merges its own PR.
 
 ## What this command must never do
 
 - **Push the release branch directly.** This command never direct-pushes the
-  `release` role's branch. The release hop pushes a promotion branch and opens
-  a PR; that is this command's whole mechanism. The one path that may advance
-  release **unattended** is a repo's own promotion automation where its recorded
-  topology decision says so (this repo's nightly `dev → main`, ADR 0003 as
-  amended — see its infrastructure asset); how that automation lands the hop,
-  PR or otherwise, is its script's business and never this command's.
+  `release` role's branch. The release hop opens a PR into it — from `<src>`
+  itself when the merge is content-trivial, otherwise from a promotion branch
+  — and never pushes `<dst>`; that is this command's whole mechanism. The one
+  path that may advance release **unattended** is a repo's own promotion
+  automation where its recorded topology decision says so (this repo's
+  nightly `dev → main`, ADR 0003 as amended — see its infrastructure asset);
+  how that automation lands the hop, PR or otherwise, is its script's business
+  and never this command's.
 - **Auto-merge the release PR.** Opening it is this command's job; merging it
   is a human/CI act.
 - **Repair a conflict or a red gate.** Both are stop conditions. A promotion
