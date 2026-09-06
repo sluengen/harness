@@ -1,7 +1,6 @@
 ---
 name: assess
-description: "/assess — run one periodic assessment: dispatch the steward for a scope (`code`, `architecture`, or `process`), write a dated report, file its findings as tickets, and drain the improvement ledger. Use when the operator invokes `/assess`, or asks for a periodic health check, a codebase sweep, an architecture review, or an audit of what the tests and gate cost. Not for reviewing one change (`/review`) and not for fixing anything — the pass is read-only. Operator-triggered only; the model does not fire it."
-disable-model-invocation: true
+description: "/assess — run one periodic assessment: dispatch the steward for a scope (`code`, `architecture`, or `process`), write a dated report, file its findings as tickets, and drain the improvement ledger. Use when the operator invokes `/assess`, or asks for a periodic health check, a codebase sweep, an architecture review, or an audit of what the tests and gate cost. Not for reviewing one change (`/review`) and not for fixing anything — the pass is read-only. Reachable by an unattended run, which reports the ledger's size rather than draining it, so `disable-model-invocation` is deliberately not set here (#565)."
 model: inherit
 effort: high
 ---

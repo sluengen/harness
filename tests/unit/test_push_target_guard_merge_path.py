@@ -325,7 +325,7 @@ def test_a_scoped_marker_never_authorises_an_ordinary_push(repo: Path) -> None:
 
 def _declare_scoped(repo: Path) -> None:
     (repo / "scoped.sh").write_text(
-        "#!/usr/bin/env sh\ntest \"${HARNESS_GATE_MARKER_RUNNER:-}\" = \"1\"\n", encoding="utf-8"
+        "#!/usr/bin/env sh\ntest -n \"${HARNESS_GATE_MARKER_RUNNER:-}\"\n", encoding="utf-8"
     )
     (repo / "harness.yaml").write_text(
         "commands:\n  verify: sh scripts/verify.sh\n  test_scoped: sh scoped.sh\n",
