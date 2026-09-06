@@ -616,6 +616,12 @@ function pushesIn(command, startDir, parser, depth) {
   // fresh one per nested script below, matches the shell: a child shell
   // inherits its parent's cwd but starts its own dirstack.
   let dirStack = [];
+  // ``pipedInto`` is dropped on purpose: a bare shell fed a script this lexer
+  // cannot read (``… | sh``, a here-string, ``bash <(…)``) is already refused
+  // unconditionally by the sibling's ``isBareShellFedExternally``, so a copy here
+  // could never fire (#562). Depended on, not omitted —
+  // ``test_push_target_guard_composition.py`` goes red if that sibling refusal is
+  // narrowed or unregistered.
   for (const { tokens } of commands) {
     const resolved = parser.resolveCommand(tokens);
     const head = resolved.length ? parser.basename(resolved[0]) : "";
