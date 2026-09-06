@@ -76,7 +76,7 @@ Read first. Touch only what the task requires. Defer everything else.
 
 A removal sweeps for its dependents: grep the removed name and update every handler, config key and document that pointed at it. The diff of a removal includes its dependents.
 
-A retired *claim* needs the same sweep and cannot use the same instrument. When a change makes a sentence false — an absolute like "this never pushes", a stated count, a described mechanism — there is no identifier to grep, so grep the retired phrase and the mechanism it described. Three things that needs which a name-sweep does not:
+A retired *claim* needs the same sweep and cannot use the same instrument. When a change makes a sentence false — an absolute like "this never pushes", a stated count, a described mechanism — there is no identifier to grep, so grep the retired phrase and the mechanism it described. Three things this needs which a name-sweep does not:
 
 - *A docstring is a home*, as are section comments, manifests, fixture names and specs. The homes that survive are the ones nobody thought to open.
 - *Derive the count; never remember it.* Report *n* homes because you just counted *n*. A recorded count is itself a claim, and a stale one hides the survivor.

@@ -85,7 +85,7 @@ The split carries more weight here than in any other scope: a pass that filed ea
 
 ## Proving a candidate
 
-Before proposing a deletion, perform the mutation: name the edit that should fail the check, make it in a scratch tree, and record what happened. "I could not see what this covers" is not evidence; "deleting the condition it guards leaves the suite green" is. `scripts/mutate.py` mechanises this where a repo has it (usage in `CONTRIBUTING.md`). The discipline itself — what counts as a killing mutation, and why mutating a rule into its opposite beats deleting it out of existence — is `craft.md` → *Mutation discipline*, and is not restated here. A candidate you could not disprove stays, and the report says so.
+Before proposing a deletion, perform the mutation: name the edit that should fail the check, make it in a scratch tree, and record what happened. "I could not see what this covers" is not evidence; "deleting the condition it guards leaves the suite green" is. `scripts/mutate.py` mechanises this where a repo has it (usage in `CONTRIBUTING.md`). The discipline itself — what counts as a killing mutation, and why mutating a rule into its opposite beats deleting it out of existence — is not restated here. A candidate you could not disprove stays, and the report says so.
 
 ## Boundaries
 
