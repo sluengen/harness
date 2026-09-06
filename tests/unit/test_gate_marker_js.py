@@ -1049,6 +1049,44 @@ def test_an_inherited_value_that_is_not_this_repository_does_not_refuse(repo: Pa
     )
 
 
+def test_a_run_outside_a_repository_refuses_before_launching_the_gate(tmp_path: Path) -> None:
+    """#559 review cycle 1, F1: the identity is computed before the gate is spawned.
+
+    The runner has to name the repository it is gating on the child's
+    environment, so it must resolve that identity *before* it launches anything.
+    Outside a repository there is no identity to resolve, and the run now refuses
+    at that point rather than running the declared gate first and discovering at
+    marker time that it has nowhere to write.
+
+    The exit code and the message are unchanged from before #559 — git's own
+    ``not a git repository``, mapped to ``EXIT_REFUSED`` by ``main``'s handler.
+    What changed is that the gate no longer runs, and this pins that, because the
+    ordering is invisible to every other case: a run inside a repository resolves
+    the identity successfully and reveals nothing about when it did so.
+
+    The sentinel is the whole measurement. A declared gate that appends to a file
+    outside the tree either ran or did not, and only the second is consistent
+    with an identity resolved first.
+    """
+    ran = tmp_path / "gate-ran"
+    workdir = tmp_path / "not-a-repo"
+    workdir.mkdir()
+    (workdir / "CLAUDE.md").write_text(
+        "```yaml\ncommands:\n" f'  verify: "sh -c \'printf ran >> {ran}\'"\n' "```\n",
+        encoding="utf-8",
+    )
+
+    proc = _cli(workdir, "run")
+
+    assert proc.returncode == 2, f"stdout={proc.stdout!r} stderr={proc.stderr!r}"
+    assert "not a git repository" in proc.stderr, proc.stderr
+    assert not ran.exists(), (
+        "the declared gate was launched outside a repository, so the runner "
+        "resolved the identity it puts on the child's environment only after "
+        "spending the gate it can record nothing about"
+    )
+
+
 def test_the_retired_direct_write_command_cannot_mint_a_marker(repo: Path) -> None:
     """AC-3: only the runner owns successful marker emission."""
     common = Path(_git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir"))

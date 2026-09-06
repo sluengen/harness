@@ -673,17 +673,27 @@ function runGate(cwd, scope) {
   // worktrees at the same commit have the same tree oid, so an inner run in one
   // would mint `<tree>.json` in the directory both share while the other's gate
   // is still running. Comparing worktree roots would admit exactly that.
-  //: Compared against this repository's identity rather than a constant, so an
-  //: inherited value naming a *different* repository — or the retired literal
-  //: `1`, which names none — is not a re-entry and its gate runs (#559).  The
-  //: `inherited` short-circuit keeps the uninherited path free of the extra
-  //: `rev-parse`: a `run` outside a repository must still fail where it fails
-  //: today, not earlier and not differently.  Where the identity cannot be
-  //: computed at all, `gitCommonDir` throws and `main` maps it to EXIT_REFUSED —
-  //: an inherited value this program cannot prove belongs to another repository
-  //: is not licence to mint evidence.
-  const inherited = process.env[RUNNER_ENV];
-  if (inherited && inherited === gitCommonDir(cwd)) {
+  //: Resolved once, before anything is launched, because both readers below need
+  //: it: the re-entry guard compares against it and the child's environment
+  //: carries it.  An inherited value naming a *different* repository — or the
+  //: retired literal `1`, which names none — is not a re-entry and its gate runs
+  //: (#559).
+  //:
+  //: Resolving it here rather than lazily has one consequence worth stating
+  //: plainly, because the first version of this comment denied it and was wrong:
+  //: a `run` outside a repository now refuses *before* the declared gate is
+  //: launched, where it used to run the gate first and fail at marker time. The
+  //: exit code and git's message are unchanged (EXIT_REFUSED, via `main`'s
+  //: `GitError` handler); what changed is that the gate is no longer spent on a
+  //: run that could never have recorded anything about it.
+  //: `tests/unit/test_gate_marker_js.py`'s
+  //: `test_a_run_outside_a_repository_refuses_before_launching_the_gate` pins it.
+  //:
+  //: There is no lenient fallback: an identity this program cannot resolve is not
+  //: an identity it may prove belongs to some *other* repository, and under a
+  //: guard against minting evidence, unprovable means refuse.
+  const repository = gitCommonDir(cwd);
+  if (process.env[RUNNER_ENV] === repository) {
     process.stderr.write(
       "gate-marker: the declared gate delegated back to `gate-marker.js run`; " +
         "refusing to re-enter the runner. Point commands.verify at the " +
@@ -711,7 +721,7 @@ function runGate(cwd, scope) {
     return EXIT_RUNNER_UNAVAILABLE;
   }
   let scopeFile = null;
-  const environment = Object.assign({}, process.env, { [RUNNER_ENV]: gitCommonDir(cwd) });
+  const environment = Object.assign({}, process.env, { [RUNNER_ENV]: repository });
   if (recordedScope !== null) {
     try {
       scopeFile = writeScopeFile(cwd, recordedScope);
