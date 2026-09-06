@@ -163,15 +163,9 @@ const MAX_REPORTED_PATH = 200;
 //: `<root>/.git/harness/gate/<40 hex>.json` whose fixed 64-character tail was
 //: exactly what 200 cut off, and `Run the repo verify command ... in <dir>`
 //: names a directory to change into. Both are remedies, not diagnostics. See
-//: that file's block for why PATH_MAX is the bound and for the per-caller
-//: reachability of the marked-cut arm (#568).
-//:
-//: This hook's two callers are bounded here, not there. `verdict.marker` is
-//: `markerPath()`, `realpathSync`-bounded like the twin's. `candidate.dir` is
-//: `input.cwd` or a `git worktree list` path, and what caps it is neither: it
-//: is the `spawnSync` cwd limit, because `verdictFor(dir)` returns null unless
-//: git can run with `cwd: dir`, and spawn refuses a cwd past PATH_MAX. So no
-//: block this hook emits can carry an over-long directory.
+//: that file's block for why PATH_MAX is the bound and why the marked-cut arm
+//: is covered by driving the helper directly rather than by an argument about
+//: which callers can reach it (#568).
 const MAX_REPORTED_FILE_PATH = 4096;
 
 /**

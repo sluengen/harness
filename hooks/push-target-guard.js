@@ -145,27 +145,17 @@ const MAX_REPORTED_PATH = 200;
 //: than ~136 characters deep, and the operator was sent to `...b7c.jso`.
 //: Linux's PATH_MAX is 4096, macOS's 1024; the larger covers both.
 //:
-//: Three callers, and they are bounded by three different things, so the
-//: reachability of the marked-cut arm below is a per-caller question rather
-//: than one claim:
+//: The arm below is reachable: `mergeAcceptance`'s scope clause reports a
+//: repo-relative path out of `git diff-tree`, which compares two tree oids, so
+//: that value is never checked out and passes no syscall that would cap it —
+//: git accepts and prints back a 5000-character path. `test_reportable_path_bound`
+//: covers the arm for every caller by driving this helper directly, which is why
+//: no per-caller reachability argument is made here: three were written for #568
+//: and all three were false, each forgetting the 64-character tail named above
+//: that `markerPath` appends *after* whatever bound applies.
 //:
-//:   - `:1028` and `:1035`, both `markerPath()`, are built on `realpathSync`,
-//:     which is itself PATH_MAX-bounded and throws `ENAMETOOLONG` past it. No
-//:     string this long reaches them on a real filesystem. (Not "past PATH_MAX
-//:     a file cannot exist" — one can, created through `openat` from a deep
-//:     cwd, and no absolute path will ever open it. The bound is the syscall's,
-//:     not the filesystem's.)
-//:   - `:911`, `uncovered`, is bounded by **nothing**. It is a repo-relative
-//:     path out of `git diff-tree`, comparing two tree oids, so it is never
-//:     checked out and never passes a syscall that would cap it: git accepts
-//:     and prints back a 5000-character path. This is the caller that makes the
-//:     arm reachable, and it is the one the test covers (#568 cycle 3).
-//:
-//: The twin's `candidate.dir` is a fourth, bounded by the `spawnSync` cwd limit
-//: that gates every block it emits; its own comment says so rather than
-//: deferring here.
-//:
-//: The widening from 200 to 4096 is what `:135`'s injection ground applies to,
+//: The widening from 200 to 4096 is what `MAX_REPORTED_PATH`'s injection ground
+//: above applies to,
 //: and `uncovered` is the argument that ground was written for: repo-controlled,
 //: unbounded, chosen by anyone who can commit a path. Kept at 4096 rather than
 //: capped tighter because the operator cannot re-gate a path they were handed
