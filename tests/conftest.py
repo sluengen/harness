@@ -2,14 +2,19 @@
 
 One fixture, for one reason. ``scripts/verify.sh``'s public path delegates to
 ``node scripts/gate-marker.js run``, which launches the declared gate with
-``HARNESS_GATE_MARKER_RUNNER=1`` on its environment — and pytest is a
+``HARNESS_GATE_MARKER_RUNNER`` set on its environment — and pytest is a
 grandchild of that launch, so every process this suite spawns inherits the
 variable when the suite is run by the gate and does not when it is run by hand.
+Since #559 the value is the identity of the repository being gated rather than
+a bare ``1``, which is what lets the runner tell a genuine re-entry from a gate
+that legitimately runs the runner against some *other* repository.
 
 That difference used to be invisible. Since #510 the runner reads its own
 variable and refuses to re-enter itself: a declared gate that calls ``run``
 again would re-run the gate at every level and let an inner level mint a marker
-for a tree whose outer stages are still running. Every test that drives ``run``
+for a tree whose outer stages are still running. This suite drives ``run``
+against **this** repository, so it is the same-identity case #559 still refuses;
+dropping the variable is what keeps it a public caller. Every test that drives ``run``
 as a **public entry** is such a caller, so under the gate they were refused with
 exit 3 while passing under a bare ``pytest``: 57 tests, across the marker,
 contract, push-guard, Stop-hook and mutation-lock modules, measured on the run

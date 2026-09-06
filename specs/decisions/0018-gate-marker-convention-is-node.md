@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-25
-- **Source:** tickets #500 and #507; consumer migration follow-up #501; amended by #537.
+- **Source:** tickets #500 and #507; consumer migration follow-up #501; amended by #537 and #559.
 
 ## Context
 
@@ -22,7 +22,7 @@ The principle boundary this draws, and the rule that decides for the next file:
 
 The module type is pinned by `scripts/package.json` (`{"type": "commonjs"}`), the same one-key mechanism and the same reasoning as `hooks/package.json`: Node resolves a `.js` file's type from the nearest `package.json` walking up, and in a consuming repo that walk otherwise terminates at a root the harness does not control.
 
-### Marker-emission boundary (amended by #507, #510, #513, and #539)
+### Marker-emission boundary (amended by #507, #510, #513, #539, and #559)
 
 `gate-marker.js` exposes no direct successful write command. Its public `run`
 subcommand accepts no operands other than `--scope <path>` (amended by #539,
@@ -50,8 +50,10 @@ ordinary text and its trailing comment is still a comment. The sibling
 and this one will not: a second flow parser buys a fragment where an explicit
 exit 3 is the safe answer, and every hydrated spine writes the block form. The
 runner launches that checked-in declaration through fixed `sh -c`, with
-`HARNESS_GATE_MARKER_RUNNER=1`, and forwards its output and exit status. It
-refuses to run at all when it finds that variable already set: the child is now
+`HARNESS_GATE_MARKER_RUNNER` carrying the identity of the repository being gated
+(#559; the literal `1` until then), and forwards its output and exit status. It
+refuses to run at all when it finds that variable already naming **this**
+repository — see the 2026-09-07 amendment — because the child is now
 an arbitrary declared command, and one that delegates back to `run` — directly,
 or through an `npm run verify` that wraps the public entry — would re-run the
 gate at every level and let an inner level emit a marker for the tree while the
@@ -116,4 +118,22 @@ The marker payload gains `scope`, `started_at`, and an atomic write, and `hooks/
 
 **Corrected 2026-09-06 (#560).** The clause above read "for every unscoped marker, which is every marker written before this change", and the second half was false. It is the key's absence that carries the claim, not the marker's age. A pre-#539 writer emitting `scope` as a human diagnostic string — `""`, `"all"`, `"backend,mobile"`, under a docstring saying *diagnostics only, no hook reads the body* — was correct through 6.0.0 and authorises nothing from #539 on. The first downstream repo to take 6.0.1 carried exactly that writer and had every push to every protected branch refused over a green gate, and the refusal read `No gate marker covers tree …  Run the repo verify gate`, naming a file that plainly existed. The reader was right and its words were wrong: it resolved *unreadable* to the same sentence as *absent*, so the remedy it prescribed reproduced the refusal forever. #560 splits the two — `markerFor`'s three deny-everything returns now carry the fault, and both refusal sites say the file was read and what is wrong with it. No decision moves; an unusable body authorised nothing before and authorises nothing now.
 
-**The provenance boundary is restated, not relaxed.** An operand may select among *checked-in* commands and may supply *data*; it may never supply a command. `gate-marker.js run --scope <path>` selects the checked-in `commands.test_scoped` where a repo declares one and otherwise runs `commands.verify`, and the paths reach that command through a NUL-delimited file named by an environment variable — so the line `sh -c` receives is still exactly the declared scalar, character for character. Concatenating operand-supplied paths into that scalar was rejected: it is hand-rolled quoting in the one helper allowed to mint gate evidence, and a path beginning `-` survives every quoting to be read as an *option* by the runner, which is an operand changing what the gate does.
+**The provenance boundary is restated, not relaxed** (2026-09-05, #539). An operand may select among *checked-in* commands and may supply *data*; it may never supply a command. `gate-marker.js run --scope <path>` selects the checked-in `commands.test_scoped` where a repo declares one and otherwise runs `commands.verify`, and the paths reach that command through a NUL-delimited file named by an environment variable — so the line `sh -c` receives is still exactly the declared scalar, character for character. Concatenating operand-supplied paths into that scalar was rejected: it is hand-rolled quoting in the one helper allowed to mint gate evidence, and a path beginning `-` survives every quoting to be read as an *option* by the runner, which is an operand changing what the gate does.
+
+## Amended 2026-09-07 (#559)
+
+**The internal-mode variable carries the identity of the repository being gated, not the flag `1`, and the re-entry refusal compares identities. Its value is private to the runner: a consumer may test it for emptiness and may never compare it to a value.**
+
+The identity is the repository's git common directory, resolved absolute and through `realpath` — the same `gitCommonDir` the runner already uses, so no second spelling of it exists. The refusal fires when the inherited value equals that string exactly. Everything else — an empty value, an unrelated string, the legacy `1`, or another repository's common directory — is not a re-entry and the gate runs.
+
+**The equivalence class is deliberately "shares a marker directory", not "is the same checkout".** `markerDir` is `<git-common-dir>/harness/gate`, so two worktrees of one repository write into one directory; a marker minted in worktree B while worktree A's gate is mid-flight is exactly the hazard, and it is at its worst when both trees are equal, because then the inner level's marker authorises the very tree the outer gate is about to report red. Comparing worktree roots instead of the common directory would let that through. Two invocations from different worktrees of one repository therefore compare equal, and are refused, by design.
+
+**When the identity cannot be computed, the runner does not run.** The comparison is evaluated only when the inherited value is non-empty, so a repository-less directory with no inherited value behaves exactly as before; where a value *is* inherited, `git rev-parse --path-format=absolute --git-common-dir` failing raises `GitError`, which `main` already maps to exit 2 with git's own message. That is the right answer twice over: a directory that is not a repository is a fact about the repository (exit 2, not the infrastructure code), and an inherited value we cannot prove belongs to a *different* repository must never be treated as one — the conservative answer under a guard against minting evidence is to refuse.
+
+**Version skew is bounded, loud, and cannot mint evidence.** A refreshed `scripts/gate-marker.js` beside a stale `scripts/verify.sh` that still tests `!= "1"` sends that script down its public path, which `exec`s `run` a second time; the second runner computes the same identity, matches, and refuses with exit 3 and the existing message, which the outer runner forwards. One extra level, no recursion, no marker, and an exit code reserved for infrastructure. The message will misdiagnose that case as a gate that delegates back to the runner, which is why `/harness:init --refresh` migrates the comparison rather than reporting it: the marker helper and the gate script are one contract, and a refresh that materialises half of it ships a broken pair. The reverse skew is benign by construction — an emptiness test accepts `1` and every future value alike, which is the reason the consumer side is specified as a test for emptiness rather than as a comparison. Requiring `verify.sh` to compare identities would put a fourth implementation of the convention in shell, in a language with no portable `realpath`; this decision refuses that for the same reason it refuses everything else in the *Alternatives rejected* list.
+
+**No version move is owed.** Under the compatibility grammar above this is an interface change — a consumer file must be edited — and the integration branch already carries a major (`7.0.0` against the release branch's `6.0.1`) for this cycle, so the promise is already made. Had the cycle been a patch cycle, this change would have raised it to major.
+
+**Alternatives rejected.** A *second* variable carrying the identity beside the flag: two names for one fact, and the flag would still refuse every foreign gate. A per-process nonce: unique, but it makes two worktrees of one repository compare unequal, which is the case the guard exists for. Comparing the worktree root or `$GIT_DIR`: same failure. An opt-out variable: that is the per-invocation control over the runner the boundary above exists to refuse, and it was already rejected at #510.
+
+**Superseded in part.** The consequence bullet beginning *"The internal-mode variable is inherited by everything the gate starts"* stands on inheritance and on the `tests/conftest.py` remedy; its claim that the refusal "refuses *any* nested public `run` beneath a running gate" is now false — it refuses any nested public `run` beneath a running gate **of the same repository**. A gate that builds a sub-project and gates it is no longer in that position and no longer needs the remedy; a suite that drives `run` against its own repository still is, and `tests/conftest.py` still drops the inherited variable for it.

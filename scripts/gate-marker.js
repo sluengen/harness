@@ -143,6 +143,17 @@ const EXIT_RUNNER_UNAVAILABLE = 3;
 //: reads it to take its internal path, which used to be the *only* recursion
 //: guard: the sole launchable child was that one script.  The child is now an
 //: arbitrary declared command, so the runner reads its own variable too.
+//:
+//: The value is the **identity of the repository being gated** — `gitCommonDir`'s
+//: answer — not a bare flag (#559).  A flag says only that *some* gate is running
+//: somewhere, and a repository whose own verification stage spawns this runner
+//: against a throwaway fixture repository, which is how a gate runner is tested,
+//: inherits it: the fixture's gate was refused, the fixture earned no marker, and
+//: the stage that needed one went red over a green tree.  The hazard the guard
+//: exists for is re-entering the *same* repository's gate, so that is what the
+//: value has to be able to say.  Consumers may test this variable for emptiness
+//: and must never compare it to a value; the shape is private to this runner and
+//: has now changed once.
 const RUNNER_ENV = "HARNESS_GATE_MARKER_RUNNER";
 
 /** A git invocation this program needs did not succeed.
@@ -655,7 +666,24 @@ function runGate(cwd, scope) {
   // the tree while the outer stages are still running, minting evidence for a
   // tree its own gate then reports red. `verify.sh`'s check on the same variable
   // covered this only while the sole launchable child was `verify.sh`.
-  if (process.env[RUNNER_ENV] === "1") {
+  //
+  // The equivalence class is the git **common directory**, which is where
+  // `markerDir` puts the evidence, so it is two worktrees of one repository —
+  // not two checkouts of one path. That is the case at its worst: two clean
+  // worktrees at the same commit have the same tree oid, so an inner run in one
+  // would mint `<tree>.json` in the directory both share while the other's gate
+  // is still running. Comparing worktree roots would admit exactly that.
+  //: Compared against this repository's identity rather than a constant, so an
+  //: inherited value naming a *different* repository — or the retired literal
+  //: `1`, which names none — is not a re-entry and its gate runs (#559).  The
+  //: `inherited` short-circuit keeps the uninherited path free of the extra
+  //: `rev-parse`: a `run` outside a repository must still fail where it fails
+  //: today, not earlier and not differently.  Where the identity cannot be
+  //: computed at all, `gitCommonDir` throws and `main` maps it to EXIT_REFUSED —
+  //: an inherited value this program cannot prove belongs to another repository
+  //: is not licence to mint evidence.
+  const inherited = process.env[RUNNER_ENV];
+  if (inherited && inherited === gitCommonDir(cwd)) {
     process.stderr.write(
       "gate-marker: the declared gate delegated back to `gate-marker.js run`; " +
         "refusing to re-enter the runner. Point commands.verify at the " +
@@ -683,7 +711,7 @@ function runGate(cwd, scope) {
     return EXIT_RUNNER_UNAVAILABLE;
   }
   let scopeFile = null;
-  const environment = Object.assign({}, process.env, { [RUNNER_ENV]: "1" });
+  const environment = Object.assign({}, process.env, { [RUNNER_ENV]: gitCommonDir(cwd) });
   if (recordedScope !== null) {
     try {
       scopeFile = writeScopeFile(cwd, recordedScope);
