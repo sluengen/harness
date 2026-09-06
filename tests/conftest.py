@@ -29,9 +29,7 @@ It is retained on the narrower claim it can still make — the suite means the
 same thing however it is launched — and kept rather than deleted because the
 property it protects is one a future test could quietly need: a case that drove
 ``run`` against *this* repository would be the same-identity case, and would be
-refused. A test that wants the internal-mode variable sets it explicitly on the
-environment it passes, which ``tests/unit/test_verify_toolchain_preflight.py``
-already does. Nothing is prevented, only inherited.
+refused.
 
 The variable is therefore dropped once, here, rather than scrubbed at each of
 the subprocess environments that would otherwise have to remember. A test that
