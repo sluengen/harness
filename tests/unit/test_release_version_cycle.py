@@ -120,7 +120,7 @@ MANIFEST_PATH = ".claude-plugin/plugin.json"
 #: a builder is not led through three separate red tests to discover them (R3).
 BUMP_SIBLINGS = (
     ".codex-plugin/plugin.json",
-    "the `spine:generated` marker in AGENTS.md and templates/spine.md",
+    "the `spine:generated` marker in AGENTS.md, CLAUDE.md and templates/spine.md",
 )
 
 #: ``X.Y.Z`` with no leading zeros, no pre-release, no build metadata.

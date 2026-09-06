@@ -29,7 +29,7 @@ source repo moves.
    values (tracker, commands, branch roles, layers) — taking answers from the
    repo itself where it can, including your existing `CONTEXT.md` — and writes
    the repo-owned files: `harness.yaml`, the spine (`AGENTS.md`) and its
-   `CLAUDE.md` pointer, the path-scoped rules under `.claude/rules/`, Codex role
+   `CLAUDE.md` derived from it, the path-scoped rules under `.claude/rules/`, Codex role
    adapters under `.codex/agents/`, the specs scaffold, the infrastructure
    record, and a `scripts/verify.sh` skeleton only if the repo has no gate yet.
    Existing host files are merged, not overwritten: the generated block is
