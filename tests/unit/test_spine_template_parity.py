@@ -91,7 +91,7 @@ SPINE_PATH = "AGENTS.md"
 PLUGIN_MANIFEST_PATH = ".claude-plugin/plugin.json"
 
 #: This ticket's deliberately published release version.
-RELEASE_VERSION = "6.0.1"
+RELEASE_VERSION = "7.0.0"
 
 #: The block's delimiters. Both are matched at line start with indent and
 #: trailing-whitespace tolerance, and with flexible spacing inside the comment,

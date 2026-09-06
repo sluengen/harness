@@ -1,7 +1,7 @@
 ---
 feature: plugin-surface
 status: implemented
-last_updated: 2026-09-05
+last_updated: 2026-09-06
 ---
 
 # The plugin surface
@@ -12,7 +12,7 @@ last_updated: 2026-09-05
 
 ### One plugin, one version
 
-The repository root **is** the plugin. `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json` name the same `harness` release at one semver (`6.0.1` at this record's date). `.claude-plugin/marketplace.json` and `.agents/plugins/marketplace.json` expose that root through each host's native marketplace contract. The manifests are updater-facing selectors; the generated spine markers in `templates/spine.md` and `AGENTS.md` carry the same version (`CLAUDE.md` carries none — since #537 it is a pointer file, not a second spine). `tests/unit/test_spine_template_parity.py` and `tests/unit/test_native_codex_plugin.py` reject a mismatch before release. There are no per-file versions, no `guidance:` headers, no `registry.yaml`, and no consumer lock file — the whole distribution channel ADR 0017 retired. Since #537 each of the nine lifecycle workflows ships **once**, as a skill under `skills/<name>/SKILL.md`, and both hosts read that one artefact: Claude Code exposes it as a slash command (`/build`, and `/harness:init` where the bare name collides with the host's own), and Codex discovers it from `skills/` — the only content key `.codex-plugin/plugin.json` declares. The generated `command-*` and `agent-*` mirror skills are gone.
+The repository root **is** the plugin. `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json` name the same `harness` release at one semver (`7.0.0` at this record's date). `.claude-plugin/marketplace.json` and `.agents/plugins/marketplace.json` expose that root through each host's native marketplace contract. The manifests are updater-facing selectors; the generated spine markers in `templates/spine.md` and `AGENTS.md` carry the same version (`CLAUDE.md` carries none — since #537 it is a pointer file, not a second spine). `tests/unit/test_spine_template_parity.py` and `tests/unit/test_native_codex_plugin.py` reject a mismatch before release. There are no per-file versions, no `guidance:` headers, no `registry.yaml`, and no consumer lock file — the whole distribution channel ADR 0017 retired. Since #537 each of the nine lifecycle workflows ships **once**, as a skill under `skills/<name>/SKILL.md`, and both hosts read that one artefact: Claude Code exposes it as a slash command (`/build`, and `/harness:init` where the bare name collides with the host's own), and Codex discovers it from `skills/` — the only content key `.codex-plugin/plugin.json` declares. The generated `command-*` and `agent-*` mirror skills are gone.
 
 The shipped inventory, counted at tree `8281ecf` — the tree #547's build produced, and the one every figure below was measured over. `tests/unit/test_landing_page_inventory.py` derives the skill, agent and hook figures from the tracked tree in both directions and holds `docs/index.html`'s printed counts to them, so those three cannot go stale in silence; the remaining rows are a reviewer's count at that tree.
 
