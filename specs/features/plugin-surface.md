@@ -186,17 +186,20 @@ prompt an unattended scheduled run pastes. `routine` carried the flag through #5
 and #547 and lost it at #564, once a scheduled run was observed refused on
 `Skill(routine)` — swept into the operator-only bucket by category rather than by
 intent. Their `description:` fields sum to
-**3,496 characters, about 874 tokens**, measured at tree `3952f3a` (#564) — up from
-3,131 characters, about 783 tokens at tree `8281ecf` (#537), the difference being
-`routine`'s own description, which grew from 162 to 365 characters explaining why
-the flag is deliberately absent. Against a 1% listing budget on a 200k window that
-is 44%, up from 39% at `8281ecf`, and down from 4,658 characters across 17 listed
-skills on `dev` at `c75c666`. The six off-listing workflows sum to 1,019 characters
-and cost nothing. `authoring` (542) and `tracker` (508) are the two long
-descriptions, and deliberately so: each absorbed a skill and has to carry both sets
-of triggers. Nothing guards the figure — a description is prose, and law 2's subject
-is code — so it is a reviewer's measurement at a named tree, re-derivable by summing
-the `description:` field of every `skills/*/SKILL.md` without the flag.
+**5,896 characters, about 1,474 tokens** at this record's tree — up from 3,496
+characters / 874 tokens at `3952f3a` (#564), 3,131 / 783 at `8281ecf` (#537), and
+down from 4,658 characters across 17 listed skills on `dev` at `c75c666`. Against a
+1% listing budget on a 200k window that is **74%**, up from 44% at `3952f3a`. #548 is
+the whole of that rise and it is a purchase rather than drift: its brief required
+every description to state what the skill does, when to use it *in the words a user
+would say*, and what it is **not** for, under 1,024 characters — three jobs where the
+pre-#548 text did one. The longest are now `routine` (716) and `review` (675) rather
+than `authoring` (537) and `tracker` (577), and none reaches the cap. The six
+off-listing workflows rose with them, 1,019 → 3,129 characters, and still cost the
+listing nothing. Nothing guards any of these figures — a description is prose, and
+law 2's subject is code — so each is a reviewer's measurement at a named tree,
+re-derivable by summing the `description:` field of every `skills/*/SKILL.md` with
+and without the flag.
 
 **Three merges, each because one caller was the only caller.**
 
@@ -276,6 +279,127 @@ test is what retires it. Without such a table the v5 cull reset a counter and ch
 nothing else. The spine points at it from *Where deeper truth lives*.
 
 
+### The craft surface after #548
+
+#548 is the content pass over what #547 kept: the eight craft skills and their
+references, the nine workflow skills for description and for text T2 made redundant,
+and the five agent files. It changed no mechanism, no hook, no template and no clause
+of the spine's contract. What it changed is the text, and — for the first time — it
+measured the text instead of reading it.
+
+**The instrument.** The official `skill-creator` plugin's published loop, unmodified:
+no bespoke runner, grader or viewer. Three recorded-failure prompts per craft skill
+ship at `skills/<name>/evals/evals.json`, with `review-discipline`'s three review
+prompts carrying their `diff.patch` fixtures beside them at `evals/files/`. The
+prompts are drawn from the tickets that went past review cycle 3 (#484, #510, #511,
+#537, #539), from `craft.md`'s defect classes, and from the improvement ledger.
+Nothing under `evals/` is a test: `pyproject.toml` sets `testpaths = ["tests"]`, so
+pytest collects none of it, and no runner or grader ships there.
+
+**Three experiments, and the first one measured nothing on purpose by the time it was
+read.**
+
+| Experiment | Arms | Result |
+|---|---|---|
+| Iteration 1 | current text against its own snapshot — *byte-identical*, since the snapshot is taken before the rewrite | No skill effect was possible. What it bought is the number nobody had: the **noise floor**, mean \|Δ\| 0.057 and max **0.110** at skill level, 0.330 at eval level, over eight comparisons |
+| Iteration 2 | rewrite against snapshot, both staged at neutral sibling paths with byte-identical briefs, arm letter randomised at seed 548, graded blind | 7 of 8 positive, mean +0.078, worst −0.033 (`architecture`), one-sided sign test p = 0.035. By **arm letter** the split is 4–4, which is what excludes iteration 1's label confound rather than assuming it away |
+| Baseline | the kept skill against **no guidance** on the same prompts | 7 of 8 positive, mean +0.169. Four clear the floor outright — `review-discipline` +0.387, `worktree-isolation` +0.317, `architecture` +0.247, `work-discovery` +0.113 — and four do not: `engineering` +0.110 exactly at it, `authoring` +0.093, `assess` +0.083, `tracker` **0.000** |
+
+The last two rank the set almost inversely, which is the point: *did this edit help*
+and *does this file earn its context* are different questions, and only the second
+could ever license a cut. Every figure above was re-derived from the benchmark JSON
+against the unblind keys at review, and the snapshot arms were walked file by file
+against `origin/dev` to confirm they are the pre-rewrite bytes.
+
+**No skill was cut.** The four below the floor are unproven, not disproven, and the
+attributed cause is measured rather than asserted: the graders' provenance audits show
+the no-skill arms rebuilding skill content out of artefacts that exist only because
+this repo is the plugin's own source — this record, `specs/proposals/lifecycle-reset.md`,
+`specs/harness-assumptions.md`, `tests/unit/test_teardown_guidance.py`. The localised
+demonstration is `worktree-isolation`: its cleanup eval is pinned verbatim by that
+test as literal strings, and it is the one eval of six where no guidance scores
+identically to the skill (6/6), inheriting a dead iOS-simulator teardown step from the
+phrases it copied. Its two unpinned evals split 8/8 against 2/8 and 5/5 against 4/5.
+
+**`tracker` is the one case where that attribution does not hold, and it is recorded
+open rather than closed.** Its no-skill arm reached 0.96 by grounding in `AGENTS.md`,
+`specs/decisions/0015` and `0006`, `settings/harness.json` and
+`specs/harness-assumptions.md`. The spine and `templates/spine.md` **ship to every
+consuming repo**, so that confound will be present in the four-week window too and the
+carry cannot produce a different answer there. What the flat result actually says is
+that the tracker semantics are stated in more places than one — AC-6's subject, and a
+contract change, which #548's *Out of scope* assigns to T2. Holding was the correct
+move and the run held; the question is open, not answered.
+
+**The leaning, measured with the ticket's own three instruments** — whole-file
+`wc -w`, a line-based count of `**…**` spans, and a fixed-string grep for backticked
+names of other skills. Each was reproduced against the ticket's starting-line table
+before being trusted, and each reproduces it exactly.
+
+| | on `dev` | at this record's tree |
+|---|---|---|
+| Largest `SKILL.md` | `review-discipline`, 3,401 words | `authoring`, 1,797 (cap 1,800) |
+| Most bold spans in one `SKILL.md` | `review-discipline`, 90 | `promote`, 12 (cap 12) |
+| Most other skills cited by one skill | `build`, 7 | 3, tied across five skills |
+| A reference reached through another reference | 4 | 0 |
+| `craft.md` contents | none | 49 entries in 6 families, every anchor resolving and every level-3 heading listed, both directions checked |
+| Agent files | `reviewer` at 76 lines | all five under 60 — `dev` and `reviewer` 59, `architect` 52, `steward` 50, `reviewer-feature` 26 — each setting `model` and `effort`, each citing only skills that exist |
+
+The whole guidance surface moved **48,816 → 47,497 words across 38 → 42 markdown
+files** under `skills/` and `agents/`, derived at this record's tree by
+`find skills agents -name '*.md' -exec cat {} + | wc -w`. So the large per-`SKILL.md`
+reductions are mostly redistribution into four new one-hop references —
+`review-discipline/references/certifying.md`, `authoring/references/decisions.md` and
+`conditional-sections.md`, `init/references/refresh.md` — each cited from its parent
+with a stated moment to load it. That is a real saving at load time, because a
+reference is read on its trigger and a `SKILL.md` is read whenever the skill is. It is
+not a saving in bytes shipped, and the distinction is stated here rather than left to
+be read off the per-file table.
+
+**Two ledger rules written in, both at the altitude the measurement asked for.**
+`authoring` gains LEDGER-547-3 whole, including the clause that does the work — *a
+criterion of the second kind does not block a PASS* — because naming who produces the
+evidence without releasing the verdict only renames the problem. `engineering` extends
+its existing dependent sweep instead of siting a second copy beside it: a retired
+*claim* has no identifier to grep, so grep the phrase and the mechanism it described,
+treat a docstring as a home, derive the count rather than remember it, and enumerate
+before repairing. Both iteration-1 arms already produced a correct *name* sweep, which
+is why the second rule went in as an extension rather than as the sibling the brief
+named; a sibling would have been the duplicate definition AC-6 forbids.
+
+**Four contract terms realigned, none redefined.** The 2×2's FAIL cell stopped
+carrying DEFER's discriminator and now reads *return it to the builder*;
+`review-discipline`'s verdict section cites the spine as the definitional home and
+keeps only what a review *does* with each verdict; `tracker`'s hold-label meaning
+table went, leaving the spine's; and `authoring`'s lane table dropped a fourth
+feature-lane trigger the spine does not have. That last one has a consequence worth
+naming: a ticket carrying a consequential architecture, data-model, interface or
+security decision that reaches no protected area, changes no contract and came from no
+proposal is now filed `simple` where `authoring` alone would have made it `complex`.
+Whether the spine should gain the fourth trigger is a proposal, not a call this change
+could make — the spine's contract section is a protected area and this diff does not
+touch it.
+
+**AC-4 is carried, not met, and its deliverable is in the tree rather than in a
+session.** Held-out trigger sets — 20 queries each, 9 positive and 11 near-miss
+negatives drawn from the neighbouring skill each description fences off — ship at
+`skills/<name>/evals/triggers.json` for all ten model-invocable skills, `routine`
+included after #564 removed its flag. The published loop could not rank them on this
+host: six skills returned an identical 3/5, and four probes established why —
+`run_eval.py` counts a trigger when a one-shot `claude -p` invokes a temp command, and
+here that fires only for a query handing the description back as an imperative.
+Realistic positives scored 0.00 throughout; the negatives are the whole of the 3/5. An
+instrument with no dynamic range cannot rank descriptions, so the number is withheld
+rather than reported as one.
+
+**Cost.** 123 sub-agent runs and 16 grader passes against the ticket's stated ~130-run
+budget, plus 112K of `evals/` shipped to every consumer, which is the P2 spend the
+ticket declared and bounded. Two defects in the instrument were found and corrected
+inside the run rather than after it: a no-skill envelope that barred
+`review-discipline`'s own diff fixtures along with the repo, and absolute paths in all
+24 copied `metrics.json` files naming the iteration and the arm, which identified the
+with-skill arm to any grader who opened one and forced a full re-grade of all eight.
+
 ### The assessment layer
 
 `/assess` writes one dated report per pass to `assessments/<YYYY-MM-DD>-<scope>.md` in the `templates/assessment.md` format. That template owns the **retention convention**; `skills/assess/SKILL.md` step 4 applies it after each pass, folding every superseded report into a one-line entry in the rolling `assessments/LOG.md` and deleting the file. The rule keeps the latest report per scope plus any report with an open finding, and since #468 a **retired scope** is its one exception: a report whose scope the current `/assess` can no longer produce — ADR 0015 narrowed the scopes to `code | architecture`, and `process` joined them below — is superseded once none of its findings are open, with the open-finding bound still binding until then. The clause had one live subject and the same change folded it: `assessments/2026-08-04-system.md`, the last `system` pass. Its findings, the tickets carrying them, and their closure against the tracker are recorded in that report's entry in `assessments/LOG.md` — the line keyed `2026-08-04 · system` — and cited from here rather than copied, so the two cannot disagree. They did disagree once, in the commit that wrote both (`10170c7`): the LOG entry counted tickets from the same day's other passes among this report's findings until `ad9c7f6` corrected the attribution, and this record happened to hold the version that was right. `assessments/` holds four reports at this record's date — `2026-07-19-pre-publication-readiness.md`, which exempts itself from the rotation in its own header, `2026-08-04-architecture.md`, `2026-08-17-code.md`, and the retained first process pass `2026-08-31-process.md` — plus `LOG.md`.
@@ -330,6 +454,11 @@ No persistent state beyond the tree itself, the gate marker, and — since #539 
 
 ## Known limitations
 
+- **AC-1d cannot refuse anything, and #548 shipped with that visible.** Its second disjunct — *the shortfall is attributed to a measured cause and the skill is carried to the consumer-repo measurement window rather than cut* — names no threshold, no owner and no date, so a building session can always satisfy it; three successive reviews reached that reading independently. The operator ratified the wording after the result it would license was already on the ticket, so it stands for this change. What has no home at all is the teeth: *if the four-week window shows the same four flat against no guidance there, that is the evidence for a cut* lives in a ticket comment, owned by nobody and dated never.
+- **The carried measurements have no comparison basis in the tree.** `evals/` ships the prompts, the assertions and the trigger sets. The benchmarks that AC-1b, AC-1c and AC-1d were decided from live only under `/home/user/eval-workspaces/`, `/home/user/eval-baseline/` and `/home/user/eval-meta/` on the build container, and the ticket's tables are their only durable record. The four-week window in calibrate and nano-erp is asked to re-answer AC-1d and AC-4 against numbers it cannot re-derive.
+- **The measured rewrite is not quite the shipped rewrite.** The eval arms were staged before the three post-eval repair commits, so the text that produced the deltas above differs from what ships by 14 lines in `review-discipline/SKILL.md`, 6 in `assess/references/process-economy.md`, 4 each in `engineering/SKILL.md` and `work-discovery/SKILL.md`, and 2 in `authoring/SKILL.md`. The snapshot arms are byte-identical to `origin/dev`, walked file by file at review. Re-running 72 sub-agent runs for a 14-word trim is the over-processing P2 refuses, so the gap is recorded rather than closed.
+- **AC-3's bold-span cap is met at zero margin, under an instrument that undercounts.** The ticket's instrument is a line-based `grep`, which cannot see a bold span wrapping a line. `promote` reads **12** under it — exactly the cap — and 14 under a multiline-aware count; `tracker` reads 11 against 12. The criterion names its own instrument, so both are met, and AC-3 is a proxy the ticket already says is a proxy. The next edit to either file should know that its headroom is a property of the counter rather than of the file.
+- **`tests/unit/test_teardown_guidance.py` is now a measured confound as well as a forbidden one.** It pins `"Docker"`, `"iOS simulator"` and `"only resources it owns"` as literal strings in `worktree-isolation/SKILL.md` — a guard over skill wording, which ADR 0017 D5 forbids and #548's *Out of scope* names. #548 did not touch it, correctly: editing a test while implementing against it is law 7, and the rewrite happened to keep phrasings that satisfy it. The baseline arm added the third argument for retiring it — the one eval whose strings that test pins is the one eval where no guidance scores identically to the skill.
 - **The spine can go stale in a consumer** that never runs `/harness:init --refresh`; the generated markers and the refresh command are the remedy. Spine growth is a first-`/assess` metric.
 - **The landing page's inventory, counts, and dual-host positioning are guarded; its remaining prose is not.** `tests/unit/test_landing_page_inventory.py` holds `docs/index.html`'s four `data-unit` inventories to the tracked tree, compares every inventory count with its list, derives the hero counts from the same tree, and requires the native Claude Code and Codex description in metadata and visible copy. The card-count pairing is positional and `_COUNT_TAG` is unanchored: a new `<span class="n">…</span>` elsewhere could take ownership of later tags, and nothing tests that shape. `build_design_tokens.py --check` holds the page's `:root` block and hex literals to `design/`; other prose and the self-contained rule still rest on review.
 - **One lock-file consumer has performed the migration** — nano-erp, 2026-08-18. `MIGRATION.md` carries its edges in *Edges from performed migrations* and still states, in *Honest limits*, what remains untested: later migrations should expect repo-specific edges, and the interview, the `CLAUDE.md` merge and uninstall ordering are instruction rather than tested code.
