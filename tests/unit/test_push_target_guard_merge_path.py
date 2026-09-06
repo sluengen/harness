@@ -669,3 +669,86 @@ def test_without_merge_tree_the_path_is_absent_and_the_old_deny_stands(
     )
     (shim / "git").chmod(0o755)
     _denied_because(repo, "recomputed", path_prefix=shim)
+
+
+# --- #568: the refusal must name a path the operator can actually open --------
+#
+# `reportable()` bounded every echoed path at 200 characters with a flat
+# `slice`, silently. A marker path is `<root>/.git/harness/gate/<40 hex>.json`,
+# whose fixed tail is 64 characters, so any repo checked out more than ~136
+# characters deep produced a refusal naming `…b7c.jso` — one character short of
+# the file, with nothing marking the cut — under the sentence "Fix the writer
+# that produced it". That is #560's own failure mode inside #560's fix.
+#
+# The three `_refuses_as_unusable` cases above already assert `str(path) in
+# reason` and so already caught this, but only on a host whose temp directory is
+# long enough: green on Linux CI, red on macOS, over identical bytes. This
+# fixture removes the host from the measurement by constructing the length
+# itself, so the load the defect needs is present on every platform.
+
+_MARKER_TAIL = len("/.git/harness/gate/") + 40 + len(".json")
+
+
+@pytest.fixture
+def repo_at_a_reporting_bound(tmp_path: Path) -> tuple[Path, int]:
+    """The ``repo`` shape, at a root padded so the marker path clears 200 chars.
+
+    Duplicated from ``repo`` rather than factored out of it: law 7 bars editing
+    the tests this change implements against, and the shared fixture is what
+    they run on. Folding the two together is a follow-up, once these are green.
+    """
+    # 201 is the length the shipped code first failed at, so prefer it; a host
+    # whose own temp path already exceeds that gets the shortest reachable
+    # length above the bound instead. Either way the target is a computed
+    # constant, never whatever the host happened to hand us.
+    target = max(201, len(str(tmp_path)) + 2 + _MARKER_TAIL)
+    pad = target - _MARKER_TAIL - len(str(tmp_path)) - 1
+    assert pad >= 1, f"cannot build a {target}-character marker path under {tmp_path}"
+
+    bare = tmp_path / "origin.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(bare)], check=True)
+    root = tmp_path / ("r" * pad)
+    root.mkdir()
+    _git(root, "init", "-q", "--initial-branch=main")
+    _git(root, "config", "user.email", "t@example.com")
+    _git(root, "config", "user.name", "t")
+    _git(root, "remote", "add", "origin", str(bare))
+    _commit(root, "a.txt", "one\n")
+    _git(root, "push", "-q", "origin", "main")
+
+    _git(root, "checkout", "-q", "-b", "work")
+    install_internal_gate(root)
+    _git(root, "add", "scripts/verify.sh")
+    _git(root, "commit", "-q", "-m", "fixture gate")
+    _commit(root, "c.txt", "candidate\n")
+
+    _git(root, "checkout", "-q", "main")
+    _commit(root, "i.txt", "incoming\n")
+    _git(root, "push", "-q", "origin", "main")
+    _git(root, "checkout", "-q", "work")
+    return root, target
+
+
+def test_a_marker_path_past_the_reporting_bound_is_still_named_in_full(
+    repo_at_a_reporting_bound: tuple[Path, int],
+) -> None:
+    """AC-1/AC-2 — the operator is told a path that resolves, at 201 characters.
+
+    The assertion is deliberately the whole path and not a prefix of it: a
+    refusal that names 200 of 201 characters is worse than one that names none,
+    because it reads as a real path and sends the reader to a file that is not
+    there.
+    """
+    repo, target = repo_at_a_reporting_bound
+    tree = _marker(repo)
+    path = _corrupt(repo, tree, '{"tree": "trunc')
+    assert len(str(path)) == target, (
+        f"the fixture must pin the load, not inherit it: {len(str(path))} != {target}"
+    )
+    assert target > 200, "the load must exceed the bound the shipped code applied"
+
+    reason = _reason(repo)
+    assert str(path) in reason, (
+        f"the refusal names a {target}-character marker path only in part, so it "
+        f"names a file that does not exist: {reason}"
+    )

@@ -136,6 +136,16 @@ const SIBLING_PARSER = "git-push-guard.js";
 //: names. A path is repo-controlled text, so it is truncated, never trusted.
 const MAX_REPORTED_PATH = 200;
 
+//: The cap on a path a refusal tells the operator to **open**, which is a
+//: different job from bounding a diagnostic and needs a different number (#568).
+//: A marker path is `<root>/.git/harness/gate/<40 hex>.json` — a 64-character
+//: tail — so 200 cut the filename off any repo checked out more than ~136
+//: characters deep, and the operator was sent to `...b7c.jso`. The bound the
+//: filesystem itself imposes is the only one that cannot do that: past PATH_MAX
+//: the string cannot name a file that exists, so nothing resolvable is lost by
+//: cutting there. Linux's is 4096, macOS's 1024; the larger covers both.
+const MAX_REPORTED_FILE_PATH = 4096;
+
 //: Used when a repo declares no branches. Deliberately over-broad: a false deny
 //: is recoverable in one command (run the gate), a false allow lands unverified
 //: work on the integration branch of a repo that told the guidance nothing about
@@ -278,13 +288,22 @@ function scopeFault(value) {
   return `its \`scope\` field is ${kind}, not an array of path strings`;
 }
 
-/** A value made safe to inject into a refusal: whitespace-collapsed and bounded.
+/** A path made safe to inject into a refusal: whitespace-collapsed and bounded.
  *
- * The ``failOpen`` idiom, and the sibling Stop hook's, because a reason is
- * written straight into the model's context.
+ * Whitespace-collapsed for the ``failOpen`` reason — a reason is written
+ * straight into the model's context. Bounded at ``MAX_REPORTED_FILE_PATH``
+ * rather than the diagnostic cap, because this path is the remedy: the reader
+ * is told to open the file it names, so a bound that can cut a real path in
+ * half is not a safety measure but a wrong answer (#568).
  */
 function reportable(value) {
-  return String(value).replace(/\s+/g, " ").slice(0, MAX_REPORTED_PATH);
+  const flat = String(value).replace(/\s+/g, " ");
+  if (flat.length <= MAX_REPORTED_FILE_PATH) return flat;
+  // Past PATH_MAX no suffix of this string names a real file, so the only
+  // honest thing left is to say the cut happened. A silently shortened path
+  // reads as a real one, which is the #568 defect: the reader cannot tell a
+  // path they should open from one that was truncated out of existence.
+  return `${flat.slice(0, MAX_REPORTED_FILE_PATH)}[... truncated at ${MAX_REPORTED_FILE_PATH} characters]`;
 }
 
 /** The fresh marker covering ``tree``, as ``{scope}``, or ``null`` if there is none.
