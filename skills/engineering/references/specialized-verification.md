@@ -1,6 +1,20 @@
 # Specialized verification checks
 
-Load only the section whose trigger matches the change.
+Load this when adding or editing a guard, and for security-control tests,
+over-limit files, guards over derived sets, cross-layer aggregates, or
+nullable narrowing. Read the section whose trigger matches the change; the
+first section applies to every guard.
+
+## What makes a guard evidence
+
+Four rules decide whether a guard proves anything at all.
+
+- **A new guard cites the occurrence it prevents**, written beside the assertion — the craft-file entry or the incident where its defect class was observed. A guard nobody can trace to an occurrence is speculative, and an assessment may read it as a deletion candidate.
+- **A guard that regenerates its reference pins the generator in the same commit**, or its green is a fact about the runner as much as about the tree.
+- **A warn-and-pass guard has not been shown to run until it has failed once for the real reason.** It exits green without having compared anything, so its result is indistinguishable from a real pass and "it passed locally" can be true and mean nothing.
+- **A guard owns only a mechanically decidable contract** — artifact integrity, generated-output correspondence, and other executable or structural properties. Do not add a prose predicate, wording guard, or pinned sentence to judge meaning; prose is reviewed directly.
+
+A green suite is evidence only if its inputs are real: a test driving on synthesized events no production path emits exercises a branch the live system never reaches.
 
 ## Specialized verification
 

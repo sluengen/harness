@@ -44,7 +44,9 @@
         "The answer says to create the ledger, with that label, if the search finds none",
         "The answer says that exactly one open ledger per repo is expected and that finding two is reported rather than resolved by picking one",
         "It states that the improvement also appears as one line in the review's own report",
-        "It distinguishes this from filing a bug, and states the test that separates the two \u2014 whether the tree contradicts its own contract today"
+        "It distinguishes this from filing a bug, and states the test that separates the two \u2014 whether the tree contradicts its own contract today",
+        "The answer states the test that separates a bug from an improvement \u2014 whether the tree contradicts its own contract today",
+        "The answer explicitly checks the finding against that test before routing it, rather than routing on size or confidence alone"
       ]
     }
   ]

@@ -13,7 +13,8 @@
         "Each criterion names what it protects \u2014 the outcome, contract, or recorded risk \u2014 rather than only naming a change",
         "Each criterion names evidence the building session can actually produce, or names who produces it and when",
         "No criterion is a raw word count, line count, or file-size bound",
-        "The criteria are checkable \u2014 a reviewer could mark each met, partial, or missing without asking a question"
+        "The criteria are checkable \u2014 a reviewer could mark each met, partial, or missing without asking a question",
+        "Every evidence line names a concrete artefact and who produces it, rather than only an evidence class such as 'direct review' or 'representative use'"
       ]
     },
     {
@@ -42,7 +43,8 @@
         "The spec states the problem, the approach, and acceptance criteria",
         "Each acceptance criterion names evidence the building session can produce, or names who produces it and when",
         "The spec says what is out of scope",
-        "If the fix lane is chosen, the answer states what that lane gives up (no ticket-side reviewer, no as-built record) and what remains as its assurance"
+        "If the fix lane is chosen, the answer states what that lane gives up (no ticket-side reviewer, no as-built record) and what remains as its assurance",
+        "Every evidence line names a concrete artefact and who produces it, rather than only an evidence class such as 'direct review' or 'representative use'"
       ]
     }
   ]

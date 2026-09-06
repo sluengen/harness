@@ -1,117 +1,100 @@
 ---
 name: authoring
-description: Use when writing anything a downstream agent or person will read and act on — a proposal, a change spec or ticket body, a design hand-off, an as-built or reference spec, a decision record, a review report, a commit body, a handoff. Covers both the shape of the artefact and the prose it is written in: what each spec type must contain, how to ground it in current reality, how to choose its assurance lane, and how to state it plainly. Not for code, structured data, or deciding whether the work should happen — that is the spine's lifecycle.
+description: Use when writing anything a downstream agent or person will read and act on — a proposal, a change spec or ticket body, a design hand-off, an as-built or reference spec, a decision record, a review report, a commit body, a handoff. Covers the shape of the artefact and the prose it is written in: what each spec type must contain, how to ground it in current reality, how to choose its assurance lane, and how to state it plainly. Not for code, structured data, or deciding whether the work should happen — that is the spine's lifecycle.
 model: inherit
 ---
 # Authoring
 
-How to write anything a downstream agent reads and acts on, so that it is actionable, consistent, and complete. Most of that is specs — including the **design** and the **decisions** behind them — and specs come in two families: **lifecycle specs** that flow with a task, and **reference specs** that document a standing part of the system. The spine (`AGENTS.md`) is the lifecycle; this is the craft.
+How to write anything a downstream agent reads and acts on, so it is actionable and complete. Most of that is specs, in two families: lifecycle specs that flow with a task, and reference specs documenting a standing part of the system. The spine (`AGENTS.md`) owns the lifecycle; this is the craft.
 
-The same discipline governs the artefacts that are not specs — a ticket body is a prompt, a design hand-off is a brief, an as-built record is a report — which is why #547 folded `writing-quality` in here as [`references/prose.md`](references/prose.md). **Load that reference immediately before writing any substantial prose,** whatever the artefact.
+The same discipline governs artefacts that are not specs — a ticket body is a prompt, a hand-off is a brief, an as-built record is a report. Load [`references/prose.md`](references/prose.md) immediately before writing any substantial prose.
 
 ## Lifecycle specs — three moments in a task's life
 
 | Spec | Answers | Lives in | When |
 |---|---|---|---|
-| **Proposal spec** | "Should we do this, and how big is it?" | `specs/proposals/<slug>.md` | Before it is confirmed work — needs a decision, carries real unknowns, or is too large to be one change |
-| **Change spec** | "What exactly will this one piece of work do?" | The tracker issue | While the work is in flight |
-| **Feature spec** | "What does the product do today?" | `specs/features/<feature>.md` | Permanent, as-built record |
+| Proposal | "Should we do this, and how big is it?" | `specs/proposals/<slug>.md` | Before it is confirmed work — needs a decision, carries real unknowns, or is too large for one change |
+| Change | "What exactly will this one piece of work do?" | The tracker issue | While the work is in flight |
+| Feature | "What does the product do today?" | `specs/features/<feature>.md` | Permanent, as-built record |
 
-They flow: a **proposal** (when needed) is decided and broken into one or more **change specs** (tracker issues); each change is built, and its delivered behaviour is recorded into the **feature spec**. Small, clear work skips the proposal and starts as a change spec.
+A proposal is decided and broken into change specs; each is built, and its delivered behaviour recorded into the feature spec. Small, clear work skips the proposal.
 
 ## Reference specs — standing documentation
 
-Some specs are not tied to a task. They document a stable part of the system and are updated when that part changes. A reference spec *is* a spec — held to the same bar (actionable, honest, current). Two recognised types (paths in `harness.yaml`):
-
-- **Infrastructure spec** (`templates/infrastructure.md`) — the operational reality: domains, hosting, services, deployment, accounts. The source of truth when making a deployment or configuration decision.
-- **Architecture-principles spec** (`templates/architecture.md`) — how the system is built: the technical principles that govern design *here*, extending the universal `engineering` with this repo's specifics. A repo with rich architecture conventions keeps them in this spec; a small repo keeps a brief version in `AGENTS.md` and skips the file.
+Some specs are not tied to a task. They document a stable part of the system, are updated when it changes, and meet the same bar as any spec. Two recognised types, with paths in `harness.yaml`: an infrastructure spec for the operational reality — domains, hosting, services, deployment — and an architecture-principles spec for how the system is built here, extending `engineering`.
 
 ## What every spec shares
 
-- **Actionable.** A reader can act without asking — a decider can decide on a proposal, an implementer can build a change spec test-first.
-- **Design, not just acceptance.** State *how* it works, not only *what* the user can do: the data model, the interface/contract, the behaviour in scenarios. Acceptance criteria check the outcome; the design says how the outcome is produced. A spec with criteria but no design pushes the hard decisions onto the implementer mid-build, where they are made fastest and worst.
-- **Evidence-fit.** Each acceptance criterion names what it protects and states the appropriate evidence from ADR 0019. Specify RED then GREEN for executable behaviour and mechanically enforceable invariants; a runtime floor needs its declaration plus functional execution on every supported environment. Prose is reviewed or used directly, never converted into a predicate or wording guard.
-- **Honest prose.** No TBDs standing in for decisions, no hedging. Follow [`references/prose.md`](references/prose.md).
-- **Scaled to size.** A one-line bug fix is one line. Depth earns its place; do not pad.
+- *Actionable.* A reader can act without asking: a decider can decide a proposal, an implementer can build a change spec test-first.
+- *Design, not just acceptance.* State how it works, not only what the user can do. Criteria check the outcome; the design says how it is produced. A spec with criteria and no design pushes the hard decisions onto the implementer mid-build, where they are made fastest and worst.
+- *Scaled to size.* A one-line fix is one line. Depth earns its place, and no TBD stands in for a decision.
 
 ## Decisions live in the spec they govern
 
-**Embedded is the default.** A consequential decision is recorded *in the spec it governs*, so the what and the why stay together:
-
-- A decision about **one feature** → a **Decision** block in that **feature spec** (`templates/decision.md` is the embeddable shape: context, decision, alternatives rejected, consequences). This holds everywhere: a decision that governs one feature stays in that feature's spec, whatever else the repo configures.
-- A **cross-cutting** decision (governs many features) → recorded in the **architecture-principles spec**, as a principle plus its rationale and the alternatives rejected.
-
-Why embedded: someone reading the feature spec sees the decision and its reasoning *in place*, not in a separate file they have to find and correlate. Superseding an embedded decision means updating it in-place in its spec, with a dated note on what changed and why (*"Superseded YYYY-MM-DD: previously X; changed to Y because Z."*) — not a new numbered file — then updating the code, comments, and specs that relied on the old choice; where a repo declares `paths.decisions`, its own architecture index owns supersession for the records filed there. (See `architecture` for when a choice is decision-worthy.)
-
-**A repo may configure a decision directory, and that configuration is the only switch.** Where a repo declares `paths.decisions` in its `harness.yaml`, that directory is the home for its architecture decision records; a repo that declares none has no `decisions/` folder and no standalone ADRs — embedded, exclusively. There is no separate strategy setting to keep in step: the optional path is the whole signal.
-
-A configured directory holds only decisions that are **cross-cutting, consequential, and expensive to reverse** — branch topology, tracker architecture, security posture, certification invariants. A decision that merely touches **several files** does not clear that bar, and one that governs a single feature never does; both stay embedded. Each qualifying decision has **one canonical record**: the feature specs it affects link to it and must not restate its reasoning, so superseding the record leaves them correct.
-
-Placement, numbering, and supersession *inside* that directory are the repo's own convention — defer to its **architecture index** (the architecture-principles spec, or the decisions index in `harness.yaml`) rather than assuming one. Universal guidance names the `paths.decisions` key and stops there.
+A consequential decision is recorded in the spec it governs — a Decision block in the feature spec, or the architecture-principles spec when it is cross-cutting — and superseded in place rather than in a second file. A repo that declares `paths.decisions` in `harness.yaml` keeps standalone records there instead, and that declaration is the only switch. Load [`references/decisions.md`](references/decisions.md) when you are writing or superseding one; `architecture` decides whether a choice rises to a decision at all.
 
 ## Proposal spec
 
-For an idea that is not yet confirmed work. Sections (see `templates/proposal.md`):
-
-- **Problem / motivation** — why this matters now.
-- **Options** — the approaches considered, with trade-offs. Not one blessed answer dressed as inevitable.
-- **Recommendation** — the proposed direction and why.
-- **Open decisions** — what must be decided, and by whom. Once made, each decision is recorded in the spec it governs (the feature spec, or the architecture-principles spec if cross-cutting).
-- **Breakdown** — the change specs this would spawn, each sized to ship on its own.
-- **Risks / unknowns** — what could go wrong or is not yet understood.
-
-A proposal's outcome is explicit: **accepted** (spawns change specs; records its decisions into the relevant specs), **rejected** (kept as the record of why), or **split** (replaced by smaller proposals). It does not sit half-decided.
+For an idea that is not yet confirmed work. Sections, per `templates/proposal.md`: Problem, Options (approaches with trade-offs, not one blessed answer dressed as inevitable), Recommendation, Open decisions (what, and by whom), Breakdown (the change specs this would spawn, each sized to ship alone), Risks. The outcome is explicit — accepted, rejected, or split. It does not sit half-decided.
 
 ## Change spec
 
-A single, concrete piece of work. The tracker issue is its home (`tracker`). Sections (see `templates/change.md`): **Problem**, **Approach**, **Design** (data model / interface / scenarios, scaled to size), **Acceptance criteria**, **Out of scope**. If the design rests on a cross-cutting decision, settle it in a proposal first and record it in the architecture-principles spec — do not bury it in the change spec.
+A single, concrete piece of work, on the tracker issue. Sections per `templates/change.md`: Problem, Approach, Design (data model / contract / scenarios), Acceptance criteria, Out of scope. If the design rests on a cross-cutting decision, settle that in a proposal first.
 
-**The capture on-ramp.** A bug or tweak noticed in actual use does not start here from a blank change spec — `/capture` fills `templates/change.md`'s capture mode at the moment of noticing (kind / As-built / Desired / From actual use / Acceptance criteria). `/build` extends it with Grounding and the full Design section at build time.
+Write the Design section to the depth the *decision* needs. The ticket's assurance level, not your judgement while writing, decides whether the work earns a separate design pass at build time — so a thin Design section is right on a change whose design was never the hard part, and wrong on one carrying a real decision.
 
-**Grounding (before the change spec).** Ground the spec in current reality before writing it: verify every fact it will rest on that names a **file / function / flag / version / decision** against the code as it is *now* — not as memory or a system-reminder recalls it (a recalled fact reflects what was true when it was written). Record what you find as a **`Grounding`** section in the change spec (`templates/change.md`): verified facts each anchored to a `path:line` (or a current version / flag value), any decision the ticket assumed settled that is actually open or already superseded (surface it now, not mid-build), and open questions. Where a sub-agent host is available, a host-native read-only sub-agent produces this brief in its own context and the executor records it verbatim; where none is available, the executor self-grounds inline — the fallback. Grounding always happens, scaled to size: a one-line fix gets a one-line grounding ("verified `foo.py:rename_flag` still exists"), not a research essay. The recorded section makes grounding auditable and pulls decisions forward to creation time — its honest limit is that it evidences the step was *recorded*, not that grounding was genuinely performed.
+A bug noticed in actual use does not start from a blank change spec: `/capture` fills the capture mode of `templates/change.md` at the moment of noticing, and `/build` extends it at build time.
 
-**Watchlist trigger (conditional).** Before writing the change spec, check the files this change will touch against the repo's `architecture_watchlist.files` in `harness.yaml` (a repo that has not opted in has no watchlist — skip this). When the planned diff intersects the watchlist, add a **`Watchlist trigger`** section recording one of the two valid outcomes: a small behavior-preserving seam extraction, or an explicit deferral with a reason. The mechanism — the trigger, the two outcomes, the no-op when a repo does not opt in — lives in `architecture` → *Architecture watchlist*; the change spec is where its result is recorded.
+### Grounding — measure it, do not recall it
 
-**How deep the Design section goes.** Write it to the depth the *decision* needs and no further. The ticket's **assurance** level, not your judgment while writing, decides whether the work earns a separate design pass at build time: only work labelled for the highest level does, and everything unlabelled resolves to the level that requires none. So a thin Design section is right on a change whose design was never going to be the hard part, and wrong on one carrying a real decision. *Which* level the ticket carries is a different question, and *Choosing assurance* below is where it is answered.
+Verify every fact the spec rests on that names a file, function, flag, version or decision against the code as it is *now* — a recalled fact reflects what was true when it was written.
 
-**Lifecycle sweep (conditional).** For any state-changing operation — a create / update / delete, or anything that mutates stored state — enumerate the **derived artifacts** of the affected entity (caches / query keys, share tokens, counts / aggregates, sessions) and state, per artifact, what happens to it. "Unaffected" is an acceptable answer; silence is not. This is the sweep that catches the write path that ships its primary mutation but drops a derived artifact — a stale cache, an unrevoked share token, a count left un-decremented — the defect class review keeps finding one artifact at a time. Do it at design time, in the change spec, where it is cheapest; a change that mutates no stored state has no sweep to do, so say so and move on.
+Record it as a **Grounding** section: verified facts each anchored to a `path:line` or a measured value, any decision the ticket assumed settled that is actually open, and the open questions. Two rules separate grounding from restating the ticket.
 
-**Scope-claim invariants (conditional).** An invariant stated as a scope claim — "the only consumer", "exactly one home", "nothing else reads this", "the single writer" — is a claim about the whole call graph, not a local fact. Cite the enumeration that establishes it — the grep, or the type followed to its readers — in the spec. If the enumeration finds a second consumer, the invariant is not recorded: it *is* a finding. A scope claim written without its enumeration is worse than none: it launders an open violation into a documented invariant that later review trusts and builds on, and it stops being true the moment a new reader touches the value without that knowledge. The enumeration is one grep; a change that makes no scope claim has none to cite.
+*Use an instrument that can return the answer you are not expecting.* A comparison that follows a symlink cannot tell a copy from a link; a search matching only file paths cannot see a retired flag name. Choose the probe by what would falsify the claim, not by what would confirm it.
 
-**Instrument replacement measures reach (conditional).** When a change **replaces an information source** — a guard rewritten, a document migrated or distilled into a new form, one report replacing another — name what the new form must retain from the old one and review that comparison against the prior source. Use an existing executable or structural check when it proves the contract; a document's semantic reach is reviewed directly, not converted into a wording predicate. A change that *adds* a source rather than replacing one has no prior reach to compare.
+*A completeness claim names the method that produced it and that method's blind spot.* "Every consumer", "the only home", "nothing else reads this" are claims about the whole call graph, so cite the enumeration — the grep, or the type followed to its readers. If it finds a second consumer, the invariant is not recorded: it *is* a finding. A scope claim without its enumeration launders an open violation into a documented invariant that later review trusts.
 
-**File size is never an acceptance criterion.** A change spec states the *structural outcome* a size target is a proxy for — "the engine-protocol layer lives in its own module; the verb file holds only glue; no test imports change" — which is checkable by import structure and tests, not by a raw line count. A quantity gets no size carve-out: if a spec author insists on one, the measuring-test rule applies with no exemption (`engineering` → *Verification* — *a measurable criterion needs a measuring test*): write the test that counts the lines and fails outside the bound, or it is not a criterion. Being forced to write that test is the tell that the number was never the requirement — a cohesive unit split to satisfy a line count moves reader-load up, not down.
+Grounding scales to size: a one-line fix gets a one-line grounding. Where a sub-agent host is available, a read-only sub-agent produces the brief and the executor records it verbatim; otherwise the executor self-grounds inline.
 
-**Challenging a criterion before build.** A builder or designer who finds a criterion wrong — a stale estimate, an impossible bound, the wrong target, or needlessly costly evidence — does not descope it silently. Provide the evidence and a smaller replacement, obtain the owner's approval, and amend the tracker issue before implementation. Build only to the amended criterion. A rationale confined to a commit body or PR description leaves the ticket false.
+### Acceptance criteria
 
-### Choosing assurance
+Each criterion names what it protects and uses ADR 0019's evidence. Three rules decide whether one is writable at all.
 
-Every ticket carries **exactly one** `assurance:<level>` label, chosen when it is filed, and this subsection is the one home for *how that choice is made*. The other direction — which stages a level obliges a run to pay for, and what a run does with a label that is missing, doubled, or unrecognized — is the driving command's (`/build`), **not this rubric's**. The two answer different questions, at different moments, for different readers; neither restates the other.
+**A criterion names evidence the building session can produce, or it names who produces it and when — and a criterion of the second kind does not block a PASS.** Evidence needing a credential the run has not got, a second backend, a board it cannot write, or an operator at a keyboard cannot be closed by building, so a criterion naming one holds the verdict hostage to something no work supplies. Marking it operator-supplied at filing turns a review-time discovery into a known precondition. Measured: a feature-lane ticket shipped with three criteria short of their stated evidence for exactly this reason, unnoticed until the binding.
 
-The label is the **lane**, and the lane is chosen by blast radius:
+*An evidence line names an artefact and its producer, not a class.* "Direct review" and "representative use" are categories from the matrix, not evidence. Write the read, the anchors it is read against, and where the result is recorded — *the reviewer reads the new text against `templates/change.md:41` and records the comparison in the review report*.
+
+*File size is never a criterion.* State the structural outcome the size stands for: the engine-protocol layer lives in its own module, the verb file holds only glue, no test import changes — checkable by import structure and tests. A quantity gets no carve-out; the measuring-test rule applies with no exemption (`engineering`), and being forced to write the counting test is the tell that the number was never the requirement.
+
+A builder who finds a criterion wrong does not descope it silently: give the evidence and a smaller replacement, get the owner's approval, amend the tracker issue before implementing. A rationale confined to a commit body leaves the ticket false.
+
+### Three conditional sections
+
+A change spec may owe a **Watchlist trigger**, a **Lifecycle sweep**, or an **Instrument replacement** section, each present only when its trigger fires. Load [`references/conditional-sections.md`](references/conditional-sections.md) while writing the spec to decide which apply.
+
+## Feature spec
+
+The canonical as-built record of what the product does today, plus the Decision blocks that shaped it. Written by the **reviewer** on PASS, from the diff — never by the builder. It answers "how does X work, and why is it that way?", grouped by user-visible behaviour.
+
+Two things it must not do. It must not enumerate a set the code owns — a class family, a command surface, a reason vocabulary: name the module that owns it, or pair the list with a guard that derives the set and fails when the two disagree. And it must not state a present-tense quantity on its own: the figure names the commit it was measured at, or a guard derives it, or the record restates the invariant the number was evidence for. A prose list with no derivation goes stale at the commit adding the next member, and a count with no anchor falsifies silently.
+
+## Choosing assurance
+
+Every ticket carries exactly one `assurance:<level>` label, chosen at filing, and this is the one home for *how that choice is made*. What each level obliges a run to pay for is the spine's contract and `/build`'s. The lane is chosen by blast radius:
 
 | Level | Lane | Choose it when |
 |---|---|---|
 | `trivial` | Fix | The diff is describable in one sentence, touches no protected area, and adds tests without editing any. |
-| `simple` | Change | The default: one checkable outcome, bounded decisions, no contract change — a normal change, a bug, a missing detail. |
-| `complex` | Feature | The work changes a contract, reaches a protected area, or came from a proposal; or it carries a consequential architecture, data-model, interface, or security decision, or spans more than one interacting lifecycle contract. |
+| `simple` | Change | The default: one checkable outcome, bounded decisions, no contract change. |
+| `complex` | Feature | The work changes a contract, reaches a protected area, came from a proposal, or carries a consequential architecture, data-model, interface or security decision. |
 
 Two rules carry the weight.
 
-**Uncertain is `simple`.** A filer who cannot place the work confidently chooses `simple`, always. Guessing high costs one design pass; guessing low costs the independent read that would have caught the guess.
+*Uncertain is `simple`*, always: guessing high costs one design pass, guessing low costs the independent read that would have caught the guess.
 
-**Never infer `trivial` from a ticket calling the work minor, a short description, or a small estimated diff alone.** All three are properties of a ticket's *text*, written by whoever filed it and influenceable by anyone who can open an issue — and three of the surfaces that file tickets are agents acting on content someone else wrote. What earns the fix lane is the **diff**: one sentence, no protected area, no test edited. A ticket cannot argue its way down, and the run may only raise a lane, never lower it (upgrade-only) — so a diff that outgrows its lane becomes a change or a feature mid-run, with the reason recorded. **A protected area is the exception, and the difference matters:** an ordinary outgrown lane is upgraded and the run continues, while reaching a protected area *stops and holds* (`input`, assigned) whatever the lane says. Upgrading the label is not an alternative to the hold — it is what the operator does when releasing it. What trips it is the **diff**, not the spec's list — that list says where to watch, and a ticket may name an area its diff never touches.
-
-The fix lane is deliberately **cheap or unused**: no ticket, no reviewer sub-agent, no as-built record, with the gate and the push guard as the whole assurance. That trade is decided (D2), and the reason it is worth taking is what the alternative costs — a lane nobody can afford is a lane every one-line fix routes around, which erodes the boundary for the changes that genuinely need the review.
-
-## Feature spec
-
-The canonical, as-built record of what the product does today, plus the decisions that shaped it (Decision blocks). Written by the **reviewer** on PASS, from the diff — never by the builder (the spine (`AGENTS.md`)). See `templates/feature.md`. It answers "how does X work, and why is it that way?", grouped by user-visible behaviour, with the data model and interface surface that back it.
-
-An as-built record must not enumerate a set the code owns — a class family, a command surface, or a reason vocabulary. Name the module that owns it and stop; or, where the list genuinely aids the reader, pair it with a guard that derives the set from the code and fails when the two disagree. A prose list with no derivation is a claim nothing measures, and it goes stale at the commit that adds the next member.
-
-An as-built record must not state a present-tense quantity on its own: the figure names the commit it was measured at, or a guard derives it and fails when tree and claim disagree, or the record restates it as the invariant the number was evidence for, because a count with no anchor falsifies silently at the next commit that touches its subject.
+*Never infer `trivial` from a ticket calling the work minor, a short description, or a small estimated diff.* All three are properties of a ticket's text, written by whoever filed it and influenceable by anyone who can open an issue; what earns the fix lane is the diff. A ticket cannot argue its way down, and a run may only raise a lane, never lower it, so a diff that outgrows its lane becomes a change or a feature mid-run with the reason recorded. Reaching a protected area is the exception: that stops and holds whatever the lane says, and raising the label is what the operator does when releasing the hold, not a substitute for it.
 
 ## Quality bar
 
-A spec is ready when its type is right, its design is specified to the depth the work needs (an implementer would not have to invent a contract mid-build), the decisions behind it are recorded in place, each criterion names what it protects and has evidence suited to its subject, and it holds no unresolved decision presented as settled. The reviewer checks change and feature specs against this bar (`review-discipline` Stage 1).
+A spec is ready when its type is right, its design is specified to the depth the work needs, its decisions are recorded in place, each criterion names what it protects and has producible evidence, and no unresolved decision is presented as settled. The reviewer checks it against this bar (`review-discipline`).

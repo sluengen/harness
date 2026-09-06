@@ -16,7 +16,8 @@
         "Each finding carries all four parts: what, where (file:line or section), why (the rule or criterion it violates), and a concrete fix",
         "Each finding is placed as blocking or non-blocking and small or large",
         "The review ends in exactly one of PASS, FAIL or DEFER",
-        "The review states what happened to every test file in the diff, naming the property that moved"
+        "The review states what happened to every test file in the diff, naming the property that moved",
+        "Every finding states BOTH axes \u2014 blocking or not, AND small or large \u2014 at the finding itself or in a placement table; a blanket 'all findings are blocking' does not discharge it"
       ]
     },
     {
@@ -33,7 +34,9 @@
         "The review does not go hunting for improvements beyond the mandate",
         "Any improvement it trips over is proposed (a line in a Proposals section, and an entry appended to the improvement ledger), not filed as a ticket",
         "The report carries a Proposals section, or the word none, rather than omitting it",
-        "The review ends in exactly one of PASS, FAIL or DEFER"
+        "The review ends in exactly one of PASS, FAIL or DEFER",
+        "Every finding states BOTH axes \u2014 blocking or not, AND small or large \u2014 at the finding itself or in a placement table",
+        "Where the review cannot reach a ledger, it writes the proposal's full entry into the report rather than recording that an append is owed"
       ]
     },
     {

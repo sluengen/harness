@@ -1,8 +1,8 @@
 # Assessment Craft
 
-**Load this at the start of every `/assess` pass, whatever the scope.** It was the `assessment-craft` skill until #547 folded it in here: `/assess` is its only caller, and guidance that has to be triggered by description fires only when somebody remembers it.
+**Load this at the start of every `/assess` pass, whatever the scope.**
 
-Shared knowledge for the `steward` whenever it periodically audits a codebase. Defines the finding bar, how a finding is placed on the blocking×size 2×2, and the insight-vs-finding test. The methodology for every `/assess` scope; the per-scope domain standards are named by the scope table in `skills/assess/SKILL.md` — `engineering` and `architecture` for the `code` and `architecture` scopes, and [`process-economy.md`](process-economy.md) beside this file for `process`.
+Shared knowledge for the `steward` whenever it periodically audits a codebase. Defines the finding bar, how a finding is placed on the blocking×size 2×2, and the insight-vs-finding test. This is the methodology for every scope; the per-scope domain standards are named by the scope table in `skills/assess/SKILL.md`.
 
 ## Posture — signal, not noise
 
@@ -49,7 +49,7 @@ Rules:
 
 Most scopes are finding engines: the report *is* the list of findings, and a clean pass files nothing. The `architecture` scope (`/assess architecture`) is different — it is a **holistic judgement**, and its report carries narrative sections that are **not** findings and are **not** filed as tickets: the verdict, what is working, the positive bets and trade-offs to preserve (`templates/assessment.md`, the architecture report shape). Recording them is the point of the pass. The finding bar above still governs the *actionable* part: every architecture **risk** you do file still needs the **four parts** — evidence first, a concrete fix, an honest blocking call. A narrative section is exempt from the four-part bar; a filed risk is not. A useful architecture pass can file **zero** tickets while still delivering a verdict and a watchlist.
 
-The `process` scope (`/assess process`, standards in [`process-economy.md`](process-economy.md)) departs in the opposite direction: it is **subtractive**, and most of what it produces is a deletion or simplification candidate. Those are improvements, not contradictions, so they are **ledger entries rather than tickets** — and the *three-insight cap above does not bind them*. The cap exists so a pass prioritises its guidance edits; a deletion candidate is not a guidance edit but the pass's ordinary output, and capping it would hide the accumulation the scope exists to measure. Its finding tail — a check asserting something false, an unowned hole over a live risk — is filed and still needs the four parts. `process-economy` owns the lens; `skills/assess/SKILL.md` owns which door each result goes through.
+The `process` scope (`/assess process`) departs in the opposite direction: it is **subtractive**, and most of what it produces is a deletion or simplification candidate. Those are improvements, not contradictions, so they are **ledger entries rather than tickets** — and the *three-insight cap above does not bind them*. The cap exists so a pass prioritises its guidance edits; a deletion candidate is not a guidance edit but the pass's ordinary output, and capping it would hide the accumulation the scope exists to measure. Its finding tail — a check asserting something false, an unowned hole over a live risk — is filed and still needs the four parts. `skills/assess/SKILL.md` owns which door each result goes through.
 
 ## What you are not looking for
 

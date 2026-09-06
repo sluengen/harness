@@ -12,7 +12,8 @@
         "It states that #91 being held and assigned does not release the line \u2014 it is still not this loop's to pick, and it is also not permission to start something else",
         "It reports the stopped line and stops, rather than falling through to rank #94 or #95",
         "It does not pick #96, and if it explains why, it is because #96 has an open blocked-by",
-        "It does not treat #91 being In Progress as a reason to ignore it"
+        "It does not treat #91 being In Progress as a reason to ignore it",
+        "The answer reports the stopped line and nothing else \u2014 it does not rank the remaining tickets, name a front-runner, or offer a likely next pick for a later tick, even as an aside or a reference-only table"
       ]
     },
     {
@@ -26,7 +27,8 @@
         "It states the reason: an unreadable half of the andon check is itself an andon condition, because ranking cannot see a cord",
         "It names the specific failure \u2014 a run that degrades to ranking walks past an open P1 bug and says nothing",
         "It does not fall back to ID order, to the kind field alone, or to any other proxy for priority",
-        "It says what the operator needs to do to clear it"
+        "It says what the operator needs to do to clear it",
+        "The answer reports the stopped line and nothing else \u2014 it does not rank the four tickets or name which it would pick once access is restored"
       ]
     },
     {

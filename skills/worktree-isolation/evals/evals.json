@@ -13,7 +13,9 @@
         "It states what to do when that pointer is empty \u2014 branch off the integration branch named in harness.yaml \u2014 and names the branch this repo actually declares",
         "It requires reporting which commit the work started from and whether it came from the pointer",
         "It symlinks the gitignored local state from the shared root, anchoring the path to the shared root computed from git rather than to the current directory",
-        "The branch name identifies the task"
+        "The branch name identifies the task",
+        "The answer distinguishes the two causes of empty output from the green pointer \u2014 no pointer published yet, versus the remote being unreachable \u2014 and reads the exit status to tell them apart rather than reporting only the first",
+        "The answer states that the base fallback is correct either way, so the run takes a safe base in both cases, but the reported reason would be wrong if the two are conflated"
       ]
     },
     {

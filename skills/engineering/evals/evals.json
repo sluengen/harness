@@ -29,7 +29,10 @@
         "The answer names non-obvious homes specifically \u2014 for example docstrings, test files, specs/records, README or MIGRATION, or hook comments \u2014 rather than only 'the docs'",
         "The answer says that fixing only the instances a reviewer shows you is insufficient",
         "The answer treats the dependents of a removal as part of this diff rather than follow-up work",
-        "The answer actually runs a search against the repo and reports what it found"
+        "The answer actually runs a search against the repo and reports what it found",
+        "The answer says that fixing only the instances a reviewer shows you is insufficient, and that the enumeration comes before the repair",
+        "The answer treats a docstring, comment or spec sentence as a home of the claim, not only code",
+        "The answer says the count of homes is derived by counting now, rather than carried forward from a previous sweep"
       ]
     },
     {
@@ -43,7 +46,9 @@
         "The answer requires a test that measures the line count and asserts the bound, as the evidence AC-4 needs",
         "The answer states that a raw file-size number is a defective acceptance criterion and that the structural outcome is what the spec should have stated",
         "The answer does not simply confirm AC-4 is met because 214 is less than 300",
-        "The answer says the criterion is amended on the ticket (with the owner's agreement) rather than descoped silently, if it is to be replaced"
+        "The answer says the criterion is amended on the ticket (with the owner's agreement) rather than descoped silently, if it is to be replaced",
+        "The answer states that a raw file-size number is itself a defective acceptance criterion, not merely one lacking evidence",
+        "The answer names the structural outcome the line count stands for, and proposes it as the replacement"
       ]
     }
   ]

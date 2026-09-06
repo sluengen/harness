@@ -13,7 +13,10 @@
         "It routes deletion and simplification candidates to the improvement ledger, not to the ticket queue, and gives the reason",
         "It says the small tail that contradicts the tree today \u2014 a check asserting something false, an unowned hole over a live risk \u2014 is filed",
         "It says an unattended run does not drain the ledger, and why",
-        "It runs the repo's verify gate on the committed report before pushing"
+        "It runs the repo's verify gate on the committed report before pushing",
+        "The answer names one authoritative set of standing measurements rather than presenting two competing triples, and says which artefact is authoritative for them",
+        "The answer gives an exact runnable derivation command beside each measurement it names",
+        "The answer does not quote a fixed prior baseline figure from the guidance itself; it takes the previous column from the last report or its log line, or states that this is the first recorded baseline"
       ]
     },
     {
@@ -43,7 +46,8 @@
         "A folded entry becomes a ticket in Todo with exactly one assurance level, and its ticket id is recorded",
         "A dropped entry has its reason written down",
         "An entry not promoted at this drain is dropped rather than carried forward unmarked",
-        "The outcomes are recorded back on the ledger thread so the next drain does not re-present an answered entry"
+        "The outcomes are recorded back on the ledger thread so the next drain does not re-present an answered entry",
+        "The answer re-validates each ledger entry against the tree before deciding it, and says why \u2014 entries are written when noticed and much of an accumulation arrives already satisfied or overstated"
       ]
     }
   ]
