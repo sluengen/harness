@@ -132,9 +132,38 @@ const MARKER_SUBDIR = ["harness", "gate"];
 //: the message it emits cannot disagree about which file is missing.
 const SIBLING_PARSER = "git-push-guard.js";
 
-//: The cap on a path echoed into a diagnostic, the same 200 the sibling hook
-//: names. A path is repo-controlled text, so it is truncated, never trusted.
+//: The cap on a value echoed into a diagnostic, the same 200 the sibling hook
+//: names — and the sibling makes the same split, so the pair still answers this
+//: question the same way (#568). A path is repo-controlled text, so it is
+//: truncated, never trusted.
 const MAX_REPORTED_PATH = 200;
+
+//: The cap on a path a refusal tells the operator to **open** or to act on,
+//: which is a different job from bounding a diagnostic and needs a different
+//: number (#568). A marker path is `<root>/.git/harness/gate/<40 hex>.json` — a
+//: 64-character tail — so 200 cut the filename off any repo checked out more
+//: than ~136 characters deep, and the operator was sent to `...b7c.jso`.
+//: Linux's PATH_MAX is 4096, macOS's 1024; the larger covers both.
+//:
+//: The arm below is reachable: `mergeAcceptance`'s scope clause reports a
+//: repo-relative path out of `git diff-tree`, which compares two tree oids, so
+//: that value is never checked out and passes no syscall that would cap it —
+//: git accepts and prints back a 5000-character path. `test_reportable_path_bound`
+//: covers the arm for every caller by driving this helper directly, which is why
+//: no per-caller reachability argument is made here: three were written for #568
+//: and all three were false, each forgetting the 64-character tail named above
+//: that `markerPath` appends *after* whatever bound applies.
+//:
+//: The widening from 200 to 4096 is what `MAX_REPORTED_PATH`'s injection ground
+//: above applies to,
+//: and `uncovered` is the argument that ground was written for: repo-controlled,
+//: unbounded, chosen by anyone who can commit a path. Kept at 4096 rather than
+//: capped tighter because the operator cannot re-gate a path they were handed
+//: half of — the defect this ticket exists to fix — and the residual is stated
+//: rather than assumed: the value is interpolated through `JSON.stringify`,
+//: which escapes quotes and control characters, and the whitespace collapse
+//: below removes the newline shape a prompt would need.
+const MAX_REPORTED_FILE_PATH = 4096;
 
 //: Used when a repo declares no branches. Deliberately over-broad: a false deny
 //: is recoverable in one command (run the gate), a false allow lands unverified
@@ -278,13 +307,22 @@ function scopeFault(value) {
   return `its \`scope\` field is ${kind}, not an array of path strings`;
 }
 
-/** A value made safe to inject into a refusal: whitespace-collapsed and bounded.
+/** A path made safe to inject into a refusal: whitespace-collapsed and bounded.
  *
- * The ``failOpen`` idiom, and the sibling Stop hook's, because a reason is
- * written straight into the model's context.
+ * Whitespace-collapsed for the ``failOpen`` reason — a reason is written
+ * straight into the model's context. Bounded at ``MAX_REPORTED_FILE_PATH``
+ * rather than the diagnostic cap, because this path is the remedy: the reader
+ * is told to open the file it names, so a bound that can cut a real path in
+ * half is not a safety measure but a wrong answer (#568).
  */
 function reportable(value) {
-  return String(value).replace(/\s+/g, " ").slice(0, MAX_REPORTED_PATH);
+  const flat = String(value).replace(/\s+/g, " ");
+  if (flat.length <= MAX_REPORTED_FILE_PATH) return flat;
+  // Past PATH_MAX no suffix of this string names a real file, so the only
+  // honest thing left is to say the cut happened. A silently shortened path
+  // reads as a real one, which is the #568 defect: the reader cannot tell a
+  // path they should open from one that was truncated out of existence.
+  return `${flat.slice(0, MAX_REPORTED_FILE_PATH)}[... truncated at ${MAX_REPORTED_FILE_PATH} characters]`;
 }
 
 /** The fresh marker covering ``tree``, as ``{scope}``, or ``null`` if there is none.
@@ -410,6 +448,10 @@ const reportedUnreadable = new Set();
  * measures the bound.
  */
 function noticeUnreadableDeclaration(file) {
+  // Stays on MAX_REPORTED_PATH, deliberately (#568 AC-4). This names *which*
+  // declaration was skipped so the operator can tell which file the notice is
+  // about; it prescribes nothing to open. A cut name degrades a diagnostic,
+  // where a cut path in a refusal is a wrong instruction.
   const name = String(file);
   if (reportedUnreadable.has(name)) return;
   reportedUnreadable.add(name);
@@ -870,7 +912,7 @@ function mergeAcceptance(dir, move, pushedTree, marker, remote) {
   );
   if (uncovered === undefined) return null;
   return (
-    `it authored ${JSON.stringify(uncovered.slice(0, MAX_REPORTED_PATH))}, which falls ` +
+    `it authored ${JSON.stringify(reportable(uncovered))}, which falls ` +
     "outside the scope its gate marker records"
   );
 }
@@ -1093,6 +1135,7 @@ if (require.main === module) {
 module.exports = {
   isLiteralDir,
   markerPath,
+  reportable,
   maxAgeSeconds,
   declaredBranches,
   protectedBranches,
