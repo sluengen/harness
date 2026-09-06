@@ -104,11 +104,18 @@ resolver is what changes, not the command.
    returns, and record in the repo's infrastructure spec that you did.
 
 5. **Back-merge after the release hop.** When the release branch gains commits
-   the integration branch does not have — the merge commit, a release-time
-   version bump, a hotfix — merge release back into integration promptly.
-   Skipping it makes every later promotion carry a phantom divergence that
-   surfaces as a conflict on somebody else's ticket. The back-merge is part of
-   the release, not housekeeping to remember afterwards.
+   the integration branch does not have — the merge commit, a hotfix — merge
+   release back into integration promptly. Skipping it makes every later
+   promotion carry a phantom divergence that surfaces as a conflict on
+   somebody else's ticket. The back-merge is part of the release, not
+   housekeeping to remember afterwards.
+
+   **A version bump is not one of those commits.** A release identifier is
+   raised at the *start* of a cycle, on the integration branch, by the first
+   change to land after the previous release. Raising it here is too late by
+   construction: the release ships content the old identifier does not
+   distinguish, so a consumer updating between the hop and the bump is told
+   it is already current over bytes that changed.
 
 ## What this command must never do
 
