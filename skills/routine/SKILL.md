@@ -1,7 +1,8 @@
 ---
 name: routine
-description: "/routine — one unattended build cycle. Use when the operator invokes `/routine` or asks to run that workflow. Operator-triggered only; the model does not fire it."
-disable-model-invocation: true
+description: "/routine — one unattended build cycle. Use when the operator invokes `/routine` or asks to run that workflow. Invoked by the operator, and reachable by an unattended scheduled run: this skill is the versioned home of the prompt such a run pastes, so `disable-model-invocation` is deliberately not set here — it would refuse the caller the command exists for (#564)."
+model: inherit
+effort: high
 ---
 
 The portable plugin root is two directories above this SKILL.md. Resolve embedded paths beginning `skills/`, `agents/`, `templates/`, `hooks/`, or `.codex/` from that root; resolve repository artifacts from the workspace root.

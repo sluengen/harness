@@ -3,7 +3,7 @@
 📖 **[Read the one-page guide →](https://sluengen.github.io/harness/)** — the operating model at a glance. (This README stays the canonical text; the page is its visual companion.)
 
 **A spec-driven development process for agent-driven repos, shipped natively for
-Claude Code and Codex**: nine lifecycle workflows, the craft skills behind them, four agent
+Claude Code and Codex**: nine lifecycle workflows, the craft skills behind them, five agent
 roles, and enforcement hooks that make a green gate the only path to a shared
 branch.
 
@@ -95,14 +95,16 @@ accept both hosts' payload and output contracts.
 Small fixes need no command and no ticket: the fix lane is the same isolation
 and the same gate, invoked by asking.
 
-## The triad
+## How and what
 
-Three skills split *how* from *what*: `engineering` (build), `architecture`
-(design and decide), `infrastructure` (operate and promote). Each is a generic
-skill body, a plugin asset where the argued rationale accretes, and a repo
-asset seeded by `init` — the repo's own stack, decisions, and topology. The
-builder and the reviewer read the same files, so the bar is identical on both
-sides.
+Two skills split *how* from *what*: `engineering` (build) and `architecture`
+(design and decide). Each is a generic skill body, a plugin asset where the
+argued rationale accretes, and a repo asset seeded by `init` — the repo's own
+stack and decisions. Promotion is the third of that job and is `/promote`'s: it
+transcribes the whole loop, so a separate skill restating it was a second copy
+and #547 retired it; the repo's own topology stays in its infrastructure spec.
+The builder and the reviewer read the same files, so the bar is identical on
+both sides.
 
 ## This repo
 
@@ -130,8 +132,9 @@ candidate — what lands is exactly the tree that was gated
 ## Related
 
 - **Why it is shaped this way:** [`specs/decisions/`](./specs/decisions/) —
-  ADR 0015 (the verification layer), ADR 0017 (the plugin shape); retired
-  designs live under [`specs/retired/`](./specs/retired/).
+  ADR 0015 (the verification layer), ADR 0017 (the plugin shape). Retired
+  designs and settled proposals are not carried in the tree — #547 removed
+  them; git history is the record.
 - **Design ancestry:** inspired by [Archon](https://github.com/coleam00/Archon)
   and Anthropic's "build skills, not agents" guidance. Greenfield rewrite, not
   a fork.

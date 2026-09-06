@@ -2,6 +2,8 @@
 name: promote
 description: "/promote — move completed work toward release. Use when the operator invokes `/promote` or asks to run that workflow. Operator-triggered only; the model does not fire it."
 disable-model-invocation: true
+model: inherit
+effort: medium
 ---
 
 The portable plugin root is two directories above this SKILL.md. Resolve embedded paths beginning `skills/`, `agents/`, `templates/`, `hooks/`, or `.codex/` from that root; resolve repository artifacts from the workspace root.
@@ -69,19 +71,63 @@ resolver is what changes, not the command.
 4. **On green, publish.** The hop selects the mechanism:
    - `<dst>` is an **intermediate** branch (e.g. `staging`): push the merged
      tree directly to the target ref. No PR — the gate already made the call.
-   - `<dst>` is the **release** branch (e.g. `main`): push only the promotion
-     branch, never the target directly, and open a PR into the target carrying
-     the commit range and the gate evidence. A human merges it.
+   - `<dst>` is the **release** branch (e.g. `main`): a protected release
+     branch's required check commonly comes from a `push`-triggered run on a
+     named branch or a `pull_request`-triggered run scoped to particular base
+     branches — not from an arbitrary PR head. Check whether the merge is
+     **content-trivial**: `<dst>`, relative to its merge base with `<src>`,
+     contributes no content, so the merge's tree equals `<src>`'s own tip tree.
+     - **Content-trivial:** open the PR with **head `<src>` itself** and push
+       nothing new. `<src>` is already pushed, so its tip already carries
+       whatever check its own `push` trigger raised, and the PR inherits that
+       check by head-SHA association. A synthetic promotion branch's head
+       commit was never pushed anywhere on its own; if the target repo's CI
+       does not *also* run `pull_request` checks based on `<dst>`, that head
+       gets no check run at all, and a branch that requires the check blocks
+       the PR permanently, not just slowly.
+     - **Not content-trivial** (`<dst>` carries commits `<src>` does not):
+       `<src>`'s own tip no longer stands in for what will land. Push the
+       merge to a promotion branch and open the PR from it, but first confirm
+       the target repo's CI actually raises the required check for a PR
+       shaped that way (a `pull_request` trigger whose base matches `<dst>`,
+       or a `push` trigger matching the promotion branch's name). If it does
+       not, treat it as the same stop condition as an unrunnable gate: do not
+       open a PR nothing can ever check — stop and report instead.
+
+     Either way, the PR body carries the commit range and the gate evidence,
+     and a human merges it — this command never merges its own PR.
+
+   A protected target that can only advance through a pull request cannot be
+   fast-forwarded: a merged PR always writes a commit the source does not
+   carry. Assert the property fast-forwarding was protecting instead — **the
+   tree that lands equals the tree the gate certified** — on the merge the API
+   returns, and record in the repo's infrastructure spec that you did.
+
+5. **Back-merge after the release hop.** When the release branch gains commits
+   the integration branch does not have — the merge commit, a hotfix — merge
+   release back into integration promptly. Skipping it makes every later
+   promotion carry a phantom divergence that surfaces as a conflict on
+   somebody else's ticket. The back-merge is part of the release, not
+   housekeeping to remember afterwards.
+
+   **A version bump is not one of those commits.** A release identifier is
+   raised at the *start* of a cycle, on the integration branch, by the first
+   change to land after the previous release. Raising it here is too late by
+   construction: the release ships content the old identifier does not
+   distinguish, so a consumer updating between the hop and the bump is told
+   it is already current over bytes that changed.
 
 ## What this command must never do
 
 - **Push the release branch directly.** This command never direct-pushes the
-  `release` role's branch. The release hop pushes a promotion branch and opens
-  a PR; that is this command's whole mechanism. The one path that may advance
-  release **unattended** is a repo's own promotion automation where its recorded
-  topology decision says so (this repo's nightly `dev → main`, ADR 0003 as
-  amended — see its infrastructure asset); how that automation lands the hop,
-  PR or otherwise, is its script's business and never this command's.
+  `release` role's branch. The release hop opens a PR into it — from `<src>`
+  itself when the merge is content-trivial, otherwise from a promotion branch
+  — and never pushes `<dst>`; that is this command's whole mechanism. The one
+  path that may advance release **unattended** is a repo's own promotion
+  automation where its recorded topology decision says so (this repo's
+  nightly `dev → main`, ADR 0003 as amended — see its infrastructure asset);
+  how that automation lands the hop, PR or otherwise, is its script's business
+  and never this command's.
 - **Auto-merge the release PR.** Opening it is this command's job; merging it
   is a human/CI act.
 - **Repair a conflict or a red gate.** Both are stop conditions. A promotion
@@ -93,9 +139,14 @@ resolver is what changes, not the command.
 
 A stopped hop is a normal outcome, not an error. Report it: the source and
 target branches, the conflicting files or the gate output tail, and the branch
-and worktree left in place to inspect. Where the repo has a tracker, file that
-report as a ticket through the provider skill so it is not lost when the
-session ends, carrying exactly one assurance level chosen per `spec-authoring`
+and worktree left in place to inspect. A red gate on a candidate is a finding
+against the **source** branch — fix it there and re-promote; never patch the
+candidate. An **infrastructure** failure (a missing toolchain, absent
+credentials, an unclean base) is a different outcome from a red tree: the gate
+reserves an exit code for it, and it stops the run without filing blame against
+the code. Where the repo has a tracker, file that
+report as a ticket through `tracker` so it is not lost when the
+session ends, carrying exactly one assurance level chosen per `authoring`
 → *Choosing assurance*. Where it does not, the report to the operator is the
 record.
 

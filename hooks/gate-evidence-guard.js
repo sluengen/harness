@@ -157,6 +157,17 @@ const MAX_DERIVED_CHECKED = 4;
 //: the newline-injection shape and the bound keeps the reason readable.
 const MAX_REPORTED_PATH = 200;
 
+//: The cap on a path this hook tells the operator to **open** or to run in.
+//: The twin of `push-target-guard.js`'s constant, for the same reason and at
+//: the same number: `Expected marker:` hands over a
+//: `<root>/.git/harness/gate/<40 hex>.json` whose fixed 64-character tail was
+//: exactly what 200 cut off, and `Run the repo verify command ... in <dir>`
+//: names a directory to change into. Both are remedies, not diagnostics. See
+//: that file's block for why PATH_MAX is the bound and why the marked-cut arm
+//: is covered by driving the helper directly rather than by an argument about
+//: which callers can reach it (#568).
+const MAX_REPORTED_FILE_PATH = 4096;
+
 /**
  * Fail open, loudly. See the identical helper in the other hooks (#303): the
  * approving payload still goes out, but stderr says this hook did not run, so a
@@ -354,6 +365,10 @@ const reportedUnreadable = new Set();
  * measures the bound.
  */
 function noticeUnreadableDeclaration(file) {
+  // Stays on MAX_REPORTED_PATH, deliberately (#568 AC-4), for the reason its
+  // twin in `push-target-guard.js` states: this names *which* declaration was
+  // skipped and prescribes nothing to open, so a cut name degrades a diagnostic
+  // where a cut path in a refusal is a wrong instruction.
   const name = String(file);
   if (reportedUnreadable.has(name)) return;
   reportedUnreadable.add(name);
@@ -747,7 +762,9 @@ function verdictFor(dir) {
  * ``failOpen`` idiom, because ``reason`` is written straight into the model's
  * context. */
 function reportable(value) {
-  return String(value).replace(/\s+/g, " ").slice(0, MAX_REPORTED_PATH);
+  const flat = String(value).replace(/\s+/g, " ");
+  if (flat.length <= MAX_REPORTED_FILE_PATH) return flat;
+  return `${flat.slice(0, MAX_REPORTED_FILE_PATH)}[... truncated at ${MAX_REPORTED_FILE_PATH} characters]`;
 }
 
 function block(reason) {
@@ -841,6 +858,7 @@ if (require.main === module) {
 // still measures the arm a shared reader cannot make vacuous — that each hook's
 // protected set really is derived from the declaration.
 module.exports = {
+  reportable,
   markerPath,
   maxAgeSeconds,
   currentTree,

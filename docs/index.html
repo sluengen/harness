@@ -4,17 +4,17 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>harness — a spec-driven development process, shipped as native plugins for Claude Code and Codex</title>
-<meta name="description" content="harness: a spec-driven development process for agent-driven repos, shipped as native plugins for Claude Code and Codex. Nine lifecycle workflows, twenty-eight skill packages, four agent roles, and hooks that make a green gate the only path to a shared branch." />
+<meta name="description" content="harness: a spec-driven development process for agent-driven repos, shipped as native plugins for Claude Code and Codex. Nine lifecycle workflows, sixteen skill packages, five agent roles, and hooks that make a green gate the only path to a shared branch." />
 <link rel="icon" type="image/png" sizes="32x32" href="favicon.png" />
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <meta property="og:type" content="website" />
 <meta property="og:url" content="https://sluengen.github.io/harness/" />
 <meta property="og:title" content="harness — native plugins for Claude Code and Codex" />
-<meta property="og:description" content="Let the agent do the judgement work; make the repo own the evidence. Nine lifecycle workflows, portable skills, four agent roles, and hooks that refuse." />
+<meta property="og:description" content="Let the agent do the judgement work; make the repo own the evidence. Nine lifecycle workflows, portable skills, five agent roles, and hooks that refuse." />
 <meta property="og:image" content="https://sluengen.github.io/harness/og-card.png" />
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="harness — native plugins for Claude Code and Codex" />
-<meta name="twitter:description" content="Let the agent do the judgement work; make the repo own the evidence. Nine lifecycle workflows, portable skills, four agent roles, and hooks that refuse." />
+<meta name="twitter:description" content="Let the agent do the judgement work; make the repo own the evidence. Nine lifecycle workflows, portable skills, five agent roles, and hooks that refuse." />
 <meta name="twitter:image" content="https://sluengen.github.io/harness/og-card.png" />
 <style>
   :root{
@@ -178,15 +178,15 @@
     <h1>A spec-driven development process<br /><span class="accent">for agent-driven repos.</span></h1>
     <p class="thesis">
       <b>harness</b> is a development process shipped as native plugins for Claude Code and Codex:
-      nine lifecycle workflows, portable skills, four agent roles, and enforcement hooks that make a
+      nine lifecycle workflows, portable skills, five agent roles, and enforcement hooks that make a
       green gate the only path to a shared branch. Install it, initialize the repo, and the repo owns
       its own contract from then on.
     </p>
     <p class="creed">Let the agent do the judgement work; make the repo own the evidence.</p>
     <ul class="counts">
       <li><b>9</b> workflows</li>
-      <li><b>24</b> skills</li>
-      <li><b>4</b> agents</li>
+      <li><b>16</b> skills</li>
+      <li><b>5</b> agents</li>
       <li><b>6</b> hooks</li>
       <li><b>1</b> gate</li>
     </ul>
@@ -352,7 +352,7 @@ Codex: ask to initialize Harness</pre>
     <div class="grid2">
       <article class="card inv inv--commands">
         <h3>Workflows <span class="n">9</span></h3>
-        <p>The entry points, on both hosts. Each ships once, as a skill; seven are operator-triggered only, and <code>/build</code> and <code>/review</code> stay model-invocable because the workflows compose.</p>
+        <p>The entry points, on both hosts. Each ships once, as a skill; six are operator-triggered only, and <code>/routine</code>, <code>/build</code> and <code>/review</code> stay model-invocable because each answers to a caller that is not a human at a prompt.</p>
         <ul class="units">
           <li class="unit" data-unit="skill:build"><code>/build</code><span>Implement, verify, review, and ship a ticket — the one lifecycle driver.</span></li>
           <li class="unit" data-unit="skill:capture"><code>/capture</code><span>File an already-decided change straight to Todo.</span></li>
@@ -367,11 +367,12 @@ Codex: ask to initialize Harness</pre>
       </article>
 
       <article class="card inv inv--agents">
-        <h3>Agents <span class="n">4</span></h3>
-        <p>Claude's roles. Codex dispatches the same four through its native adapters in <code>.codex/agents/</code>.</p>
+        <h3>Agents <span class="n">5</span></h3>
+        <p>Claude's roles. Codex dispatches the same five through its native adapters in <code>.codex/agents/</code>.</p>
         <ul class="units">
           <li class="unit" data-unit="agent:dev"><code>dev</code><span>Implementation — test-first, strictly in scope, verified before handoff.</span></li>
           <li class="unit" data-unit="agent:reviewer"><code>reviewer</code><span>The final gate before merge; records what actually shipped on PASS.</span></li>
+        <li class="unit" data-unit="agent:reviewer-feature"><code>reviewer-feature</code><span>The same reviewer at feature-lane depth: the lane picks the definition, the frontmatter sets the cost.</span></li>
           <li class="unit" data-unit="agent:architect"><code>architect</code><span>Data models, contracts, decisions — design artifacts, never code.</span></li>
           <li class="unit" data-unit="agent:steward"><code>steward</code><span>Periodic health assessment: the cross-file patterns no per-change review sees.</span></li>
         </ul>
@@ -392,24 +393,16 @@ Codex: ask to initialize Harness</pre>
     </div>
 
     <article class="card inv inv--skills" style="margin-top:20px">
-      <h3>Craft skills <span class="n">15</span></h3>
-      <p>Loaded by task, not all at once — 15 of them, alongside the nine workflows above. Both hosts read the same files.</p>
+      <h3>Craft skills <span class="n">7</span></h3>
+      <p>Loaded by task, not all at once — 7 of them, alongside the nine workflows above. Both hosts read the same files.</p>
       <ul class="units units--two">
-        <li class="unit" data-unit="skill:engineering"><code>engineering</code><span>The build leg of the triad: durable principles, test-first method, scope, the gate.</span></li>
+        <li class="unit" data-unit="skill:engineering"><code>engineering</code><span>The build half of how and what: durable principles, test-first method, scope, the gate.</span></li>
         <li class="unit" data-unit="skill:architecture"><code>architecture</code><span>The design leg: cross-cutting decisions, recorded in the spec they govern.</span></li>
-        <li class="unit" data-unit="skill:infrastructure"><code>infrastructure</code><span>The operate leg: promotion, release, CI/CD, what a gate means at each boundary.</span></li>
-        <li class="unit" data-unit="skill:spec-authoring"><code>spec-authoring</code><span>The craft of writing any spec — proposal, change, or as-built.</span></li>
+        <li class="unit" data-unit="skill:authoring"><code>authoring</code><span>The craft of anything a downstream agent reads and acts on — a spec, a ticket body, a design hand-off, and the prose all three are written in.</span></li>
         <li class="unit" data-unit="skill:review-discipline"><code>review-discipline</code><span>Spec compliance then quality, and the defect classes that read as green.</span></li>
-        <li class="unit" data-unit="skill:systematic-debugging"><code>systematic-debugging</code><span>Reproduce, isolate the root cause, fix minimally, prove it fixed.</span></li>
         <li class="unit" data-unit="skill:worktree-isolation"><code>worktree-isolation</code><span>Every multi-commit task on its own branch in its own worktree.</span></li>
         <li class="unit" data-unit="skill:work-discovery"><code>work-discovery</code><span>How an unattended routine picks its own next ticket, and what it must skip.</span></li>
-        <li class="unit" data-unit="skill:assessment-craft"><code>assessment-craft</code><span>The finding bar for a periodic audit, and the insight-versus-finding test.</span></li>
-        <li class="unit" data-unit="skill:process-economy"><code>process-economy</code><span>What the assurance machinery costs and what it buys — vacuous checks, theatre, gate waste.</span></li>
-        <li class="unit" data-unit="skill:ux-design"><code>ux-design</code><span>Designing a user-facing surface — flow, information architecture, every state.</span></li>
-        <li class="unit" data-unit="skill:design-system"><code>design-system</code><span>Building UI with a repo's own tokens and primitives rather than degrading them.</span></li>
-        <li class="unit" data-unit="skill:writing-quality"><code>writing-quality</code><span>Plain prose; kill the predictable AI-writing patterns.</span></li>
-        <li class="unit" data-unit="skill:github-issues"><code>github-issues</code><span>The GitHub provider recipes for reading and updating the queue.</span></li>
-        <li class="unit" data-unit="skill:linear"><code>linear</code><span>The Linear provider recipes for the same backend-neutral contract.</span></li>
+        <li class="unit" data-unit="skill:tracker"><code>tracker</code><span>One set of ticket semantics — lanes, holds, dependencies, priority, the ledger — over whichever backend the repo declares.</span></li>
       </ul>
     </article>
   </section>
