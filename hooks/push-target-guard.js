@@ -261,13 +261,46 @@ function markerPath(tree, cwd) {
   return path.join(real, ...MARKER_SUBDIR, `${tree}.json`);
 }
 
+//: Why a marker that was read still authorises nothing. Hook-owned sentences,
+//: the ``MERGE_DENIALS`` idiom and the same reason: an operator can only clear a
+//: refusal that names which fact defeated it. **No byte of the marker body
+//: appears in one of these** — the body is data a local process wrote, the
+//: refusal is prose an agent reads, and #560's whole cost was a message that
+//: described the wrong file.
+const MARKER_FAULTS = {
+  notJson: "its body is not JSON",
+  notAnObject: "its body is JSON but not a JSON object",
+};
+
+/** The ``scope`` fault, naming the field's **type** and never its value. */
+function scopeFault(value) {
+  const kind = Array.isArray(value) ? "an array with a non-string entry" : `a ${typeof value}`;
+  return `its \`scope\` field is ${kind}, not an array of path strings`;
+}
+
+/** A value made safe to inject into a refusal: whitespace-collapsed and bounded.
+ *
+ * The ``failOpen`` idiom, and the sibling Stop hook's, because a reason is
+ * written straight into the model's context.
+ */
+function reportable(value) {
+  return String(value).replace(/\s+/g, " ").slice(0, MAX_REPORTED_PATH);
+}
+
 /** The fresh marker covering ``tree``, as ``{scope}``, or ``null`` if there is none.
  *
  * **This hook reads the marker body; the Stop hook still does not.** ADR 0018
  * made the filename the whole claim because no reader parsed the body, and that
- * stays true for every marker written before #539 and every marker a repo
- * without ``commands.test_scoped`` will ever write: no ``scope`` key means the
- * gate covered the whole tree, which is what the filename always meant.
+ * stays true for every marker a repo without ``commands.test_scoped`` will ever
+ * write: no ``scope`` key means the gate covered the whole tree, which is what
+ * the filename always meant.
+ *
+ * It does **not** follow that every marker written before #539 keeps working,
+ * and #560 is the price of the version of this paragraph that said it did. A
+ * writer that omits the key is unaffected; one that emits *something else* under
+ * that name — a legacy helper carrying ``scope`` as a human diagnostic string —
+ * was fine through 6.0.0 and authorises nothing from #539 on. The claim is about
+ * the key's absence, never about a date.
  *
  * What the body adds is one field and one rule. ``scope`` present means the run
  * verified *less* than the tree, so **the marker authorises no push on its own**
@@ -278,14 +311,20 @@ function markerPath(tree, cwd) {
  *
  * Every way of failing to read it resolves to ``{scope: []}``: fresh, and
  * containing nothing, so it authorises nothing. That is state 2's rule (a fact
- * the guard could not establish closes), and it is cheap to clear — one gate
- * run. The write is atomic since #539, so the one routine way to see a torn body
- * is gone.
+ * the guard could not establish closes). Those three arms also carry
+ * ``unreadable``, the fault, so the caller can say *this file could not be used*
+ * rather than *no such file* — two facts with different remedies, and only one
+ * of them cleared by another gate run. A **valid** ``"scope": []`` never carries
+ * it: an empty list is a scope honestly recording that it covers nothing, and
+ * reporting it as malformed would misdirect the next operator exactly as #560
+ * misdirected the last one. The write is atomic since #539, so the one routine
+ * way to see a torn body is gone.
  *
  * Returns:
  *   ``null`` — no marker, or older than the bound.
  *   ``{scope: null}`` — fresh and unscoped: today's authority, unchanged.
  *   ``{scope: [...]}`` — fresh and scoped: authorises only a contained merge.
+ *   ``{scope: [], unreadable}`` — fresh, and unusable for the stated reason.
  */
 function markerFor(tree, dir) {
   const marker = markerPath(tree, dir);
@@ -304,16 +343,16 @@ function markerFor(tree, dir) {
     payload = JSON.parse(body);
   } catch (err) {
     void err;
-    return { scope: [] };
+    return { scope: [], unreadable: MARKER_FAULTS.notJson };
   }
   if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
-    return { scope: [] };
+    return { scope: [], unreadable: MARKER_FAULTS.notAnObject };
   }
   if (payload.scope === undefined || payload.scope === null) return { scope: null };
   if (Array.isArray(payload.scope) && payload.scope.every((entry) => typeof entry === "string")) {
     return { scope: payload.scope };
   }
-  return { scope: [] };
+  return { scope: [], unreadable: scopeFault(payload.scope) };
 }
 
 /** The shared configuration reader, or ``null`` when it cannot be loaded.
@@ -616,6 +655,12 @@ function pushesIn(command, startDir, parser, depth) {
   // fresh one per nested script below, matches the shell: a child shell
   // inherits its parent's cwd but starts its own dirstack.
   let dirStack = [];
+  // ``pipedInto`` is dropped on purpose: a bare shell fed a script this lexer
+  // cannot read (``… | sh``, a here-string, ``bash <(…)``) is already refused
+  // unconditionally by the sibling's ``isBareShellFedExternally``, so a copy here
+  // could never fire (#562). Depended on, not omitted —
+  // ``test_push_target_guard_composition.py`` goes red if that sibling refusal is
+  // narrowed or unregistered.
   for (const { tokens } of commands) {
     const resolved = parser.resolveCommand(tokens);
     const head = resolved.length ? parser.basename(resolved[0]) : "";
@@ -768,7 +813,14 @@ function mergeAcceptance(dir, move, pushedTree, marker, remote) {
 
   const certifiedTree = git(dir, ["rev-parse", "--verify", `${certifiedCommit}^{tree}`]);
   const certified = certifiedTree === null ? null : markerFor(certifiedTree, dir);
-  if (certified === null || certified.scope !== null) return MERGE_DENIALS.firstParent;
+  if (certified === null || certified.scope !== null) {
+    // The same two facts the pushed-tree arm separates, one level down: a parent
+    // that was never gated and a parent whose evidence cannot be read are not
+    // the same problem, and the merge push is the shape a reconcile produces.
+    return certified !== null && certified.unreadable !== undefined
+      ? `its first parent's gate marker authorises nothing: ${certified.unreadable}`
+      : MERGE_DENIALS.firstParent;
+  }
 
   const tracking = trackingRef(dir, remote, move.target);
   if (tracking === null) return MERGE_DENIALS.secondParent;
@@ -925,14 +977,30 @@ function verdict(push, parser) {
     // Path two (#539): git alone produced this merge over a gated parent.
     const refusal = mergeAcceptance(dir, move, tree, marker, push.remote);
     if (refusal !== null) {
+      // Two different facts, and they were one sentence until #560. *No marker*
+      // is cleared by running the gate. *A marker that cannot be read* is not:
+      // the gate already produced this file, so running it again writes the same
+      // body and refuses again — and the sentence below sent one operator round
+      // that loop until they reverse-engineered the reader. Only the lead clause
+      // differs; the merge reason and the closing rule are the same in both.
+      const found =
+        marker !== null && marker.unreadable !== undefined
+          ? `A gate marker for tree ${tree.slice(0, 12)} exists and was read, but it ` +
+            `authorises nothing: ${marker.unreadable} (read ` +
+            `${reportable(markerPath(tree, dir))}). A marker's \`scope\` must be absent ` +
+            "or null, meaning the gate covered the whole tree, or an array of path " +
+            "strings, meaning it covered only those. This file is fresh, so whatever " +
+            "wrote it will write the same body again and another gate run cannot " +
+            "clear this. Fix the writer that produced it."
+          : `No gate marker covers tree ${tree.slice(0, 12)}: the gate has not been ` +
+            "run green over the exact bytes this push carries (looked for " +
+            `${reportable(markerPath(tree, dir))}). Run the repo verify gate in ` +
+            `${dir}, then push again.`;
       return (
-        `Blocked a push to the protected branch ${JSON.stringify(move.target)}. No ` +
-        `gate marker covers tree ${tree.slice(0, 12)} — the gate has not been run ` +
-        "green over the exact bytes this push carries — and this push does not take " +
-        `the merge path either: ${refusal} (looked for ${markerPath(tree, dir)}). ` +
-        `Run the repo verify gate in ${dir}, then push again. The authorisation is ` +
-        "a gated tree, or a merge git alone made over one; there is no exemption " +
-        "for a particular command."
+        `Blocked a push to the protected branch ${JSON.stringify(move.target)}. ` +
+        `${found} This push does not take the merge path either: ${refusal}. The ` +
+        "authorisation is a gated tree, or a merge git alone made over one; there " +
+        "is no exemption for a particular command."
       );
     }
   }
@@ -963,6 +1031,21 @@ function main() {
   const parser = require("./git-push-guard.js");
 
   const cwd = input.cwd || process.cwd();
+  // State 2 of the split above, reached before any push is looked for: a heredoc
+  // whose delimiter never arrives leaves the lexer unable to say which of the
+  // following lines are commands, so whether this command pushes at all is
+  // unknowable. Refuse rather than read the remaining lines as commands, which
+  // is what this hook did to *every* heredoc body until #557.
+  if (parser.hasUnterminatedHeredoc(command, 0)) {
+    return deny(
+      "Blocked a command carrying an unterminated heredoc. Its delimiter never " +
+        "appears on a line of its own, so where the body ends — and which of the " +
+        "following lines are commands rather than data — cannot be established " +
+        "before it runs, and neither can the tree any push among them would " +
+        "carry. Close the heredoc with its delimiter at the start of a line; " +
+        "leading tabs are stripped only for the <<- form."
+    );
+  }
   for (const push of pushesIn(command, cwd, parser, 0)) {
     const reason = verdict(push, parser);
     if (reason) return deny(reason);
