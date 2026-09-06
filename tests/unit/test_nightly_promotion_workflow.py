@@ -181,6 +181,48 @@ def _uncommented(text: str) -> str:
     return "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
 
 
+def _ci_checkout_options() -> list[dict[str, str]]:
+    """Every ``actions/checkout`` step in ``ci.yml``, as its ``with:`` mapping.
+
+    A **list**, not the first step found: what the guard below must be able to
+    see is a *second* checkout arriving without the fetch key, and a helper
+    returning one mapping cannot — the same reason ``_permissions_block`` is
+    compared as an equality rather than searched for substrings.
+
+    Read over ``_uncommented`` so a ``#`` line naming the key cannot satisfy the
+    assertion. Derived from the file rather than restated here, so the guard
+    measures what the workflow says and not what this module remembers it said.
+    """
+    lines = _uncommented(CI_WORKFLOW.read_text(encoding="utf-8")).splitlines()
+    steps: list[dict[str, str]] = []
+    for index, line in enumerate(lines):
+        opener = re.match(r"^(\s*)-\s+uses:\s*actions/checkout@", line)
+        if opener is None:
+            continue
+        # `- ` is two columns, so the step's own keys sit two past the dash.
+        body_indent = len(opener.group(1)) + 2
+        options: dict[str, str] = {}
+        in_with = False
+        for following in lines[index + 1 :]:
+            if not following.strip():
+                continue
+            indent = len(following) - len(following.lstrip())
+            starts_next_step = indent == body_indent and following.lstrip().startswith("- ")
+            if indent < body_indent or starts_next_step:
+                break
+            if indent == body_indent:
+                in_with = following.strip() == "with:"
+                continue
+            if in_with:
+                pair = re.match(r"^\s+([a-z-]+):\s*(\S+)\s*$", following)
+                assert pair is not None, (
+                    f"unreadable line in a checkout `with:` block: {following!r}"
+                )
+                options[pair.group(1)] = pair.group(2)
+        steps.append(options)
+    return steps
+
+
 def test_the_workflow_is_a_bounded_deterministic_nightly() -> None:
     """The scheduler's own shape: when it fires, that it cannot race itself, and
     what it may write (#378). None of this is reachable by executing anything."""
@@ -271,6 +313,42 @@ def test_ci_runs_pull_request_checks_only_for_the_integration_branch() -> None:
         "removed coverage rather than a duplicate"
     )
 
+
+def test_the_ci_checkout_supplies_the_ref_the_cycle_start_guard_reads() -> None:
+    """``ci.yml``'s checkout must fetch a ref naming the release role (#580).
+
+    ``tests/unit/test_release_version_cycle.py`` reads three things off that ref
+    — ``rev-parse --verify``, the manifest blob, and ``diff --cached`` against
+    its tree — and where no such ref exists it returns ``NO_RELEASE_REF``, which
+    is in ``SKIPPING``. A bare ``actions/checkout@v4`` fetches only the ref being
+    built, so on every ``push: dev`` run the start-of-cycle guard **skipped**,
+    and the only control left on a missing version bump was the builder's local
+    gate — client-side, on whichever machine happened to push, while the spine's
+    posture puts the controls of record in CI.
+
+    That is not hypothetical: it is how `7.0.0` landed twice. Nightly promotion
+    run 34046398127 (2026-09-06) failed ``Kind.EQUAL`` on ``dev`` roughly a day
+    after the offending landing, having been green on every push in between,
+    because the nightly is the one workflow that fetches full history.
+
+    The fix is the checkout action's own key, not a hand-written fetch step: a
+    narrow ``--depth=1`` fetch of the release branch would serve the three reads
+    (none needs history), but it re-implements ref fetching and adds a
+    ``harness.yaml`` read inside CI, which P2 refuses while a native option
+    exists. Measured 2026-09-07: 1781 commits, 10 remote heads, 22 MB ``.git``.
+    """
+    checkouts = _ci_checkout_options()
+
+    assert len(checkouts) == 1, (
+        f"ci.yml declares {len(checkouts)} `actions/checkout` steps; this guard pins the "
+        "fetch depth of exactly one, so a second checkout would be unpinned and could "
+        "reintroduce the shallow clone this ticket removed"
+    )
+    assert checkouts[0].get("fetch-depth") == "0", (
+        f"ci.yml's checkout declares fetch-depth={checkouts[0].get('fetch-depth')!r}, so no "
+        "ref naming the release role is fetched and the start-of-cycle version guard reports "
+        "NO_RELEASE_REF and skips on every push — a false green, not a pass (#580)"
+    )
 
 def test_the_promotion_step_carries_no_logic_of_its_own() -> None:
     """The step invokes the script and nothing else.
