@@ -50,7 +50,8 @@ measured rather than argued.
 Item 1 is complete and items 2–4 (#323–#325) are unblocked. The evidence, the rubric, and
 the derived form in full are in
 the `changelog-from-commits` proposal (settled; removed from the tree by #547, kept in git history); the
-drained window is in [`../../CHANGELOG-archive/2026.md`](../../CHANGELOG-archive/2026.md).
+drained window was in `CHANGELOG-archive/2026.md` (removed from the tree by #435, kept in
+git history).
 
 One residual is carried into #323: a build that reverses its ticket's plan leaves that
 reasoning in neither the commit subject nor the issue. The release editor is told to look
