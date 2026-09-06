@@ -189,34 +189,71 @@ def _ci_checkout_options() -> list[dict[str, str]]:
     returning one mapping cannot — the same reason ``_permissions_block`` is
     compared as an equality rather than searched for substrings.
 
-    Read over ``_uncommented`` so a ``#`` line naming the key cannot satisfy the
+    **A step is recognised by its list-item dash, and ``uses:`` is then looked
+    for among its keys.** The first version of this helper anchored its opener
+    pattern on the dash and ``uses:`` together, which reads only the one-line
+    spelling; a step written the other legal way —
+
+    .. code-block:: yaml
+
+        - name: Check out
+          uses: actions/checkout@v4
+
+    — was invisible to it, so a second unpinned checkout in that form passed the
+    count assertion below. Review of #580 found this by mutating the workflow;
+    the builder's own probe had used the spelling the parser was written for and
+    therefore confirmed nothing. Enumerate the syntactic positions a name can
+    occupy, not just its shape.
+
+    Read over ``_uncommented`` so a ``#`` line naming a key cannot satisfy the
     assertion. Derived from the file rather than restated here, so the guard
     measures what the workflow says and not what this module remembers it said.
     """
     lines = _uncommented(CI_WORKFLOW.read_text(encoding="utf-8")).splitlines()
     steps: list[dict[str, str]] = []
     for index, line in enumerate(lines):
-        opener = re.match(r"^(\s*)-\s+uses:\s*actions/checkout@", line)
+        opener = re.match(r"^(\s*)-\s+(\S.*)$", line)
         if opener is None:
             continue
-        # `- ` is two columns, so the step's own keys sit two past the dash.
-        body_indent = len(opener.group(1)) + 2
-        options: dict[str, str] = {}
-        in_with = False
+        dash_indent = len(opener.group(1))
+        # `- ` is two columns, so the step's own keys sit two past the dash, and
+        # the opener's own content is the first of them.
+        body_indent = dash_indent + 2
+        body: list[tuple[int, str]] = [(body_indent, opener.group(2).strip())]
         for following in lines[index + 1 :]:
             if not following.strip():
                 continue
             indent = len(following) - len(following.lstrip())
-            starts_next_step = indent == body_indent and following.lstrip().startswith("- ")
-            if indent < body_indent or starts_next_step:
+            if indent <= dash_indent:
                 break
+            body.append((indent, following.strip()))
+
+        checkout = any(
+            indent == body_indent and re.match(r"^uses:\s*actions/checkout@", content)
+            for indent, content in body
+        )
+        if not checkout:
+            continue
+
+        options: dict[str, str] = {}
+        in_with = False
+        for indent, content in body:
             if indent == body_indent:
-                in_with = following.strip() == "with:"
+                # A flow mapping (`with: {fetch-depth: 0}`) is legal YAML this
+                # helper does not read. Refuse it by name rather than return an
+                # empty mapping, which would fail the guard below with a message
+                # blaming an absent key instead of an unread one.
+                assert not re.match(r"^with:\s*\S", content), (
+                    f"ci.yml writes a checkout `with:` as a flow mapping ({content!r}); this "
+                    "helper reads the block form only — rewrite it as a block, or teach this "
+                    "helper the flow form"
+                )
+                in_with = content == "with:"
                 continue
             if in_with:
-                pair = re.match(r"^\s+([a-z-]+):\s*(\S+)\s*$", following)
+                pair = re.match(r"^([a-z-]+):\s*(\S+)$", content)
                 assert pair is not None, (
-                    f"unreadable line in a checkout `with:` block: {following!r}"
+                    f"unreadable line in a checkout `with:` block: {content!r}"
                 )
                 options[pair.group(1)] = pair.group(2)
         steps.append(options)
