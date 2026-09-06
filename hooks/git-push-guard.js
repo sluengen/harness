@@ -302,44 +302,6 @@ function captureHeredocDelimiter(s, start) {
   return { word, quoted, next: i };
 }
 
-/** True if a parenthesised body is **arithmetic** rather than a command list.
- *
- * Bash's own disambiguation, and the distinction is load-bearing in both
- * directions. Read a command list as arithmetic and its commands are never
- * analysed — a force push walks straight through. Read arithmetic as a command
- * list and its ``<<`` left shift is taken for a heredoc operator whose delimiter
- * never comes, refusing ``echo $((1 << 2))``.
- *
- * The rule is not "starts with ``(`` and ends with ``)``", which the first cut
- * of #557 used and which is wrong on every command list wrapped in parens.
- * Arithmetic opens only when the paren at index 0 is closed by the **final**
- * character; an inner paren that closes early makes bash re-parse the whole
- * construct as commands and run them. Measured:
- *
- *     echo $((echo A) && (echo B))   ->  A B      (commands)
- *     echo $((echo A); (echo B))     ->  A B      (commands)
- *     echo $((echo A) | (cat))       ->  A        (commands)
- *     echo $((echo A))               ->  error    (arithmetic)
- *     echo $(( (1+2) << 3 ))         ->  24       (arithmetic)
- *
- * One predicate serves ``$((…))`` and the word-boundary ``((…))`` command,
- * because bash disambiguates them the same way. A ``)`` inside quotes can close
- * the count early and read a genuine arithmetic body as commands; that direction
- * costs a body lexed as shell, which is what every body was before this change,
- * so the error falls the safe way. */
-function isArithmeticBody(body) {
-  if (body[0] !== "(") return false;
-  let depth = 0;
-  for (let i = 0; i < body.length; i++) {
-    if (body[i] === "(") depth++;
-    else if (body[i] === ")") {
-      depth--;
-      if (depth === 0) return i === body.length - 1;
-    }
-  }
-  return false;
-}
-
 /** Push every ``$(…)`` and backtick body found in ``text`` onto ``out``.
  *
  * The expansion-bearing half of the heredoc rule. Only ``\`` suppresses an
@@ -476,35 +438,11 @@ function lex(command) {
     }
     if (c === "$" && command[i + 1] === "(") {
       const [body, next] = captureParenSub(command, i + 2);
-      if (isArithmeticBody(body)) {
-        // ``$((…))`` is *arithmetic* expansion: no command runs in it, and its
-        // ``<<`` is a left shift, not a redirection. Inner ``$(…)``/backticks
-        // inside the arithmetic still execute, so they are harvested rather
-        // than dropped.
-        harvestSubstitutions(body, substitutions);
-      } else {
-        substitutions.push(body);
-      }
+      substitutions.push(body);
       token += "$(" + body + ")";
       hasToken = true;
       i = next;
       continue;
-    }
-    // A word-boundary ``((`` is an arithmetic *command* — ``(( x = 1 << 3 ))``,
-    // ``if (( 1 << 2 ))`` — and its ``<<`` is a shift. Without this the ``(``
-    // separator below severs it and the shift reaches the heredoc branch, so
-    // ``(( 1 << 2 ))`` would be refused: #557's own defect class inside its fix.
-    // Same predicate as ``$((…))``, because bash disambiguates the two the same
-    // way; when it says commands, this falls through to the separator branch and
-    // ``((cmd) && (cmd))`` is lexed as the nested subshells it is.
-    if (c === "(" && command[i + 1] === "(" && !hasToken) {
-      const [body, next] = captureParenSub(command, i + 1);
-      if (isArithmeticBody(body)) {
-        harvestSubstitutions(body, substitutions);
-        endCommand();
-        i = next;
-        continue;
-      }
     }
     // A here-string, consumed whole. Skipping it as three characters is what
     // stops the scan from restarting on its *second* ``<`` and reading the last
@@ -519,6 +457,10 @@ function lex(command) {
     }
     // A heredoc redirection. The body does not begin until the next newline, so
     // the operator is only *queued* here and the rest of this line stays command.
+    // A ``<<`` *left shift* queues here too — the lexer cannot tell one from a
+    // redirection at this point, and does not try. What settles it is whether a
+    // body ever starts: see the end of this function, which is where a shift
+    // stops being a heredoc.
     if (c === "<" && command[i + 1] === "<") {
       let j = i + 2;
       const strip = command[j] === "-";
@@ -650,9 +592,29 @@ function lex(command) {
     i++;
   }
   endCommand();
-  // A redirection still waiting for its body when the input ran out: the body
-  // is empty and its delimiter never came, so the same refusal applies.
-  if (pending.length) unterminated = true;
+  // A redirection still queued here never met the newline that starts a body,
+  // so it has no body and is **dropped rather than refused**. That decision is
+  // the whole of how a ``<<`` left shift stops being a heredoc, and it is
+  // deliberate rather than an omission.
+  //
+  // Refusing instead is what two review cycles of #557 shipped, and it turned
+  // ``echo $((1 << 2))`` into a denial: the shift queues exactly like a
+  // redirection, so the unparseable rule fired on arithmetic. The first repair
+  // was a classifier telling arithmetic from a command list by counting parens;
+  // it was quote-blind where bash is quote-aware, so ``$(("(" ) ; <a push> )``
+  // — which bash really runs — read as arithmetic and its commands were never
+  // analysed. That failure was *fail-open* in a guard whose posture is
+  // fail-closed, so the classifier is gone rather than patched a third time.
+  //
+  // Dropping is safe on the shell's own terms: with no newline there is no
+  // body, and bash agrees — it warns (``here-document delimited by
+  // end-of-file``) and runs with an empty one, exit 0. Nothing can hide in a
+  // body that does not exist. AC-4 is unaffected: every heredoc that *starts* a
+  // body and never ends it still refuses, from ``consumeHeredocBodies``.
+  //
+  // The residue is a shift inside a *multi-line* ``$(( … ))``, whose body does
+  // contain a newline and so still refuses. Fail-closed, one gate run clears
+  // it, and that is the trade this file's header already prices.
   return { commands, substitutions, unterminated };
 }
 

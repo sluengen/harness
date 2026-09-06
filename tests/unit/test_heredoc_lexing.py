@@ -373,6 +373,34 @@ def test_a_double_paren_subshell_group_still_runs_its_commands(repo: Path) -> No
     assert _denied(TARGET_HOOK, f"(({PUSH}) && (true))", repo)
 
 
+#: The shapes that defeated the paren-counting classifier across two review
+#: cycles. A quoted ``(`` inflates a naive depth count, so the naive close lands
+#: on the final character and a command list reads as arithmetic — while bash,
+#: which honours the quotes, runs it. Verified: ``bash -c 'echo $(("(" ) ; echo
+#: RAN )'`` prints ``RAN``. Kept as the deny-direction pair to the allow cases in
+#: ``NO_HEREDOC``, so a future attempt to reintroduce a classifier has to face
+#: both halves at once.
+QUOTED_PAREN_ESCAPES = [
+    ("double_quoted", 'echo $(("(" ) ; %s )'),
+    ("single_quoted", "echo $(('(' ) ; %s )"),
+    ("backslash", "echo $((\\( ) ; %s )"),
+    ("piped", 'echo $(("(" ) | %s )'),
+    ("nested", 'echo $(((\"(\" ) ) ; %s )'),
+    ("word_boundary_double_paren", '(("(" ) ; %s )'),
+]
+
+
+@pytest.mark.parametrize(
+    "shape",
+    [s for _, s in QUOTED_PAREN_ESCAPES],
+    ids=[i for i, _ in QUOTED_PAREN_ESCAPES],
+)
+def test_a_quoted_paren_does_not_hide_a_command_list(shape: str, repo: Path) -> None:
+    """Bash runs these; both guards must still see the push inside them."""
+    assert _denied(FORCE_HOOK, shape % FORCE, repo)
+    assert _denied(TARGET_HOOK, shape % PUSH, repo)
+
+
 # --- AC-3 controls: the guards still refuse the real thing ---------------------
 
 
@@ -411,15 +439,9 @@ UNTERMINATED = [
     ("quoted_no_terminator", "cat > note.txt <<'EOF'\nsome text\n"),
     ("second_of_two_unterminated", "cat <<A <<B\nbody\nA\nbody\n"),
     ("terminator_indented_for_plain_form", "cat > note.txt <<EOF\nbody\n\tEOF\n"),
-    # No newline after the operator at all, so the body never starts and the
-    # redirection is still queued when the input runs out. A separate arm from
-    # the four above, which all refuse by reaching the end of a body that had
-    # begun — and one no case reached until the mutation table found it killing
-    # nothing.
-    ("operator_then_end_of_input", "cat > note.txt <<EOF"),
-    ("operator_alone", "cat <<EOF"),
-    # ``<<`` with no delimiter word after it is the same syntax error one
-    # character earlier.
+    # ``<<`` with no delimiter word after it. Measured against bash: a genuine
+    # syntax error, `syntax error near unexpected token 'newline'`, exit 2 —
+    # nothing runs, and the guard refuses in kind.
     ("no_delimiter_word", "cat > note.txt <<\n"),
 ]
 
@@ -469,16 +491,31 @@ NO_HEREDOC = [
     ("a_shift_operator_in_text", "echo 'x << 2'"),
     ("commit_message_naming_a_push", "git commit -m 'document the push rule'"),
     # ``$((…))`` is arithmetic expansion and its ``<<`` is a left shift, not a
-    # redirection. Lexed as shell it would open a heredoc whose delimiter never
-    # arrives, and AC-4 would refuse it — this ticket's own defect class,
-    # reintroduced inside the fix for it. Unquoted, so it actually reaches the
-    # branch: the corpus's only other shift is inside single quotes and never
-    # did.
+    # redirection. These are allowed for a structural reason rather than by
+    # being recognised as arithmetic: **a heredoc opens a body only when a
+    # newline follows the operator**, and none of these has one. Two review
+    # cycles were spent on a classifier that tried to tell arithmetic from a
+    # command list by counting parens, and both failed the same way — it was
+    # quote-blind where bash is quote-aware, so a command list read as
+    # arithmetic and the force push inside it went unanalysed. The classifier is
+    # gone; a body that cannot exist needs no classifying.
     ("an_arithmetic_shift", "echo $((1 << 2))"),
     ("an_arithmetic_shift_with_spaces", "echo $(( 1 << 2 ))"),
-    # A genuine substitution nested in arithmetic still runs, so it is still
-    # harvested — this one is not a push, and stays allowed on its merits.
     ("a_substitution_inside_arithmetic", "echo $(( $(date +%s) << 2 ))"),
+    ("a_nested_arithmetic_group", "echo $(( (1+2) << 3 ))"),
+    # The quoted-paren shapes that defeated the classifier. Each is a command
+    # list bash really runs; with no classifier there is nothing to fool, and
+    # the deny-direction half of this pair is
+    # ``test_a_quoted_paren_does_not_hide_a_command_list``.
+    ("a_quoted_open_paren", 'echo $(("(" ) ; true )'),
+    ("a_single_quoted_open_paren", "echo $(('(' ) ; true )"),
+    ("a_backslash_open_paren", "echo $((\\( ) ; true )"),
+    # No newline after the operator, so no body can begin. Bash agrees: it warns
+    # (`here-document delimited by end-of-file`) and runs with an empty body,
+    # exit 0 — nothing is hidden and nothing is guessed at, so there is nothing
+    # for AC-4 to refuse.
+    ("operator_then_end_of_input", "cat > note.txt <<EOF"),
+    ("operator_alone", "cat <<EOF"),
 ]
 
 
