@@ -205,6 +205,16 @@ def _ci_checkout_options() -> list[dict[str, str]]:
     therefore confirmed nothing. Enumerate the syntactic positions a name can
     occupy, not just its shape.
 
+    **A quoted ``uses:`` value defeated the repaired opener the same way.**
+    ``uses: "actions/checkout@v4"`` is legal YAML and common enough (dependabot
+    and several linters emit it), and the checkout-detection pattern matched
+    the bare form only — a second checkout spelled with either quote character
+    was not merely under-counted, it dropped out of ``steps`` entirely, so it
+    could carry no ``fetch-depth`` at all and still leave the count assertion
+    at one. Found the same way, by mutating cycle 2's own repair rather than
+    trusting it. The opener now tolerates one leading quote character it does
+    not otherwise interpret.
+
     Read over ``_uncommented`` so a ``#`` line naming a key cannot satisfy the
     assertion. Derived from the file rather than restated here, so the guard
     measures what the workflow says and not what this module remembers it said.
@@ -229,7 +239,7 @@ def _ci_checkout_options() -> list[dict[str, str]]:
             body.append((indent, following.strip()))
 
         checkout = any(
-            indent == body_indent and re.match(r"^uses:\s*actions/checkout@", content)
+            indent == body_indent and re.match(r"^uses:\s*['\"]?actions/checkout@", content)
             for indent, content in body
         )
         if not checkout:
