@@ -90,8 +90,10 @@ SPINE_PATH = "AGENTS.md"
 #: The updater-facing source of the one plugin release version.
 PLUGIN_MANIFEST_PATH = ".claude-plugin/plugin.json"
 
-#: This ticket's deliberately published release version.
-RELEASE_VERSION = "7.0.0"
+#: ``X.Y.Z``, no leading zeros. The reference version is derived from the manifest
+#: rather than restated here (#556), so this is what keeps three
+#: garbage-but-identical values from agreeing with each other.
+_SEMVER = re.compile(r"(?:0|[1-9]\d*)(?:\.(?:0|[1-9]\d*)){2}")
 
 #: The block's delimiters. Both are matched at line start with indent and
 #: trailing-whitespace tolerance, and with flexible spacing inside the comment,
@@ -660,6 +662,65 @@ def test_the_spine_and_its_template_carry_the_same_generated_block() -> None:
     )
 
 
+def version_disagreements(manifest: str, template: str, spine: str) -> dict[str, object]:
+    """Where the updater selector and the two spine markers fail to name one version.
+
+    The manifest is the **reference**, derived rather than restated (#556 / D7).
+    The literal that used to sit here had to be edited once per release cycle —
+    which the fix lane may not do at all (law 7) and which the test-lock hook
+    refuses in the change lane — so the start-of-cycle bump rule was unshippable
+    while it stood. It was also a hardcoded answer masquerading as a guard, the
+    repo's most-repeated defect class (#458, #466: pin the derivation, not the
+    derived answer); the property this module names in its own docstring is
+    *agreement*, to which a particular number contributed nothing.
+
+    What the literal was incidentally holding is kept explicitly: with the
+    reference derived, three garbage-but-identical values agree with each other
+    and the equality says nothing, so a reference that is not an ``X.Y.Z``
+    version is itself the disagreement.
+    """
+    carried: dict[str, object] = {
+        PLUGIN_MANIFEST_PATH: json.loads(manifest).get("version"),
+        TEMPLATE_PATH: generated_block(template, label=TEMPLATE_PATH).version,
+        SPINE_PATH: generated_block(spine, label=SPINE_PATH).version,
+    }
+    reference = carried[PLUGIN_MANIFEST_PATH]
+    if not isinstance(reference, str) or _SEMVER.fullmatch(reference) is None:
+        return {PLUGIN_MANIFEST_PATH: f"not an X.Y.Z version: {reference!r}"}
+    return {home: value for home, value in carried.items() if value != reference}
+
+
+def _sample(manifest: str, template: str, spine: str) -> tuple[str, str, str]:
+    """Three synthetic homes, at versions this repo has never published (#458)."""
+    return (
+        json.dumps({"name": "harness", "version": manifest}),
+        _spine("## Laws", version=template),
+        _spine("## Laws", version=spine),
+    )
+
+
+def test_the_three_homes_agree_on_a_version_this_repo_never_published() -> None:
+    """#458: the reference is *derived* from the manifest, never restated here."""
+    assert version_disagreements(*_sample("2.3.4", "2.3.4", "2.3.4")) == {}
+
+
+def test_a_marker_that_moved_without_the_manifest_is_reported() -> None:
+    """The property #496 recorded, kept: a release that moves one value and not the
+    others makes consumers disagree about which guidance they have."""
+    assert version_disagreements(*_sample("2.3.4", "2.3.4", "2.3.5")) == {SPINE_PATH: "2.3.5"}
+
+
+def test_three_identically_unusable_versions_do_not_compare_equal() -> None:
+    """What the deleted literal was holding, made explicit.
+
+    With the reference derived rather than restated, three garbage-but-identical
+    values agree with each other and the equality says nothing — the
+    identically-failed-operands class (#466). The shape refusal is what keeps the
+    test refusing a version that is not a version.
+    """
+    assert version_disagreements(*_sample("seven", "seven", "seven")) != {}
+
+
 def test_the_manifest_and_both_spines_name_the_current_release() -> None:
     """#496: the updater selector and both shipped spine markers agree.
 
@@ -669,9 +730,7 @@ def test_the_manifest_and_both_spines_name_the_current_release() -> None:
     have, even when the generated bodies compare byte-for-byte. All operands are
     read from the index: this is a release contract over the tree that ships.
     """
-    manifest = json.loads(indexed_text(PLUGIN_MANIFEST_PATH))
-    assert manifest.get("version") == RELEASE_VERSION, manifest
-    template = _block(TEMPLATE_PATH)
-    spine = _block(SPINE_PATH)
-    assert template.version == RELEASE_VERSION, template
-    assert spine.version == RELEASE_VERSION, spine
+    disagreements = version_disagreements(
+        indexed_text(PLUGIN_MANIFEST_PATH), indexed_text(TEMPLATE_PATH), indexed_text(SPINE_PATH)
+    )
+    assert disagreements == {}, disagreements

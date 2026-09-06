@@ -1,6 +1,6 @@
 ---
 spec: architecture-principles
-last_updated: 2026-08-31  # ADR 0019: purpose precedes proof
+last_updated: 2026-09-06  # #556: the one semver moves at the cycle's start
 ---
 
 # Architecture Principles
@@ -46,6 +46,8 @@ The boundary earned its keep twice — #435 deleted the runtime and v5 deleted t
 ### Surface is a versioned interface
 
 *Superseded in mechanism 2026-08-18 by [ADR 0017](decisions/0017-harness-v5-plugin-shaped-guidance.md): per-file `guidance:` headers and `registry.yaml` are deleted; the surface carries **one** semver, the plugin's, bumped at release. The compatibility grammar below — patch = wording, minor = implementation swap, major = interface change — still governs what a bump means; it just applies to the plugin as a whole. Kept for that grammar and the audit.*
+
+*Amended 2026-09-06 (#556): the note above says the one semver is "bumped at release". It is not, and in this repo it cannot be. The automated release hop has no authoring step — `scripts/promotion-step.sh` opens a pull request whose head is the integration branch itself and pushes nothing new — and a bump written onto the release branch by hand leaves that script's content-divergence pre-condition non-empty from that night on, wedging every later nightly until somebody performs the back-merge `specs/infrastructure.md` records this repo as deliberately not doing. The version is raised **at the start of the release cycle, on the integration branch**: the first change to land after a release raises it above the release branch's, and every later change in that cycle leaves it alone. The occurrence: the release merged on 2026-09-05 (`a609d5b`) carried both manifests at `6.0.1`, and `7.0.0` was written onto the integration branch the next day, so a consumer updating in between was told it was already current over bytes that had changed. Only the **moment** moves. The **level** is still governed by the compatibility grammar below, which this amendment leaves unchanged, and the surface still carries one semver. This does not re-open the colliding monotonic append point [ADR 0017](decisions/0017-harness-v5-plugin-shaped-guidance.md) retired with the per-file headers (#461): that scheme derived the next value from whatever the branch said at the time, so two concurrent worktrees produced one number over two different predecessors and the number meant two things; this one derives it from the release branch, which is fixed for the whole cycle, so two worktrees produce one number over the same predecessor and their agreement is the correct outcome rather than a collision. `tests/unit/test_release_version_cycle.py` fails the gate when the integration branch's content differs from the release branch's and its version does not.*
 
 **The installed surface is a versioned interface, governed by semver on the `guidance:<id>@x.y.z` header — a consuming repo never sees an unannounced breaking change.** Each installed unit carries that per-unit version; the bump level *is* the compatibility promise, and there is no separate interface-registry file — the header plus `registry.yaml` are the record.
 
