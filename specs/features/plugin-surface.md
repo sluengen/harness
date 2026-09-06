@@ -12,11 +12,13 @@ last_updated: 2026-09-06
 
 ### One plugin, one version
 
-The repository root **is** the plugin. `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json` name the same `harness` release at one semver (`7.0.0` at this record's date). `.claude-plugin/marketplace.json` and `.agents/plugins/marketplace.json` expose that root through each host's native marketplace contract. The manifests are updater-facing selectors; the generated spine markers in `templates/spine.md` and `AGENTS.md` carry the same version (`CLAUDE.md` carries none — since #537 it is a pointer file, not a second spine). `tests/unit/test_spine_template_parity.py` and `tests/unit/test_native_codex_plugin.py` reject a mismatch on every gate run. There are no per-file versions, no `guidance:` headers, no `registry.yaml`, and no consumer lock file — the whole distribution channel ADR 0017 retired. Since #537 each of the nine lifecycle workflows ships **once**, as a skill under `skills/<name>/SKILL.md`, and both hosts read that one artefact: Claude Code exposes it as a slash command (`/build`, and `/harness:init` where the bare name collides with the host's own), and Codex discovers it from `skills/` — the only content key `.codex-plugin/plugin.json` declares. The generated `command-*` and `agent-*` mirror skills are gone.
+The repository root **is** the plugin. `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json` name the same `harness` release at one semver (`8.0.0` at this record's date). `.claude-plugin/marketplace.json` and `.agents/plugins/marketplace.json` expose that root through each host's native marketplace contract. The manifests are updater-facing selectors; the generated spine markers in `templates/spine.md` and `AGENTS.md` carry the same version (`CLAUDE.md` carries none — since #537 it is a pointer file, not a second spine). `tests/unit/test_spine_template_parity.py` and `tests/unit/test_native_codex_plugin.py` reject a mismatch on every gate run. There are no per-file versions, no `guidance:` headers, no `registry.yaml`, and no consumer lock file — the whole distribution channel ADR 0017 retired. Since #537 each of the nine lifecycle workflows ships **once**, as a skill under `skills/<name>/SKILL.md`, and both hosts read that one artefact: Claude Code exposes it as a slash command (`/build`, and `/harness:init` where the bare name collides with the host's own), and Codex discovers it from `skills/` — the only content key `.codex-plugin/plugin.json` declares. The generated `command-*` and `agent-*` mirror skills are gone.
 
 **When it moves (#556).** The version is raised at the *start* of a release cycle, on the integration branch, by the first change to land after a release; every later change in that cycle leaves it alone. The rule previously named the release hop, a moment nothing in this repo can write at: the automated promotion opens a pull request whose head is the integration branch itself and pushes nothing new, and a bump authored onto the release branch by hand leaves `scripts/promotion-step.sh`'s content-divergence pre-condition non-empty and wedges every later nightly. The occurrence: the release merged on 2026-09-05 (`a609d5b`) carried both manifests at `6.0.1`, and `7.0.0` reached the integration branch the next day, so a consumer running `claude plugins update harness` in between was told it was already current over bytes that had changed. `specs/architecture-principles.md` holds the superseded clause and its dated amendment, the spine's *Repo principles* holds the obligation both lanes read, `skills/promote/SKILL.md` no longer names a version bump as content the release branch may gain, and `skills/build/references/reconcile.md` carves this value out of the monotonic-field trap: both sides of a merge derive it from the same release, so identical text is agreement rather than a collision.
 
 A bump moves four files, the two manifests and the `spine:generated` marker in `AGENTS.md` and `templates/spine.md`. `tests/unit/test_release_version_cycle.py` compares the index's `.claude-plugin/plugin.json` version against the highest one any locally present release-role ref carries, and fails when this tree's content differs from the release tree without a strictly greater version. Where the index tree *is* the release tree it passes, which is what keeps the `push: main` CI run from going permanently red. It skips, naming every ref spelling it tried, where the checkout holds no release ref, so on a shallow CI checkout of the integration branch it asserts nothing and the control that holds is the local gate the push guard demands a marker from. `tests/unit/test_spine_template_parity.py` stopped restating the version at the same ticket: it derives the reference from the manifest and refuses a reference that is not `X.Y.Z`, so a bump no longer edits a test file, which the fix lane may not do at all.
+
+**The level, worked (#565).** By the time #565 was reviewed, `main` had been promoted to `7.0.0` (`d7f39e4`) and `dev` had already diverged from it (`2aca9b0` and its merge, neither a version-bearing change), so the guard above was already failing `EQUAL` before this ticket touched a byte — any tree shipping `dev`'s current content needed a version strictly greater than `7.0.0`, named in the guard's own remedy message. That settles *whether* to bump, not *how far*. The ticket's own change removes `disable-model-invocation` from `digest` and `assess`, which is precisely a *refusal reason changed* under `specs/architecture-principles.md`'s compatibility grammar — a call that `Skill(digest)` and `Skill(assess)` used to refuse now succeeds — so patch ("wording only, no behaviour change") does not fit, and minor is excluded by name (minor requires invocation and refusal reasons unchanged). The candidate as built declared `7.0.1`; the review raised it to `8.0.0` and re-ran the gate green over the corrected tree, on the reasoning above rather than the cycle-start default, which governs only the *first* bump of a cycle and not a later change's own compatibility class.
 
 The shipped inventory, counted at tree `8281ecf` — the tree #547's build produced, and the one every figure below was measured over. `tests/unit/test_landing_page_inventory.py` derives the skill, agent and hook figures from the tracked tree in both directions and holds `docs/index.html`'s printed counts to them, so those three cannot go stale in silence; the remaining rows are a reviewer's count at that tree.
 
@@ -175,33 +177,43 @@ After a successful push, `/build` runs the `worktree-isolation` cleanup procedur
 ### The skill surface after #547
 
 The cull that ADR 0017 argued and the lifecycle-reset proposal scheduled. Twenty-eight
-skills on `dev` at the start of the reset became sixteen, and — after #564 — six of
-the nine workflows sit off the model's skill listing, so most of the surface costs
-the listing nothing at all.
+skills on `dev` at the start of the reset became sixteen, and — after #565 — four of
+the nine workflows sit off the model's skill listing, down from six after #564. Four
+of nine is no longer *most* of the workflow surface, which is why the framing changed
+here rather than only the numbers: the listing now costs something on a majority of
+the nine, not a minority of it.
 
 **The listing, measured.** `disable-model-invocation: true` removes a skill from the
-listing, so the listing is the ten model-invocable skills — the seven craft skills
-plus `build`, `review`, and `routine`, none of which carries the flag because each
-answers to a caller that is not a human at a prompt: `/routine` drives `/build`,
-`/build` drives the review stage, and `routine` itself is the versioned home of the
-prompt an unattended scheduled run pastes. `routine` carried the flag through #537
-and #547 and lost it at #564, once a scheduled run was observed refused on
-`Skill(routine)` — swept into the operator-only bucket by category rather than by
-intent. Their `description:` fields sum to
-**5,896 characters, about 1,474 tokens** at this record's tree — up from 3,496
-characters / 874 tokens at `3952f3a` (#564), 3,131 / 783 at `8281ecf` (#537), and
-down from 4,658 characters across 17 listed skills on `dev` at `c75c666`. Against a
-1% listing budget on a 200k window that is **74%**, up from 44% at `3952f3a`. #548 is
-the whole of that rise and it is a purchase rather than drift: its brief required
-every description to state what the skill does, when to use it *in the words a user
-would say*, and what it is **not** for, under 1,024 characters — three jobs where the
-pre-#548 text did one. The longest are now `routine` (716) and `review` (675) rather
-than `authoring` (537) and `tracker` (577), and none reaches the cap. The six
-off-listing workflows rose with them, 1,019 → 3,129 characters, and still cost the
-listing nothing. Nothing guards any of these figures — a description is prose, and
-law 2's subject is code — so each is a reviewer's measurement at a named tree,
-re-derivable by summing the `description:` field of every `skills/*/SKILL.md` with
-and without the flag.
+listing, so the listing is the twelve model-invocable skills — the seven craft skills
+plus `build`, `review`, `routine`, `digest`, and `assess`, none of which carries the
+flag because each answers to a caller that is not a human at a prompt: `/routine`
+drives `/build`, `/build` drives the review stage, `routine` itself is the versioned
+home of the prompt an unattended scheduled run pastes, a scheduled run fires
+`/harness:digest` directly, and a work-pull run falls back to `/assess code` when its
+own queue is empty. `routine` carried the flag through #537 and #547 and lost it at
+#564, once a scheduled run was observed refused on `Skill(routine)` — swept into the
+operator-only bucket by category rather than by intent. `digest` and `assess` carried
+the flag through #564 — whose reviewer flagged the identical contradiction in both and
+recommended a follow-up rather than widening that branch — and lost it at #565, once
+both were found refused on the operator's own host: two scheduled tasks invoking
+`/harness:digest` and one `lab-book-work-pull` fallback invoking `/assess code`. Their
+`description:` fields sum to **7,294 characters, about 1,823 tokens** at this record's
+tree — up from 5,896 / 1,474 (74% of budget) at `21e1b2b` (`dev`, immediately before
+#565), 3,496 / 874 at `3952f3a` (#564), 3,131 / 783 at `8281ecf` (#537), and down from
+4,658 characters across 17 listed skills on `dev` at `c75c666`. Against a 1% listing
+budget on a 200k window that is **91%**, up from 74% before #565 and 44% at `3952f3a`.
+Two skills rejoining the listing cost the 17-point rise; 91% is close enough to the
+budget to state plainly rather than bury: the next skill to rejoin would exceed it.
+The longest are now `digest` (786), `routine` (716), and `review` (675) — `digest`
+overtaking `routine` is new at #565 — rather than `authoring` (537) and `tracker`
+(577) before #548, and none reaches the cap. `digest` (786) and `assess` (612) moved
+from the off-listing sum into this one; a skill's own length is unchanged by which
+side of the flag it sits on, only which sum counts it. The four off-listing workflows
+— `capture` (570), `init` (683), `promote` (170), `propose` (579) — sum to **2,002
+characters**, down from 3,129 at #564's tree and 1,019 before #548. Nothing guards any
+of these figures — a description is prose, and law 2's subject is code — so each is a
+reviewer's measurement at a named tree, re-derivable by summing the `description:`
+field of every `skills/*/SKILL.md` with and without the flag.
 
 **Three merges, each because one caller was the only caller.**
 
@@ -402,9 +414,15 @@ touch it.
 session.** Held-out trigger sets — 20 queries each, 9 positive and 11 near-miss
 negatives drawn from the neighbouring skill each description fences off — ship at
 `skills/<name>/evals/triggers.json` for all ten model-invocable skills, `routine`
-included after #564 removed its flag. The published loop could not rank them on this
-host: seven skills — every loop run that produced a `results.json` — returned an
-identical 3/5, and four probes established why —
+included after #564 removed its flag. `digest` and `assess` joined the model-invocable
+set at #565 without either gaining one: `digest` ships no `evals/` directory at all,
+and `assess` ships `evals/evals.json` but no `triggers.json` — a gap #565 found
+already open, not one it made. The set is now twelve model-invocable skills, ten of
+which carry a held-out trigger file; generating one is #547's own multi-day, ~130-run
+job, #565's criteria named no such deliverable, and the gap is carried here rather
+than closed. The published loop could not rank the ten it has on this host: seven
+skills — every loop run that produced a `results.json` — returned an identical 3/5,
+and four probes established why —
 `run_eval.py` counts a trigger when a one-shot `claude -p` invokes a temp command, and
 here that fires only for a query handing the description back as an imperative.
 Realistic positives scored 0.00 throughout; the negatives are the whole of the 3/5. An
@@ -504,7 +522,7 @@ No persistent state beyond the tree itself, the gate marker, and — since #539 
 - **The test lock's Codex half is unprobed.** `.codex/config.toml` registers no hooks at all, so on Codex none of the six guards runs from this repo's configuration — the new one is exactly as strong as the three refusing guards already there, and no weaker. Its `apply_patch` handling and `turn_id` pass-through match `push-target-guard.js`'s shipped shape, and `tests/unit/test_test_lock_hook.py` exercises both over synthetic Codex payloads; what is recorded nowhere in this tree is whether Codex honours `permissionDecision: "deny"`. Stated as a limitation rather than measured.
 - **Nothing states when the lock is released, and one stage plausibly needs it to be.** `tests_locked` is set `true` in the write that enters `implement`, and the only documented way back is a test that turns out wrong returning the run to `stage: "tests"`. Reconciliation happens later in the same run, so a merge conflict *inside* a test file is resolved under an armed lock: the hook refuses the `Edit`, and the escape its message names mislabels where the run actually is. No shipped guidance covers the case. T3 (#539) built the reconcile-and-land loop this would land in and did **not** resolve it: `scripts/land.js` leaves a conflicted worktree for the agent to resolve by hand, which is precisely an edit to a test file under a lock nothing releases, and neither the run file's stage vocabulary nor `hooks/test-lock-guard.js` changed. The case is now reachable by the shipped landing procedure rather than hypothetical.
 - **The build workflow's length is a read, not a guard.** #538's criterion set a 70-line bound on `skills/build/SKILL.md`, which measured 68 at #547's tree; the measurement is `wc -l` and direct review, and no test asserts it — law 2's subject is code, and P2 refuses a guard over prose, so a wording or length predicate over a skill file would be the thing the spine was amended to stop (#511, #520). What *is* mechanical is the structural half: `tests/unit/test_build_lifecycle_order.py` reads the `harness:build-lifecycle` block out of the index and `tests/unit/test_teardown_guidance.py` requires the cleanup contract, so a rewrite that drops either goes red. The bound itself has the same standing as the spine's 120-line ceiling: a reviewer's read at a named tree.
-- **Workflow invocation control is asserted from a host reference, not measured here.** Six of the nine workflow skills carry `disable-model-invocation: true` — `assess`, `capture`, `digest`, `init`, `promote`, `propose` — and `build`, `review`, and `routine` deliberately do not, because each answers to a caller that is not a human at a prompt: `/routine` drives `/build`, `/build` drives the review stage, and `routine` itself is fired by an unattended scheduled run. The probe behind that split read the host's own frontmatter and skills references; nothing in this tree executes a host dispatch, so what the flag does at runtime is the host's contract, recorded here rather than tested. #537's criterion said "six"; the shipped set was seven, because `routine` had been swept into the operator-only bucket by category rather than by intent. #564 (2026-09-06) is the correction: a scheduled run was observed refused on `Skill(routine)`, silently shipping nothing, and removing the flag returned the count to six — for a different reason than the criterion that first named it. `tests/unit/test_workflow_skill_invocability.py` now holds the composed set (`routine`, `build`, `review`) against the flag, with the remaining six as its control, both read from the index.
+- **Workflow invocation control is asserted from a host reference, not measured here.** Four of the nine workflow skills carry `disable-model-invocation: true` — `capture`, `init`, `promote`, `propose` — and `build`, `review`, `routine`, `digest`, and `assess` deliberately do not, because each answers to a caller that is not a human at a prompt: `/routine` drives `/build`, `/build` drives the review stage, `routine` itself is fired by an unattended scheduled run, a scheduled run fires `/harness:digest` directly, and a work-pull run falls back to `/assess code`. The probe behind that split read the host's own frontmatter and skills references; nothing in this tree executes a host dispatch, so what the flag does at runtime is the host's contract, recorded here rather than tested. #537's criterion said "six"; the shipped set was seven, because `routine` had been swept into the operator-only bucket by category rather than by intent. #564 (2026-09-06) is the first correction: a scheduled run was observed refused on `Skill(routine)`, silently shipping nothing, and removing the flag returned the count to six. #565 is the second: `digest` and `assess` carried the identical contradiction — a scheduled run refused on `Skill(digest)`, and `lab-book-work-pull`'s `/assess code` fallback refused the same way — and removing both flags returned the count to four. `tests/unit/test_workflow_skill_invocability.py` now holds the composed set (`routine`, `build`, `review`, `digest`, `assess`) against the flag, with the remaining four as its control, both read from the index.
 - **The improvement ledger and the tracker behaviours leave almost no footprint in this tree.** D7's sweep, holds and board writes are tracker-side; what is in the tree is `skills/tracker/` and the two transport references beneath it, and the ledger's own contents live on one standing issue found by its `improvement-ledger` label.
 - **Three exercises #547's criteria name cannot run from this environment, and each has a named owner rather than a fix.** The agent proxy in front of this container refuses every GraphQL query before GitHub sees it, and Projects v2 is GraphQL-only, so the board's Todo placement and Priority writes in `skills/tracker/references/github.md` ship carried; no Linear transport or workspace is reachable, so `references/linear.md` ships carried too; and `/assess` step 5 forbids an unattended run from draining, so the drain's three-outcome marking is reviewed by reading. `specs/harness-assumptions.md` → *Carried, with an owner* names who produces each piece of evidence and when. The recipes moved into `tracker` verbatim from the two provider skills, where they were exercised, which is why a re-exercise buys less here than the criterion assumed.
 - **A `<<` shift inside a multi-line `$(( ... ))` still refuses.** That body does contain a newline, so the shift reaches the heredoc branch, opens a body, and waits for a delimiter that never arrives. The refusal is fail-closed and rewriting the expression on one line clears it. It is not fixed, because fixing it means telling arithmetic from a command list again, which is what two review cycles of #557 failed at.
