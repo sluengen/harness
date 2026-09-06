@@ -16,9 +16,7 @@ The inverse is the pass's most valuable output and the one nobody goes looking f
 
 A check that cannot fail for the reason it claims. One detection method governs all of them: **name the edit that should fail it, make that edit, and watch.**
 
-**`review-discipline` → `references/craft.md` is this repo's home for defect classes that read as green**, and it carries what a bare definition cannot: the falsifying example, the concrete shape where the wrong thing passed. Read it alongside the list below, and wherever a shape here has an entry there, take that entry as the better description — an example beats a definition. Additions to it are an operator call at the drain, never self-filed, so a new class is *proposed* there rather than grown here.
-
-**The two are not the same set, and this list does not summarise that file.** The split is *audience*: `craft.md` recognises one shape in the diff in front of you; this is the sweep order for a whole suite, where covering the shapes matters more than depth on any one. Several shapes below have no `craft.md` entry, and several others correspond only loosely to differently-scoped entries there, so treat the mapping as partial rather than assuming a counterpart exists. They are named here rather than quietly moved into it, because moving them is the operator's call at the drain and not a pass's.
+A reviewer-facing sibling of this list lives in the review skill's own reference on defect classes. It is not the same set and this list does not summarise it: the split is *audience*, one shape in the diff in front of you there against the sweep order for a whole suite here, so several shapes below have no counterpart and several correspond only loosely. A new class is *proposed* to whichever of the two fits its audience and decided by the operator at the drain, never self-filed and never quietly moved between them.
 
 - **Green from birth** — asserts behaviour it never saw absent; no RED was ever observed for it.
 - **Synthesized inputs** — driven by events no production path emits, so it exercises a branch the live system never reaches.
