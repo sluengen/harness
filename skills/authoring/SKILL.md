@@ -87,7 +87,7 @@ Every ticket carries exactly one `assurance:<level>` label, chosen at filing, an
 |---|---|---|
 | `trivial` | Fix | The diff is describable in one sentence, touches no protected area, and adds tests without editing any. |
 | `simple` | Change | The default: one checkable outcome, bounded decisions, no contract change. |
-| `complex` | Feature | The work changes a contract, reaches a protected area, came from a proposal, or carries a consequential architecture, data-model, interface or security decision. |
+| `complex` | Feature | The work changes a contract, reaches a protected area, or came from a proposal — the spine's three, and no fourth. |
 
 Two rules carry the weight.
 

@@ -64,7 +64,7 @@ When the posture cannot be changed from this run — settings are the operator's
 
 ## Held tickets
 
-A ticket a human holds is not this loop's to pick (the spine's contract). **Skip any ticket assigned to a human, or carrying a hold label, in any state.** The assignment is the authoritative, provider-neutral signal, and the ticket re-enters the queue when the human unassigns it; the label says only why it is held, and is the operator's filter rather than this loop's skip lever.
+A ticket a human holds is not this loop's to pick (the spine's contract). **Skip any ticket assigned to a human, in any state.** The assignment is the authoritative, provider-neutral signal, and the ticket re-enters the queue when the human unassigns it; the label says only why it is held, and is the operator's filter rather than this loop's skip lever.
 
 Do not re-litigate a held ticket every tick — it wastes a run and risks inventing busywork.
 

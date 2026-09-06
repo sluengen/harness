@@ -65,7 +65,7 @@ Two axes decide everything about a finding, each a binary.
 
 |  | Small fix | Large fix |
 |---|---|---|
-| Blocking | Fix now, in this branch | **FAIL** — the ticket cannot ship as scoped |
+| Blocking | Fix now, in this branch | **FAIL** — return it to the builder |
 | Non-blocking | Fix now, in this branch | Propose it — one line in the report's Proposals section, and one ledger entry |
 
 The default posture is fix it now: three of the four cells resolve inside this branch, because fixing a small thing costs less than discussing it.
@@ -94,7 +94,7 @@ What (the specific issue), where (file:line or section), why (the rule it violat
 
 ## The verdicts
 
-A review ends in exactly one of these, and no command, agent or report may act on a word this section does not name:
+The three are the spine's contract, not this skill's; what each obliges a review to do is here. A review ends in exactly one of them, and no command, agent or report may act on a fourth word:
 
 - **PASS** — the criteria are met over the tree the verdict binds to, and the change is ready to integrate.
 - **FAIL** — a blocking finding stands. Return it to the builder and re-review, bounded by the stop rule below.
