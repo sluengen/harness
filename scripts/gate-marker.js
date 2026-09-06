@@ -697,9 +697,24 @@ function runGate(cwd, scope) {
   const startedAt = Date.now();
   let result;
   try {
+    //: `stdio: "inherit"` rather than capture (#561). Without it `spawnSync`
+    //: buffers the child's output under a default `maxBuffer` of one mebibyte and
+    //: fails the *spawn* past that bound — `status: null`, `error.code =
+    //: 'ENOBUFS'` — which the arm below maps to `EXIT_RUNNER_UNAVAILABLE`. A gate
+    //: that exited 0 was therefore reported as unable to run and earned no
+    //: marker, and a mebibyte is not a high bar for a full-suite gate across
+    //: several languages. Inheriting removes the buffer rather than raising it,
+    //: so there is no new bound to outgrow, and it makes a long gate's stages
+    //: appear as they are produced instead of arriving at once at the end.
+    //:
+    //: The only thing given up is the captured text, which this function used
+    //: solely to write straight back out; `encoding` went with it, having nothing
+    //: left to decode. The exit status is unaffected — it is `result.status`
+    //: either way — and so is the `error`/`null` arm below, which still catches a
+    //: shell that could not be launched or a gate killed by a signal.
     result = spawnSync("sh", ["-c", gate.command], {
       cwd: String(cwd),
-      encoding: "utf8",
+      stdio: "inherit",
       env: environment,
     });
   } finally {
@@ -711,8 +726,6 @@ function runGate(cwd, scope) {
       }
     }
   }
-  if (result.stdout) process.stdout.write(String(result.stdout));
-  if (result.stderr) process.stderr.write(String(result.stderr));
   if (result.error || result.status === null) {
     const reason = result.error ? result.error.message : "terminated without an exit status";
     process.stderr.write(`gate-marker: could not launch declared gate: ${reason}\n`);
