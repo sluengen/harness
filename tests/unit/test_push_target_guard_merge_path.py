@@ -703,7 +703,6 @@ def repo_at_a_reporting_bound(tmp_path: Path) -> tuple[Path, int]:
     # constant, never whatever the host happened to hand us.
     target = max(201, len(str(tmp_path)) + 2 + _MARKER_TAIL)
     pad = target - _MARKER_TAIL - len(str(tmp_path)) - 1
-    assert pad >= 1, f"cannot build a {target}-character marker path under {tmp_path}"
 
     bare = tmp_path / "origin.git"
     subprocess.run(["git", "init", "-q", "--bare", str(bare)], check=True)
@@ -751,4 +750,34 @@ def test_a_marker_path_past_the_reporting_bound_is_still_named_in_full(
     assert str(path) in reason, (
         f"the refusal names a {target}-character marker path only in part, so it "
         f"names a file that does not exist: {reason}"
+    )
+
+
+def test_an_authored_path_past_the_reporting_bound_is_named_in_full(repo: Path) -> None:
+    """The same #568 defect at the guard's *other* resolvable path.
+
+    ``uncovered`` is ``authored.find(...)`` — one string, not the array its
+    ``.slice(0, MAX_REPORTED_PATH)`` read as — so the scope clause truncated a
+    repo-relative authored path at 200 characters too, and the cut sits *inside*
+    ``JSON.stringify``, which puts quotes around it and makes it read as a
+    complete path. It is the only thing in that sentence telling the operator
+    which path to re-gate.
+
+    Repo-relative paths clear 200 far less often than absolute ones, which is
+    why this outlived the marker path's defect; the class is identical.
+    """
+    prefix = "d" * 210 + "/"
+    conflicted = _conflict_fixture(repo, prefix=prefix)
+    authored = conflicted[0]
+    assert len(authored) > 200, (
+        f"the load must exceed the bound the shipped code applied: {len(authored)}"
+    )
+
+    _marker(repo, "elsewhere")
+    decision, reason, _ = _hook(PUSH, repo)
+    assert decision == "deny", f"an authored path outside the scope must refuse: {reason}"
+    assert "outside the scope" in reason, f"a different refusal than the one under test: {reason}"
+    assert authored in reason, (
+        f"the refusal names the {len(authored)}-character authored path only in "
+        f"part, so it names a file the operator will not find: {reason}"
     )

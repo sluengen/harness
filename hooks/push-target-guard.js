@@ -132,18 +132,33 @@ const MARKER_SUBDIR = ["harness", "gate"];
 //: the message it emits cannot disagree about which file is missing.
 const SIBLING_PARSER = "git-push-guard.js";
 
-//: The cap on a path echoed into a diagnostic, the same 200 the sibling hook
-//: names. A path is repo-controlled text, so it is truncated, never trusted.
+//: The cap on a value echoed into a diagnostic, the same 200 the sibling hook
+//: names — and the sibling makes the same split, so the pair still answers this
+//: question the same way (#568). A path is repo-controlled text, so it is
+//: truncated, never trusted.
 const MAX_REPORTED_PATH = 200;
 
 //: The cap on a path a refusal tells the operator to **open**, which is a
 //: different job from bounding a diagnostic and needs a different number (#568).
 //: A marker path is `<root>/.git/harness/gate/<40 hex>.json` — a 64-character
 //: tail — so 200 cut the filename off any repo checked out more than ~136
-//: characters deep, and the operator was sent to `...b7c.jso`. The bound the
-//: filesystem itself imposes is the only one that cannot do that: past PATH_MAX
-//: the string cannot name a file that exists, so nothing resolvable is lost by
-//: cutting there. Linux's is 4096, macOS's 1024; the larger covers both.
+//: characters deep, and the operator was sent to `...b7c.jso`. Linux's PATH_MAX
+//: is 4096, macOS's 1024; the larger covers both.
+//:
+//: Not "past this a file cannot exist" — one can, created through `openat` from
+//: a deep cwd, and no absolute path will ever open it. The claim is about the
+//: callers: every argument is `markerPath()`, built on `realpathSync`, which is
+//: itself PATH_MAX-bounded and throws `ENAMETOOLONG` past it. So no string this
+//: long can arrive from either call site on a real filesystem, and the arm
+//: below is a totality guard for a future caller that does not go through
+//: `markerPath` — unreachable today, deliberately kept, and untested for that
+//: reason rather than by omission (#568 B-3).
+//:
+//: It widens what reaches the model's context from 200 characters to 4096, and
+//: `:135`'s injection ground applies to that. The residual is small and stated
+//: rather than assumed: the value is `realpath` output plus a hex oid, the
+//: whitespace collapse below removes the newline shape a prompt would need, and
+//: reaching it at all requires directory names already on the operator's disk.
 const MAX_REPORTED_FILE_PATH = 4096;
 
 //: Used when a repo declares no branches. Deliberately over-broad: a false deny
@@ -429,6 +444,10 @@ const reportedUnreadable = new Set();
  * measures the bound.
  */
 function noticeUnreadableDeclaration(file) {
+  // Stays on MAX_REPORTED_PATH, deliberately (#568 AC-4). This names *which*
+  // declaration was skipped so the operator can tell which file the notice is
+  // about; it prescribes nothing to open. A cut name degrades a diagnostic,
+  // where a cut path in a refusal is a wrong instruction.
   const name = String(file);
   if (reportedUnreadable.has(name)) return;
   reportedUnreadable.add(name);
@@ -889,7 +908,7 @@ function mergeAcceptance(dir, move, pushedTree, marker, remote) {
   );
   if (uncovered === undefined) return null;
   return (
-    `it authored ${JSON.stringify(uncovered.slice(0, MAX_REPORTED_PATH))}, which falls ` +
+    `it authored ${JSON.stringify(reportable(uncovered))}, which falls ` +
     "outside the scope its gate marker records"
   );
 }

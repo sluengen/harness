@@ -100,6 +100,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -1091,4 +1092,53 @@ def test_hook_is_registered_for_stop(settings_path: Path) -> None:
     assert all("matcher" not in entry for entry in entries), (
         "a Stop hook takes no matcher; one here would be silently ignored or "
         "silently never fire, and both look identical from a session"
+    )
+
+
+# --- #568: the Stop hook's marker path is a remedy, so it is named in full ----
+#
+# `Expected marker: <path>` hands the operator a
+# `<root>/.git/harness/gate/<40 hex>.json` — the same shape, and the same fixed
+# 64-character tail, that `reportable()`'s flat 200-character cut removed the
+# filename from in `push-target-guard.js`. This hook fires on every completion
+# claim, so it is the one an operator reads most. The length is constructed
+# rather than inherited from the host temp directory, for the reason the twin
+# test gives: inherited, the same bytes are green on Linux CI and red on macOS.
+
+_MARKER_TAIL = len("/.git/harness/gate/") + 40 + len(".json")
+_EXPECTED = re.compile(r"Expected marker: (?P<path>\S+?)\.(?:\s|$)")
+
+
+@pytest.fixture
+def repo_at_a_reporting_bound(tmp_path: Path) -> tuple[Path, int]:
+    """The ``repo`` shape, at a root padded so the marker path clears 200 chars."""
+    real = Path(os.path.realpath(tmp_path))
+    target = max(201, len(str(real)) + 2 + _MARKER_TAIL)
+    root = real / ("r" * (target - _MARKER_TAIL - len(str(real)) - 1))
+    root.mkdir()
+    _git(root, "init", "-q", "--initial-branch=main")
+    _git(root, "config", "user.email", "t@example.com")
+    _git(root, "config", "user.name", "t")
+    _commit(root, "a.txt", "one\n")
+    _git(root, "checkout", "-q", "-b", "task/x")
+    (root / "b.txt").write_text("work in progress\n")
+    return root, target
+
+
+def test_the_expected_marker_path_is_named_in_full_past_the_reporting_bound(
+    repo_at_a_reporting_bound: tuple[Path, int], tmp_path: Path
+) -> None:
+    """#568 B-2 — the twin hook's remedy path, at the length the old cap cut."""
+    root, target = repo_at_a_reporting_bound
+    out = _run_real(root, tmp_path)
+    assert _blocked(out), f"an ungated tree must still block: {out}"
+
+    found = _EXPECTED.search(str(out.get("reason", "")))
+    assert found is not None, f"the block did not name an expected marker: {out}"
+    named = found.group("path")
+    assert len(named) == target, (
+        f"the fixture must pin the load, not inherit it: {len(named)} != {target}"
+    )
+    assert named.endswith(".json"), (
+        f"the marker path is named only in part, so it names no file: {named}"
     )
