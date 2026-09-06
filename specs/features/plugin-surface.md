@@ -317,9 +317,19 @@ the no-skill arms rebuilding skill content out of artefacts that exist only beca
 this repo is the plugin's own source — this record, `specs/proposals/lifecycle-reset.md`,
 `specs/harness-assumptions.md`, `tests/unit/test_teardown_guidance.py`. The localised
 demonstration is `worktree-isolation`: its cleanup eval is pinned verbatim by that
-test as literal strings, and it is the one eval of six where no guidance scores
-identically to the skill (6/6), inheriting a dead iOS-simulator teardown step from the
-phrases it copied. Its two unpinned evals split 8/8 against 2/8 and 5/5 against 4/5.
+test as literal strings, and it is the one of its three evals where no guidance
+scores identically to the skill — 6/6 in both arms — inheriting a dead
+iOS-simulator teardown step from the phrases it copied. Its two unpinned evals split 8/8 against 2/8 and 5/5 against 4/5.
+
+One arithmetic fact belongs beside that attribution, because it bounds what the
+baseline experiment could have shown at all: for every one of the four, the no-skill
+arm scored high enough that clearing 0.110 was out of reach before any confound is
+argued. A perfect with-skill score leaves `engineering` exactly 0.110 of headroom,
+`authoring` 0.093, `assess` 0.083 and `tracker` 0.040. Three of the four did score
+that perfect 1.000, so their shortfall is the ceiling and not a judgement about the
+skill — the same defective-proxy shape this run diagnosed in the original AC-1, now
+reaching its replacement. The dogfooding confound is real and measured; it is not
+what decided these four.
 
 **`tracker` is the one case where that attribution does not hold, and it is recorded
 open rather than closed.** Its no-skill arm reached 0.96 by grounding in `AGENTS.md`,
@@ -334,20 +344,26 @@ move and the run held; the question is open, not answered.
 **The leaning, measured with the ticket's own three instruments** — whole-file
 `wc -w`, a line-based count of `**…**` spans, and a fixed-string grep for backticked
 names of other skills. Each was reproduced against the ticket's starting-line table
-before being trusted, and each reproduces it exactly.
+before being trusted, and each reproduces it exactly. The `dev` column is
+`origin/dev` at `faff22c`. The reference-pointer row counts **directed edges** — one
+per pointer, so a mutual pair counts twice — over every file under
+`skills/*/references/`. That convention is why it reads 5 where the change spec's
+amendment listed 4: the amendment counted `assess`'s mutual pair in both directions
+and `engineering`'s in one, missed `process-economy.md` reaching `review-discipline`'s
+`craft.md`, and counted one `SKILL.md` deep-link that is not a reference at all.
 
 | | on `dev` | at this record's tree |
 |---|---|---|
 | Largest `SKILL.md` | `review-discipline`, 3,401 words | `authoring`, 1,797 (cap 1,800) |
 | Most bold spans in one `SKILL.md` | `review-discipline`, 90 | `promote`, 12 (cap 12) |
-| Most other skills cited by one skill | `build`, 7 | 3, tied across five skills |
-| A reference reached through another reference | 4 | 0 |
+| Most other skills cited by one skill | `build`, 7 | 3, tied across six — `architecture`, `assess`, `authoring`, `build`, `propose`, `tracker` |
+| A reference reached through another reference | 5 | 0 |
 | `craft.md` contents | none | 49 entries in 6 families, every anchor resolving and every level-3 heading listed, both directions checked |
 | Agent files | `reviewer` at 76 lines | all five under 60 — `dev` and `reviewer` 59, `architect` 52, `steward` 50, `reviewer-feature` 26 — each setting `model` and `effort`, each citing only skills that exist |
 
 The whole guidance surface moved **48,816 → 47,497 words across 38 → 42 markdown
-files** under `skills/` and `agents/`, derived at this record's tree by
-`find skills agents -name '*.md' -exec cat {} + | wc -w`. So the large per-`SKILL.md`
+files** under `skills/` and `agents/`, derived at `faff22c` and at this record's tree
+by `find skills agents -name '*.md' -exec cat {} + | wc -w`. So the large per-`SKILL.md`
 reductions are mostly redistribution into four new one-hop references —
 `review-discipline/references/certifying.md`, `authoring/references/decisions.md` and
 `conditional-sections.md`, `init/references/refresh.md` — each cited from its parent
@@ -385,7 +401,8 @@ session.** Held-out trigger sets — 20 queries each, 9 positive and 11 near-mis
 negatives drawn from the neighbouring skill each description fences off — ship at
 `skills/<name>/evals/triggers.json` for all ten model-invocable skills, `routine`
 included after #564 removed its flag. The published loop could not rank them on this
-host: six skills returned an identical 3/5, and four probes established why —
+host: seven skills — every loop run that produced a `results.json` — returned an
+identical 3/5, and four probes established why —
 `run_eval.py` counts a trigger when a one-shot `claude -p` invokes a temp command, and
 here that fires only for a query handing the description back as an imperative.
 Realistic positives scored 0.00 throughout; the negatives are the whole of the 3/5. An
@@ -393,8 +410,10 @@ instrument with no dynamic range cannot rank descriptions, so the number is with
 rather than reported as one.
 
 **Cost.** 123 sub-agent runs and 16 grader passes against the ticket's stated ~130-run
-budget, plus 112K of `evals/` shipped to every consumer, which is the P2 spend the
-ticket declared and bounded. Two defects in the instrument were found and corrected
+budget, plus the `evals/` directories that ship to every consumer: 21 files,
+**69,087 bytes**, measured at this record's tree by
+`git ls-files 'skills/*/evals/*' | xargs wc -c`. That is the P2 spend the ticket
+declared and bounded. Two defects in the instrument were found and corrected
 inside the run rather than after it: a no-skill envelope that barred
 `review-discipline`'s own diff fixtures along with the repo, and absolute paths in all
 24 copied `metrics.json` files naming the iteration and the arm, which identified the
@@ -456,7 +475,7 @@ No persistent state beyond the tree itself, the gate marker, and — since #539 
 
 - **AC-1d cannot refuse anything, and #548 shipped with that visible.** Its second disjunct — *the shortfall is attributed to a measured cause and the skill is carried to the consumer-repo measurement window rather than cut* — names no threshold, no owner and no date, so a building session can always satisfy it; three successive reviews reached that reading independently. The operator ratified the wording after the result it would license was already on the ticket, so it stands for this change. What has no home at all is the teeth: *if the four-week window shows the same four flat against no guidance there, that is the evidence for a cut* lives in a ticket comment, owned by nobody and dated never.
 - **The carried measurements have no comparison basis in the tree.** `evals/` ships the prompts, the assertions and the trigger sets. The benchmarks that AC-1b, AC-1c and AC-1d were decided from live only under `/home/user/eval-workspaces/`, `/home/user/eval-baseline/` and `/home/user/eval-meta/` on the build container, and the ticket's tables are their only durable record. The four-week window in calibrate and nano-erp is asked to re-answer AC-1d and AC-4 against numbers it cannot re-derive.
-- **The measured rewrite is not quite the shipped rewrite.** The eval arms were staged before the three post-eval repair commits, so the text that produced the deltas above differs from what ships by 14 lines in `review-discipline/SKILL.md`, 6 in `assess/references/process-economy.md`, 4 each in `engineering/SKILL.md` and `work-discovery/SKILL.md`, and 2 in `authoring/SKILL.md`. The snapshot arms are byte-identical to `origin/dev`, walked file by file at review. Re-running 72 sub-agent runs for a 14-word trim is the over-processing P2 refuses, so the gap is recorded rather than closed.
+- **The measured rewrite is not quite the shipped rewrite.** The eval arms are byte-identical to `skills/<name>/` at `6e21f1a`, walked file by file at review, and four repair commits landed after them — `fda33e5`, `ddef7ba`, `4fe8933`, `a97873b`. So the text that produced the deltas above differs from what ships in six files, by `git diff --numstat 6e21f1a HEAD`: 14 lines in `review-discipline/SKILL.md`, 6 in `assess/references/process-economy.md`, 4 in `work-discovery/SKILL.md`, and 2 each in `authoring/SKILL.md`, `engineering/SKILL.md` and `engineering/references/specialized-verification.md`. The snapshot arms are byte-identical to `origin/dev`, walked file by file at review. Re-running 72 sub-agent runs for a 14-word trim is the over-processing P2 refuses, so the gap is recorded rather than closed.
 - **AC-3's bold-span cap is met at zero margin, under an instrument that undercounts.** The ticket's instrument is a line-based `grep`, which cannot see a bold span wrapping a line. `promote` reads **12** under it — exactly the cap — and 14 under a multiline-aware count; `tracker` reads 11 against 12. The criterion names its own instrument, so both are met, and AC-3 is a proxy the ticket already says is a proxy. The next edit to either file should know that its headroom is a property of the counter rather than of the file.
 - **`tests/unit/test_teardown_guidance.py` is now a measured confound as well as a forbidden one.** It pins `"Docker"`, `"iOS simulator"` and `"only resources it owns"` as literal strings in `worktree-isolation/SKILL.md` — a guard over skill wording, which ADR 0017 D5 forbids and #548's *Out of scope* names. #548 did not touch it, correctly: editing a test while implementing against it is law 7, and the rewrite happened to keep phrasings that satisfy it. The baseline arm added the third argument for retiring it — the one eval whose strings that test pins is the one eval where no guidance scores identically to the skill.
 - **The spine can go stale in a consumer** that never runs `/harness:init --refresh`; the generated markers and the refresh command are the remedy. Spine growth is a first-`/assess` metric.
