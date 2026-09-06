@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-04
-- **Source:** `specs/proposals/codex-engines-and-the-container-sandbox.md`
+- **Source:** the `codex-engines-and-the-container-sandbox` proposal (settled; removed from the tree by #547, kept in git history)
 - **Amends:** [0002](0002-in-container-review-engine.md) (the in-container review engine), [0007](0007-design-verb.md) (design's Claude-only engine)
 
 ## Context

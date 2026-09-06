@@ -1,0 +1,62 @@
+# Assessment Craft
+
+**Load this at the start of every `/assess` pass, whatever the scope.** It was the `assessment-craft` skill until #547 folded it in here: `/assess` is its only caller, and guidance that has to be triggered by description fires only when somebody remembers it.
+
+Shared knowledge for the `steward` whenever it periodically audits a codebase. Defines the finding bar, how a finding is placed on the blocking×size 2×2, and the insight-vs-finding test. The methodology for every `/assess` scope; the per-scope domain standards are named by the scope table in `skills/assess/SKILL.md` — `engineering` and `architecture` for the `code` and `architecture` scopes, and [`process-economy.md`](process-economy.md) beside this file for `process`.
+
+## Posture — signal, not noise
+
+Your report becomes work items. Every finding is a unit of someone's future time. Treat finding count like money.
+
+- **Specific or silent.** Every finding names a file, line, or concrete pattern. "Could be improved" is not a finding.
+- **Evidence leads.** State what you found before proposing a fix.
+- **No hypotheticals.** If it might not be a problem under normal conditions, do not file it.
+
+If you write "could benefit from", "might be worth considering", or "it would be nice to" — delete the finding.
+
+## Every finding has four parts
+
+1. **What** — the specific issue.
+2. **Where** — file:line (code) or section (docs).
+3. **Why** — the rule, principle, or standard it violates.
+4. **How** — a concrete fix, not "this is wrong".
+
+Missing any of these means it is not a finding yet.
+
+## Placing a finding — the 2×2
+
+A finding is placed by two binaries, **does it block?** and **is the fix small?**. That 2×2 is `review-discipline`'s and has its one home there; read the placement rules from that skill rather than from a copy here. What the axes mean for a periodic pass:
+
+- **Blocking** — the tree contradicts its own contract today: a security or data-integrity risk, a silent wiring failure, a guard asserting something false, a violation a current change is actively compounding.
+- **Non-blocking** — structural drift, duplicated knowledge, a weak test assertion, a stale doc that creates confusion, cleanup.
+
+Calibrate honestly. An inflated backlog loses its shape and trains the reader to skim.
+
+## Systemic insights — prevent recurrence
+
+This is what makes a steward more than a linter. An insight is a concrete edit to a skill, agent, command, hook, or template that would stop a *class* of findings from recurring.
+
+**Litmus:** does this one change prevent a class of future findings, or just fix this one? The former is an insight; the latter is a finding.
+
+Rules:
+- **Maximum three insights per report.** The cap forces prioritisation.
+- **Name a specific file and the exact edit.** Not "update the skill" — "add a section to `engineering` stating X, so the developer catches Y before review."
+- **Cite at least one finding as evidence.** No insight without a pattern behind it.
+- **Zero insights is legitimate.** Say "no insights this cycle" rather than inventing one.
+- **An insight is proposed, not filed.** It is an improvement — an edit that would make the guidance better, not a place the tree contradicts itself today — so it goes to the improvement ledger and is decided when `/assess` drains it (`review-discipline` → *bugs are filed; improvements are proposed*). The cap above still binds what you write; the ledger decides what is built.
+
+## When a report is not just a finding list
+
+Most scopes are finding engines: the report *is* the list of findings, and a clean pass files nothing. The `architecture` scope (`/assess architecture`) is different — it is a **holistic judgement**, and its report carries narrative sections that are **not** findings and are **not** filed as tickets: the verdict, what is working, the positive bets and trade-offs to preserve (`templates/assessment.md`, the architecture report shape). Recording them is the point of the pass. The finding bar above still governs the *actionable* part: every architecture **risk** you do file still needs the **four parts** — evidence first, a concrete fix, an honest blocking call. A narrative section is exempt from the four-part bar; a filed risk is not. A useful architecture pass can file **zero** tickets while still delivering a verdict and a watchlist.
+
+The `process` scope (`/assess process`, standards in [`process-economy.md`](process-economy.md)) departs in the opposite direction: it is **subtractive**, and most of what it produces is a deletion or simplification candidate. Those are improvements, not contradictions, so they are **ledger entries rather than tickets** — and the *three-insight cap above does not bind them*. The cap exists so a pass prioritises its guidance edits; a deletion candidate is not a guidance edit but the pass's ordinary output, and capping it would hide the accumulation the scope exists to measure. Its finding tail — a check asserting something false, an unowned hole over a live risk — is filed and still needs the four parts. `process-economy` owns the lens; `skills/assess/SKILL.md` owns which door each result goes through.
+
+## What you are not looking for
+
+Style preferences, formatting nits, complexity that is justified by the problem, intentional deviations that are improvements, or "future work" that is not causing a problem now.
+
+When unjustified complexity *is* a finding, the `code` scope names it with the `review-discipline` over-engineering taxonomy — that skill is its one canonical home; cite the tag and what replaces the cut, rather than restating the tags here.
+
+## Output
+
+Write a dated report in the `templates/assessment.md` format. The `assess` command files the **findings** and nothing else — an insight is an improvement, so it is appended to the improvement ledger instead of being filed (above). For each finding use an ID prefixed by the steward's domain (`CODE-`, `ARCH-`, `PROC-`); insights append `-INSIGHT`. Zero findings is a legitimate, stated outcome — do not invent findings to fill the report.
