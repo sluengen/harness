@@ -233,6 +233,143 @@ function captureParam(s, start) {
   return [text, j];
 }
 
+/** The delimiter word of a heredoc redirection, read from just past ``<<``.
+ *
+ * Returns ``{word, quoted, next}``, or ``null`` when no delimiter word follows —
+ * a bare ``<<`` at end of input, or one followed straight by another operator.
+ * That is a syntax error, and the caller turns it into the refusal AC-4 owns.
+ *
+ * ``quoted`` is the whole point of this helper, and it is POSIX's rule rather
+ * than a convenience: if *any* character of the delimiter is quoted — ``<<'Z'``,
+ * ``<<"Z"``, ``<<\Z`` — the body undergoes no expansion at all. Unquoted, the
+ * body is expanded, so a ``$(…)`` or a backtick inside it really executes.
+ * :func:`lex` skips the body either way, but harvests substitutions only out of
+ * the unquoted form, and that asymmetry is the whole of #557's fix: skipping
+ * both forms wholesale would blind the guards to ``cat <<EOF`` …
+ * ``$(git push --force …)`` … ``EOF``.
+ *
+ * Leading blanks are skipped, because ``<< EOF`` is a legal spelling and
+ * enumerating the shape rather than the spellings is how this class of bug
+ * survives a test suite. */
+function captureHeredocDelimiter(s, start) {
+  let i = start;
+  while (i < s.length && (s[i] === " " || s[i] === "\t")) i++;
+  let word = "";
+  let quoted = false;
+  let sawAny = false;
+  while (i < s.length) {
+    const c = s[i];
+    if (c === "'") {
+      quoted = true;
+      sawAny = true;
+      i++;
+      while (i < s.length && s[i] !== "'") {
+        word += s[i];
+        i++;
+      }
+      i++;
+      continue;
+    }
+    if (c === '"') {
+      quoted = true;
+      sawAny = true;
+      i++;
+      while (i < s.length && s[i] !== '"') {
+        if (s[i] === "\\" && i + 1 < s.length) {
+          word += s[i + 1];
+          i += 2;
+          continue;
+        }
+        word += s[i];
+        i++;
+      }
+      i++;
+      continue;
+    }
+    if (c === "\\" && i + 1 < s.length) {
+      quoted = true;
+      sawAny = true;
+      word += s[i + 1];
+      i += 2;
+      continue;
+    }
+    if (" \t\n;&|<>()".includes(c)) break;
+    word += c;
+    sawAny = true;
+    i++;
+  }
+  if (!sawAny || word === "") return null;
+  return { word, quoted, next: i };
+}
+
+/** Push every ``$(…)`` and backtick body found in ``text`` onto ``out``.
+ *
+ * The expansion-bearing half of the heredoc rule. Only ``\`` suppresses an
+ * expansion inside an unquoted heredoc body — single and double quotes are
+ * ordinary characters there — so this walk honours the backslash and nothing
+ * else. ``${…}`` is deliberately *not* skipped as a unit: ``${x:-$(cmd)}`` runs
+ * ``cmd``, so scanning straight through finds an inner ``$(`` that a unit-skip
+ * would hide. */
+function harvestSubstitutions(text, out) {
+  let i = 0;
+  while (i < text.length) {
+    const c = text[i];
+    if (c === "\\") {
+      i += 2;
+      continue;
+    }
+    if (c === "$" && text[i + 1] === "(") {
+      const [body, next] = captureParenSub(text, i + 2);
+      out.push(body);
+      i = next;
+      continue;
+    }
+    if (c === "`") {
+      const [body, next] = captureBacktick(text, i + 1);
+      out.push(body);
+      i = next;
+      continue;
+    }
+    i++;
+  }
+}
+
+/** Consume the queued heredoc bodies from ``start``; return the index just past
+ * the last one, or ``null`` when any of them is unterminated.
+ *
+ * Bodies are consumed in the order their operators appeared, which is the
+ * shell's own order for ``cat <<A <<B``. The terminator is matched against the
+ * **whole line**, never a substring of one, and leading tabs are stripped from
+ * both the body lines and the terminator **only** for the ``<<-`` form.
+ *
+ * ``null`` rather than a best guess: where the terminator never arrives there is
+ * no way to know which of the remaining lines were data and which were command,
+ * and inventing an answer is the guessing these guards refuse everywhere else. */
+function consumeHeredocBodies(command, start, pending, substitutions) {
+  let i = start;
+  for (const doc of pending) {
+    const bodyLines = [];
+    let terminated = false;
+    while (i < command.length) {
+      let end = command.indexOf("\n", i);
+      if (end === -1) end = command.length;
+      const raw = command.slice(i, end);
+      const line = doc.strip ? raw.replace(/^\t+/, "") : raw;
+      i = end + 1;
+      if (line === doc.word) {
+        terminated = true;
+        break;
+      }
+      bodyLines.push(line);
+    }
+    if (!terminated) return null;
+    // Joined before harvesting, never line by line: a ``$(…)`` may span several
+    // lines of a body, and a per-line scan would capture neither half of it.
+    if (!doc.quoted) harvestSubstitutions(bodyLines.join("\n"), substitutions);
+  }
+  return i;
+}
+
 /** Lex a shell command string.
  *
  * Returns ``{commands, substitutions}``. ``commands`` is a list of
@@ -243,10 +380,27 @@ function captureParam(s, start) {
  * backtick bodies, kept for recursive analysis. Single/double quotes, backslash
  * escapes and ``#`` comments are honoured; ``$(…)`` and ``${…}`` are captured as
  * opaque tokens so they never sever the surrounding command. A pragmatic lexer
- * for *detecting* a git-push invocation, not a full shell parser. */
+ * for *detecting* a git-push invocation, not a full shell parser.
+ *
+ * **Heredoc bodies are data (#557).** A ``<<`` redirection queues its delimiter;
+ * at the newline that ends the command line the body is consumed and never
+ * reaches ``commands``. Before this the body's lines arrived as ordinary
+ * commands, so writing a file whose content quoted a push was refused as that
+ * push — in both guards at once, since both run this one lexer. The redirection
+ * *operator* is still emitted as a token, because
+ * :func:`isBareShellFedExternally` reads it off the command line to fail closed
+ * on ``sh <<EOF``; only the body is removed.
+ *
+ * ``unterminated`` is the third return value, and it is a refusal rather than a
+ * detail: a heredoc whose delimiter never arrives leaves the lexer unable to say
+ * which of the remaining lines were data, so both guards deny on it. */
 function lex(command) {
   const commands = [];
   const substitutions = [];
+  // Heredoc redirections seen on the current line, awaiting their bodies, and
+  // the flag that says one of those bodies never ended.
+  let pending = [];
+  let unterminated = false;
   let cur = [];
   let token = "";
   let hasToken = false;
@@ -284,10 +438,57 @@ function lex(command) {
     }
     if (c === "$" && command[i + 1] === "(") {
       const [body, next] = captureParenSub(command, i + 2);
-      substitutions.push(body);
+      if (body.startsWith("(") && body.endsWith(")")) {
+        // ``$((…))`` is *arithmetic* expansion: no command runs in it, and its
+        // ``<<`` is a left shift. Lexing that body as shell would read the shift
+        // as a heredoc operator whose delimiter never arrives, and refuse
+        // ``echo $((1 << 2))`` — trading #557's false positive for a new one.
+        // Inner ``$(…)``/backticks inside the arithmetic still execute, so they
+        // are harvested rather than dropped. (Bash reads ``$((cmd))`` as
+        // arithmetic too, so a subshell spelled that way runs no command here
+        // either.)
+        harvestSubstitutions(body, substitutions);
+      } else {
+        substitutions.push(body);
+      }
       token += "$(" + body + ")";
       hasToken = true;
       i = next;
+      continue;
+    }
+    // A here-string, consumed whole. Skipping it as three characters is what
+    // stops the scan from restarting on its *second* ``<`` and reading the last
+    // two as a heredoc whose delimiter is the here-string's word — which would
+    // refuse every ``<<<`` in the repo, the one construct of this family its own
+    // corpus actually contains.
+    if (c === "<" && command[i + 1] === "<" && command[i + 2] === "<") {
+      endToken();
+      cur.push("<<<");
+      i += 3;
+      continue;
+    }
+    // A heredoc redirection. The body does not begin until the next newline, so
+    // the operator is only *queued* here and the rest of this line stays command.
+    if (c === "<" && command[i + 1] === "<") {
+      let j = i + 2;
+      const strip = command[j] === "-";
+      if (strip) j++;
+      const delim = captureHeredocDelimiter(command, j);
+      if (delim === null) {
+        unterminated = true;
+        break;
+      }
+      // A file-descriptor prefix (``0<<EOF``) is left in the token stream as an
+      // ordinary word. Dropping it would be tidier and was written that way
+      // first, but no mutant could kill it: neither guard reaches a different
+      // verdict for the ``0``, so the code was unmeasured and went (P2).
+      endToken();
+      // Emitted so ``isBareShellFedExternally`` still sees an input redirect on
+      // ``sh <<EOF``. Spelled quote-stripped, which is the token this lexer
+      // produced for the operator before heredocs were understood at all.
+      cur.push("<<" + (strip ? "-" : "") + delim.word);
+      pending.push({ word: delim.word, quoted: delim.quoted, strip });
+      i = delim.next;
       continue;
     }
     if (c === "$" && command[i + 1] === "{") {
@@ -376,6 +577,17 @@ function lex(command) {
       endCommand();
       if (doubled) i++;
       i++;
+      // The newline that ends a command line is where any heredoc bodies queued
+      // on it begin. Consumed here so their lines never reach ``commands``.
+      if (c === "\n" && pending.length) {
+        const resumeAt = consumeHeredocBodies(command, i, pending, substitutions);
+        if (resumeAt === null) {
+          unterminated = true;
+          break;
+        }
+        i = resumeAt;
+        pending = [];
+      }
       continue;
     }
     if (c === " " || c === "\t" || c === "\r") {
@@ -388,7 +600,31 @@ function lex(command) {
     i++;
   }
   endCommand();
-  return { commands, substitutions };
+  // A redirection still waiting for its body when the input ran out: the body
+  // is empty and its delimiter never came, so the same refusal applies.
+  if (pending.length) unterminated = true;
+  return { commands, substitutions, unterminated };
+}
+
+/** True if ``command`` — or any substitution or inline script nested in it —
+ * carries a heredoc the lexer could not close.
+ *
+ * Its own traversal rather than a flag threaded through
+ * :func:`forcePushAnywhere`, because the two guards refuse this for different
+ * reasons and each says so in its own words: one is about rewriting history, the
+ * other about landing unverified work, and neither message fits "this command
+ * cannot be read". The recursion mirrors that function's exactly, so an
+ * unterminated heredoc inside ``sh -c "…"`` is caught at the depth it appears. */
+function hasUnterminatedHeredoc(command, depth = 0) {
+  if (depth > 16) return false; // pathological-nesting backstop, as above
+  const { commands, substitutions, unterminated } = lex(command);
+  if (unterminated) return true;
+  for (const { tokens } of commands) {
+    for (const script of nestedScripts(tokens)) {
+      if (hasUnterminatedHeredoc(script, depth + 1)) return true;
+    }
+  }
+  return substitutions.some((body) => hasUnterminatedHeredoc(body, depth + 1));
 }
 
 // A leading ``NAME=value`` environment assignment.
@@ -633,6 +869,26 @@ function deny(command) {
   );
 }
 
+/** The refusal for a command this guard could not read at all (#557, AC-4). */
+function denyUnreadable(command) {
+  const reason =
+    `[GIT-PUSH-GUARD] Blocked a command carrying an unterminated heredoc. The command ` +
+    `${JSON.stringify(command)} opens a heredoc whose delimiter never appears on a line of ` +
+    `its own, so where the body ends — and which of the following lines are commands rather ` +
+    `than data — cannot be established before it runs. This guard refuses rather than picking ` +
+    `an interpretation. Close the heredoc with its delimiter at the start of a line (leading ` +
+    `tabs are stripped only for the <<- form).`;
+  process.stdout.write(
+    JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "deny",
+        permissionDecisionReason: reason,
+      },
+    })
+  );
+}
+
 /** Defer to the normal permission flow — do NOT pre-approve. */
 function passThrough(input) {
   if (input && Object.prototype.hasOwnProperty.call(input, "turn_id")) return;
@@ -643,6 +899,10 @@ function main() {
   const input = readStdin();
   if ((input.tool_name || "") !== "Bash") return passThrough(input);
   const command = (input.tool_input && input.tool_input.command) || "";
+  // Before the force check, not after: an unreadable command has no force
+  // verdict to reach, and saying so plainly beats a force-push message about a
+  // command that may not contain one.
+  if (hasUnterminatedHeredoc(command)) return denyUnreadable(command);
   if (forcePushAnywhere(command)) return deny(command);
   passThrough(input);
 }
@@ -695,4 +955,5 @@ module.exports = {
   nestedScripts,
   hasCommandSubstitution,
   isBareShellFedExternally,
+  hasUnterminatedHeredoc,
 };

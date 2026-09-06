@@ -963,6 +963,21 @@ function main() {
   const parser = require("./git-push-guard.js");
 
   const cwd = input.cwd || process.cwd();
+  // State 2 of the split above, reached before any push is looked for: a heredoc
+  // whose delimiter never arrives leaves the lexer unable to say which of the
+  // following lines are commands, so whether this command pushes at all is
+  // unknowable. Refuse rather than read the remaining lines as commands, which
+  // is what this hook did to *every* heredoc body until #557.
+  if (parser.hasUnterminatedHeredoc(command, 0)) {
+    return deny(
+      "Blocked a command carrying an unterminated heredoc. Its delimiter never " +
+        "appears on a line of its own, so where the body ends — and which of the " +
+        "following lines are commands rather than data — cannot be established " +
+        "before it runs, and neither can the tree any push among them would " +
+        "carry. Close the heredoc with its delimiter at the start of a line; " +
+        "leading tabs are stripped only for the <<- form."
+    );
+  }
   for (const push of pushesIn(command, cwd, parser, 0)) {
     const reason = verdict(push, parser);
     if (reason) return deny(reason);
