@@ -1,7 +1,6 @@
 ---
 name: digest
-description: "/digest — the operator's console: one report of everything waiting on a human — questions to answer, run outcomes, work parked for a verdict, new ledger entries, hands-on errands — and, with `--drain`, an interactive pass that resolves the input-held tickets. Use when the operator says `/digest`, \"what needs me today\", \"catch me up on the repo\", or \"drain my held tickets\". The report changes nothing; the drain changes only hold state, and only with the operator present. Not for building, fixing, merging, or deciding improvements (`/assess` drains the ledger). Operator-triggered only; the model does not fire it."
-disable-model-invocation: true
+description: "/digest — the operator's console: one report of everything waiting on a human — questions to answer, run outcomes, work parked for a verdict, new ledger entries, hands-on errands — and, with `--drain`, an interactive pass that resolves the input-held tickets. Use when the operator says `/digest`, \"what needs me today\", \"catch me up on the repo\", or \"drain my held tickets\". The report changes nothing; the drain changes only hold state, and only with the operator present. Not for building, fixing, merging, or deciding improvements (`/assess` drains the ledger). Reachable by a scheduled run, which fires the report half, so `disable-model-invocation` is deliberately not set here; `--drain` stays operator-only by the rule in this skill's body, which the flag never enforced (#565)."
 model: inherit
 effort: medium
 ---
