@@ -285,11 +285,92 @@ def test_an_unquoted_body_spelling_a_bare_force_push_is_allowed(repo: Path) -> N
     assert not _denied(FORCE_HOOK, f"cat > d.md <<EOF\n{FORCE}\nEOF\n", repo)
 
 
+#: The three spellings that quote a delimiter. Parametrised over the body-inert
+#: assertion rather than tested once, because the ``quoted`` flag is the fix's
+#: core claim and the spelling corpus above only proves each spelling's *word*
+#: parses. Review of the first cycle measured the gap directly: flipping
+#: ``quoted`` to ``false`` in the double-quote or backslash arm of
+#: ``captureHeredocDelimiter`` changed no test outcome.
+QUOTED_DELIMITERS = [
+    ("single", "<<'EOF'"),
+    ("double", '<<"EOF"'),
+    ("backslash", "<<\\EOF"),
+]
+
+
+@pytest.mark.parametrize(
+    "delimiter", [d for _, d in QUOTED_DELIMITERS], ids=[i for i, _ in QUOTED_DELIMITERS]
+)
 def test_a_quoted_body_does_not_expand_so_a_substitution_in_it_is_data(
-    repo: Path,
+    delimiter: str, repo: Path
 ) -> None:
     """The asymmetry's other half: ``$(…)`` inside a *quoted* body never runs."""
-    assert not _denied(FORCE_HOOK, f"cat > d.md <<'EOF'\n$({FORCE})\nEOF\n", repo)
+    assert not _denied(FORCE_HOOK, f"cat > d.md {delimiter}\n$({FORCE})\nEOF\n", repo)
+    assert not _denied(TARGET_HOOK, f"cat > d.md {delimiter}\n$({PUSH})\nEOF\n", repo)
+
+
+# --- arithmetic expansion is not command substitution, and vice versa ---------
+#
+# ``$((…))`` had to be told apart from ``$(…)`` so a left shift would not read as
+# a heredoc operator. Getting that classifier wrong in the *other* direction is
+# worse than the bug it prevents: a body bash would run as commands, taken for
+# arithmetic, is a force push nobody analyses. Bash opens arithmetic only when
+# the paren after ``$(`` is closed by the **final** ``)``; when an inner paren
+# closes early it re-parses the whole construct as command substitution and runs
+# it. Verified on this host:
+#
+#     $ echo $((echo A) && (echo B))   ->  A B
+#     $ echo $((echo A); (echo B))     ->  A B
+#     $ echo $((echo A) | (cat))       ->  A
+#     $ echo $((echo A))               ->  syntax error (genuinely arithmetic)
+
+RUNS_AS_COMMANDS = [
+    ("and_list", "(%s) && (true)"),
+    ("semicolon_list", "(%s); (true)"),
+    ("pipeline", "(%s) | (cat)"),
+]
+
+
+@pytest.mark.parametrize(
+    "shape", [s for _, s in RUNS_AS_COMMANDS], ids=[i for i, _ in RUNS_AS_COMMANDS]
+)
+def test_a_dollar_paren_body_bash_runs_as_commands_is_not_treated_as_arithmetic(
+    shape: str, repo: Path
+) -> None:
+    """An early-closing inner paren makes it command substitution, and it runs."""
+    assert _denied(FORCE_HOOK, "echo $(" + shape % FORCE + ")", repo)
+    assert _denied(TARGET_HOOK, "echo $(" + shape % PUSH + ")", repo)
+
+
+def test_genuine_arithmetic_in_dollar_paren_is_still_not_a_heredoc(repo: Path) -> None:
+    """The half that must keep working: a shift is arithmetic, not a redirect."""
+    for command in ("echo $((1 << 2))", "echo $(( (1+2) << 3 ))"):
+        assert not _denied(FORCE_HOOK, command, repo)
+        assert not _denied(TARGET_HOOK, command, repo)
+
+
+ARITHMETIC_COMMANDS = [
+    ("bare", "(( 1 << 2 ))"),
+    ("in_an_if", "if (( 1 << 2 )); then echo hi; fi"),
+    ("assignment", "(( x = 1 << 3 ))"),
+]
+
+
+@pytest.mark.parametrize(
+    "command", [c for _, c in ARITHMETIC_COMMANDS], ids=[i for i, _ in ARITHMETIC_COMMANDS]
+)
+def test_a_word_boundary_double_paren_is_an_arithmetic_command(
+    command: str, repo: Path
+) -> None:
+    """``(( … ))`` is arithmetic too, and its ``<<`` is a shift, not a heredoc."""
+    assert not _denied(FORCE_HOOK, command, repo)
+    assert not _denied(TARGET_HOOK, command, repo)
+
+
+def test_a_double_paren_subshell_group_still_runs_its_commands(repo: Path) -> None:
+    """``((cmd) && (cmd))`` is nested subshells, not arithmetic — bash runs both."""
+    assert _denied(FORCE_HOOK, f"(({FORCE}) && (true))", repo)
+    assert _denied(TARGET_HOOK, f"(({PUSH}) && (true))", repo)
 
 
 # --- AC-3 controls: the guards still refuse the real thing ---------------------

@@ -302,6 +302,44 @@ function captureHeredocDelimiter(s, start) {
   return { word, quoted, next: i };
 }
 
+/** True if a parenthesised body is **arithmetic** rather than a command list.
+ *
+ * Bash's own disambiguation, and the distinction is load-bearing in both
+ * directions. Read a command list as arithmetic and its commands are never
+ * analysed — a force push walks straight through. Read arithmetic as a command
+ * list and its ``<<`` left shift is taken for a heredoc operator whose delimiter
+ * never comes, refusing ``echo $((1 << 2))``.
+ *
+ * The rule is not "starts with ``(`` and ends with ``)``", which the first cut
+ * of #557 used and which is wrong on every command list wrapped in parens.
+ * Arithmetic opens only when the paren at index 0 is closed by the **final**
+ * character; an inner paren that closes early makes bash re-parse the whole
+ * construct as commands and run them. Measured:
+ *
+ *     echo $((echo A) && (echo B))   ->  A B      (commands)
+ *     echo $((echo A); (echo B))     ->  A B      (commands)
+ *     echo $((echo A) | (cat))       ->  A        (commands)
+ *     echo $((echo A))               ->  error    (arithmetic)
+ *     echo $(( (1+2) << 3 ))         ->  24       (arithmetic)
+ *
+ * One predicate serves ``$((…))`` and the word-boundary ``((…))`` command,
+ * because bash disambiguates them the same way. A ``)`` inside quotes can close
+ * the count early and read a genuine arithmetic body as commands; that direction
+ * costs a body lexed as shell, which is what every body was before this change,
+ * so the error falls the safe way. */
+function isArithmeticBody(body) {
+  if (body[0] !== "(") return false;
+  let depth = 0;
+  for (let i = 0; i < body.length; i++) {
+    if (body[i] === "(") depth++;
+    else if (body[i] === ")") {
+      depth--;
+      if (depth === 0) return i === body.length - 1;
+    }
+  }
+  return false;
+}
+
 /** Push every ``$(…)`` and backtick body found in ``text`` onto ``out``.
  *
  * The expansion-bearing half of the heredoc rule. Only ``\`` suppresses an
@@ -438,15 +476,11 @@ function lex(command) {
     }
     if (c === "$" && command[i + 1] === "(") {
       const [body, next] = captureParenSub(command, i + 2);
-      if (body.startsWith("(") && body.endsWith(")")) {
+      if (isArithmeticBody(body)) {
         // ``$((…))`` is *arithmetic* expansion: no command runs in it, and its
-        // ``<<`` is a left shift. Lexing that body as shell would read the shift
-        // as a heredoc operator whose delimiter never arrives, and refuse
-        // ``echo $((1 << 2))`` — trading #557's false positive for a new one.
-        // Inner ``$(…)``/backticks inside the arithmetic still execute, so they
-        // are harvested rather than dropped. (Bash reads ``$((cmd))`` as
-        // arithmetic too, so a subshell spelled that way runs no command here
-        // either.)
+        // ``<<`` is a left shift, not a redirection. Inner ``$(…)``/backticks
+        // inside the arithmetic still execute, so they are harvested rather
+        // than dropped.
         harvestSubstitutions(body, substitutions);
       } else {
         substitutions.push(body);
@@ -455,6 +489,22 @@ function lex(command) {
       hasToken = true;
       i = next;
       continue;
+    }
+    // A word-boundary ``((`` is an arithmetic *command* — ``(( x = 1 << 3 ))``,
+    // ``if (( 1 << 2 ))`` — and its ``<<`` is a shift. Without this the ``(``
+    // separator below severs it and the shift reaches the heredoc branch, so
+    // ``(( 1 << 2 ))`` would be refused: #557's own defect class inside its fix.
+    // Same predicate as ``$((…))``, because bash disambiguates the two the same
+    // way; when it says commands, this falls through to the separator branch and
+    // ``((cmd) && (cmd))`` is lexed as the nested subshells it is.
+    if (c === "(" && command[i + 1] === "(" && !hasToken) {
+      const [body, next] = captureParenSub(command, i + 1);
+      if (isArithmeticBody(body)) {
+        harvestSubstitutions(body, substitutions);
+        endCommand();
+        i = next;
+        continue;
+      }
     }
     // A here-string, consumed whole. Skipping it as three characters is what
     // stops the scan from restarting on its *second* ``<`` and reading the last
