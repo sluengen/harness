@@ -66,4 +66,4 @@ the migration paths are there, and none of it applies to a first-time run.
 
 ## What this never does
 
-No tracker writes, no commits, no pushes — hydration is working-tree only, and the operator reviews and commits the result. It never overwrites a repo-owned section, never edits between another plugin's markers, and never touches an existing gate beyond reporting that it kept it.
+No tracker writes, no commits, no pushes — hydration is working-tree only, and the operator reviews and commits the result. It never rewrites a repo-owned section with content of its own, never edits between another plugin's markers, and never touches an existing gate beyond reporting that it kept it. `--refresh` reaches a repo-owned region exactly once, to carry the configuration block out to `harness.yaml` unchanged and leave a pointer where it stood; `references/refresh.md` states that move and its refusals.
