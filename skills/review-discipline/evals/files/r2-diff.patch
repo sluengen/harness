@@ -1,0 +1,41 @@
+diff --git a/scripts/retention.js b/scripts/retention.js
+index aaa1111..bbb2222 100644
+--- a/scripts/retention.js
++++ b/scripts/retention.js
+@@ -12,14 +12,22 @@ const SCOPES = ['code', 'architecture', 'process'];
+ 
+ /**
+- * Keep the latest report per scope. Everything else folds into LOG.md.
++ * Keep the latest report per scope, plus any report that still has an
++ * open finding -- folding one of those away loses the only record that
++ * the finding was ever raised. Everything else folds into LOG.md.
+  */
+-function keepSet(reports) {
++function keepSet(reports, openFindingIds) {
+   const latest = new Map();
+   for (const r of reports) {
+     const prev = latest.get(r.scope);
+     if (!prev || r.date > prev.date) latest.set(r.scope, r);
+   }
+-  return new Set([...latest.values()].map((r) => r.path));
++  const keep = new Set([...latest.values()].map((r) => r.path));
++  for (const r of reports) {
++    if (r.findings.some((f) => openFindingIds.has(f.id))) keep.add(r.path);
++  }
++  return keep;
+ }
+ 
+ module.exports = { keepSet };
+diff --git a/tests/unit/test_retention.py b/tests/unit/test_retention.py
+index ccc3333..ddd4444 100644
+--- a/tests/unit/test_retention.py
++++ b/tests/unit/test_retention.py
+@@ -20,3 +20,20 @@ def test_keeps_latest_per_scope():
+     kept = keep_set(REPORTS, set())
+     assert kept == {"assessments/2026-09-01-code.md",
+                     "assessments/2026-08-30-process.md"}
++
++
++def test_keeps_a_superseded_report_with_an_open_finding():
++    kept = keep_set(REPORTS, {"F-12"})
++    assert "assessments/2026-08-11-code.md" in kept

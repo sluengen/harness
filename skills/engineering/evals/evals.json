@@ -1,0 +1,50 @@
+{
+  "skill_name": "engineering",
+  "evals": [
+    {
+      "id": 1,
+      "name": "fail-open-guard-build-plan",
+      "prompt": "I'm the builder on ticket ENG-212 in /home/user/harness-ref (read it, it's a real repo \u2014 but do not read anything under skills/ or agents/ there).\n\n`hooks/push-target-guard.js` currently refuses a push to a branch named under `branches:` in harness.yaml unless a fresh gate marker covers the pushed tree. ENG-212 adds a second acceptance path: also allow the push when the pushed commit is a two-parent merge whose first parent's tree is already covered by a marker.\n\nGive me the build plan \u2014 what I write, in what order, and what evidence I need before I can call ENG-212 done. Don't write the implementation; write the plan a builder follows. Save it as plan.md in the output directory.",
+      "expected_output": "A written artefact demonstrating engineering judgment on a recorded failure mode.",
+      "files": [],
+      "expectations": [
+        "The plan writes a failing test before any implementation code",
+        "The plan requires confirming the test fails for the right reason (a failing assertion, not an import or setup error)",
+        "The plan requires at least one test in the REFUSE direction \u2014 a push that must still be denied after the change",
+        "The plan explicitly names the fail-open risk: a predicate bug that admits a tree no gate ever covered",
+        "The plan requires proving the guard can actually fail (a mutation, a deliberately bad input, or an equivalent negative proof) rather than only that it passes",
+        "The plan does not propose editing or relaxing an existing test to accommodate the new path",
+        "The plan requires running the repo's own verify command and reading its output before claiming done"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "retired-claim-sweep-before-handoff",
+      "prompt": "I'm finishing ticket ENG-240 in /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there).\n\nI deleted the `--legacy-path` flag from `scripts/gate-marker.js`. It's gone \u2014 the flag, its parsing, and the branch behind it. My diff is three files, the gate is green, and I'm about to hand this to review.\n\nIs there anything else I owe before handoff? Answer concretely for this repo \u2014 if there's something to run, give me the exact command. Save your answer as handoff-check.md in the output directory.",
+      "expected_output": "A written artefact demonstrating engineering judgment on a recorded failure mode.",
+      "files": [],
+      "expectations": [
+        "The answer requires enumerating every home of the retired name/claim across the tree before handoff, not waiting for review to point them out",
+        "The answer gives an actual runnable grep (or equivalent search) command over the repository",
+        "The answer names non-obvious homes specifically \u2014 for example docstrings, test files, specs/records, README or MIGRATION, or hook comments \u2014 rather than only 'the docs'",
+        "The answer says that fixing only the instances a reviewer shows you is insufficient",
+        "The answer treats the dependents of a removal as part of this diff rather than follow-up work",
+        "The answer actually runs a search against the repo and reports what it found"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "quantitative-criterion-needs-measuring-test",
+      "prompt": "Ticket ENG-263 in /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there) has this acceptance criterion:\n\n  AC-4: `scripts/land.js` drops below 300 lines.\n\nI did it by moving the merge logic into a new `scripts/land-merge.js`. `land.js` is now 214 lines. The full gate is green.\n\nCan I mark AC-4 met and hand this over? Save your answer as ac4.md in the output directory.",
+      "expected_output": "A written artefact demonstrating engineering judgment on a recorded failure mode.",
+      "files": [],
+      "expectations": [
+        "The answer says a structural change is not by itself evidence that the measured quantity moved",
+        "The answer requires a test that measures the line count and asserts the bound, as the evidence AC-4 needs",
+        "The answer states that a raw file-size number is a defective acceptance criterion and that the structural outcome is what the spec should have stated",
+        "The answer does not simply confirm AC-4 is met because 214 is less than 300",
+        "The answer says the criterion is amended on the ticket (with the owner's agreement) rather than descoped silently, if it is to be replaced"
+      ]
+    }
+  ]
+}

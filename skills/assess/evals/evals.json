@@ -1,0 +1,50 @@
+{
+  "skill_name": "assess",
+  "evals": [
+    {
+      "id": 1,
+      "name": "process-scope-measurements-and-doors",
+      "prompt": "Run me through a `/assess process` pass on /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there). I want to know exactly what the pass produces and where each kind of result goes \u2014 I don't need you to actually write the report, I need the procedure, grounded in this repo. Derive the measurements the pass owes if you can get them.\n\nSave it as process-pass.md in the output directory.",
+      "expected_output": "A written artefact demonstrating assess judgment on a recorded failure mode.",
+      "files": [],
+      "expectations": [
+        "The answer derives, or names the exact derivation for, all three standing measurements: gate duration, module count, and the guard-to-deliverable ratio",
+        "It states that a count of zero gate durations means this clone has run no gate since the field existed, not that the gate is instant",
+        "It routes deletion and simplification candidates to the improvement ledger, not to the ticket queue, and gives the reason",
+        "It says the small tail that contradicts the tree today \u2014 a check asserting something false, an unowned hole over a live risk \u2014 is filed",
+        "It says an unattended run does not drain the ledger, and why",
+        "It runs the repo's verify gate on the committed report before pushing"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "architecture-scope-may-file-nothing",
+      "prompt": "I ran `/assess architecture` on /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there) and the system shape looks broadly right. I found two things worth keeping, one boundary I'd watch, and no risk I'd call actionable.\n\nHave I done it wrong? What do I file, and what does the report have to carry? Save your answer as arch-pass.md in the output directory.",
+      "expected_output": "A written artefact demonstrating assess judgment on a recorded failure mode.",
+      "files": [],
+      "expectations": [
+        "The answer says filing zero tickets is a valid outcome for this scope, not a failed run",
+        "It says positive observations and stable trade-offs live in the report, not in the backlog",
+        "It says only actionable risks become tickets",
+        "It names what the report must carry: a verdict plus narrative \u2014 what is working, the risks, and a watchlist",
+        "It says the report is still recorded even with no findings, because it is evidence the assessment ran",
+        "It does not tell the user to invent findings to justify the run"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "drain-the-ledger",
+      "prompt": "End of a `/assess code` pass on /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there), run by me at the keyboard. The improvement ledger has 34 entries built up since the last drain. Several of them are clearly about the same file.\n\nWhat do I do with them? Save your answer as drain.md in the output directory.",
+      "expected_output": "A written artefact demonstrating assess judgment on a recorded failure mode.",
+      "files": [],
+      "expectations": [
+        "Entries are grouped by their suggested home, abstracted into pattern-level candidates where several are evidence of one thing, and prioritised \u2014 presented as a short slate rather than the raw list of 34",
+        "Every entry leaves the drain marked as exactly one of three outcomes: done, folded, or dropped",
+        "A folded entry becomes a ticket in Todo with exactly one assurance level, and its ticket id is recorded",
+        "A dropped entry has its reason written down",
+        "An entry not promoted at this drain is dropped rather than carried forward unmarked",
+        "The outcomes are recorded back on the ledger thread so the next drain does not re-present an answered entry"
+      ]
+    }
+  ]
+}

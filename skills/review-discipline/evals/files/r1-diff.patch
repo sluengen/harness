@@ -1,0 +1,76 @@
+diff --git a/scripts/land.js b/scripts/land.js
+index 1a2b3c4..5d6e7f8 100644
+--- a/scripts/land.js
++++ b/scripts/land.js
+@@ -1,9 +1,10 @@
+ #!/usr/bin/env node
+ /**
+  * land.js — the landing sequence for a certified candidate.
+  *
+- * Verbs: plan, finish.
+- * It never pushes. The caller owns every conversation with a remote;
+- * this script only prepares and records. `test_no_verb_ever_pushes`
+- * measures that.
++ * Verbs: plan, finish, done.
++ * It never pushes. The caller owns every conversation with a remote;
++ * this script only prepares and records. `test_no_verb_ever_pushes`
++ * measures that.
+  */
+ 
+ const { execFileSync } = require('node:child_process');
+@@ -104,6 +105,24 @@ function finish(args) {
+   return 0;
+ }
+ 
++/**
++ * done — publish the gate record for the landed tree and advance the
++ * green pointer so the next builder branches off a commit known green.
++ */
++function done(args) {
++  const tree = git(['rev-parse', 'HEAD^{tree}']);
++  writeGateRecord(tree);
++
++  // The green pointer lives on the remote, so publishing it is a push.
++  execFileSync('git', ['push', 'origin', `HEAD:refs/harness/green`], {
++    stdio: 'inherit',
++  });
++
++  advanceGreenPointer(tree);
++  return 0;
++}
++
+ const VERBS = { plan, finish, done };
+ 
+ function main(argv) {
+diff --git a/tests/unit/test_land_script.py b/tests/unit/test_land_script.py
+index 2b3c4d5..6e7f8a9 100644
+--- a/tests/unit/test_land_script.py
++++ b/tests/unit/test_land_script.py
+@@ -1,7 +1,7 @@
+ """Guards over scripts/land.js.
+ 
+-It never pushes -- the caller owns every conversation with a remote.
+-`test_no_verb_ever_pushes` measures that, because a script that can
+-reach a remote on its own can land an uncertified tree.
++It never pushes -- the caller owns every conversation with a remote.
++`test_no_verb_ever_pushes` measures that, because a script that can
++reach a remote on its own can land an uncertified tree.
+ """
+ 
+ import subprocess
+@@ -41,10 +41,20 @@ def test_plan_emits_the_merge_command(tmp_path):
+     assert "git merge --no-ff" in out
+ 
+ 
+-def test_no_verb_ever_pushes(tmp_path):
+-    for verb in ("plan", "finish"):
++def test_no_verb_ever_pushes(tmp_path):
++    # `done` is excluded: it is the verb that talks to a remote.
++    for verb in ("plan", "finish"):
+         out = run_land(verb, cwd=tmp_path)
+         assert "git push" not in out
++
++
++def test_done_writes_the_gate_record(tmp_path):
++    out = run_land("done", cwd=tmp_path)
++    assert "gate record" in out
