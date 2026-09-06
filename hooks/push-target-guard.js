@@ -138,27 +138,41 @@ const SIBLING_PARSER = "git-push-guard.js";
 //: truncated, never trusted.
 const MAX_REPORTED_PATH = 200;
 
-//: The cap on a path a refusal tells the operator to **open**, which is a
-//: different job from bounding a diagnostic and needs a different number (#568).
-//: A marker path is `<root>/.git/harness/gate/<40 hex>.json` — a 64-character
-//: tail — so 200 cut the filename off any repo checked out more than ~136
-//: characters deep, and the operator was sent to `...b7c.jso`. Linux's PATH_MAX
-//: is 4096, macOS's 1024; the larger covers both.
+//: The cap on a path a refusal tells the operator to **open** or to act on,
+//: which is a different job from bounding a diagnostic and needs a different
+//: number (#568). A marker path is `<root>/.git/harness/gate/<40 hex>.json` — a
+//: 64-character tail — so 200 cut the filename off any repo checked out more
+//: than ~136 characters deep, and the operator was sent to `...b7c.jso`.
+//: Linux's PATH_MAX is 4096, macOS's 1024; the larger covers both.
 //:
-//: Not "past this a file cannot exist" — one can, created through `openat` from
-//: a deep cwd, and no absolute path will ever open it. The claim is about the
-//: callers: every argument is `markerPath()`, built on `realpathSync`, which is
-//: itself PATH_MAX-bounded and throws `ENAMETOOLONG` past it. So no string this
-//: long can arrive from either call site on a real filesystem, and the arm
-//: below is a totality guard for a future caller that does not go through
-//: `markerPath` — unreachable today, deliberately kept, and untested for that
-//: reason rather than by omission (#568 B-3).
+//: Three callers, and they are bounded by three different things, so the
+//: reachability of the marked-cut arm below is a per-caller question rather
+//: than one claim:
 //:
-//: It widens what reaches the model's context from 200 characters to 4096, and
-//: `:135`'s injection ground applies to that. The residual is small and stated
-//: rather than assumed: the value is `realpath` output plus a hex oid, the
-//: whitespace collapse below removes the newline shape a prompt would need, and
-//: reaching it at all requires directory names already on the operator's disk.
+//:   - `:1028` and `:1035`, both `markerPath()`, are built on `realpathSync`,
+//:     which is itself PATH_MAX-bounded and throws `ENAMETOOLONG` past it. No
+//:     string this long reaches them on a real filesystem. (Not "past PATH_MAX
+//:     a file cannot exist" — one can, created through `openat` from a deep
+//:     cwd, and no absolute path will ever open it. The bound is the syscall's,
+//:     not the filesystem's.)
+//:   - `:911`, `uncovered`, is bounded by **nothing**. It is a repo-relative
+//:     path out of `git diff-tree`, comparing two tree oids, so it is never
+//:     checked out and never passes a syscall that would cap it: git accepts
+//:     and prints back a 5000-character path. This is the caller that makes the
+//:     arm reachable, and it is the one the test covers (#568 cycle 3).
+//:
+//: The twin's `candidate.dir` is a fourth, bounded by the `spawnSync` cwd limit
+//: that gates every block it emits; its own comment says so rather than
+//: deferring here.
+//:
+//: The widening from 200 to 4096 is what `:135`'s injection ground applies to,
+//: and `uncovered` is the argument that ground was written for: repo-controlled,
+//: unbounded, chosen by anyone who can commit a path. Kept at 4096 rather than
+//: capped tighter because the operator cannot re-gate a path they were handed
+//: half of — the defect this ticket exists to fix — and the residual is stated
+//: rather than assumed: the value is interpolated through `JSON.stringify`,
+//: which escapes quotes and control characters, and the whitespace collapse
+//: below removes the newline shape a prompt would need.
 const MAX_REPORTED_FILE_PATH = 4096;
 
 //: Used when a repo declares no branches. Deliberately over-broad: a false deny
@@ -1131,6 +1145,7 @@ if (require.main === module) {
 module.exports = {
   isLiteralDir,
   markerPath,
+  reportable,
   maxAgeSeconds,
   declaredBranches,
   protectedBranches,
