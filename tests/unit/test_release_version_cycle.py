@@ -83,7 +83,8 @@ the module green before and green again after, because a red that was already re
 proves nothing.
 """
 
-# size: past `engineering`'s 300-line soft ceiling, and recorded rather than
+# size: past `engineering`'s 300-line soft ceiling and past its 500-line hard
+# limit, whose rule is justify near the top or ticket — recorded rather than
 # drifted into. The module is one predicate — `release_cycle_verdict` and the pure
 # helpers it composes — plus the acceptance matrix that is the only thing proving
 # it on a run where the live assertion has nothing to say (R4). Eight verdict kinds
