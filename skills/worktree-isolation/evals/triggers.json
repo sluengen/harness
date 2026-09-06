@@ -1,0 +1,22 @@
+[
+{"query":"i'm about to start on HAR-402, it's the auth refactor and it'll be maybe 8 or 9 commits across the session provider and the middleware. two other people have agents running on this repo right now. how should i set up before i touch anything?","should_trigger":true},
+{"query":"ok so i've got three sub-agents I want to run at the same time on different parts of the payments module and then diff the whole thing myself at the end. is that going to be a problem","should_trigger":true},
+{"query":"CAL-88 finally merged. i had a vite dev server on 5173 and a compose stack up for it. what do i tear down and in what order — there's another ticket's checkout on this box i don't want to break","should_trigger":true},
+{"query":"my agent has been committing straight onto main for the last hour and i only just noticed. what should it have been doing instead","should_trigger":true},
+{"query":"before this branch starts, which commit do i branch from? someone said not to just use the tip of dev because it might be red","should_trigger":true},
+{"query":"the new checkout doesn't have my .venv or my .env so uv run blows up. do i just reinstall everything in there or is there a better way","should_trigger":true},
+{"query":"git status in my worktree is showing a file i definitely never opened, plus a stash that isn't mine. what do i do with those","should_trigger":true},
+{"query":"i finished the ticket and merged it. do i need to do anything about the branch and the directory or does that get cleaned up on its own","should_trigger":true},
+{"query":"what's the difference between git worktree add and just cloning the repo twice","should_trigger":false},
+{"query":"i've got a merge conflict in src/session.ts between my branch and dev, both sides changed the token refresh. how do i resolve it","should_trigger":false},
+{"query":"can you explain what a detached HEAD actually means and why git keeps warning me about it","should_trigger":false},
+{"query":"the push guard refused my push saying no gate marker covers the tree. what does that mean and how do i get past it","should_trigger":false},
+{"query":"write me the acceptance criteria for a ticket that makes the retention rule configurable","should_trigger":false},
+{"query":"review this diff for me, it changes how the claim TTL is computed in harness-refs.js","should_trigger":false},
+{"query":"our CI runs out of disk because docker images pile up on the runners. what's the standard way to handle that","should_trigger":false},
+{"query":"i need to isolate the database between test runs so they stop interfering with each other","should_trigger":false},
+{"query":"which ticket should the unattended loop pick next given there's an open P1 bug that's already assigned","should_trigger":false},
+{"query":"how do i squash the 9 commits on this branch into one before opening the PR","should_trigger":false},
+{"query":"set me up to work on TICK-19 — it's a two-line fix to a log message, nothing else","should_trigger":true},
+{"query":"explain the difference between our integration branch and the release branch and when things move between them","should_trigger":false}
+]

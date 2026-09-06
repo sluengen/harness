@@ -1,0 +1,22 @@
+[
+{"query":"the branch feat/marker-scope is finished and the agent that built it is gone. it needs the independent look before anything merges","should_trigger":true},
+{"query":"HAR-208's branch is green. is it actually mergeable or did it quietly miss half the criteria","should_trigger":true},
+{"query":"the sub-agent handed this back saying done. go through it against what the ticket asked and tell me pass or fail","should_trigger":true},
+{"query":"if this branch holds up i want the record of what shipped written before it lands","should_trigger":true},
+{"query":"go through the diff on my current branch against the spec on #612. i don't trust my own read of my own work","should_trigger":true},
+{"query":"the last session claimed HAR-140 was built. i want that checked properly before it goes anywhere near dev","should_trigger":true},
+{"query":"i've got someone else's branch checked out. don't implement anything on it, i just want the outcome","should_trigger":true},
+{"query":"the gate passing only tells me the tests are green. i need an actual judgement on the change itself","should_trigger":true},
+{"query":"builder says every criterion is met on this branch. confirm it and if it holds, write it up","should_trigger":true},
+{"query":"i'm the one doing the checking — what order do i go in and how do i phrase something so the builder can act on it","should_trigger":false},
+{"query":"i found something that's genuinely wrong but tiny. does that stop it or do i note it and let it go","should_trigger":false},
+{"query":"the item's in todo with a spec. do the whole thing, including getting it checked","should_trigger":false},
+{"query":"halfway through implementing and my test needs a fixture that doesn't exist. conftest or inline it","should_trigger":false},
+{"query":"dev's been green three days. move it up","should_trigger":false},
+{"query":"it came back failing. put the ticket back to in progress and record why on it","should_trigger":false},
+{"query":"i want two branches open side by side without stashing every time i switch","should_trigger":false},
+{"query":"how do i make git diff ignore whitespace-only changes","should_trigger":false},
+{"query":"which pytest flag stops at the first failure and drops me into pdb","should_trigger":false},
+{"query":"the diff adds a second way of resolving config paths. is that a call that should have been settled and written down somewhere","should_trigger":false},
+{"query":"go over this branch for anything that logs a token or writes a secret to disk","should_trigger":false}
+]

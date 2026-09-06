@@ -68,7 +68,7 @@ A ticket a human holds is not this loop's to pick (the spine's contract). **Skip
 
 Do not re-litigate a held ticket every tick — it wastes a run and risks inventing busywork.
 
-The queue pull may filter held tickets out as an optimisation, so they never reach the ranking step. That filter is a convenience and this judgment rule is authoritative: if an assigned or held-labelled ticket does reach you, skip it.
+The queue pull may filter held tickets out as an optimisation, so they never reach the ranking step. That filter is a convenience and this judgment rule is authoritative: if an assigned ticket does reach you, skip it.
 
 ## Return path — when a held ticket is clearable
 

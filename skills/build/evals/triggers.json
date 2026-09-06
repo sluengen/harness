@@ -1,0 +1,22 @@
+[
+{"query":"HAR-311 is sitting in todo with a spec on it and nobody's touched it. take it all the way","should_trigger":true},
+{"query":"we agreed the approach yesterday and i filed it as #612. i want it implemented, checked by someone other than whoever writes it, and merged before i'm back","should_trigger":true},
+{"query":"pick up the one about cleaning stale markers and don't come back until it's merged and closed","should_trigger":true},
+{"query":"issue 604 is ready. run the whole thing on it, i don't need to be in the loop unless something actually blocks","should_trigger":true},
+{"query":"the branch for HAR-208 is half done from last night and the tests are red. finish it and ship it","should_trigger":true},
+{"query":"take ENG-51 from todo through to done, it's the one adding the --refresh flag to init","should_trigger":true},
+{"query":"there's an item for making the ticket backend configurable. built and landed today please","should_trigger":true},
+{"query":"the proposal got accepted and spawned three items. start with the first and carry it the whole way","should_trigger":true},
+{"query":"implement the one we just filed for the drift guard and get it in","should_trigger":true},
+{"query":"the branch is built and green already. it just needs the independent pass before it lands","should_trigger":false},
+{"query":"HAR-190's branch is finished and sitting there. tell me whether it can merge","should_trigger":false},
+{"query":"there's a bug where the marker survives a rebase. don't build it now, just get it written down properly so someone can","should_trigger":false},
+{"query":"dev's been green for two days, move it up to the release branch","should_trigger":false},
+{"query":"typo in the error string in scripts/verify.sh, it says covrage. just fix it","should_trigger":false},
+{"query":"nothing was handed to me this morning. work out what's worth starting","should_trigger":false},
+{"query":"close HAR-311 and leave a note on it saying what actually shipped","should_trigger":false},
+{"query":"i'm partway through the implementation and it's grown to touch a hook file. do i keep going or cut it back","should_trigger":false},
+{"query":"pytest is collecting the same test twice since i added a conftest under tests/unit. why","should_trigger":false},
+{"query":"how do i get git to list only the filenames changed between two branches without the diff body","should_trigger":false},
+{"query":"this is going to be six or seven commits. set me up somewhere that can't touch the default branch","should_trigger":false}
+]

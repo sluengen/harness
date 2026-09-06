@@ -5,15 +5,15 @@ model: inherit
 ---
 # Review discipline
 
-How to review any artifact — code, spec, design, copy — for spec compliance and quality: by the reviewer before merge, by the developer as a self-check, or ad hoc. The standards are the ones the builder built to, since structure, scope and verification come from `engineering`, so the bar cannot drift between the two sides.
+How to review any artifact — code, spec, design, copy — for spec compliance and quality: by the reviewer before merge, by the developer as a self-check, or ad hoc. The standards are the builder's own — structure, scope and verification come from `engineering` — so the bar cannot drift between the two sides.
 
 ## The mandate
 
 A review answers four questions and no others: is it correct; does it meet the criteria as they stand on the ticket now; does it cheat (the four categories below, the one thing a review is uniquely able to see); and is every test-file diff justified, one item per file naming the property that moved. Silence on a test file is not a pass.
 
-**A review does not hunt for improvements.** A reviewer prompted to find gaps reports some even when the work is sound, and each enlarges the diff and spends a cycle. The 2×2 still routes one the review *trips over*; going looking is out of scope.
+**A review does not hunt for improvements.** A reviewer prompted to find gaps reports some even in sound work, and each spends a cycle. The 2×2 still routes one the review *trips over*; going looking is out of scope.
 
-Pre-existing problems in untouched files are not findings; prose predating the branch is the tree's baseline, not this diff's regression — three consecutive tickets spent most of their review budget on that mistake. What the diff *makes* false is in scope.
+Pre-existing problems in untouched files are not findings: prose predating the branch is the tree's baseline, not this diff's regression — three consecutive tickets lost most of their review budget to that mistake. What the diff *makes* false is in scope.
 
 ### The four cheat categories
 
@@ -70,7 +70,7 @@ Two axes decide everything about a finding, each a binary.
 
 The default posture is fix it now: three of the four cells resolve inside this branch, because fixing a small thing costs less than discussing it.
 
-**Render both axes on every finding**, at its heading — *blocking · small* — or in a placement table. A report that reasons about blocking and never states size has not discharged the 2×2, because size is the axis deciding fix-now against propose, and "all findings are blocking" is not a placement.
+**Render both axes on every finding**, at its heading — *blocking · small* — or in a placement table. A report that reasons about blocking and never states size has not discharged the 2×2: size is the axis deciding fix-now against propose, and "all findings are blocking" is not a placement.
 
 There is no "small but not worth doing" cell: a stateable defect is a finding and a small one is worth its cost; anything vaguer never became a finding.
 
@@ -90,7 +90,7 @@ A proposal is one line in this report's Proposals section *and* one entry append
 
 What (the specific issue), where (file:line or section), why (the rule it violates), how (a concrete fix). "Could be improved" is not a finding — be specific or say nothing.
 
-**Report a claim's homes as one finding with a count, not one instance per cycle.** The finding is the claim and the count is its size; reporting them one at a time across cycles turns a repair into a lineage.
+**Report a claim's homes as one finding with a count, not one instance per cycle.** The claim is the finding and the count is its size; reporting them one per cycle turns a repair into a lineage.
 
 ## The verdicts
 
