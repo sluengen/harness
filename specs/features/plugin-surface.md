@@ -173,22 +173,30 @@ After a successful push, `/build` runs the `worktree-isolation` cleanup procedur
 ### The skill surface after #547
 
 The cull that ADR 0017 argued and the lifecycle-reset proposal scheduled. Twenty-eight
-skills on `dev` at the start of the reset became sixteen, and seven of the nine
-workflows sit off the model's skill listing, so most of the surface costs the listing
-nothing at all.
+skills on `dev` at the start of the reset became sixteen, and — after #564 — six of
+the nine workflows sit off the model's skill listing, so most of the surface costs
+the listing nothing at all.
 
 **The listing, measured.** `disable-model-invocation: true` removes a skill from the
-listing, so the listing is the nine model-invocable skills — the seven craft skills
-plus `build` and `review`, which deliberately carry no flag because `/routine` drives
-`/build` and `/build` drives the review stage. Their `description:` fields sum to
-**3,131 characters, about 783 tokens**, measured at tree `8281ecf` — the tree the build produced, which this record's own edit leaves unchanged for every figure in this section. Against a 1% listing budget
-on a 200k window that is 39%, down from 4,658 characters across 17 listed skills on
-`dev` at `c75c666`. The seven off-listing workflows sum to 1,181 characters and cost
-nothing. `authoring` (542) and `tracker` (508) are the two long descriptions, and
-deliberately so: each absorbed a skill and has to carry both sets of triggers. Nothing
-guards the figure — a description is prose, and law 2's subject is code — so it is a
-reviewer's measurement at a named tree, re-derivable by summing the `description:`
-field of every `skills/*/SKILL.md` without the flag.
+listing, so the listing is the ten model-invocable skills — the seven craft skills
+plus `build`, `review`, and `routine`, none of which carries the flag because each
+answers to a caller that is not a human at a prompt: `/routine` drives `/build`,
+`/build` drives the review stage, and `routine` itself is the versioned home of the
+prompt an unattended scheduled run pastes. `routine` carried the flag through #537
+and #547 and lost it at #564, once a scheduled run was observed refused on
+`Skill(routine)` — swept into the operator-only bucket by category rather than by
+intent. Their `description:` fields sum to
+**3,496 characters, about 874 tokens**, measured at tree `3952f3a` (#564) — up from
+3,131 characters, about 783 tokens at tree `8281ecf` (#537), the difference being
+`routine`'s own description, which grew from 162 to 365 characters explaining why
+the flag is deliberately absent. Against a 1% listing budget on a 200k window that
+is 44%, up from 39% at `8281ecf`, and down from 4,658 characters across 17 listed
+skills on `dev` at `c75c666`. The six off-listing workflows sum to 1,019 characters
+and cost nothing. `authoring` (542) and `tracker` (508) are the two long
+descriptions, and deliberately so: each absorbed a skill and has to carry both sets
+of triggers. Nothing guards the figure — a description is prose, and law 2's subject
+is code — so it is a reviewer's measurement at a named tree, re-derivable by summing
+the `description:` field of every `skills/*/SKILL.md` without the flag.
 
 **Three merges, each because one caller was the only caller.**
 
@@ -346,7 +354,7 @@ No persistent state beyond the tree itself, the gate marker, and — since #539 
 - **The test lock's Codex half is unprobed.** `.codex/config.toml` registers no hooks at all, so on Codex none of the six guards runs from this repo's configuration — the new one is exactly as strong as the three refusing guards already there, and no weaker. Its `apply_patch` handling and `turn_id` pass-through match `push-target-guard.js`'s shipped shape, and `tests/unit/test_test_lock_hook.py` exercises both over synthetic Codex payloads; what is recorded nowhere in this tree is whether Codex honours `permissionDecision: "deny"`. Stated as a limitation rather than measured.
 - **Nothing states when the lock is released, and one stage plausibly needs it to be.** `tests_locked` is set `true` in the write that enters `implement`, and the only documented way back is a test that turns out wrong returning the run to `stage: "tests"`. Reconciliation happens later in the same run, so a merge conflict *inside* a test file is resolved under an armed lock: the hook refuses the `Edit`, and the escape its message names mislabels where the run actually is. No shipped guidance covers the case. T3 (#539) built the reconcile-and-land loop this would land in and did **not** resolve it: `scripts/land.js` leaves a conflicted worktree for the agent to resolve by hand, which is precisely an edit to a test file under a lock nothing releases, and neither the run file's stage vocabulary nor `hooks/test-lock-guard.js` changed. The case is now reachable by the shipped landing procedure rather than hypothetical.
 - **The build workflow's length is a read, not a guard.** #538's criterion set a 70-line bound on `skills/build/SKILL.md`, which measured 68 at #547's tree; the measurement is `wc -l` and direct review, and no test asserts it — law 2's subject is code, and P2 refuses a guard over prose, so a wording or length predicate over a skill file would be the thing the spine was amended to stop (#511, #520). What *is* mechanical is the structural half: `tests/unit/test_build_lifecycle_order.py` reads the `harness:build-lifecycle` block out of the index and `tests/unit/test_teardown_guidance.py` requires the cleanup contract, so a rewrite that drops either goes red. The bound itself has the same standing as the spine's 120-line ceiling: a reviewer's read at a named tree.
-- **Workflow invocation control is asserted from a host reference, not measured here.** Seven of the nine workflow skills carry `disable-model-invocation: true` — `assess`, `capture`, `digest`, `init`, `promote`, `propose`, `routine` — and `build` and `review` deliberately do not, because `/routine` drives `/build` and `/build` drives the review stage, and the flag's documented effect (user ✓, model ✗) would break that composition. The probe behind that split read the host's own frontmatter and skills references; nothing in this tree executes a host dispatch, so what the flag does at runtime is the host's contract, recorded here rather than tested. The ticket's criterion said "six"; the shipped set is seven, and the correction is on #537.
+- **Workflow invocation control is asserted from a host reference, not measured here.** Six of the nine workflow skills carry `disable-model-invocation: true` — `assess`, `capture`, `digest`, `init`, `promote`, `propose` — and `build`, `review`, and `routine` deliberately do not, because each answers to a caller that is not a human at a prompt: `/routine` drives `/build`, `/build` drives the review stage, and `routine` itself is fired by an unattended scheduled run. The probe behind that split read the host's own frontmatter and skills references; nothing in this tree executes a host dispatch, so what the flag does at runtime is the host's contract, recorded here rather than tested. #537's criterion said "six"; the shipped set was seven, because `routine` had been swept into the operator-only bucket by category rather than by intent. #564 (2026-09-06) is the correction: a scheduled run was observed refused on `Skill(routine)`, silently shipping nothing, and removing the flag returned the count to six — for a different reason than the criterion that first named it. `tests/unit/test_workflow_skill_invocability.py` now holds the composed set (`routine`, `build`, `review`) against the flag, with the remaining six as its control, both read from the index.
 - **The improvement ledger and the tracker behaviours leave almost no footprint in this tree.** D7's sweep, holds and board writes are tracker-side; what is in the tree is `skills/tracker/` and the two transport references beneath it, and the ledger's own contents live on one standing issue found by its `improvement-ledger` label.
 - **Three exercises #547's criteria name cannot run from this environment, and each has a named owner rather than a fix.** The agent proxy in front of this container refuses every GraphQL query before GitHub sees it, and Projects v2 is GraphQL-only, so the board's Todo placement and Priority writes in `skills/tracker/references/github.md` ship carried; no Linear transport or workspace is reachable, so `references/linear.md` ships carried too; and `/assess` step 5 forbids an unattended run from draining, so the drain's three-outcome marking is reviewed by reading. `specs/harness-assumptions.md` → *Carried, with an owner* names who produces each piece of evidence and when. The recipes moved into `tracker` verbatim from the two provider skills, where they were exercised, which is why a re-exercise buys less here than the criterion assumed.
 - **A `<<` shift inside a multi-line `$(( ... ))` still refuses.** That body does contain a newline, so the shift reaches the heredoc branch, opens a body, and waits for a delimiter that never arrives. The refusal is fail-closed and rewriting the expression on one line clears it. It is not fixed, because fixing it means telling arithmetic from a command list again, which is what two review cycles of #557 failed at.
