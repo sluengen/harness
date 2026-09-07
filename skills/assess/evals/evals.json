@@ -43,7 +43,7 @@
       "expectations": [
         "Entries are grouped by their suggested home, abstracted into pattern-level candidates where several are evidence of one thing, and prioritised \u2014 presented as a short slate rather than the raw list of 34",
         "Every entry leaves the drain marked as exactly one of three outcomes: done, folded, or dropped",
-        "A folded entry becomes a ticket in Todo with exactly one assurance level, and its ticket id is recorded",
+        "A folded entry becomes a ticket in Backlog with exactly one assurance level, and its ticket id is recorded",
         "A dropped entry has its reason written down",
         "An entry not promoted at this drain is dropped rather than carried forward unmarked",
         "The outcomes are recorded back on the ledger thread so the next drain does not re-present an answered entry",

@@ -1,6 +1,6 @@
 ---
 name: propose
-description: "/propose — work an idea to a decision before build time is spent: a proposal spec with options and trade-offs, a recommendation, the open decisions, and a breakdown that becomes tickets once it is accepted. Use when the operator says `/propose`, \"should we do X\", \"work up an approach for X\", or \"this is too big for one ticket\" — an idea that is unconfirmed, carries real unknowns, or spans several changes. Not for work already decided (`/capture` files that straight to Todo), not for a one-line fix, and it writes no code. Operator-triggered only; the model does not fire it."
+description: "/propose — work an idea to a decision before build time is spent: a proposal spec with options and trade-offs, a recommendation, the open decisions, and a breakdown that becomes tickets once it is accepted. Use when the operator says `/propose`, \"should we do X\", \"work up an approach for X\", or \"this is too big for one ticket\" — an idea that is unconfirmed, carries real unknowns, or spans several changes. Not for work already decided (`/capture` files that onto the queue), not for a one-line fix, and it writes no code. Operator-triggered only; the model does not fire it."
 disable-model-invocation: true
 model: inherit
 effort: high
@@ -14,7 +14,7 @@ Usage: `/propose <idea>`
 
 Creates and works a **proposal spec** for an idea that is not yet confirmed work — it needs a decision, carries real unknowns, or is too big to be a single change. The proposal is where the thinking happens before build time is spent. Implements the proposal tier of `authoring`.
 
-Use this when the idea is unconfirmed or large. A small, clear piece of work skips the proposal — `/capture` files it straight to Todo, and the smallest needs no ticket at all (the spine's fix lane). Every tracker read or write here goes through `tracker`, per the spine's *Tracker dispatch* contract.
+Use this when the idea is unconfirmed or large. A small, clear piece of work skips the proposal — `/capture` files it onto the queue, and the smallest needs no ticket at all (the spine's fix lane). Every tracker read or write here goes through `tracker`, per the spine's *Tracker dispatch* contract.
 
 ## Steps
 

@@ -32,11 +32,10 @@
         "The review is scoped to what this diff changes or makes false; it does not file findings about stale prose that predates the branch",
         "Where the same claim has several homes, the review reports it as one finding with a count rather than one finding per instance",
         "The review does not go hunting for improvements beyond the mandate",
-        "Any improvement it trips over is proposed (a line in a Proposals section, and an entry appended to the improvement ledger), not filed as a ticket",
-        "The report carries a Proposals section, or the word none, rather than omitting it",
+        "Any non-blocking improvement it trips over is dropped rather than carried: it is neither filed as a ticket nor written into the report",
+        "The report carries no Proposals section at all",
         "The review ends in exactly one of PASS, FAIL or DEFER",
-        "Every finding states BOTH axes \u2014 blocking or not, AND small or large \u2014 at the finding itself or in a placement table",
-        "Where the review cannot reach a ledger, it writes the proposal's full entry into the report rather than recording that an append is owed"
+        "Every finding states BOTH axes \u2014 blocking or not, AND small or large \u2014 at the finding itself or in a placement table"
       ]
     },
     {

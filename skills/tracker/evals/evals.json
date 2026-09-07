@@ -9,7 +9,7 @@
       "files": [],
       "expectations": [
         "The sequence sets exactly one assurance label on the ticket",
-        "The sequence places the ticket in Todo as an explicit step, not as a side effect of creating it",
+        "The sequence places the ticket in a state as an explicit step — Todo where the project has a free slot, Backlog where it has none — not as a side effect of creating it",
         "The sequence sets the blocked-by relationship in the tracker's own field, not in the ticket's prose",
         "The sequence sets the priority field",
         "The final step verifies the result by re-reading the ticket rather than by trusting the exit status of the write",

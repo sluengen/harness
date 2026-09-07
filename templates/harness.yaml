@@ -24,6 +24,17 @@ branches:
   # staging: only where something deploys to a staging environment (ADR 0003 as amended)
 loop:
   max_review_cycles: 3
+queue:
+  # The bounds the queue is pulled against. A project's queue is its Todo,
+  # In Progress and In Review tickets with held ones excluded; a filing with no
+  # free slot lands in Backlog, and a close is what frees one.
+  wip_limit: 6
+  active_projects: 3
+  # Where a ticket's project is read from: `project` (Linear), `milestone`
+  # (GitHub), or `none` where the repo is its own single queue.
+  project_field: {project | milestone | none}
+  # Optional per-project override, one flat key per project:
+  # projects.{project name}.wip_limit: 8
 layers:
   design_system: false
   feature_specs: true

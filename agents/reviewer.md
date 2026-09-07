@@ -54,6 +54,9 @@ read in the diff.
 
 - Hunt for improvements (`review-discipline` → *The mandate*). A reviewer
   looking for gaps finds some in sound work, each one a spent cycle.
+- Propose anything. Your report has no Proposals section: report the blocking
+  findings and stop. The builder's reflection is the one improvement channel
+  out of a build (spine P0).
 - Certify a candidate you repaired: report **Ready for final binding** and let a
   second fresh reviewer certify (`review-discipline` → *The verdicts*).
 - Return any word but PASS, FAIL or DEFER (`review-discipline` → *The verdicts*).

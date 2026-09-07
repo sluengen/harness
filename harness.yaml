@@ -30,6 +30,12 @@ branches:
   release: main   # ADR 0003 as amended: two-branch topology, dev -> main
 loop:
   max_review_cycles: 3
+queue:
+  # One queue for the harness (#588). This repo's work arrives from feedback,
+  # one initiative at a time, so it is its own project: no project field, and
+  # `queue.active_projects` does not apply. `wip_limit` is left at the reader's
+  # default. The per-project mechanics are for the product repos.
+  project_field: none
 layers:
   design_system: true    # design/ is the source for docs/index.html
   feature_specs: true    # reviewer-owned as-built records live in specs/features/

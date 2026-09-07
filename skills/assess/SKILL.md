@@ -54,7 +54,7 @@ The `count` travels with the median: three runs is a different claim from three 
 Take the previous column from the last `process` report's Baseline table or its `assessments/LOG.md` fold line; where neither exists, write `first recorded baseline`. No starting value lives in this file: a measurement is true of one tree on one day, and this guidance installs into repos whose product globs it cannot know.
 
 ### 2. File the findings
-For every finding, create an issue through `tracker` in the Todo state, with the repo's Build project attached (mandatory when filing), the `review-finding` source label, and exactly one `assurance:` label (`AGENTS.md` → *Filing*). Whether a finding blocks and how much verification its fix must buy are different axes: neither its place on the 2×2 nor its length decides its assurance level. Todo rather than Backlog is deliberate: a finding is confirmed work, so a later unattended tick may pick one up with no human in between — the guards on that loop are the finding bar at filing time and the merge-time review gate. Triage happens in the tracker, not at report time. Where `harness.yaml` sets `tracker: none`, skip filing and surface the findings to the user; the dated report is the deliverable.
+For every finding, create an issue through `tracker`, with the repo's Build project attached (mandatory when filing), the `review-finding` source label, and exactly one `assurance:` label (`AGENTS.md` → *Filing*). Whether a finding blocks and how much verification its fix must buy are different axes: neither its place on the 2×2 nor its length decides its assurance level. A finding is confirmed work, so it is placed like any other filing — Todo where the project has a free slot, Backlog where it has none (`tracker` → *The limit*) — and a later unattended tick may pick one up with no human in between; the guards on that loop are the finding bar at filing time and the merge-time review gate. Triage happens in the tracker, not at report time. Where `harness.yaml` sets `tracker: none`, skip filing and surface the findings to the user; the dated report is the deliverable.
 
 A systemic insight is not filed: it proposes a guidance edit that would prevent a class of findings, which is an improvement rather than something the tree already contradicts. Append each to the improvement ledger (`tracker` → *`ledger`*) as one entry carrying its case, the work that raised it, and the file a fix would land in; step 5 decides it.
 
@@ -77,14 +77,14 @@ The ledger accumulates every improvement the loop proposed and nothing in it exp
 
 Then make the survivors answerable: group entries whose suggested home is the same file, abstract several small ones into the pattern-level candidate they are evidence for, prioritise what is left by the cost of leaving it, and present a short slate the operator can decide in one sitting — each with its case, not the raw list.
 
-Every entry leaves the drain marked in exactly one of three ways — otherwise this is a review of a list that keeps growing, not a drain.
+**Drop is the default.** An entry is promoted only when it names what a user or a consuming repo gets from it; an entry that names only a tidier tree, a more consistent wording, or a risk nobody has met is dropped, and the drop is written down. Every entry leaves the drain marked in exactly one of three ways — otherwise this is a review of a list that keeps growing, not a drain.
 
 | Outcome | Means | What happens |
 |---|---|---|
 | **done** | already satisfied — the tree changed, another ticket carried it, or re-validation found the condition gone | record what satisfied it |
-| **folded** | it becomes work | create the ticket through `tracker` in the Todo state, Build project attached, exactly one `assurance:` label; record the id |
+| **folded** | it becomes work, and it named the user or consumer outcome that earns a slot | create the ticket through `tracker` in the **Backlog** state, its project attached, exactly one `assurance:` label; record the id. Never straight into Todo — Backlog is where confirmed work waits, and a close is what pulls it |
 | **dropped** | it will not be done | record the reason. A drop is a decision written down; an entry that quietly stops being mentioned is the inventory this drain exists to clear |
 
-Record the outcomes back on the ledger thread as a comment, so the next drain does not re-present an answered entry. An entry not promoted here is dropped, not carried: carrying it forward unmarked is how a ledger becomes a backlog nobody drains. An entry the operator wants to keep thinking about is a `folded` ticket in Backlog — a state with an owner — not a ledger line with none.
+Record the outcomes back on the ledger thread as a comment, so the next drain does not re-present an answered entry. An entry not promoted here is dropped, not carried: carrying it forward unmarked is how a ledger becomes a backlog nobody drains. A fold never lands in a queue that is already at its limit, because it lands in Backlog and waits there like everything else.
 
 The slate needs somebody to answer it, so an unattended run does not drain: note the ledger's size in the report and stop there. A pass deciding its own proposals is the grant this split exists to close.

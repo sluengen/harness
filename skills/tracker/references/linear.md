@@ -22,7 +22,7 @@ Keep the taxonomy flat and small. The hold labels and what they mean are the spi
 
 ## Placement on create
 
-`projectId` is **mandatory** — a project-less issue is invisible to the Build queue. And a new issue lands in the team's **default state, which is often not Todo**, so resolve the `unstarted` state by `type` and move it explicitly as its own step ([recipes below](#accessing-linear-graphql-via-curl)). This is Linear's form of the spine contract's placement rule (*Filing*).
+`projectId` is **mandatory** — a project-less issue is invisible to the Build queue. And a new issue lands in the team's **default state, which is often neither Todo nor Backlog**, so resolve the target state by `type` — `unstarted` for Todo, `backlog` for Backlog — and move it explicitly as its own step ([recipes below](#accessing-linear-graphql-via-curl)). This is Linear's form of the spine contract's placement rule (*Filing*).
 
 ## A merged PR auto-transitions every ticket it names
 

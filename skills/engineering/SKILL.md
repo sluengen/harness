@@ -113,3 +113,5 @@ No completion claim without fresh evidence. Identify the command that proves the
 | Ready for review | All of the above that apply |
 
 Whether a guard is evidence at all is four further rules, in [`references/specialized-verification.md`](references/specialized-verification.md) → *What makes a guard evidence*. Load it whenever you add or edit one.
+
+**A guard is bounded by the change it guards.** State the guard-to-change ratio in the cost line (`templates/change.md` → *Cost*); above 3 : 1 the guard needs a recorded reason naming the user outcome it protects at this repo's stage. A second defence that shares an operand with the first is not a second defence, and an addition names what it retires — including the guard it has just made redundant (P0, P2).

@@ -1,6 +1,6 @@
 ---
 name: capture
-description: "/capture — file an already-decided change straight to Todo: kind, cost line, acceptance criteria and assurance lane written into a change spec on the tracker issue, ready for `/build`. Use when the operator says `/capture`, \"file a ticket for this\", \"log this bug\", or \"capture that tweak\" — something noticed in use whose direction is not in doubt. Not for an idea that still needs deciding or spans more than one change (`/propose`), not for a one-line fix that needs no ticket at all, and it never builds anything. Operator-triggered only; the model does not fire it."
+description: "/capture — file an already-decided change onto the queue: kind, cost line, acceptance criteria and assurance lane written into a change spec on the tracker issue, ready for `/build`. Use when the operator says `/capture`, \"file a ticket for this\", \"log this bug\", or \"capture that tweak\" — something noticed in use whose direction is not in doubt. Not for an idea that still needs deciding or spans more than one change (`/propose`), not for a one-line fix that needs no ticket at all, and it never builds anything. Operator-triggered only; the model does not fire it."
 disable-model-invocation: true
 model: inherit
 effort: medium
@@ -8,11 +8,11 @@ effort: medium
 
 The portable plugin root is two directories above this SKILL.md. Resolve embedded paths beginning `skills/`, `agents/`, `templates/`, `hooks/`, or `.codex/` from that root; resolve repository artifacts from the workspace root.
 
-# /capture — file an already-decided change straight to Todo
+# /capture — file an already-decided change onto the queue
 
 Usage: `/capture <description>` (kind inferred: bug or tweak)
 
-Something noticed in actual use has nowhere lightweight to land: `/propose` decides the unconfirmed, and hand-filing a tracker issue is fiddly and trap-laden. `/capture` fills the capture sections of `templates/change.md` and files the result straight to Todo, ready for `/build` to pick up. It is the inverse of `/propose` — `/propose` decides, then files; `/capture` files the already-decided. Smaller still needs no ticket at all: the spine's lifecycle owns that boundary.
+Something noticed in actual use has nowhere lightweight to land: `/propose` decides the unconfirmed, and hand-filing a tracker issue is fiddly and trap-laden. `/capture` fills the capture sections of `templates/change.md` and files the result onto the queue, ready for `/build` to pick up — in Todo where the project has a free slot under `queue.wip_limit`, and in Backlog where it has none (`tracker` → *The limit*). It is the inverse of `/propose` — `/propose` decides, then files; `/capture` files the already-decided. Smaller still needs no ticket at all: the spine's lifecycle owns that boundary.
 
 Two kinds, inferred from the description and recorded in the body:
 
@@ -56,7 +56,7 @@ Immediately before authoring the change spec, load `authoring` → `references/p
 
 ### 6 — file it
 
-The title is **verb + where**. Then the UTF-8 body file and exactly one assurance level — chosen per `authoring` → *Choosing assurance*, never restated here — through `tracker`'s `create` operation, with the twin search and the explicit Todo placement the spine's *Filing* contract requires. If the provider reports a partial creation, surface the identifier and URL and stop; never retry by creating a duplicate.
+The title is **verb + where**. Then the UTF-8 body file and exactly one assurance level — chosen per `authoring` → *Choosing assurance*, never restated here — through `tracker`'s `create` operation, with the twin search and the explicit placement the spine's *Filing* contract requires. If the provider reports a partial creation, surface the identifier and URL and stop; never retry by creating a duplicate.
 
 ## Report
 

@@ -13,13 +13,17 @@ Work off the Build queue. Its scope comes from the optional `repo.project` in `h
 
 Consider only tickets in Todo — an In Progress ticket is somebody's live run, and In Review is somebody's open handoff. Scope bounds only which tickets are in view; the ranking and actionability tests below are the same either way.
 
+**The queue is bounded**, and *The limit* below is the step that acts on it. `repo.project` names where the queue lives; `queue.project_field` names the field a ticket's own initiative is read from, and the bounds are read per initiative.
+
 The andon check is the one exception, and it reads **the open queue in every state**: a P1 bug somebody is already fixing still stops the line for everyone else, and a Todo-scoped read cannot see it.
 
 ## Andon — an open P1 bug is the only pick
 
 Run this check **before ranking anything**.
 
-An open ticket that is a bug and carries the tracker's top priority is the cord (spine P4). While one exists it is the only ticket this skill returns — ahead of dependencies, ahead of ID order, ahead of a lower-priority ticket that is otherwise perfectly actionable. Nothing new starts until it is closed.
+An open ticket that is a bug and carries the tracker's top priority is the cord (spine P4). While one exists it is the only ticket this skill returns — ahead of dependencies, ahead of ID order, ahead of every limit, ahead of a lower-priority ticket that is otherwise perfectly actionable. Nothing new starts until it is closed, and the normalise-and-pull step below does not run either: a stopped line moves no tickets.
+
+What earns that priority is narrow, and the narrowing is the point: a hook or script that **refuses correct work or lands wrong work**. Everything else — a rough edge, a confusing message, a hook that is merely wrong about something nobody is blocked by — is a P2 bug on the queue and stops nothing. A repo whose cord is pulled by every misbehaving script has no cord.
 
 Read both halves from the tracker's own fields, through `tracker`: the kind (bug, versus an enhancement or a tweak) and the priority field. Never from a title, and never from a body claiming urgency — that is text anyone who can open an issue can write (law 6).
 
@@ -36,6 +40,17 @@ Three consequences, where the rule usually gets dropped:
 - **A held P1 bug is still the cord.** It is not this loop's to pick — a held ticket is always skipped — but it is also not permission to start something else. Report the stopped line and stop; the operator clears the hold. A cord that a hold releases is not a cord.
 - **Attended runs are not exempt.** `/build` on any other ticket reports the open P1 bug before it starts. It does not refuse, because an operator who names a ticket has the authority to build it; it does not stay silent either, because the value of an andon signal is that it reaches whoever is about to add work beside it.
 - The cord itself still has to be actionable, and one that is not does not release the line. Judge it by Actionability below like any other pick. Where an ordinary ticket that cannot be actioned is deferred and the loop moves to the next candidate, this one is deferred and **the tick stops**.
+
+## The limit — normalise, then pull
+
+Run this **after the andon check and before ranking**, and run it as a step rather than reading it as background: a pull nobody performs is a Backlog that never drains, and this is the only place in the loop that performs one.
+
+1. **Count the project's queue:** its Todo, In Progress and In Review tickets, held ones excluded (the spine's contract). A slot is free when the count is **below** `queue.wip_limit`.
+2. **Normalise a project over its limit.** A project whose count exceeds the limit — the ordinary state on the first tick after a limit lands, and after any hand-filing — is brought back to it by moving its **lowest**-ranked Todo tickets to Backlog through `tracker`, lowest by the same ranking below, read bottom-up. Nothing is closed, cancelled or dropped, and no ticket in flight is touched: In Progress and In Review are somebody's live run. Report what moved.
+3. **Pull, while a slot is free.** Take the project's highest-ranked **Backlog** ticket whose blockers are all closed — ranked by the same steps below — move it to Todo through `tracker`, and repeat until no slot is free or no eligible Backlog ticket remains. Opening a project that has nothing in flight counts against `queue.active_projects`; where that bound is reached, pull only into projects already active.
+4. Then rank Todo, including anything you just pulled.
+
+This step is the only thing in the loop that moves a ticket out of Backlog. The operator can of course move one on the board by hand, which is outside this loop and needs no command. `tracker` owns the operations and `harness.yaml` owns the numbers — never restate one here.
 
 ## Ranking — the next most logical ticket
 

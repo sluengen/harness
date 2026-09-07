@@ -63,7 +63,12 @@ const SINGLE = "\x27";
 //: One ``key: value`` pair. Matched against the ``\r``-stripped raw line: a
 //: trailing ``(.*)$`` cannot cross a ``\r``, because JavaScript counts it as a
 //: line terminator, so a CRLF spine lost its whole block until #488.
-const PAIR = /^\s*([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*(.*)$/;
+//: A key may carry dots (#588). ``queue.projects.<name>.wip_limit`` is the path
+//: the spine names for a per-project override, and this reader is flat by
+//: design — a genuinely nested block is refused whole rather than half-read —
+//: so the path is spelled as one key. Widening only ever makes a previously
+//: unreadable line readable; nothing that parsed before parses differently.
+const PAIR = /^\s*([A-Za-z_][A-Za-z0-9_.-]*)\s*:\s*(.*)$/;
 
 //: A key opening a block at the top level of the configuration map. Anchored at
 //: column 0: an indented ``commands:`` is an example inside prose or a nested
@@ -86,7 +91,7 @@ function flowMapping(name) {
 //: can have — and dropped the name actually declared (#488). The value
 //: alternation tries both quoted forms before the bare one, so a quoted value is
 //: taken whole and only an unquoted value stops at a comma.
-const FLOW_PAIR = /\s*([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*(\x22[^\x22]*\x22|\x27[^\x27]*\x27|[^,]*)\s*/y;
+const FLOW_PAIR = /\s*([A-Za-z_][A-Za-z0-9_.-]*)\s*:\s*(\x22[^\x22]*\x22|\x27[^\x27]*\x27|[^,]*)\s*/y;
 
 //: The yaml indicators that make a value something other than the plain or
 //: quoted scalar this reader understands: block and folded scalars, an anchor,
@@ -402,6 +407,66 @@ function declaredPaths(top, onUnreadable) {
   return readMap(top, "paths", onUnreadable);
 }
 
+//: The queue's bounds where the repo declares none (#588). Six is two concurrent
+//: builders, their reviews and one andon slot; three is the initiatives that may
+//: run at once. ``project_field`` defaults to ``none`` — the repo is its own
+//: single queue — because a reader that guessed ``milestone`` would send every
+//: filing to consult a field the repo never declared.
+const QUEUE_DEFAULTS = { wip_limit: 6, active_projects: 3, project_field: "none" };
+
+//: One flat key spelling a per-project override's path. The block reader is flat
+//: by design, so ``queue.projects.<name>.wip_limit`` is declared as this one key
+//: rather than as a nested mapping, which :func:`blockMap` refuses whole.
+const PROJECT_OVERRIDE = /^projects\.(.+)\.wip_limit$/;
+
+/** ``raw`` as a positive integer, or ``null``. */
+function positiveCount(raw) {
+  if (!/^[0-9]+$/.test(raw)) return null;
+  const value = Number(raw);
+  return value > 0 ? value : null;
+}
+
+/** The ``queue:`` bounds the repo at ``top`` declares, defaults filled in.
+ *
+ * Returns ``{wip_limit, active_projects, project_field, projects}``, where
+ * ``projects`` maps a project name to its ``{wip_limit}`` override. The two
+ * counts come back as **numbers**: every caller compares them against a count,
+ * and returning the raw strings would compare them lexically, where ``"10"``
+ * sorts below ``"6"``.
+ *
+ * A value this reader cannot read as a positive integer falls back to its
+ * default rather than being handed on. The alternative is putting an unusable
+ * bound in front of every caller, and each would have to re-decide what to do
+ * with it; the template declares both counts explicitly so a typo is visible in
+ * the diff that introduces it.
+ *
+ * A nested ``projects:`` block makes :func:`blockMap` return ``null``, which
+ * :func:`readMap` reports through ``onUnreadable`` and steps over — so this
+ * returns the defaults, never a half-read map that silently dropped an override
+ * the repo did declare.
+ */
+function queueSettings(top, onUnreadable) {
+  const declared = readMap(top, "queue", onUnreadable);
+  const settings = { ...QUEUE_DEFAULTS, projects: {} };
+  for (const [key, raw] of Object.entries(declared)) {
+    const override = PROJECT_OVERRIDE.exec(key);
+    if (override !== null) {
+      const limit = positiveCount(raw);
+      if (limit !== null) settings.projects[override[1]] = { wip_limit: limit };
+      continue;
+    }
+    if (key === "project_field") {
+      settings.project_field = raw;
+      continue;
+    }
+    if (key === "wip_limit" || key === "active_projects") {
+      const count = positiveCount(raw);
+      if (count !== null) settings[key] = count;
+    }
+  }
+  return settings;
+}
+
 /** A source declares no usable field. */
 class ConfigDeclarationError extends Error {}
 
@@ -525,6 +590,7 @@ module.exports = {
   declaredLoop,
   declaredCommands,
   declaredPaths,
+  queueSettings,
   declaredVerify,
   declaredScopedTest,
   gateCommand,

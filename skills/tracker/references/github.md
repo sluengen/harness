@@ -46,7 +46,7 @@ gh api graphql -f query='query { viewer { login } }' # GraphQL
 
 Three differences from the `gh issue` forms. REST `/issues` **returns pull requests as well as issues**, so filter `select(.pull_request == null)`. The REST `assignee` parameter takes a login or the literal `none`; there is no `@me`. And **adding a label is its own `POST .../labels` endpoint** — a `PATCH` carrying `labels[]` replaces the whole set and silently drops the assurance label, which is an incomplete filing you inflicted on yourself.
 
-**Projects v2 has no REST API at all** — no `repos/{owner}/{repo}/projectsV2`, nothing under the repo scope, by design; the board is GraphQL-only. So on a GraphQL-refused host every `gh project` call fails (often as the unhelpful `unknown owner type`, which is a 403 underneath), and with it **Status, Priority, and therefore `create`'s mandatory placement in Todo**. That is not a step to skip quietly: the issue exists and the board does not know about it, which is precisely the item-add-no-status trap arriving by another route. **Report the filing incomplete** — the identifier, the URL, and which board operations could not run — and stop. Never report a ticket as placed, queued, or prioritised on the strength of the issue having been created.
+**Projects v2 has no REST API at all** — no `repos/{owner}/{repo}/projectsV2`, nothing under the repo scope, by design; the board is GraphQL-only. So on a GraphQL-refused host every `gh project` call fails (often as the unhelpful `unknown owner type`, which is a 403 underneath), and with it **Status, Priority, and therefore `create`'s mandatory placement**. That is not a step to skip quietly: the issue exists and the board does not know about it, which is precisely the item-add-no-status trap arriving by another route. **Report the filing incomplete** — the identifier, the URL, and which board operations could not run — and stop. Never report a ticket as placed, queued, or prioritised on the strength of the issue having been created.
 
 ## No id here is stable — resolve at runtime
 
@@ -56,7 +56,7 @@ Project ids, status field ids, and single-select option ids differ per board and
 # the board's node id
 gh project view <number> --owner <owner> --format json        # -> .id
 
-# the Status field id + its option ids (Todo / In Progress / In Review / Done)
+# the Status field id + its option ids (Backlog / Todo / In Progress / In Review / Done)
 gh project field-list <number> --owner <owner> --format json
 ```
 
@@ -73,6 +73,8 @@ gh issue view <number> --repo <owner>/<name> \
 
 Four steps, in order. **Skipping the third is the item-add-no-status trap:** an item added to the board lands with **Status unset**, and a Todo-scoped queue read never sees it — the issue exists, looks filed, and is invisible to the loop.
 
+**Backlog is a Status option like any other**, and a board that declares none gives a ticket nowhere to wait. Report the filing incomplete, naming the missing option, rather than placing it in Todo past the limit.
+
 ```bash
 # 1. create the issue, carrying the chosen assurance level (use --body-file;
 #    never interpolate untrusted text into the shell)
@@ -82,9 +84,11 @@ gh issue create --repo <owner>/<name> --title "<title>" --body-file <path> \
 # 2. add it to the board, capturing the returned item id
 gh project item-add <number> --owner <owner> --url <issue-url> --format json
 
-# 3. set Status explicitly (ids from the field-list call above)
+# 3. set Status explicitly (ids from the field-list call above) — the Todo
+#    option where the project has a free slot, the Backlog option where it
+#    does not (`tracker` -> The limit)
 gh project item-edit --id <item-id> --field-id <status-field-id> \
-  --project-id <project-id> --single-select-option-id <todo-option-id>
+  --project-id <project-id> --single-select-option-id <status-option-id>
 
 # 4. verify the postcondition by re-reading the issue, not by exit status
 gh issue view <number> --repo <owner>/<name> --json labels

@@ -66,25 +66,25 @@ Two axes decide everything about a finding, each a binary.
 |  | Small fix | Large fix |
 |---|---|---|
 | Blocking | Fix now, in this branch | **FAIL** — return it to the builder |
-| Non-blocking | Fix now, in this branch | Propose it — one line in the report's Proposals section, and one ledger entry |
+| Non-blocking | Fix now, in this branch | Let it go — say nothing (P0) |
 
 The default posture is fix it now: three of the four cells resolve inside this branch, because fixing a small thing costs less than discussing it.
 
-**Render both axes on every finding**, at its heading — *blocking · small* — or in a placement table. A report that reasons about blocking and never states size has not discharged the 2×2: size is the axis deciding fix-now against propose, and "all findings are blocking" is not a placement.
+**Render both axes on every finding**, at its heading — *blocking · small* — or in a placement table. A report that reasons about blocking and never states size has not discharged the 2×2: size is the axis deciding fix-now against let-it-go, and "all findings are blocking" is not a placement.
 
 There is no "small but not worth doing" cell: a stateable defect is a finding and a small one is worth its cost; anything vaguer never became a finding.
 
 ### Bugs are filed; improvements are proposed
 
-The line is factual, not judged: *does the tree contradict its own contract today* — a red gate, a crash, a guard asserting something false, a document describing behaviour the code does not have. That is a *bug*, and any agent files it through `tracker` without asking. Everything else — a hole, a gap, a could-be-better — is an *improvement*, proposed and never filed, by every agent path including this one.
+The line is factual, not judged, and it has two halves: *does the tree contradict its own contract today* — a red gate, a crash, a guard asserting something false, a document describing behaviour the code does not have — **and does that contradiction break a user outcome or a consumer behaviour you can name**. Both halves, or it is not a bug. A stale comment, a wording mismatch, a test asserting the wrong thing breaks nothing anyone receives; so does a defect in a case no user reaches for a year. That is an *improvement*, and it is not this review's to carry.
 
 Nothing in the split is a judgement call, on purpose: a queue anything can add to grows without bound. State the consequence with the rule, so a later edit cannot keep the mechanism and lose the point — **the improvement volume an agent can file is structurally zero.**
 
-A proposal is one line in this report's Proposals section *and* one entry appended to an improvement ledger; which ledger, and what the entry carries, is [`references/improvement-ledger.md`](references/improvement-ledger.md). Nothing else happens to it — no ticket, no queue slot. A report is read once and archived; the ledger outlives it.
+**This report has no Proposals section, and a review proposes nothing** (P0). Every review cycle that manufactured a proposal added an entry somebody later had to decide, and the drain's own measurement is what retired the practice. Report the blocking findings and stop. The one improvement channel out of a build is the builder's three-line reflection, and where an entry does get written, [`references/improvement-ledger.md`](references/improvement-ledger.md) says which ledger and what it carries.
 
-**Write the entry into the report when you cannot reach the ledger**, in full — case, provenance, suggested home, which ledger — rather than noting that an append is owed. An owed append nobody performs is the improvement lost.
+The single exception is a **blocking** finding that is genuinely not this ticket's: file it as a bug when it clears the floor above, and append it to the ledger when it does not. Nothing non-blocking leaves this review.
 
-*The recursion cap.* A ticket filed from a review carries the `review-finding` label, marking generation one — the last. When the ticket *under review* carries it, this review fixes or drops what it can and files nothing; the Propose-it cell closes with it. A large-and-blocking finding there is still a FAIL, never a new ticket.
+*The recursion cap.* A ticket filed from a review carries the `review-finding` label, marking generation one — the last. When the ticket *under review* carries it, this review fixes or drops what it can and files nothing. A large-and-blocking finding there is still a FAIL, never a new ticket.
 
 ## Every finding has four parts
 
@@ -106,7 +106,7 @@ One further outcome is not a verdict. A small, contained, in-scope finding the r
 
 - *Run the verification yourself* — fresh run, output read (`engineering`). Do not trust the builder's claim.
 - *Before certifying, load* [`references/certifying.md`](references/certifying.md) — the as-built-record gate, the twin sweep, and the ordering that makes the gate cover the tree that ships.
-- *Report:* the verdict, the mandate reviewed under, one explicit item per test file with the four cheat categories checked by name, Stage 1 result per criterion, Stage 2 findings each placed on both axes with the four parts and what happened to them, a Proposals section carrying every improvement or the word `none`, the verification output, the `reviewed_tree`, and whether visual evidence was consulted. That last line reads `consulted`, naming the capture directory, or `not consulted` with one reason: not a user-facing change, not supplied, or not readable by this reviewer. Silence on it is incomplete, and a bare `not consulted` is that silence wearing a label.
+- *Report:* the verdict, the mandate reviewed under, one explicit item per test file with the four cheat categories checked by name, Stage 1 result per criterion, Stage 2 findings each placed on both axes with the four parts and what happened to them, the verification output, the `reviewed_tree`, and whether visual evidence was consulted. That last line reads `consulted`, naming the capture directory, or `not consulted` with one reason: not a user-facing change, not supplied, or not readable by this reviewer. Silence on it is incomplete, and a bare `not consulted` is that silence wearing a label.
 
 ## On a FAIL
 
