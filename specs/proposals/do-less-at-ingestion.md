@@ -63,7 +63,7 @@ The lifecycle reset measured the symptom: "ballooning complexity and work creati
 
 **2. The boundary binds downstream.** Anything named in `Not doing` cannot be pulled into a ticket the proposal spawned without amending the proposal. This is the mirror of the existing no-silent-descoping rule: a builder may not quietly shrink a criterion, and may not quietly widen one either. It costs nothing new — it is a Stage 1 review check against an artefact the reviewer already reads.
 
-**3. `authoring` and `templates/proposal.md` — order the breakdown by cost of being wrong.** Replace "each sized to ship alone" with: *ordered by dependency; where the work introduces a shape that is expensive to unpick, that shape is item 1.* `/propose` step 2 cites it; step 4 files item 1 held.
+**3. `authoring` and `templates/proposal.md` — order the breakdown by cost of being wrong.** Replace "each sized to ship alone" with: *ordered by dependency; where the work introduces a shape that trips the foundations test below, that shape is item 1.* `/propose` step 2 cites it; step 4 files item 1 held.
 
 `/capture` gets one sentence and nothing else: extend step 2's stop condition — currently *architecture, contract, data model, test design* — to include what the change explicitly does not do. A capture is already decided, and it already has a cost line that refuses, an escape hatch to `/propose`, and an unbounded clarify loop.
 
@@ -71,7 +71,24 @@ The lifecycle reset measured the symptom: "ballooning complexity and work creati
 
 **Not a spike.** A spike ends when the model feels finished, which P1 refuses; a ticket whose deliverable is a conversation is over-production with a ticket number. The foundations item is a real change with a pass/fail exit: it **ships** the shape as an executable artefact — types, schema, migration, interface — with the tests that hold it; the **decision is recorded** in the spec it governs; it is **held** (`input`, comment, assignment — the existing contract, unchanged) so the unattended loop cannot start it; and downstream items **declare a dependency** on it.
 
-**The trigger is cost of reversal, not the presence of a shape.** The operating context refuses "a week of cycle time to prevent a defect a revert would fix in an hour," so *every proposal gets a held foundations ticket* is exactly the assurance P0 refuses as calibrated for a stage the product is not at. A shape is expensive to unpick when it will **carry data that must survive the change** or when it is **a contract with a consumer outside the repo**. At pre-user, pre-revenue, neither is common — and the rule should fire seldom now and reliably later, which is what makes the stage line load-bearing rather than decorative. Everything else is ordered by dependency alone.
+**Up-front thinking is not assurance, and P0 does not refuse it.** The operating context refuses "a week of cycle time to prevent a defect a revert would fix in an hour." That sentence is about *assurance* — guards, gates, verification machinery built to catch a defect after the fact. Deciding a shape before building on it is not assurance; it is P1's "clarity before build", which comes first in the principles for a reason, and it is how P0's "the best change is the one not made" gets found at all. Reading that refusal onto design time produces a rule that never fires — which is exactly how the first draft of this section was written, and why it was wrong. Thinking is cheap. Building the wrong shape and then living on it is not.
+
+**The cost of a late shape change is not the revert.** It is the revert, *plus* re-deciding under worse information, *plus* reloading the context that produced the original decision, *plus* everything already built on top of it, *plus* the flow the queue loses while that happens. In P2's vocabulary that is **motion** and **rework**; in P3's it is a serialised landing. A revert measures the git operation and none of the rest.
+
+**The trigger, in four dimensions. Any one fires it.**
+
+| Dimension | Fires when | Does not fire when |
+|---|---|---|
+| **Migration** | Data already written must be transformed rather than dropped — including seed data, dev state, and any deployed instance somebody relies on | Nothing has been stored in the shape yet |
+| **Blast** | Changing it fans out across call sites — restructuring keys touches every query | It sits behind one interface |
+| **Access** | The shape determines how it can be queried, so getting it wrong surfaces as a rewrite under load rather than as a bug to revert | Access patterns are unaffected |
+| **Comprehension** | The operator cannot guide the work without seeing the shape first, and would otherwise have to reconstruct the model from a diff to hold an opinion | The shape is evident from the ticket |
+
+Adding a column fires none of them and is ordered by dependency like anything else. Restructuring tables and keys fires the first three. A new entity's primary shape usually fires access and comprehension.
+
+**Three of the four are stage-independent.** Only *migration* softens at pre-user, and only partly — there is no customer data, but there is still seed data, dev state, and any deployed instance. Blast, access and comprehension do not care what stage the product is at. So this rule fires **regularly, now** — not "seldom now and reliably later", which is what an earlier draft claimed and is the tell that the trigger had been written to cancel itself. The stage line calibrates how much gets *built*; it does not calibrate whether the shape gets *decided*.
+
+**Comprehension is a dimension, not a tiebreaker.** At a startup the operator holds product context no agent has. A shape they have not seen is a shape they cannot steer, and their correction then arrives late, as rework, instead of early, as direction. Nothing in the harness makes provision for this today: every existing control asks whether the *agent* has enough information, never whether the *human* does.
 
 ### What it retires
 
@@ -90,9 +107,9 @@ Net: about +35 lines against ~10 retired, and no new configuration key, label, l
 | **D3.** The spine's *Lanes* contract makes anything a proposal spawned `complex`. Does that survive foundations-first? | operator | `AGENTS.md` |
 | **D4.** Does `/capture` get the one sentence, or nothing at all? | operator | `skills/capture/SKILL.md` |
 
-**D1 — recommend Option C, and it is a genuine question.** P0 landed days ago and has not been given a cycle to work. The argument for acting now is that P0 is a principle to be recalled at a moment nothing prompts, and both surfaces it would act on are one-line edits; the argument for waiting is that the reset's whole thesis was that additions must earn their place against a measurement, and there is no measurement yet. If the answer is A, the two signals in *Risks* below are still worth taking as a baseline.
+**D1 — recommend Option C.** The case for waiting is that P0 landed days ago and the reset's own thesis was that additions earn their place against a measurement. The case for acting is stronger and is what settled it: P0 is a principle to be *recalled* at a moment nothing prompts, and the failure mode it leaves open is not over-building — it is **never doing the up-front thinking at all**, because every individual instance of skipping it is locally defensible at this stage. That failure compounds silently and is invisible to a review that only sees the diff in front of it. Both surfaces are one-line edits. If the answer is A, take the two signals under *Risks* as a baseline anyway.
 
-**D2 — recommend code, where a shape exists.** A data model recorded only in prose is not settled; it is settled the first time something must store a value in it. Where the item is a contract with no implementation yet, the artefact is the interface plus its contract tests.
+**D2 — recommend both, because they serve different readers.** A data model recorded only in prose is not settled; it is settled the first time something must store a value in it, so the **executable shape** is what the downstream tickets need. But the *comprehension* dimension means the **recorded decision** is not a by-product — it is what lets the operator hold an opinion without reading a diff. Shipping the code without recording the reasoning satisfies the agents and fails the human; recording the reasoning without shipping the code satisfies nobody. Where the item is a contract with no implementation yet, the artefact is the interface plus its contract tests.
 
 **D3 — recommend narrowing to: *carries a consequential decision the proposal did not settle*.** The clause predates foundations-first. If the shape is settled in item 1, downstream tickets have less design left, not more, and holding them all at `complex` buys a design pass for work whose design is already recorded — which is P0's "assurance calibrated for a stage the product is not at" in miniature. Flagged because it makes this proposal's own breakdown either non-compliant or an argument for the change, and pretending otherwise would be the tell. It is now a spine edit, so it is heavier than it looks.
 
@@ -100,7 +117,7 @@ Net: about +35 lines against ~10 retired, and no new configuration key, label, l
 
 ## Breakdown
 
-Ordered by dependency. No foundations item: this change introduces no shape that carries data and no contract outside the repo, so the trigger does not fire — the rule applied to itself.
+Ordered by dependency. The trigger fires on **comprehension** and nothing else: migration, blast and access are all inert for a prose change, but the shape here *is* the four-dimension test, and it is not something the operator could hold an opinion on from a diff. That foundations decision is being taken in this proposal, with the operator, which is where it belongs when the shape is prose rather than schema — so item 1 carries it rather than a separate held ticket. The rule, applied to itself, and it fires.
 
 1. **`templates/proposal.md` — the `Not doing` section**, with the binding rule stated in `authoring`'s proposal tier. Resolves D1 by being built.
 2. **Order the breakdown by cost of being wrong.** `authoring:38` and `templates/proposal.md`'s Breakdown section; the foundations-item definition and its trigger. Depends on 1 sharing the same subsection. Resolves D2.
@@ -113,7 +130,8 @@ Items 1–3 are one surface and could be one ticket; they are split here because
 ## Risks / unknowns
 
 - **The section becomes decoration.** `Not doing` filled with non-goals nobody would have done anyway. Mitigation: its raw material is the rejected options, a real set with reasons attached, and Stage 1 review gets one artefact against which to check a widened ticket. Weak mitigation, and the most likely way this fails.
-- **Foundations-first moves the bottleneck to the operator.** A held ticket at the head of a proposal is waiting waste and a serialised landing, which P3 refuses. Bounded by the reversal-cost trigger, and `input` holds are what `/digest --drain` exists for. If the trigger is read loosely, this trades rework for waiting at a bad rate — and at this stage that is the wrong trade.
+- **The trigger gets read as a licence to skip the thinking.** Demonstrated, not hypothesised: the first draft of this proposal wrote the trigger so narrowly that it would almost never fire, by reading the operating context's assurance refusal onto design time. Every individual skip is locally defensible at this stage, which is what makes the drift invisible. The four dimensions are stated as *any one fires it*, and three of them are stage-independent, specifically to close that reading. This is now the failure this proposal most needs to survive.
+- **Foundations-first moves work onto the operator.** A held ticket at the head of a proposal is waiting waste and a serialised landing, which P3 refuses, and the corrected trigger fires more often than the first draft's did — so this cost is real rather than theoretical. It is accepted: the thing being bought is a decision made once with the person who holds the product context, against a rework loop that would otherwise run every time an agent guesses the shape. `input` holds are what `/digest --drain` exists for. The rate to watch is how long these sit, not how many are raised.
 - **Nothing here measures whether it works**, and guidance is verified by use, not by reading. Two signals, both cheap and both derivable from the tracker: **tickets spawned that were not in the breakdown** (over-production past the boundary), and **data-model changes landing after the first feature ticket** (the shape was not settled). Take both over the last ten proposals as a baseline whichever way D1 goes.
 - **The stage line is prose, and prose is what this repo says it cannot enforce.** Foundations-first depends on an agent reading it correctly. Accepted deliberately: the alternative is Option E, and a guard that checks a heading has bytes under it does not detect a misread stage either.
 
