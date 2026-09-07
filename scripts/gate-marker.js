@@ -722,6 +722,52 @@ function runGate(cwd, scope) {
   }
   let scopeFile = null;
   const environment = Object.assign({}, process.env, { [RUNNER_ENV]: repository });
+  //: ADR 0018's boundary, one channel over. "No per-invocation value — an
+  //: operand, argv, or an environment variable — may decide that command", and
+  //: an inherited `npm_config_script_shell` decides which interpreter npm hands
+  //: the declared command to, which is deciding the command. Every consumer
+  //: whose `commands.verify` is an npm invocation inherited that hole: measured
+  //: on a scratch npm repo whose gate wrote a sentinel then exited 0, both
+  //: `npm_config_script_shell` (either case) and `npm_config_workspace` paired
+  //: with `npm_config_if_present` minted a marker with the sentinel absent —
+  //: `runGate` reading an exit zero the chain never earned.
+  //:
+  //: The **namespace**, not the two names. npm documents the whole
+  //: `npm_config_` prefix as its environment-config surface, so deleting the
+  //: prefix has a completion condition where a list of names is the blacklist a
+  //: consumer already rejected upstream for having none. It is also the smaller
+  //: change: conditioning on "the command is npm" would need a classifier over
+  //: `gate.command`, and a hand-rolled parser of a shared subject is a class
+  //: this repo has paid for repeatedly (#510, #484, #487, #580).
+  //:
+  //: Case-insensitively, because npm reads `NPM_CONFIG_SCRIPT_SHELL` too and a
+  //: predicate keyed on the exact-case literal admits the other spelling (#580).
+  //:
+  //: What this closes and what it does not. Closed: npm's namespace. **Open:
+  //: the class** — an interpreter configured out of the ambient environment;
+  //: `YARN_*`, `PNPM_*` and `COREPACK_*` are the same shape and are not touched,
+  //: because a guard for a risk never observed is one P2 refuses. Also open, and
+  //: not closable here: `PATH`, which this function resolves `sh` and `git`
+  //: through. So what the scrub buys is that the declared command is interpreted
+  //: as the tree spells it rather than as an inherited option redefines it —
+  //: determinism, not a boundary against someone who already writes this
+  //: process's environment.
+  //:
+  //: The risk it answers is accidental, not adversarial, and that is why it is
+  //: worth a line: an outer `npm run` exports a dozen of these routinely, while
+  //: nobody shadows `sh` by accident. Regression risk is near-nil for the same
+  //: reason npm makes it: `.npmrc` is re-read by the child either way, so what
+  //: is removed is exactly the ambient contribution — and a consumer that did
+  //: depend on one fails as a red gate with no marker, which is the loud side.
+  //:
+  //: The copy, never `process.env`: `git()` above spawns with `env: process.env`,
+  //: so a global delete would reach past this call. Nothing the runner sets
+  //: carries the prefix, so `RUNNER_ENV` above and the two scope variables below
+  //: survive by construction, and `gate.legacy` shares this one spawn — there is
+  //: no second site to keep in step.
+  for (const name of Object.keys(environment)) {
+    if (name.toLowerCase().startsWith("npm_config_")) delete environment[name];
+  }
   if (recordedScope !== null) {
     try {
       scopeFile = writeScopeFile(cwd, recordedScope);

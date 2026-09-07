@@ -1,7 +1,8 @@
 ---
 proposal: do-less-at-ingestion
-status: draft            # draft | under-decision | accepted | shipped | rejected | split | superseded
+status: accepted         # draft | under-decision | accepted | shipped | rejected | split | superseded
 date: 2026-09-07
+decided: 2026-09-07
 related: [lifecycle-reset, purpose-before-proof]
 research: research/INDEX.md
 ---
@@ -57,7 +58,7 @@ The lifecycle reset measured the symptom: "ballooning complexity and work creati
 
 ## Recommendation
 
-**Adopt Option C.** Three changes, no configuration.
+**Adopt Option C.** Five changes, no configuration.
 
 **1. `templates/proposal.md` — a `Not doing` section**, immediately after Recommendation. One line per item: the capability, why it is out, and the trigger that would reopen it. Its raw material is the Options section — rejected options are already non-goals with reasons attached — plus whatever the operator cut during the decision. A spawned ticket's `Out of scope` cites it rather than re-deriving it.
 
@@ -66,6 +67,22 @@ The lifecycle reset measured the symptom: "ballooning complexity and work creati
 **3. `authoring` and `templates/proposal.md` — order the breakdown by cost of being wrong.** Replace "each sized to ship alone" with: *ordered by dependency; where the work introduces a shape that trips the foundations test below, that shape is item 1.* `/propose` step 2 cites it; step 4 files item 1 held.
 
 `/capture` gets one sentence and nothing else: extend step 2's stop condition — currently *architecture, contract, data model, test design* — to include what the change explicitly does not do. A capture is already decided, and it already has a cost line that refuses, an escape hatch to `/propose`, and an unbounded clarify loop.
+
+### The decision gate
+
+Two behaviours added 2026-09-07, after the proposal was written. Both land on `/propose` step 3, and they are one mechanism rather than two: the rendering is what the decision is taken against.
+
+**4. Clarification is input, not approval.** A proposal's status never moves because a question was answered. Answers change the proposal's *content*; only an explicit decision on the proposal *as written* changes its state. Neither an answered question, nor engagement with the content, nor silence, nor a direction chosen on one open decision is that act — an approval names the proposal and says proceed. Where a run cannot point to one, the status stays `under-decision` and step 4 does not run.
+
+This is not politeness. Step 4 **files tickets**, so a run that reads clarification as approval creates work nobody agreed to, and it enters the queue and consumes WIP slots — over-production (P2) with a tracker record behind it, which is the expensive kind.
+
+The mechanism already exists and is unused: `under-decision` is declared in `templates/proposal.md`'s status vocabulary and **set by nothing** — no skill writes it, and no proposal in this tree has ever carried it. So `/propose` gets three states with meaning rather than a new gate: `draft` while it is worked and clarified, `under-decision` once the completed proposal and its rendering are handed over, and `accepted` / `rejected` / `split` only from an explicit act. Native first (P2).
+
+**5. The proposal ships with a shareable rendering, and the decision is taken against it.** A markdown file at the end of a repo path is a poor decision instrument: hard to read, hard to circulate, and — the reason that matters most — it does not show the operator whether the agent understood. The rendering is where a misunderstanding surfaces **before** tickets are filed rather than after. That is the comprehension dimension again, turned on the proposal itself instead of on a data model.
+
+Stated portably, because Codex reads the same file: `/propose` produces the proposal spec **and** a shareable rendering of it, published wherever the host can publish one; where the host cannot, the run says so and the proposal file is the rendering — the same degradation as `tracker: none`. The host-specific mechanism belongs in the Claude Code delta, which is what that file is for; the portable skill must not name it.
+
+No size carve-out is needed. `/propose` is already reserved for the unconfirmed or the large — small clear work goes to `/capture`, the smallest to the fix lane — so every invocation is by definition worth a decision, and a decision instrument is proportionate to one.
 
 ### The foundations item, and the trigger that fires it
 
@@ -96,36 +113,70 @@ Adding a column fires none of them and is ordered by dependency like anything el
 - **The per-ticket scope re-derivation.** A spawned ticket cites the proposal's `Not doing` instead of reconstructing a boundary from the recommendation.
 - **Withdrawn from this proposal before it was proposed:** the `stage:` config key and its four-value table, which the grounding found already served by the stage line under *This repo*.
 
-Net: about +35 lines against ~10 retired, and no new configuration key, label, lane, hook, or command. It is an addition; calling it a wash would be the rationalisation the cost line exists to prevent. *Serves:* P0, P1. *Spends against:* P2, by adding guidance to two surfaces. *Waste:* removes over-production and rework; adds waiting, where a foundations item holds.
+Net: about +50 lines against ~10 retired, and no new configuration key, label, lane, hook, or command. It is an addition; calling it a wash would be the rationalisation the cost line exists to prevent. *Serves:* P0, P1. *Spends against:* P2, by adding guidance to two surfaces. *Waste:* removes over-production and rework; adds waiting, where a foundations item holds.
 
-## Open decisions
+## Open decisions, answered — then approved
 
-| Decision | Who decides | Recorded in |
+The operator answered all four on 2026-09-07, each as recommended, and **separately approved the proposal as written on the same day**, after the decision gate was amended in. The two acts are distinct and the sequence is the point: answering D1 through D4 settled the proposal's *content* and left its status at `draft`; the approval moved it to `accepted` and licensed step 4.
+
+*The decision gate* above exists because this run collapsed those two acts first: it read four answered questions as an acceptance, moved the status, and produced a decided plan before anyone had decided anything. The rule was written from the failure, not ahead of it.
+
+| | Question | Resolution |
 |---|---|---|
-| **D1.** Option A (nothing — P0 and the stage line are enough) against Option C? | operator | this proposal |
-| **D2.** Does the foundations item ship code, or only a recorded design? | operator / architect | `authoring` |
-| **D3.** The spine's *Lanes* contract makes anything a proposal spawned `complex`. Does that survive foundations-first? | operator | `AGENTS.md` |
-| **D4.** Does `/capture` get the one sentence, or nothing at all? | operator | `skills/capture/SKILL.md` |
+| **D1** | Do nothing — P0 and the stage line are enough — or adopt this? | **Adopt.** |
+| **D2** | Does the foundations item ship code, or only a recorded design? | **Both**, for different readers. |
+| **D3** | Does "anything a proposal spawned → `complex`" survive foundations-first? | **Narrow it.** |
+| **D4** | Does `/capture` get one sentence, or nothing? | **The one sentence.** |
 
-**D1 — recommend Option C.** The case for waiting is that P0 landed days ago and the reset's own thesis was that additions earn their place against a measurement. The case for acting is stronger and is what settled it: P0 is a principle to be *recalled* at a moment nothing prompts, and the failure mode it leaves open is not over-building — it is **never doing the up-front thinking at all**, because every individual instance of skipping it is locally defensible at this stage. That failure compounds silently and is invisible to a review that only sees the diff in front of it. Both surfaces are one-line edits. If the answer is A, take the two signals under *Risks* as a baseline anyway.
+**D1 — adopt.** The case for waiting was that P0 landed days ago and the reset's own thesis was that additions earn their place against a measurement. The case for acting is stronger: the failure P0 leaves open is not over-building, it is **never doing the up-front thinking at all**, because every individual instance of skipping it is locally defensible at this stage. That compounds silently and is invisible to a review that sees only the diff in front of it.
 
-**D2 — recommend both, because they serve different readers.** A data model recorded only in prose is not settled; it is settled the first time something must store a value in it, so the **executable shape** is what the downstream tickets need. But the *comprehension* dimension means the **recorded decision** is not a by-product — it is what lets the operator hold an opinion without reading a diff. Shipping the code without recording the reasoning satisfies the agents and fails the human; recording the reasoning without shipping the code satisfies nobody. Where the item is a contract with no implementation yet, the artefact is the interface plus its contract tests.
+**D2 — both.** A data model recorded only in prose is not settled; it is settled the first time something must store a value in it, so the **executable shape** is what the downstream tickets need. But comprehension makes the **recorded decision** load-bearing rather than a by-product: it is what lets the operator hold an opinion without reading a diff. Code without the reasoning satisfies the agents and fails the human; reasoning without the code satisfies nobody. Where the item is a contract with no implementation yet, the artefact is the interface plus its contract tests.
 
-**D3 — recommend narrowing to: *carries a consequential decision the proposal did not settle*.** The clause predates foundations-first. If the shape is settled in item 1, downstream tickets have less design left, not more, and holding them all at `complex` buys a design pass for work whose design is already recorded — which is P0's "assurance calibrated for a stage the product is not at" in miniature. Flagged because it makes this proposal's own breakdown either non-compliant or an argument for the change, and pretending otherwise would be the tell. It is now a spine edit, so it is heavier than it looks.
+**D3 — narrow to *carries a consequential decision the proposal did not settle*.** The clause predates foundations-first. Once the shape is settled in item 1, downstream tickets carry less design, not more, and holding them all at `complex` buys a design pass for work whose design is already recorded — P0's "assurance calibrated for a stage the product is not at", in miniature.
 
-**D4 — recommend the one sentence.** The gap is narrow and real: the stop condition asks what would change the architecture, a contract, the data model, or the test design — not what the change explicitly will not do. Anything more at capture is a second copy of the proposal tier.
+**D4 — the one sentence.** The stop condition asks what would change the architecture, a contract, the data model, or the test design; it does not ask what the change will not do. Anything more at capture is a second copy of the proposal tier.
+
+### Where these are recorded
+
+In this file, and — for D3 — in the spine's *Lanes* contract when T3 below edits it. **No ADR is opened.** `paths.decisions` holds what is "cross-cutting, consequential, and expensive to reverse"; narrowing one clause of a lane rubric is cross-cutting but cheap to reverse, and `authoring`'s rule is that a decision is recorded in the spec it governs. The spine's Lanes paragraph *is* that spec, so the edit carries the decision and a standalone record would be the ceremony P0 refuses.
 
 ## Breakdown
 
-Ordered by dependency. The trigger fires on **comprehension** and nothing else: migration, blast and access are all inert for a prose change, but the shape here *is* the four-dimension test, and it is not something the operator could hold an opinion on from a diff. That foundations decision is being taken in this proposal, with the operator, which is where it belongs when the shape is prose rather than schema — so item 1 carries it rather than a separate held ticket. The rule, applied to itself, and it fires.
+**Three tickets, not five.** The draft listed five and said the split was not load-bearing. `tracker` settles it: *split a breakdown by what can proceed independently, not by what is shippable alone* — and P0 refuses a ticket per file. Items 1–3 of the draft are one surface, one outcome and one review, so they are one ticket.
 
-1. **`templates/proposal.md` — the `Not doing` section**, with the binding rule stated in `authoring`'s proposal tier. Resolves D1 by being built.
-2. **Order the breakdown by cost of being wrong.** `authoring:38` and `templates/proposal.md`'s Breakdown section; the foundations-item definition and its trigger. Depends on 1 sharing the same subsection. Resolves D2.
-3. **`/propose` — the two steps.** Fill `Not doing` in step 2; foundations-first ordering and held filing in step 4. Depends on 1, 2.
-4. **`/capture` — the stop-condition sentence.** Independent. Resolves D4.
-5. **Narrow the proposal-spawned lane clause** in the spine's *Lanes* contract. Only if D3 resolves that way; independent of the rest.
+The trigger fires on **comprehension** and nothing else: migration, blast and access are inert for a prose change, but the shape here *is* the four-dimension test, and it is not something the operator could hold an opinion on from a diff. That foundations decision was taken in this proposal, with the operator, which is where it belongs when the shape is prose rather than schema — so T1 carries it instead of a separate held ticket. The rule, applied to itself, and it fires.
 
-Items 1–3 are one surface and could be one ticket; they are split here because item 3 is the only one that changes a command, and `/propose` is the busiest surface in the lifecycle. If the operator prefers one ticket, take one — the split is not load-bearing.
+| | Ticket | Lane | Blocked by |
+|---|---|---|---|
+| **T1** | Give the proposal tier a scope boundary and a foundations-ordered breakdown | `complex` | — |
+| **T2** | Extend `/capture`'s clarify stop condition to what the change will not do | `simple` | — |
+| **T3** | Narrow the spine's proposal-spawned lane clause | `complex` | T1 |
+
+**T1 — the proposal tier and its decision gate.** `templates/proposal.md` gains a **Not doing** section after Recommendation, the ordering note on its Breakdown section, and a lifecycle note giving `under-decision` its meaning. `skills/authoring/SKILL.md`'s proposal tier gains the binding rule (nothing in *Not doing* enters a spawned ticket without amending the proposal) and the four-dimension foundations test, replacing "each sized to ship alone" at line 38. `skills/propose/SKILL.md`: step 2 fills *Not doing* from the rejected options; **step 3 becomes the decision gate** — hand over the proposal and its rendering, set `under-decision`, and advance only on an explicit act; step 4 orders foundations-first and files the foundations item held. `CLAUDE.md` gains the one-line delta naming the Artifact as this host's rendering mechanism. *Lane on its own merits:* it changes the proposal contract, the command's decision gate, and its required outputs.
+
+The two decision-gate behaviours stay inside T1 rather than becoming a fourth ticket: they edit the same command, in the step between the two T1 already touches, so split apart they would collide on landing. `tracker`'s rule is to split by what can proceed independently, and these cannot.
+
+**T2 — `/capture`.** One sentence at `skills/capture/SKILL.md:32`, extending the stop condition. *Lane:* `simple` — it changes documented behaviour of a command, so it earns a ticket and a review, and nothing more.
+
+**T3 — the spine's lane clause.** "anything a proposal spawned" in the *Lanes* paragraph, in both `AGENTS.md` and `templates/spine.md` (one occurrence each — the generated block and its template must move together). *Lane:* `complex`, a spine contract change. *Blocked by T1* because the replacement wording reads from the foundations concept T1 establishes — a real dependency, not a tidiness one.
+
+### Filing — issues created, board placement outstanding
+
+Filed 2026-09-07 on approval, through `tracker`'s `create` against the GitHub REST surface.
+
+| | Issue | Lane | Blocked by |
+|---|---|---|---|
+| **T1** | [#595](https://github.com/sluengen/harness/issues/595) | `assurance:complex` | — |
+| **T2** | [#596](https://github.com/sluengen/harness/issues/596) | `assurance:simple` | — |
+| **T3** | [#597](https://github.com/sluengen/harness/issues/597) | `assurance:complex` | #595 |
+
+Each carries a change spec per `templates/change.md`, exactly one assurance label, and its cost line. The T3 → T1 dependency is set as a first-class REST relationship and verified from both directions. Every postcondition was checked by re-reading the issue, never by exit status.
+
+**The filing is incomplete in one respect, and it is not a step that was skipped quietly.** `queue.project_field` is `none`, so the repo is its own single queue and placement is a board operation — but **Projects v2 is GraphQL-only and this session's GraphQL transport is refused** (`403: only the pinned set of PR-review operations is served`), while REST works. So **Status and Priority are unset on all three**: they are open issues that no Todo-scoped queue read will return, and `work-discovery` cannot see them. Nothing here reports them as placed, queued, or prioritised.
+
+To complete: from a session with board access, read Status to count the queue against `wip_limit` 6, then place #595 first (nothing blocks it), #596 next, and #597 in Backlog behind its blocker; set Priority on each. This session's GitHub transport serves REST but refuses GraphQL (`403: only the pinned set of PR-review operations is served`), and **Projects v2 has no REST API at all**. Status and Priority are board fields, so `create`'s mandatory placement cannot run. `tracker` → *`create`* calls an issue filed without placement an **incomplete filing** — the issue exists, looks filed, and is invisible to the Todo-scoped queue read the loop uses. Creating three of those and reporting them as filed is the trap that operation exists to name, so the breakdown stays in this file and is reported to the operator, exactly as `tracker: none` degrades.
+
+To file, from a session with board access: three `create` calls with the lanes above, the dependency T3 ← T1, priority set at filing, and each linked back to this proposal. **Placement needs a board read first.** The repo is its own single queue (`queue.project_field: none`) at the reader's default `wip_limit` of 6; REST shows 7 open issues, 5 unheld — but Todo / In Progress / In Review cannot be told apart from Backlog without the board, so whether that leaves one free slot or none is not knowable here. Read Status, then place: free slots take Todo in dependency order, the rest wait in Backlog.
 
 ## Risks / unknowns
 
@@ -139,4 +190,4 @@ Items 1–3 are one surface and could be one ticket; they are split here because
 
 *Named, at the operator's request, for the argument rather than the author: **Nafis' Do Less approach** — the cheapest moment to not build something is before anyone has agreed it exists.*
 
-**Lifecycle.** Draft, 2026-09-07. Awaiting D1–D4. Lives in `specs/proposals/`.
+**Lifecycle.** Accepted 2026-09-07 on an explicit act against the document, after D1–D4 were answered and the decision gate amended in. Spawned #595, #596, #597. Advances to **shipped** when all three have landed. Lives in `specs/proposals/`.

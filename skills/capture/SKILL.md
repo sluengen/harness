@@ -29,7 +29,7 @@ From the description: what actually happens today (plus the repro, for a bug), w
 
 ### 2 — clarify, until the questions stop mattering
 
-There is no cap on the questions and no licence for a formality round. Keep asking while any question remains whose answer would change **the architecture, a contract, the data model, or the test design**; stop when none does. Rank by impact so the consequential ones come first, and integrate each answer into the spec as it arrives, *replacing* the sentence it supersedes rather than accumulating beside it.
+There is no cap on the questions and no licence for a formality round. Keep asking while any question remains whose answer would change **the architecture, a contract, the data model, the test design, or what the change will explicitly not do**; stop when none does. Rank by impact so the consequential ones come first, and integrate each answer into the spec as it arrives, *replacing* the sentence it supersedes rather than accumulating beside it.
 
 Attended, ask with `AskUserQuestion`. Unattended, a question you cannot answer is not a guess: hold the ticket for the operator through `tracker`'s `hold` operation, with the `input` label. Where a question is material but the filing should still land, write `[NEEDS CLARIFICATION: …]` inline in the sentence its answer would change; `/build` refuses to start while one remains.
 
