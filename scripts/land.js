@@ -165,7 +165,36 @@ function certifies(commit, ctx) {
     //: has a refusal to word; here both answers are the same answer.
     return false;
   }
-  return body === null || typeof body !== "object" || body.scope === undefined || body.scope === null;
+  //: The same three shapes `markerFor` calls unreadable, and for the same reason.
+  //: A body that parses is not a body that says anything: an array has no `scope`
+  //: key either, and reading that absence as "unscoped, therefore certified"
+  //: is exactly the disagreement this function exists to prevent.
+  if (body === null || typeof body !== "object" || Array.isArray(body)) return false;
+  return body.scope === undefined || body.scope === null;
+}
+
+/** True when `commit` is a merge whose bytes a rebuild would reproduce exactly.
+ *
+ * Two questions, and neither is "does it have two parents" — a hand-resolved
+ * conflict merge has two parents as well, and its resolution is bytes nobody can
+ * recompute. So: is the tree the one `git merge-tree` produces from the parents
+ * (the guard's own recomputation test, and the question `done` asks to decide
+ * `contended`), and is the second parent already contained in the tip we are
+ * about to merge? Both true means everything this commit contributed comes back
+ * in the rebuilt merge, and dropping it loses nothing.
+ *
+ * Exit 1 is `merge-tree` reporting that the recomputed merge conflicts, which is
+ * an answer and not a failure: a merge that no longer recomputes cleanly is one
+ * whose tree somebody authored, which is the case this refuses.
+ */
+function recomputable(commit, tip, ctx) {
+  const parents = (line(["rev-parse", `${commit}^@`], ctx.cwd) || "").split("\n").filter(Boolean);
+  if (parents.length !== 2) return false;
+  if (git(["merge-base", "--is-ancestor", parents[1], tip], ctx.cwd) === null) return false;
+  const tree = line(["rev-parse", "--verify", `${commit}^{tree}`], ctx.cwd);
+  const out = git(["merge-tree", "--write-tree", parents[0], parents[1]], ctx.cwd, [0, 1]);
+  if (tree === null || out === null) return false;
+  return out.split("\n", 1)[0].trim() === tree;
 }
 
 /** The nearest first-parent ancestor of HEAD that `certifies`, with the walk.
@@ -175,13 +204,13 @@ function certifies(commit, ctx) {
  * `MAX_ATTEMPTS + 1`: a chain longer than the attempt bound allows is not a stack
  * this script produced, and following it further would be guessing.
  */
-function nearestCertified(ctx) {
+function nearestCertified(ctx, tip) {
   const steps = [];
   let commit = line(["rev-parse", "--verify", "HEAD"], ctx.cwd);
   for (let depth = 0; commit !== null && depth <= MAX_ATTEMPTS + 1; depth += 1) {
     if (certifies(commit, ctx)) return { commit, steps };
     const parents = (line(["rev-parse", `${commit}^@`], ctx.cwd) || "").split("\n").filter(Boolean);
-    steps.push({ commit, parents: parents.length });
+    steps.push({ commit, recomputable: recomputable(commit, tip, ctx) });
     commit = parents.length === 0 ? null : parents[0];
   }
   return { commit: null, steps };
@@ -318,14 +347,16 @@ function plan(options) {
   //: nothing. The check is here rather than after the merge because a refusal
   //: that had already committed would leave the branch in the shape it refused.
   if (!certifies("HEAD", ctx)) {
-    const found = nearestCertified(ctx);
-    //: What may be discarded to reach it. Only a two-parent merge may: a
-    //: single-parent commit is work somebody authored after the verdict, and a
-    //: scoped marker on HEAD means the tree carries a hand resolution whose only
-    //: evidence is that scope. Rebuilding over either would throw work away, so
-    //: those get the refusal without the recovery.
+    const found = nearestCertified(ctx, tip);
+    //: What may be discarded to reach it. Only a merge git alone made, whose
+    //: second parent the tip already carries: everything it contributed comes
+    //: back in the rebuilt merge. A single-parent commit is work somebody
+    //: authored after the verdict, and a hand-resolved merge carries a
+    //: resolution nothing can recompute — parent count alone cannot tell the
+    //: second from a clean merge, and reading it as if it could offered a
+    //: discarding recovery for a resolution (cycle 1).
     const droppable =
-      found.commit !== null && found.steps.every((step) => step.parents === 2);
+      found.commit !== null && found.steps.every((step) => step.recomputable);
     const branchName = line(["symbolic-ref", "--short", "HEAD"], ctx.cwd);
     report({
       decision: "refused",

@@ -35,8 +35,9 @@ shape (#566). `plan` now refuses instead, and names `certified`: the nearest
 first-parent ancestor a fresh unscoped marker does cover.
 
 - A `recovery_command` in the output means everything between `HEAD` and
-  `certified` is a merge this script made. Run it — it rebuilds the merge from
-  `certified` against the current tip, and loses nothing.
+  `certified` is a merge *git alone made* whose second parent the tip already
+  carries — checked by recomputation, not by counting parents. Run it: it
+  rebuilds the merge from `certified` against the current tip, and loses nothing.
 - **No `recovery_command` means do not rebuild.** `HEAD` carries bytes no
   unscoped gate covers: a resolution under a scoped marker, or work committed
   after the verdict. Re-gate the whole tree and land again, or hold the ticket.

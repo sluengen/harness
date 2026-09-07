@@ -599,3 +599,100 @@ def test_a_marker_past_its_freshness_bound_does_not_certify(repo: Path) -> None:
 
     assert code == 2, payload
     assert payload["case"] == "uncertified-head", payload
+
+
+def _resolve_a_conflict_under_a_scoped_gate(repo: Path) -> str:
+    """The real case 3, carried to the point `finish` sends a run back to `plan`.
+
+    Certify the candidate, let the tip move and conflict, resolve it by hand,
+    commit the merge and gate **only the resolved path** — which is exactly what
+    `plan`'s own `scope_command` tells the agent to run. Returns the certified
+    commit, which is now a genuine first-parent ancestor of HEAD.
+    """
+    _git(repo, "checkout", "-q", "-B", "other", "origin/main")
+    (repo / "shared.txt").write_text("theirs\n", encoding="utf-8")
+    _git(repo, "commit", "-qam", "their side")
+    _git(repo, "push", "-q", "origin", "other:main")
+    _git(repo, "fetch", "-q", "origin")
+    _git(repo, "checkout", "-q", "work")
+    (repo / "shared.txt").write_text("ours\n", encoding="utf-8")
+    _git(repo, "commit", "-qam", "our side")
+    #: The gate runs over the finished candidate, which is what `plan` then reads.
+    _marker(repo)
+    certified = _git(repo, "rev-parse", "HEAD")
+    assert _land(repo, "plan")[1]["decision"] == "resolve"
+    (repo / "shared.txt").write_text("resolved by hand\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "--no-edit")
+    _marker(repo, "shared.txt")
+    return certified
+
+
+def test_a_hand_resolution_is_never_offered_a_discard_even_below_a_certified_commit(
+    repo: Path,
+) -> None:
+    """AC-3's second half, with the ancestor that makes it a real measurement.
+
+    Cycle 1 shipped a `droppable` test that inferred "a merge this script made"
+    from parent count alone. A hand-resolved merge is two-parented too, and the
+    only reason the shipped test passed was that its chain had no certified
+    ancestor at all — so `certified is None` short-circuited the answer and the
+    property was never exercised. Here the ancestor exists, which is the shape
+    `finish` itself produces when it prints ``run `land.js plan --attempt 2` ``.
+    Offering a rebuild here would throw the resolution away.
+    """
+    certified = _resolve_a_conflict_under_a_scoped_gate(repo)
+    _move_the_tip(repo, "later.txt", "and again\n")
+
+    code, payload, _ = _land(repo, "plan", "--attempt", "2")
+
+    assert code == 2, payload
+    assert payload["case"] == "uncertified-head", payload
+    assert payload["certified"] == certified, (
+        "the ancestor must be found, or this test degenerates into the vacuous one it replaces"
+    )
+    assert "recovery_command" not in payload, payload
+
+
+def test_a_marker_body_the_guard_calls_unreadable_does_not_certify(repo: Path) -> None:
+    """`certifies()` and `hooks/push-target-guard.js`'s `markerFor` must agree.
+
+    A JSON array parses, and has no `scope` key. Reading "no scope" off it as
+    "unscoped, therefore certified" is the disagreement: `markerFor` calls the
+    same body unreadable and denies the push. Any body this script calls
+    certified and the guard denies puts back the defect #566 removed.
+    """
+    tree = _marker(repo)
+    _marker_path(repo, tree).write_text("[]", encoding="utf-8")
+    _move_the_tip(repo, "theirs.txt", "concurrent\n")
+
+    code, payload, _ = _land(repo, "plan")
+
+    assert code == 2, payload
+    assert payload["case"] == "uncertified-head", payload
+
+
+def test_a_merged_sibling_branch_is_never_offered_a_discard(repo: Path) -> None:
+    """The other half of `recomputable`: where the dropped bytes would come from.
+
+    A merge git alone made is safe to drop only because the rebuilt merge brings
+    its content back — and that holds only for a second parent the tip already
+    carries. Merge a sibling branch into the candidate instead and the content
+    lives nowhere else, so rebuilding from the certified commit would lose the
+    whole branch. Recomputability alone cannot see this: the merge is perfectly
+    clean.
+    """
+    _marker(repo)
+    certified = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "checkout", "-q", "-b", "side")
+    _commit(repo, "side.txt", "a sibling branch\n")
+    _git(repo, "checkout", "-q", "work")
+    _git(repo, "merge", "-q", "--no-ff", "--no-edit", "side")
+    _move_the_tip(repo, "theirs.txt", "concurrent\n")
+
+    code, payload, _ = _land(repo, "plan")
+
+    assert code == 2, payload
+    assert payload["certified"] == certified, payload
+    assert "recovery_command" not in payload, payload
+    assert (repo / "side.txt").exists()
