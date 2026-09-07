@@ -51,7 +51,12 @@ Acceptance criteria:
   :func:`test_a_present_payload_message_is_not_second_guessed_by_the_transcript`
   for the production path).
 * **AC-4** — the conditions that make a block appropriate at all: a task branch
-  with work to claim. A protected branch is not a build
+  with work to claim, and *attached* is part of what makes it a task branch —
+  #569, where a clean ``--detach`` checkout ahead of the tip refused every
+  completion claim in a worktree-driven build
+  (:func:`test_a_clean_detached_checkout_ahead_of_the_tip_is_not_claimed`, whose
+  paired :func:`test_a_dirty_detached_checkout_still_counts` holds the dirtiness
+  arm above it). A protected branch is not a build
   (:func:`test_a_session_on_a_protected_branch_is_never_blocked`), and neither is
   a clean checkout at the integration tip
   (:func:`test_nothing_to_claim_is_never_blocked`). Answering that question means
@@ -632,6 +637,82 @@ def test_clean_diverged_work_is_not_claimed_by_the_advisory_stop_guard(tmp_path:
 def test_dirty_diverged_work_still_counts(tmp_path: Path) -> None:
     """Dirty bytes are session work regardless of the commit graph shape."""
     root = _diverged_task(tmp_path, dirty=True)
+
+    assert _blocked(_run_real(root, tmp_path))
+
+
+def _detached_ahead(tmp_path: Path, *, dirty: bool) -> Path:
+    """A clean ``--detach`` checkout sitting one commit past ``refs/heads/dev``.
+
+    The ordinary state of the repo root whenever a build follows law 5: the
+    session authors in a sibling worktree and the root is left standing at a
+    commit nobody in this session made. #569 records three firings in it.
+    """
+    root = tmp_path / ("dirty-detached" if dirty else "clean-detached")
+    root.mkdir()
+    _git(root, "init", "-q", "--initial-branch=dev")
+    _git(root, "config", "user.email", "t@example.com")
+    _git(root, "config", "user.name", "t")
+    _commit(root, "a.txt", "base\n")
+    (root / "CONTEXT.md").write_text(_DECLARES_DEV)
+    _git(root, "add", "CONTEXT.md")
+    _git(root, "commit", "-q", "-m", "context")
+    _git(root, "checkout", "-q", "--detach")
+    _commit(root, "merged.txt", "a commit nobody in this session made\n")
+    if dirty:
+        (root / "merged.txt").write_text("edited here, by this session\n")
+    return root
+
+
+def test_a_clean_detached_checkout_ahead_of_the_tip_is_not_claimed(tmp_path: Path) -> None:
+    """#569 AC-1. Being ahead of the integration tip is a sound proxy for *this
+    session committed on its task branch* only while HEAD is attached: commits
+    between the tip and a **detached** HEAD say nothing about who made them.
+
+    The control is the second half of this test, not a dirty fixture. Attaching
+    the same commit to a branch changes exactly one bit — ``symbolic-ref HEAD``
+    from null to a string — leaving the tree, the HEAD oid, the marker directory,
+    the declared branches and the resolved tip identical. That is what excludes
+    every other reason this hook could have allowed: an unfired claim filter, the
+    ``stop_hook_active`` short-circuit, a protected-branch skip reading the
+    literal branch name ``HEAD``, a null tree, an unresolved tip, or a marker
+    that happened to cover this tree.
+    """
+    root = _detached_ahead(tmp_path, dirty=False)
+    assert _git(root, "rev-parse", "--abbrev-ref", "HEAD") == "HEAD", "must be detached"
+    assert _git(root, "status", "--porcelain") == "", (
+        "must be clean, else the uncommitted-work arm answers before the condition "
+        "under test and the test proves nothing"
+    )
+    assert _git(root, "rev-list", "--count", "refs/heads/dev..HEAD") == "1", "must be ahead"
+    assert _git(root, "rev-parse", "HEAD") != _git(root, "rev-parse", "refs/heads/dev"), (
+        "off the tip, else the primary-checkout-at-a-protected-tip exemption allows "
+        "with no fix at all"
+    )
+
+    assert _run_real(root, tmp_path) == {"continue": True}
+
+    _git(root, "checkout", "-q", "-b", "task/569")
+    assert _blocked(_run_real(root, tmp_path)), (
+        "the same commit on a branch must still block, or the allow above was not "
+        "the detachment"
+    )
+
+
+def test_a_dirty_detached_checkout_still_counts(tmp_path: Path) -> None:
+    """#569 AC-2, and the pin on **where** the condition goes rather than on
+    whether it exists.
+
+    Uncommitted bytes are session work whatever HEAD is attached to, and they are
+    answered by the dirtiness arm, above the detachment test. A detachment test
+    placed at candidate admission — the fix this ticket's body originally
+    proposed — or anywhere above that arm allows here, trading a false positive
+    for a false negative in exactly the case this hook exists to catch. This is
+    the only assertion that dies under that misplacement.
+    """
+    root = _detached_ahead(tmp_path, dirty=True)
+    assert _git(root, "rev-parse", "--abbrev-ref", "HEAD") == "HEAD", "must be detached"
+    assert _git(root, "status", "--porcelain") != "", "must be dirty or nothing is measured"
 
     assert _blocked(_run_real(root, tmp_path))
 

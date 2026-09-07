@@ -543,12 +543,41 @@ function integrationTip(cwd, integration) {
 }
 
 /** True iff this session has produced something a completion claim would cover:
- * uncommitted work, or commits ahead of the integration branch. */
+ * uncommitted work, or — on an attached HEAD — commits ahead of the integration
+ * branch.
+ *
+ * Being ahead of the tip is a proxy for *this session committed on its task
+ * branch*, and it is sound only while HEAD is attached. Commits between the tip
+ * and a **detached** HEAD say nothing about who made them (#569): a clean
+ * ``--detach`` checkout reads as ahead whenever ``integrationTip`` resolves a
+ * stale ``refs/heads/<b>`` in preference to ``origin``'s, and again for the
+ * gate's own ``--detach`` of a merge result — the artifact the comment above
+ * ``candidates`` already calls one "nobody claims work in". That is the
+ * ordinary state of the repo root under law 5, where the session authors in a
+ * sibling worktree, so the guard was refusing every completion claim in a
+ * worktree-driven build and, because the payload ``cwd`` short-circuits the
+ * candidate loop, never reaching the worktree that held the change.
+ *
+ * The test sits **below** the dirtiness arm, which is the whole of the choice.
+ * Filtering the detached cwd out at admission instead — the ticket's first
+ * proposal — would drop the detached-*and-dirty* checkout too, which is an agent
+ * that edited files and claims done: precisely what this hook exists to catch.
+ * Here any uncommitted byte still answers first, and only the clean case is
+ * declined. Derived candidates already skip ``detached`` at admission, so no
+ * derived path changes.
+ *
+ * ``symbolic-ref --quiet HEAD`` is the one-spawn question, the spelling
+ * ``scripts/land.js`` already uses for it against the same null-on-non-zero
+ * helper: it prints ``refs/heads/<b>`` attached and exits non-zero silently when
+ * detached, and there is no third answer. It costs a spawn only on the clean
+ * path of a repo that declares an integration branch, and saves the two
+ * ``rev-parse`` spawns it short-circuits. */
 function hasWorkToClaim(cwd, tree, declared) {
   const headTree = git(cwd, ["rev-parse", "--verify", "HEAD^{tree}"]);
   if (headTree === null || headTree !== tree) return true;
   const integration = declared.integration;
   if (!integration) return false;
+  if (git(cwd, ["symbolic-ref", "--quiet", "HEAD"]) === null) return false;
   const head = git(cwd, ["rev-parse", "--verify", "HEAD"]);
   const tip = integrationTip(cwd, integration);
   if (head === null || tip === null) return false;

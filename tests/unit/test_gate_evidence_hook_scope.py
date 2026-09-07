@@ -1221,3 +1221,49 @@ def test_the_ticket_value_reaches_neither_the_reason_nor_stderr(tmp_path: Path) 
     assert TICKET_SENTINEL not in proc.stderr, (
         f"the ticket value reached stderr: {proc.stderr}"
     )
+
+
+# --- #569: a detached session cwd does not swallow the derived scan -----------
+#
+# The other half of the same defect. The payload ``cwd`` is always evaluated
+# first and the loop returns on the first candidate that produces a verdict, so
+# a repo root that blocks on its own account is not merely a wrong answer — it
+# is a wrong answer that stops the right one being reached. The three firings
+# #569 records all have this shape: the root standing clean and detached at
+# already-landed work, the session's authored worktree carrying the change.
+
+
+def test_a_detached_session_cwd_still_reaches_the_worktree_it_worked_in(
+    tmp_path: Path,
+) -> None:
+    """#569 AC-1, second half.
+
+    The discriminator is the **tree oid**, not the path: the worktree's path
+    contains the root's, so "names the worktree" alone cannot tell the two
+    answers apart (:func:`test_a_nested_worktree_is_not_mapped_to_the_repo_root`
+    is where that idiom comes from). The root's tree and the worktree's tree
+    differ, and only one of them may appear.
+
+    The root is left clean deliberately. A dirty root blocks on the dirtiness
+    arm whatever HEAD is attached to, so the derived reach is never exercised
+    and the test would be measuring nothing.
+    """
+    root = _project(tmp_path)
+    wt = _worktree(root, "569")
+    _git(root, "checkout", "-q", "--detach")
+    (root / "merged.txt").write_text("a commit nobody in this session made\n")
+    _git(root, "add", "merged.txt")
+    _git(root, "commit", "-q", "-m", "landed elsewhere")
+    assert _git(root, "rev-parse", "--abbrev-ref", "HEAD") == "HEAD", "must be detached"
+    assert _git(root, "status", "--porcelain") == "", "the root must be clean"
+    assert _git(root, "rev-list", "--count", "refs/heads/dev..HEAD") == "1", "must be ahead"
+    assert _tree(root) != _tree(wt), "the two trees must differ or nothing is measured"
+
+    out = _run(root, _transcript(tmp_path, root, wt))
+
+    assert _blocked(out), "the ungated worktree must still be judged on its own evidence"
+    assert _tree(wt)[:12] in out["reason"]
+    assert _tree(root)[:12] not in out["reason"], (
+        "the root's tree is the wrong answer, and reaching it first is what "
+        "hid the right one"
+    )
