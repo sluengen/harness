@@ -35,7 +35,20 @@ A consequential decision is recorded in the spec it governs — a Decision block
 
 ## Proposal spec
 
-For an idea that is not yet confirmed work. Sections, per `templates/proposal.md`: Problem, Options (approaches with trade-offs, not one blessed answer dressed as inevitable), Recommendation, Open decisions (what, and by whom), Breakdown (the change specs this would spawn, each sized to ship alone), Risks. The outcome is explicit — accepted, rejected, or split. It does not sit half-decided.
+For an idea that is not yet confirmed work. Sections, per `templates/proposal.md`: Problem, Options (approaches with trade-offs, not one blessed answer dressed as inevitable), Recommendation, Not doing (the capabilities cut, why each is out, and what would reopen it), Open decisions (what, and by whom), Breakdown (the change specs this would spawn, ordered by dependency and foundations first), Risks. The outcome is explicit — accepted, rejected, or split. It does not sit half-decided.
+
+*Not doing binds the tickets it spawns.* Nothing named there enters a spawned ticket without amending the proposal first, which is the mirror of the no-silent-descoping rule: a builder may not quietly shrink a criterion, and may not quietly widen one either. Options records the alternatives considered and Not doing records the capabilities cut. Those are different sets, and the second is the one that leaks, because a boundary reconstructed one ticket at a time is a boundary widened.
+
+*Order the breakdown by cost of being wrong, not by what ships alone.* Dependency decides the order. Where the work introduces a shape that is expensive to unpick, that shape is item 1, held for the operator, and the items building on it declare a dependency on it. It is a real change rather than a spike: it ships the shape as an executable artefact — types, schema, migration, interface — with the tests that hold it, and records the decision in the spec it governs, so the agents get something to build against and the operator gets something to hold an opinion on. Four dimensions decide whether a shape earns that position, and any one of them fires it.
+
+| Dimension | Fires when | Does not fire when |
+|---|---|---|
+| **Migration** | Data already written must be transformed rather than dropped, including seed data, dev state, and any deployed instance somebody relies on | Nothing has been stored in the shape yet |
+| **Blast** | Changing it fans out across call sites, the way restructuring keys touches every query | It sits behind one interface |
+| **Access** | The shape decides how it can be queried, so getting it wrong surfaces as a rewrite under load rather than a bug to revert | Access patterns are unaffected |
+| **Comprehension** | The operator cannot steer the work without seeing the shape first, and would otherwise reconstruct the model from a diff to hold an opinion | The shape is evident from the ticket |
+
+Adding a column fires none of them and is ordered by dependency like anything else; restructuring tables and keys fires the first three; a new entity's primary shape usually fires access and comprehension. Three of the four are stage-independent — only migration softens before a product has users, and only partly, because seed data and dev state are still data — so this test fires regularly rather than seldom. The stage line calibrates how much gets built; it does not calibrate whether the shape gets decided.
 
 ## Change spec
 

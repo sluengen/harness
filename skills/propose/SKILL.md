@@ -26,14 +26,21 @@ Fill the proposal following `authoring`:
 - Problem / motivation — why now.
 - Options with trade-offs — real alternatives, not one inevitable answer.
 - Recommendation — the proposed direction, and the principle it traces to (`architecture`).
+- Not doing — fill it from the options you actually rejected, one line each: the capability, why it is out, and the trigger that would reopen it. A rejected option is already a non-goal with its reason attached, so carry it down here instead of leaving each spawned ticket to re-derive the boundary.
 - Open decisions — what must be decided and by whom. Surface these to the user; a cross-cutting one is recorded in the architecture-principles spec, or in the repo's configured `paths.decisions` directory when it clears that bar (`authoring` → *Decisions live in the spec they govern*).
-- Breakdown — the change specs this would spawn, each shippable on its own.
+- Breakdown — the change specs this would spawn, ordered by dependency and foundations first (`authoring` → *Proposal spec*).
 - Risks / unknowns.
 
 Write to the standard of `authoring` → `references/prose.md`. Do not present an unresolved decision as settled.
 
-### 3. Get a decision
-Bring the open decisions to the user. Set the proposal's `status` to the outcome:
+### 3. Hand it over, then wait for a decision
+Hand over two things: the completed proposal spec, and a shareable rendering of it, published wherever the host can publish one. Where the host cannot publish one, say so and the proposal file is the rendering — the same degradation as `tracker: none`. The rendering is what the decision is taken against, and it is where a misunderstanding surfaces before tickets are filed rather than after. Bring the open decisions over with it.
+
+Set `status` to `under-decision` and stop there.
+
+**Advance only on an explicit act against the proposal as written.** An answered clarifying question is not that act, and neither is engagement with the content, silence, or a direction chosen on a single open decision. Those settle what the proposal says and leave its state alone. An approval names the proposal and says proceed. Step 4 files tickets, so a run that reads clarification as approval creates work nobody agreed to and consumes queue slots holding it. Where you cannot point to the act, the status stays `under-decision`, step 4 does not run, and the report says so.
+
+On that act, set `status` to the outcome:
 - *accepted* → proceed to step 4.
 - *rejected* → keep the file as the record of why; stop.
 - *split* → replace with smaller proposals; stop.
@@ -41,6 +48,8 @@ Bring the open decisions to the user. Set the proposal's `status` to the outcome
 ### 4. On accepted, spin out the work
 - Record the decisions in the specs they govern (`architecture`, `templates/decision.md`).
 - Create an issue per item in the breakdown through `tracker`'s `create` operation — which sets queue placement explicitly, or the item is filed but invisible to the queue — each with a change spec (`templates/change.md`) and exactly one assurance level chosen per `authoring` → *Choosing assurance*. Link them back to the proposal. Under `tracker: none` the breakdown stays in the proposal file and is reported to the operator.
+- File them in the breakdown's order, foundations first, and declare each item's dependency on the one it builds on. Where the four-dimension test fired (`authoring` → *Proposal spec*), hold the foundations item through `tracker`'s `hold` operation with the `input` label, so the unattended loop cannot start the shape before the operator has seen it.
+- Give each spawned ticket an `Out of scope` that cites the proposal's *Not doing* rather than re-deriving the boundary. Nothing named there enters a ticket without amending the proposal first.
 
 ## Report
 Print the proposal path, its status, the open decisions (and how they resolved), any decisions recorded, and the issues created from the breakdown.

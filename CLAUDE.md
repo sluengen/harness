@@ -25,3 +25,8 @@ this host alone.
   `settings/harness.json`.
 - **Sub-agents.** `agents/` defines the five roles Claude Code dispatches. Codex
   reads its own equivalents from `.codex/agents/`.
+- **Proposal renderings.** `/propose` step 3 hands over a shareable rendering
+  alongside the spec file, and here that rendering is an **Artifact**, so the
+  operator reads and decides against it in the session instead of opening a path
+  in the repo. The portable skill names no mechanism, because a host without one
+  falls back to the file.
