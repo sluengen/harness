@@ -738,6 +738,68 @@ def test_the_declared_gate_forwards_its_nonzero_status_without_a_marker(repo: Pa
     assert not _marker_path(repo, tree).exists()
 
 
+# Node's documented default for `spawnSync`'s captured-output buffer. Named here
+# rather than inlined because the case below is about crossing it, and a bound a
+# reader has to recognise from a bare literal is a bound a later edit can lower by
+# accident (#568 — the load a case needs must be computed where it can be read).
+_SPAWN_CAPTURE_BUFFER_BYTES = 1024 * 1024
+
+
+def test_a_passing_gate_over_the_capture_buffer_is_not_reported_unrunnable(
+    repo: Path,
+) -> None:
+    """#561: a gate that talks too much passed; the runner said it could not run.
+
+    ``runGate`` spawned the declared gate with no ``stdio`` option, so node
+    *captured* the child's output under the default ``maxBuffer`` above.  Past
+    that bound ``spawnSync`` returns ``status: null`` with ``error.code =
+    'ENOBUFS'``, and the runner maps ``result.error || result.status === null``
+    to ``EXIT_RUNNER_UNAVAILABLE``: a gate that **exited 0** is reported as
+    unable to run and earns no marker.  For a full-suite gate across several
+    languages a megabyte of output is not a high bar, which is what made the
+    managed ``exec node scripts/gate-marker.js run`` path unusable for a large
+    consumer gate.
+
+    The load is **computed here**, not inherited from anything ambient, and
+    asserted before it is used: a case whose load is a literal somebody may edit
+    is not a detector for a bound (#568).  The margin is generous on purpose —
+    the overflow is detected at a read boundary rather than at the exact byte, so
+    a payload a few bytes over the bound is not reliably over it.
+
+    The sentinel is tested for **emptiness**, never against a value: the runner
+    owns that variable's shape and it is private to it, so a fixture comparing
+    against a literal breaks the next time the shape changes.
+    """
+    payload = 2 * _SPAWN_CAPTURE_BUFFER_BYTES
+    assert payload > _SPAWN_CAPTURE_BUFFER_BYTES, (
+        f"the fixture must cross the buffer it is about: {payload} <= "
+        f"{_SPAWN_CAPTURE_BUFFER_BYTES}"
+    )
+    scripts = repo / "scripts"
+    scripts.mkdir(exist_ok=True)
+    (scripts / "verify.sh").write_text(
+        "#!/usr/bin/env sh\n"
+        'test -n "${HARNESS_GATE_MARKER_RUNNER:-}"\n'
+        f"yes 0123456789abcdef | head -c {payload}\n"
+        "echo\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    tree = _tree(repo)
+
+    proc = _cli(repo, "run")
+
+    assert proc.returncode == 0, (
+        f"a gate that exited 0 was not reported green: rc={proc.returncode} "
+        f"stderr={proc.stderr[-400:]!r}"
+    )
+    assert _marker_path(repo, tree).exists(), "the passing gate earned no marker"
+    assert len(proc.stdout) > _SPAWN_CAPTURE_BUFFER_BYTES, (
+        "the gate's own output did not reach the caller: "
+        f"{len(proc.stdout)} bytes"
+    )
+
+
 def test_an_absent_spine_preserves_the_legacy_fixed_gate(repo: Path) -> None:
     """AC-3: with no spine at all, the historical gate runs, named as it was.
 
