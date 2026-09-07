@@ -300,7 +300,7 @@ def test_an_unquoted_body_running_a_force_push_in_a_backtick_is_denied(
     ``$(…)`` and a backtick both expand inside an unquoted body, so both are
     harvested — but until #573 only the ``$(…)`` arm had a killer. Deleting the
     backtick arm flipped this shape from deny to allow in **both** guards while
-    all 253 assertions across the six push-guard suites stayed green: fail-open
+    all 253 tests across the six push-guard suites stayed green: fail-open
     in a fail-closed guard, invisible to every one of them.
 
     A **characterisation** test — the arm works, so this was green the moment it

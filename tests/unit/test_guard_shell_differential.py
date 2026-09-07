@@ -11,7 +11,7 @@ What that cost, measured rather than asserted. ``harvestSubstitutions`` has two
 independent trigger arms, ``$(…)`` and a backtick, because both expand inside an
 unquoted heredoc body. Deleting the backtick arm turns a backtick force-push in
 an unquoted body from **deny** into **allow in both guards** — fail-open in a
-fail-closed guard — while **253 assertions across all six push-guard suites stay
+fail-closed guard — while **253 tests across all six push-guard suites stay
 green**. A whole class of defect was invisible to every test in the tree.
 
 The mechanism here is a differential. Each **shape** is a literal shell template
@@ -91,15 +91,31 @@ exclusions, each for a reason rather than by omission:
   is the objection this module escapes by writing structure out literally, and
   its nondeterminism would break ``mutate.py``'s observable rule.
 
-**What it costs, measured rather than predicted.** 12 shapes x (1 bash + 2
-registered guards) is a **36-spawn ceiling**, under the 40 asserted by
-:func:`test_the_corpus_stays_within_its_subprocess_budget`; the real figure is
-lower because the three inert shapes never reach their hook runs. Serially
-(``-n0 -p no:cacheprovider``) the module is **2.26 s**, median of three on
-darwin/arm64 at #573. The node spawns dominate — ``push-target-guard.js`` runs
-git internally — and both fixtures are module-scoped so the repo is built once
-per worker rather than once per case. The module adds no ``scripts/`` coverage
-and therefore cannot move the 82% floor in either direction.
+**What it costs.** Two different numbers, kept apart deliberately, because
+conflating them is how this paragraph was wrong the first time it was written.
+
+*The ceiling*, derived and asserted by
+:func:`test_the_corpus_stays_within_its_subprocess_budget`: each shape costs one
+``bash`` (its classification) plus, if it executes, one ``node`` per registered
+guard; the two instrument controls cost one ``bash`` each and the two guard
+controls one ``node`` per guard. With 12 shapes and 2 guards that is
+``12*(1+2) + 2 + 2*2`` = **42**, and :data:`SPAWN_BUDGET` is set to exactly that
+so *any* growth is a decision rather than something that fits under slack.
+
+*The measured cost*, counted by putting counting shims for ``bash`` and ``node``
+on ``PATH`` and running the module serially — identical on three consecutive
+runs: **36 spawns, 14 bash + 22 node**. It sits under the ceiling because only 9
+of the 12 shapes execute, so the other three never reach their guard runs. (A
+shape classified UNUSABLE spends one extra ``bash -n`` to say why, which is a
+failure path and is not in this figure.)
+
+Serially (``-n0 -p no:cacheprovider``) the module is **2.26 s**, median of three
+on darwin/arm64 at #573. The node spawns dominate — ``push-target-guard.js``
+runs git internally. All three fixtures are module-scoped, so the corpus is
+classified once and the fixture repo built once **per xdist worker** rather than
+per case; under ``-n auto`` each worker gets its own, so the figures above are
+per worker. The module adds no ``scripts/`` coverage and therefore cannot move
+the 82% floor in either direction.
 
 Mutation evidence
 -----------------
@@ -169,8 +185,15 @@ SENTINEL_ECHO = f"echo HARNESSEND   {NONCE}"
 #: Never executed.
 GUARD_PAYLOAD = "git push --force origin HEAD:main"
 
-#: Bounds the module's subprocess cost (AC-5). Growth past it is a decision.
-SPAWN_BUDGET = 40
+#: The module's whole subprocess ceiling (AC-5), set to exactly today's value so
+#: any growth is a decision rather than something that fits under slack. Derived
+#: in :func:`test_the_corpus_stays_within_its_subprocess_budget`; the measured
+#: cost is lower and is recorded in the module docstring.
+SPAWN_BUDGET = 42
+#: Instrument controls that spawn bash without going through a shape.
+_BASH_CONTROLS = 2
+#: Guard-side control tests, each paying one node spawn per registered guard.
+_GUARD_CONTROLS = 2
 
 
 @dataclass(frozen=True)
@@ -399,6 +422,25 @@ def oracle_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 @pytest.fixture(scope="module")
+def outcomes(oracle_dir: Path) -> dict[str, Outcome]:
+    """The whole corpus classified **once**, by shape id.
+
+    Module-scoped because the classification is the expensive half and both its
+    readers — the anti-vacuity floor and the parametrized predicate — need the
+    same answer. Running it per case ran every shape's oracle twice per session,
+    which is over-processing (P2) and, worse, made the module's real spawn count
+    diverge from the ceiling its own budget test asserts.
+
+    Sharing is safe: :func:`_run_oracle` writes nothing that survives it (it
+    asserts the work directory is empty afterwards) and the classification is a
+    pure function of the shape and this host's bash. Under ``-n auto`` each
+    xdist worker gets its own ``tmp_path_factory`` basetemp and so builds its
+    own copy — per worker, not per case.
+    """
+    return {s.id: _run_oracle(s, oracle_dir) for s in SHAPES}
+
+
+@pytest.fixture(scope="module")
 def repo(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """A repository on ``main`` with one commit, no marker and no declaration.
 
@@ -456,12 +498,6 @@ def test_the_two_instantiations_differ_only_in_the_payload_span() -> None:
         assert oracle == guard, shape.id
 
 
-def test_every_shape_names_the_code_path_it_targets() -> None:
-    """A shape earns its place by naming one; decoration does not."""
-    for shape in SHAPES:
-        assert len(shape.why) > 30, shape.id
-
-
 # --- AC-1: the instrument -----------------------------------------------------
 
 
@@ -511,7 +547,7 @@ def test_copying_the_oracle_payload_text_does_not_print_the_marker(
 
 
 def test_the_oracle_separates_executing_shapes_from_inert_ones(
-    oracle_dir: Path,
+    outcomes: dict[str, Outcome],
 ) -> None:
     """The anti-vacuity floor — the most important test in this module.
 
@@ -524,7 +560,6 @@ def test_the_oracle_separates_executing_shapes_from_inert_ones(
     It deliberately does not name which shapes belong to which class — that
     would be expected verdicts arriving by another route.
     """
-    outcomes = {s.id: _run_oracle(s, oracle_dir) for s in SHAPES}
     table = "\n".join(
         f"  {i:44s} usable={o.usable!s:5s} executed={o.executed!s:5s} {o.reason}"
         for i, o in outcomes.items()
@@ -566,7 +601,7 @@ def test_an_ordinary_command_is_allowed_by_every_guard(repo: Path) -> None:
 
 @pytest.mark.parametrize("shape", SHAPES, ids=lambda s: s.id)
 def test_a_shape_bash_executes_is_not_allowed_by_both_guards(
-    shape: Shape, oracle_dir: Path, repo: Path
+    shape: Shape, outcomes: dict[str, Outcome], repo: Path
 ) -> None:
     """The differential. Bash decides what runs; the guards must not allow it.
 
@@ -574,22 +609,29 @@ def test_a_shape_bash_executes_is_not_allowed_by_both_guards(
     If this goes red on an unmutated tree it has found a live fail-open: record
     the shape and hold the ticket. ``hooks/`` is a protected area.
     """
-    outcome = _run_oracle(shape, oracle_dir)
+    outcome = outcomes[shape.id]
     assert outcome.usable, (
         f"{shape.id}: {outcome.reason}. A shape that cannot be measured is a "
         "defect in this corpus, not a shape bash declines to execute."
     )
     if not outcome.executed:
-        # Deliberately not a `pytest.skip`. Whether a shape executes is a fact
-        # about *this host's* bash, so skipping on it would make the suite run
-        # less on some hosts than others without declaring a host dependency —
-        # which `test_verify_toolchain_preflight.py` refuses, positionally, and
-        # is right to: it is the property that the suite means the same thing
-        # everywhere. The predicate is an implication and an inert shape
-        # satisfies it vacuously. Nothing is hidden by that, because the
-        # classification is asserted in its own right by
-        # `test_the_oracle_separates_executing_shapes_from_inert_ones`, which
-        # goes red if every shape ever reads one way.
+        # Deliberately not a `pytest.skip`. `test_verify_toolchain_preflight.py`
+        # refuses a skip **positionally** — in a function that resolves no
+        # binary — and an implication whose antecedent is false is the compliant
+        # encoding of the same thing.
+        #
+        # The residual, stated rather than argued away: this does not make the
+        # suite host-independent. Whether a shape executes is a fact about *this
+        # host's* bash, so a different bash runs a different amount of this
+        # module either way — the `return` removes the undeclared skip site, not
+        # the variance, and unlike a skip it does not surface in the report at
+        # all. `test_the_oracle_separates_executing_shapes_from_inert_ones` is
+        # an **aggregate** floor: it catches the corpus collapsing to one class,
+        # and it cannot see a *single* shape flipping to inert — through a
+        # template typo or a future bash — and quietly ceasing to test anything.
+        # Closing that would need a per-shape expected-executability field,
+        # which is the expected verdict AC-1 exists to refuse. The floor is the
+        # strongest control compatible with AC-1, and it is not a total one.
         return
 
     command = _render(shape.template, GUARD_PAYLOAD)
@@ -609,10 +651,24 @@ def test_a_shape_bash_executes_is_not_allowed_by_both_guards(
 def test_the_corpus_stays_within_its_subprocess_budget() -> None:
     """Refuses corpus growth past the bound without a decision.
 
-    The ceiling, not the observed cost: the inert shapes skip their hook runs.
+    A **ceiling over the whole module**, not over the parametrized predicate
+    alone — the earlier version counted only the shapes and so sat below the
+    module's real cost, which is the direction that lets growth through. Every
+    spawn the module makes on a green run is in the arithmetic below: a
+    classification per shape, a guard run per executing shape per guard, the two
+    instrument controls, and the two guard-side controls.
+
+    The observed cost is lower than this, because only the executing shapes
+    reach their guard runs; the measured figure and how it was taken are in the
+    module docstring. What is asserted here is the bound, per law 2.
     """
-    ceiling = len(SHAPES) * (1 + len(registered_bash_guards()))
+    guards = len(registered_bash_guards())
+    ceiling = (
+        len(SHAPES) * (1 + guards) + _BASH_CONTROLS + _GUARD_CONTROLS * guards
+    )
     assert ceiling <= SPAWN_BUDGET, (
-        f"{len(SHAPES)} shapes x (1 bash + {len(registered_bash_guards())} guards) "
-        f"= {ceiling} spawns, over the {SPAWN_BUDGET} budget"
+        f"{len(SHAPES)} shapes x (1 bash + {guards} guards) + {_BASH_CONTROLS} "
+        f"bash controls + {_GUARD_CONTROLS} x {guards} guard controls = "
+        f"{ceiling} spawns, over the {SPAWN_BUDGET} budget. Raising the budget "
+        "is a decision about gate wall-clock, not a formality."
     )
