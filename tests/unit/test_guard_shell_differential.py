@@ -109,6 +109,14 @@ of the 12 shapes execute, so the other three never reach their guard runs. (A
 shape classified UNUSABLE spends one extra ``bash -n`` to say why, which is a
 failure path and is not in this figure.)
 
+*Neither figure is every subprocess*, and saying otherwise is how the paragraph
+above was wrong the first time. ``git`` is outside both: the ``repo`` fixture
+spends five calls building the fixture, and each guard run spends more inside
+its own node process, for **85 git spawns on a green run** against the 36 above,
+shimmed identically. They are not bounded directly because they are not
+independent — every one is downstream of a fixture built once or of a guard run
+the arithmetic already counts, so holding the node runs down holds them down.
+
 Serially (``-n0 -p no:cacheprovider``) the module is **2.26 s**, median of three
 on darwin/arm64 at #573. The node spawns dominate — ``push-target-guard.js``
 runs git internally. All three fixtures are module-scoped, so the corpus is
@@ -651,12 +659,15 @@ def test_a_shape_bash_executes_is_not_allowed_by_both_guards(
 def test_the_corpus_stays_within_its_subprocess_budget() -> None:
     """Refuses corpus growth past the bound without a decision.
 
-    A **ceiling over the whole module**, not over the parametrized predicate
-    alone — the earlier version counted only the shapes and so sat below the
-    module's real cost, which is the direction that lets growth through. Every
-    spawn the module makes on a green run is in the arithmetic below: a
+    A ceiling over **the whole module's bash and node spawns**, not over the
+    parametrized predicate alone — the earlier version counted only the shapes
+    and so sat below the module's real cost, which is the direction that lets
+    growth through. All four sources are in the arithmetic below: a
     classification per shape, a guard run per executing shape per guard, the two
-    instrument controls, and the two guard-side controls.
+    instrument controls, and the two guard-side controls. It is not a ceiling
+    over every subprocess — the module's git spawns outnumber these, and the
+    module docstring records why they are held by this bound rather than beside
+    it.
 
     The observed cost is lower than this, because only the executing shapes
     reach their guard runs; the measured figure and how it was taken are in the
