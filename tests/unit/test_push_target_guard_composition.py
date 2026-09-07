@@ -35,7 +35,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -45,10 +44,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from tests.unit._prose import REPO_ROOT  # noqa: E402
-
-_HOOKS_DIR = REPO_ROOT / "hooks"
-_HOOKS_JSON = _HOOKS_DIR / "hooks.json"
+from tests.unit._bash_guards import registered_bash_guards  # noqa: E402
 
 #: The three shapes #562 measured walking past the target guard. Each carries a
 #: push to a protected branch on a channel no static lexer can read, so the only
@@ -93,33 +89,13 @@ def repo(tmp_path: Path) -> Path:
     return root
 
 
-def _bash_hooks() -> list[Path]:
-    """Every hook ``hooks.json`` registers against the ``Bash`` tool.
-
-    Derived, not listed. A matcher is a regex over the tool name, so this asks
-    each ``PreToolUse`` matcher whether it matches ``Bash`` rather than assuming
-    the literal string — and returns the hook scripts in registration order.
-    """
-    spec = json.loads(_HOOKS_JSON.read_text())
-    found: list[Path] = []
-    for entry in spec.get("hooks", {}).get("PreToolUse", []):
-        if not re.search(entry.get("matcher", ""), "Bash"):
-            continue
-        for hook in entry.get("hooks", []):
-            name = Path(hook.get("command", "").split()[-1]).name
-            script = _HOOKS_DIR / name
-            if script.is_file():
-                found.append(script)
-    return found
-
-
 def _decisions(command: str, repo: Path) -> dict[str, str | None]:
     """Each registered ``Bash`` guard's verdict on ``command``, by filename."""
     payload = json.dumps(
         {"tool_name": "Bash", "cwd": str(repo), "tool_input": {"command": command}}
     )
     verdicts: dict[str, str | None] = {}
-    for script in _bash_hooks():
+    for script in registered_bash_guards():
         proc = subprocess.run(
             [_node(), str(script)],
             input=payload,
