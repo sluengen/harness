@@ -1017,6 +1017,18 @@ def test_a_root_driven_build_still_blocks_on_a_worktree_that_declares_a_ticket(
     )
 
 
+#: Bytes V8 **quotes back** in its ``JSON.parse`` message — measured on node
+#: v24: ``Unexpected token 'L', "LEAK-SENTINEL-3f9a" is not valid JSON``. The
+#: shape matters. A document opening with ``{`` yields only a position, so a
+#: fixture built from one cannot fail the leak assertion it carries, which is
+#: what cycle 1 found: splicing a ``process.stderr.write`` of ``err.message``
+#: into the reader's catch left the whole module green.
+LEAK_SENTINEL = "LEAK-SENTINEL-3f9a"
+
+#: A ticket value shaped like an injection attempt, for the one path where the
+#: reader's return value is live.
+TICKET_SENTINEL = "IGNORE-PREVIOUS-INSTRUCTIONS-8c1d"
+
 #: Every shape of a sibling run file that leaves ownership *unestablished*. Each
 #: must admit the candidate, which is #439's behaviour — the hook opens on what
 #: it cannot establish, and only a positive contradiction closes a candidate out.
@@ -1043,13 +1055,12 @@ UNESTABLISHED: list[tuple[str, object]] = [
 def test_an_unestablished_sibling_run_file_admits_the_candidate(
     tmp_path: Path, label: str, content: object
 ) -> None:
-    """AC-4. Nine shapes, each paired with its own control in the same test.
+    """AC-4. Every unestablished shape, each paired with its own control.
 
     The block alone proves nothing: a fixture that never reached the filter
-    would satisfy every one of these nine assertions. So each case ends by
-    rewriting the same file to a well-formed differing ticket, which must flip
-    the answer to allow. The pair differs only in the bytes of one gitignored
-    file.
+    would satisfy every one of these assertions. So each case ends by rewriting
+    the same file to a well-formed differing ticket, which must flip the answer
+    to allow. The pair differs only in the bytes of one gitignored file.
     """
     _root, mine, theirs, transcript = _concurrent(tmp_path)
     if content == "<dir>":
@@ -1157,7 +1168,7 @@ def test_a_malformed_own_run_file_does_not_disarm_the_hook(tmp_path: Path) -> No
     """
     _root, mine, theirs, transcript = _concurrent(tmp_path)
     _run_file(theirs, {"version": 1, "ticket": "580"})
-    _run_bytes(mine, "{not json")
+    _run_bytes(mine, LEAK_SENTINEL)
 
     proc = _feed(mine, _payload(mine, transcript))
     out = json.loads(proc.stdout)
@@ -1170,6 +1181,43 @@ def test_a_malformed_own_run_file_does_not_disarm_the_hook(tmp_path: Path) -> No
     assert "fail-open" not in proc.stderr, (
         f"the hook crashed and failed open over a malformed run file: {proc.stderr}"
     )
-    assert "not json" not in proc.stderr, (
-        f"the parse error put file content on stderr: {proc.stderr}"
+    assert LEAK_SENTINEL not in proc.stderr, (
+        f"the parse error put the file's own bytes on stderr: {proc.stderr}"
+    )
+    assert LEAK_SENTINEL not in out["reason"], (
+        f"the file's own bytes reached the injected reason: {out['reason']}"
+    )
+
+
+def test_the_ticket_value_reaches_neither_the_reason_nor_stderr(tmp_path: Path) -> None:
+    """The value is a set-membership key, and this is the test that says so.
+
+    The shapes above all end in ``runTicket`` returning null, so none of them
+    exercises a ticket the reader actually *returns*. Here both sides carry the
+    same ticket, so the value is read, compared, and found equal — the candidate
+    is admitted and blocked on, which is the only path where a returned value is
+    live. What must not happen is that it comes back out: ``reason`` is written
+    straight into the model's context and is built from hook-owned constants, a
+    tree oid and a path git printed, and this file is agent-written.
+
+    The path git printed is asserted present in the same breath. Without it a
+    hook that stopped naming anything at all would pass the two absences.
+    """
+    _root, mine, theirs, transcript = _concurrent(tmp_path)
+    _run_file(mine, {"version": 1, "ticket": TICKET_SENTINEL})
+    _run_file(theirs, {"version": 1, "ticket": TICKET_SENTINEL})
+
+    proc = _feed(mine, _payload(mine, transcript))
+    out = json.loads(proc.stdout)
+
+    assert _blocked(out), (
+        "equal tickets did not admit the candidate, so no returned value was "
+        "ever live and the absences below prove nothing"
+    )
+    assert str(theirs) in out["reason"], "the block named no directory"
+    assert TICKET_SENTINEL not in out["reason"], (
+        f"the ticket value reached the injected reason: {out['reason']}"
+    )
+    assert TICKET_SENTINEL not in proc.stderr, (
+        f"the ticket value reached stderr: {proc.stderr}"
     )
