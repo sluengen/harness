@@ -44,6 +44,27 @@ waiting to be told a twin exists. A stale twin ships green by construction:
 every guard over the original still passes, and the copy the next reader
 reaches is the one describing behaviour that was retired.
 
+## The version class, where the repo ships one
+
+A repo whose plugin version `/build` raises per cycle carries that raise **in
+this diff**, put there at step 1 before the first edit. Two things follow.
+
+The version homes are in scope for every change that carries them. A reviewer
+who flags them as an unrelated edit is flagging the mechanism, not the builder.
+
+And the floor is minor, so ask whether this change exceeds it. A renamed command
+or skill, a changed argument, or a **changed refusal reason** — a call that used
+to be refused and now succeeds, or the reverse — is a major change, and a major
+reaches a consuming repo as a decision rather than an auto-pull, which is the
+whole point of the class (`specs/architecture-principles.md` → *The installed
+surface is a versioned interface*). Where the change exceeds the floor, raise
+every version home to the next major **inside the candidate, before the
+certifying gate**: a version edit after the verdict is uncertified tree content
+like anything else. Where it does not, say so in the report in one line. The
+class is a judgment about the whole diff, which is why nothing upstream of this
+point makes it — and why closing the ticket is not the same as delivering the
+change, since a major stays unpulled until each consuming repo decides.
+
 ## Close the candidate before you certify it
 
 The tree you verify and the tree your verdict covers are the tree that merges.
