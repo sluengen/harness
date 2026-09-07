@@ -750,9 +750,17 @@ function runGate(cwd, scope) {
     //: left to decode. The exit status is unaffected — it is `result.status`
     //: either way — and so is the `error`/`null` arm below, which still catches a
     //: shell that could not be launched or a gate killed by a signal.
+    //:
+    //: stdin is **not** inherited, and the triple is spelled out rather than the
+    //: bare `"inherit"` shorthand to say so. Capturing gave the child a pipe at
+    //: immediate EOF; `"inherit"` throughout would instead hand it this process's
+    //: stdin, so a consumer gate that reads stdin would consume or block on the
+    //: caller's — and under an unattended run there is no operator behind it.
+    //: `"ignore"` gives the same immediate EOF the child saw before, so the only
+    //: stream whose behaviour changes is the one this fix is about.
     result = spawnSync("sh", ["-c", gate.command], {
       cwd: String(cwd),
-      stdio: "inherit",
+      stdio: ["ignore", "inherit", "inherit"],
       env: environment,
     });
   } finally {

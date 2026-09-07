@@ -15,7 +15,7 @@ Every row takes exactly one `action`, from this set and no other word.
 | `migrated` | the bytes left this file for another path, and what stands in their place points there | 1, and step 1 alone — the plan's one reach into a repo-owned region |
 | `retained` | the plan changed nothing here — consumer-owned, already current, or offered rather than done | every step |
 | `deleted` | the path is gone | 5, after an empty sweep |
-| `blocked` | left untouched, and an operator must decide before the plan is complete | 1 (a key-by-key difference, or two qualifying blocks), 2 (a spine with no markers to refresh), 3 (a module source or manifest that blocks flat placement) |
+| `blocked` | left untouched, and an operator must decide before the plan is complete | 1 (a key-by-key difference, or two qualifying blocks), 2 (a spine with no markers to refresh), 3 (a module source or manifest that blocks flat placement), 4 (a failed entry condition) |
 
 A path takes more than one row where different steps act on different regions of it — `AGENTS.md` ordinarily takes two, step 1's fence replacement and step 2's marker rewrite — and the `path` column then carries the region as well as the file (`AGENTS.md` lines 11–32). `retained` and `blocked` both leave the bytes alone; the difference is whether anything waits on an answer. What a path *is* — consumer-owned, managed pair, custom wiring, a legacy hash, already migrated — goes in `classification` and is never repeated in `action`.
 
