@@ -19,9 +19,10 @@ depend on an agent remembering them:
   a completion claim may cite; one more edit invalidates it.
 - **The spine.** A repo-owned `AGENTS.md` carries the five principles, the laws
   derived from them, and the lifecycle contract — always loaded, never optional.
-  `CLAUDE.md` carries `AGENTS.md` verbatim, followed by the deltas that apply on
-  that host alone — derived from the spine, not a pointer to it, and re-derived
-  by `--refresh` — and the repo's configuration is `harness.yaml`. Skills carry the
+  `CLAUDE.md` carries `AGENTS.md` verbatim, then a `<!-- spine:copy:end -->`
+  line, then the deltas that apply on that host alone — derived from the spine,
+  not a pointer to it, and re-derived by `--refresh` from that marker whatever
+  has drifted above it — and the repo's configuration is `harness.yaml`. Skills carry the
   depth and load by task; path-scoped rules under `.claude/rules/` load with the
   files they scope.
 - **Builder / recorder separation.** The agent that promises delivery is not the

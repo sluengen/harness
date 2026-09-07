@@ -776,6 +776,16 @@ def test_the_manifest_and_both_spines_name_the_current_release() -> None:
 # (#492 — de-duplication is a deletion; the survivor here is the prefix
 # relation). That subsumption holds *only* while the relation asserted is a
 # prefix; weaken it to "contains" and the version stamp needs its own operand.
+#
+# The boundary marker (#594) changes none of this. `<!-- spine:copy:end -->` is
+# written into the remainder, at position `len(source)` — inside the tail this
+# predicate already treats as opaque, not the prefix. All three clauses hold
+# unchanged: clause 1 (the prefix relation) is the same bytes it always was,
+# clause 3 (a non-empty remainder) is satisfied more strongly, not less, since
+# the remainder now opens with the marker. The subsumption argument above is
+# likewise unmoved: the marker carries no version and sits below the
+# `spine:generated` stamp, so the relation excluding `CLAUDE.md` from
+# `version_disagreements` is still a prefix, not a containment.
 
 
 def derived_spine_divergence(
@@ -894,6 +904,13 @@ def _rejects_pair(source: str, derived: str, needle: str) -> None:
 _SOURCE = "# Spine\n\nA law.\nAnother law.\n"
 _TAIL = "\n# Host deltas\n\nOne delta.\n"
 
+#: The boundary the derivation writes at the end of the copied region (#594).
+#: `--refresh` re-derives from it whatever has drifted above it, so it is
+#: recovery machinery for that procedure and **not** an operand of the predicate
+#: below — the contract is still the prefix relation and nothing else.
+_COPY_END = "<!-- spine:copy:end -->"
+_BOUNDARY = f"\n{_COPY_END}\n"
+
 
 def test_the_prefix_reader_reaches_real_spine_bytes() -> None:
     """Paired splice: prove both readers reach real bytes.
@@ -965,6 +982,43 @@ def test_a_derived_edit_inside_the_prefix_is_reported() -> None:
     assert "character" in report["prefix"][1]
 
 
+def test_the_boundary_marker_does_not_excuse_a_drifted_copy() -> None:
+    """The boundary marker is ``--refresh``'s recovery locator, not a relaxation
+    of this gate's contract (#594). A drifted copy is reported even when it
+    carries a well-formed boundary marker below the drift.
+
+    *Exclusive killer:* the relaxation this ticket invites —
+    ``if _COPY_END in derived: return {}``, on the reasoning that ``--refresh``
+    will re-derive it anyway. That mutant is green on every other row in this
+    module and returns ``{}`` here. The gate's job is unchanged by #594: it says
+    the copy is correct **now**, not that something will fix it later. *What it
+    does not kill:* a boundary-splitting reimplementation
+    (``derived.split(_COPY_END)[0] == source``), which also reports on this
+    input — :func:`test_the_boundary_marker_is_not_an_operand_of_this_predicate`
+    below is that one's killer.
+    """
+    drifted = _SOURCE.replace("Another law.", "Another rule.")
+    report = derived_spine_divergence(_SOURCE, drifted + _BOUNDARY + _TAIL)
+    assert set(report) == {"prefix"}, report
+
+
+def test_the_boundary_marker_is_not_an_operand_of_this_predicate() -> None:
+    """The marker locates nothing for this guard; only the prefix does (#594).
+
+    *Exclusive killer:* any reimplementation that locates the copy region by the
+    marker rather than by position — ``derived.split(_COPY_END)[0] == source``
+    and every variant. Those report on this input; the shipped predicate
+    returns ``{}``, because the contract is the prefix and everything after
+    ``len(source)`` is the tail as far as *this guard* is concerned. The
+    division is the subtle part of the whole ticket: the guard asserts the
+    prefix; the boundary marker is ``--refresh``'s recovery locator. A file in
+    this shape is legal to the gate and would have its ``extra\\n`` replaced and
+    reported by the next ``--refresh`` (see ``refresh.md``'s *Reporting an
+    overwrite*). Both are correct; they answer different questions.
+    """
+    assert derived_spine_divergence(_SOURCE, _SOURCE + "extra\n" + _BOUNDARY + _TAIL) == {}
+
+
 def test_a_derived_file_shorter_than_its_source_names_the_truncation() -> None:
     """A copy that stops partway carries no tail, and is named as truncated.
 
@@ -1002,7 +1056,15 @@ def test_a_line_ending_change_inside_the_prefix_is_reported() -> None:
 
 def test_two_agreeing_spines_report_nothing() -> None:
     """The passing direction. Without it, a predicate that reported everything
-    would satisfy every kill above."""
+    would satisfy every kill above.
+
+    Also the marker-less-pair control (#594): neither operand here carries
+    ``<!-- spine:copy:end -->``, unlike the two boundary-marker samples below
+    (``test_the_boundary_marker_does_not_excuse_a_drifted_copy`` and
+    ``test_the_boundary_marker_is_not_an_operand_of_this_predicate``), so this
+    row's agreement is evidence about the prefix relation with no marker
+    involved at all — do not cull it as redundant with those two.
+    """
     assert derived_spine_divergence(_SOURCE, _SOURCE + _TAIL) == {}
 
 
@@ -1096,4 +1158,44 @@ def test_the_host_file_carries_the_spine_verbatim() -> None:
     report = derived_spine_divergence(source, derived)
     assert report == {}, "\n".join(
         [f"{DERIVED_PATH} no longer carries {SPINE_PATH} verbatim:", *report["prefix"]]
+    )
+
+
+def test_the_host_file_marks_where_the_copy_ends() -> None:
+    """The boundary marker sweep (#594). ``CLAUDE.md`` marks where the copied
+    region ends, so ``--refresh`` can re-derive the deltas from a declared
+    position rather than by comparing bytes against a possibly-drifted source.
+
+    Two properties, both live. *Position*: the marker opens the remainder,
+    asserted positionally rather than by containment — ``_COPY_END in derived``
+    would pass for a marker anywhere, including inside the copy region, which is
+    this module's own prefix-versus-containment lesson
+    (``test_content_above_the_copy_is_a_divergence_not_a_containment``) one
+    level down. *Exactly one*: what makes the file bounded under the procedure
+    in ``refresh.md`` — two or more anchored markers and nothing can tell which
+    delimits the deltas. This also subsumes "``AGENTS.md`` carries none":
+    ``AGENTS.md`` is a prefix of ``CLAUDE.md``, so an occurrence there would be
+    a second occurrence here (law 1 — no separate assertion for it).
+
+    The first line is read with ``lstrip("\\n")`` and ``.strip()`` deliberately:
+    asserting the remainder starts with the boundary bytes exactly would go red
+    when a trailing newline legitimately migrates across the join, which
+    ``test_whitespace_at_the_join_may_move_across_the_boundary`` exists to say
+    must not happen. Interior comment spacing is *not* tolerated here — these
+    bytes are hand-written in this repo and canonical; the tolerant reading is
+    ``refresh.md``'s job, over files this repo does not own.
+
+    Born red at the tree this test was authored on: ``CLAUDE.md`` does not yet
+    carry the marker. Green once #594's ``CLAUDE.md`` edit lands (AC-5).
+    """
+    source, derived = _pair()
+    remainder = derived[len(source) :]
+    first_line = remainder.lstrip("\n").split("\n", 1)[0].strip()
+    assert first_line == _COPY_END, (
+        f"{DERIVED_PATH}'s remainder after the {SPINE_PATH} prefix does not open "
+        f"with {_COPY_END!r}; its first line is {first_line!r}"
+    )
+    assert derived.count(_COPY_END) == 1, (
+        f"{DERIVED_PATH} carries {derived.count(_COPY_END)} occurrences of "
+        f"{_COPY_END!r}, not exactly one, so the file is not bounded"
     )

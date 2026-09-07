@@ -84,6 +84,8 @@ Configuration: `harness.yaml`. Path-scoped rules under `.claude/rules/` carry wh
 - What every component assumes the model cannot do, and the test that would retire it: `specs/harness-assumptions.md`. Read at every model or host release.
 - Unconfirmed ideas: `specs/proposals/`. In-flight work: the GitHub repo and Projects board.
 
+<!-- spine:copy:end -->
+
 # Claude Code deltas
 
 Nothing in `AGENTS.md` is repeated below. These are the differences that apply on
