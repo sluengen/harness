@@ -181,234 +181,6 @@ def _uncommented(text: str) -> str:
     return "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
 
 
-class UnclassifiedStepError(AssertionError):
-    """A ``steps:`` item this module could not classify.
-
-    Raised, never swallowed. The whole point of the classifier below is that an
-    item it cannot read is **louder** than one it can — three review cycles of
-    #580 were spent on a recogniser that silently dropped what it did not match,
-    so a second unpinned checkout stayed invisible while the count read one.
-    """
-
-
-#: A key line inside a step body. Deliberately narrow: anything a step may
-#: legally contain that does not match this raises rather than being skipped.
-_STEP_KEY = re.compile(r"^(?P<key>[A-Za-z_][A-Za-z0-9_.-]*):(?P<value>.*)$")
-
-#: `run: |`, `run: >-`, and friends — a block scalar whose indented body is
-#: arbitrary text, including text shaped like a step. Recognised so it can be
-#: skipped wholesale; unrecognised block styles fall through to the refusal.
-_BLOCK_SCALAR = re.compile(r"^[|>][0-9+-]*$")
-
-
-def _unquote(value: str) -> str:
-    """One matching pair of surrounding quotes removed; anything else untouched.
-
-    `uses: "actions/checkout@v4"` is legal and is what defeated the second
-    version of this guard. Only a *matching* pair is stripped, so a value with
-    one stray quote stays as written and fails the comparison it is used in
-    rather than being silently normalised into something that passes.
-    """
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-        return value[1:-1]
-    return value
-
-
-def _parse_steps(text: str) -> list[dict[str, object]]:
-    """Every item under every ``steps:`` key in ``text``, classified or refused.
-
-    A pure function over YAML text, so the spelling table that guards it is an
-    executed regression test rather than mutation narrated in a docstring.
-
-    **The closed set.** An item opens with a dash at the block's own indent and
-    is a block mapping, spelled either way:
-
-    .. code-block:: yaml
-
-        - uses: actions/checkout@v4     # mapping starts on the dash line
-        -                               # mapping starts on the next line
-          uses: actions/checkout@v4
-
-    Everything else — a flow item (``- {uses: …}``), a flow ``with:``, a bare
-    scalar item, a line that is not ``key: value`` — raises
-    :class:`UnclassifiedStepError`. That is the fail-closed property: an unreadable
-    workflow makes the guard **red**, never quietly short. Returns one dict per
-    step with its ``uses`` value (unquoted, or ``None``) and its ``with`` mapping.
-    """
-    lines = [line for line in text.splitlines() if line.strip()]
-    steps: list[dict[str, object]] = []
-
-    for index, line in enumerate(lines):
-        header = re.match(r"^ *steps:(?P<rest>.*)$", line)
-        if header is None:
-            continue
-        if header.group("rest").strip():
-            raise UnclassifiedStepError(
-                f"a `steps:` key carries its sequence inline ({line.strip()!r}); this module "
-                "reads block sequences only — rewrite it as a block, or widen the closed set"
-            )
-        steps_indent = len(line) - len(line.lstrip())
-
-        block: list[str] = []
-        for following in lines[index + 1 :]:
-            if len(following) - len(following.lstrip()) <= steps_indent:
-                break
-            block.append(following)
-        if not block:
-            raise UnclassifiedStepError(
-                f"a `steps:` key has no block beneath it ({line.strip()!r}); a workflow this "
-                "module cannot read must be red, not quietly short"
-            )
-
-        item_indent = len(block[0]) - len(block[0].lstrip())
-        if not block[0].lstrip().startswith("-"):
-            raise UnclassifiedStepError(
-                f"a `steps:` block opens with a non-item line: {block[0]!r}"
-            )
-
-        # Split the block on dashes at the item indent; a deeper dash belongs to
-        # a nested sequence inside one step and is that step's own business.
-        bounds = [
-            offset
-            for offset, entry in enumerate(block)
-            if len(entry) - len(entry.lstrip()) == item_indent and entry.lstrip().startswith("-")
-        ]
-        for position, opening in enumerate(bounds):
-            closing = bounds[position + 1] if position + 1 < len(bounds) else len(block)
-            steps.append(_classify(block[opening:closing], item_indent))
-
-    return steps
-
-
-def _classify(item: list[str], item_indent: int) -> dict[str, object]:
-    """One ``steps:`` item, as ``{"uses": str | None, "with": {...}}``."""
-    opener = re.match(r"^ *-(?P<rest>.*)$", item[0])
-    assert opener is not None, f"not a step item: {item[0]!r}"
-    rest = opener.group("rest")
-
-    body: list[tuple[int, str]] = []
-    if rest.strip():
-        if rest.lstrip()[0] in "{[":
-            raise UnclassifiedStepError(
-                f"a `steps:` item is written in flow style ({item[0].strip()!r}); this module "
-                "reads block mappings only — rewrite it as a block, or widen the closed set"
-            )
-        # The first key sits wherever its first non-space character actually is,
-        # which is not always `dash + 2`: `-   uses:` is legal and indents by more.
-        body_indent = item_indent + 1 + (len(rest) - len(rest.lstrip()))
-        body.append((body_indent, rest.strip()))
-        remainder = item[1:]
-    else:
-        if not item[1:]:
-            raise UnclassifiedStepError(f"a `steps:` item has no body: {item[0]!r}")
-        body_indent = len(item[1]) - len(item[1].lstrip())
-        if body_indent <= item_indent:
-            raise UnclassifiedStepError(f"a `steps:` item has no body: {item[0]!r}")
-        remainder = item[1:]
-
-    for entry in remainder:
-        body.append((len(entry) - len(entry.lstrip()), entry.strip()))
-
-    uses: str | None = None
-    options: dict[str, str] = {}
-    position = 0
-    while position < len(body):
-        indent, content = body[position]
-        position += 1
-        if indent != body_indent:
-            continue  # a sub-value; its owning key consumed it below
-
-        matched = _STEP_KEY.match(content)
-        if matched is None:
-            raise UnclassifiedStepError(
-                f"a `steps:` item carries a line this module cannot read as `key: value`: "
-                f"{content!r}"
-            )
-        key, value = matched.group("key"), matched.group("value").strip()
-
-        if _BLOCK_SCALAR.match(value):
-            while position < len(body) and body[position][0] > body_indent:
-                position += 1
-            continue
-
-        if key == "uses":
-            uses = _unquote(value)
-        elif key == "with":
-            if value:
-                raise UnclassifiedStepError(
-                    f"a step writes `with:` in flow style ({content!r}); this module reads block "
-                    "mappings only — rewrite it as a block, or widen the closed set"
-                )
-            while position < len(body) and body[position][0] > body_indent:
-                _, option = body[position]
-                position += 1
-                pair = _STEP_KEY.match(option)
-                if pair is None:
-                    raise UnclassifiedStepError(
-                        f"unreadable line in a step `with:` block: {option!r}"
-                    )
-                options[pair.group("key")] = _unquote(pair.group("value").strip())
-
-    return {"uses": uses, "with": options}
-
-
-#: What a checkout step's `uses:` starts with. One spelling, used by the parse
-#: and by the floor below, so the two can never drift apart and disagree about
-#: what they are counting.
-_CHECKOUT = "actions/checkout@"
-
-
-def _checkout_steps_in(text: str) -> list[dict[str, object]]:
-    """Every classified checkout step in ``text``, under a floor on the count.
-
-    **The floor is the half that does not depend on this module reading YAML
-    correctly.** Four review cycles of #580 each found a spelling the recogniser
-    silently dropped — a two-line ``uses:``, a quoted value, a flow item, a bare
-    dash, and finally a whole second job whose ``steps:`` was written inline. In
-    every case it failed *open*: the extra step vanished and the count still read
-    one. Each fix taught the parser one more shape, which is a bet that the next
-    spelling has been imagined.
-
-    This is not that bet. The number of steps classified as checkouts is compared
-    against the number of times ``actions/checkout@`` simply *appears* in the
-    text, and a shortfall raises. A spelling nobody has thought of cannot escape,
-    because escaping means being mentioned and not counted, which is exactly what
-    is measured. The parser may still fail to *read* a workflow; it can no longer
-    fail to *notice* one.
-
-    The cost is over-refusal — ``actions/checkout@`` inside a ``run:`` body, or in
-    a string that is not a step, trips it. That is the fail-closed direction: a
-    loud, diagnosable red on a legal edit, rather than a silent green on a
-    dangerous one.
-    """
-    steps = _parse_steps(text)
-    checkouts = [
-        step
-        for step in steps
-        if isinstance(step["uses"], str) and step["uses"].startswith(_CHECKOUT)
-    ]
-
-    mentioned = text.count(_CHECKOUT)
-    if len(checkouts) < mentioned:
-        raise UnclassifiedStepError(
-            f"{mentioned} occurrence(s) of `{_CHECKOUT}` appear in this workflow but only "
-            f"{len(checkouts)} were classified as steps, so {mentioned - len(checkouts)} "
-            "escaped the parse entirely — which is how an unpinned second checkout hides "
-            "from the count (#580). Either a step is written in a shape this module does "
-            "not read, or the name appears somewhere that is not a step."
-        )
-    return checkouts
-
-
-def _ci_checkout_steps() -> list[dict[str, object]]:
-    """Every ``actions/checkout`` step in ``ci.yml``, classified and floored.
-
-    Read over ``_uncommented`` so a ``#`` line naming a key cannot satisfy the
-    assertions, and derived from the file rather than restated here.
-    """
-    return _checkout_steps_in(_uncommented(CI_WORKFLOW.read_text(encoding="utf-8")))
-
-
 def test_the_workflow_is_a_bounded_deterministic_nightly() -> None:
     """The scheduler's own shape: when it fires, that it cannot race itself, and
     what it may write (#378). None of this is reachable by executing anything."""
@@ -500,34 +272,11 @@ def test_ci_runs_pull_request_checks_only_for_the_integration_branch() -> None:
     )
 
 
-#: A workflow holding exactly one pinned checkout, used as the control the
-#: spellings below are grafted into. Its answer must differ from theirs, or the
-#: table proves only that the parser runs.
-_ONE_PINNED_CHECKOUT = """\
-jobs:
-  lint-and-test:
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
-"""
-
-#: Every spelling of a *second*, unpinned `actions/checkout` step that has ever
-#: escaped this guard, plus the ones that never did. Each must end red — either
-#: counted (so the count assertion fails) or refused (so the parser raises).
-#: Three of these five were live defects found in review, one per cycle.
-_SECOND_CHECKOUT_SPELLINGS = {
-    "one-line uses": "      - uses: actions/checkout@v4\n",
-    "name then uses": "      - name: Again\n        uses: actions/checkout@v4\n",
-    "double-quoted uses": '      - uses: "actions/checkout@v4"\n',
-    "single-quoted uses": "      - uses: 'actions/checkout@v4'\n",
-    "flow mapping item": "      - { uses: actions/checkout@v4 }\n",
-    "bare dash, mapping below": "      -\n        uses: actions/checkout@v4\n",
-    "extra spaces after dash": "      -   uses: actions/checkout@v4\n",
-    "full sha pin": "      - uses: actions/checkout@8f4b7f84864484a7bf31766abe9204da3cbe65b3\n",
-}
+#: The action whose duplication this guard refuses, lower-cased once and used by
+#: both assertions below. GitHub resolves action names case-insensitively, so the
+#: comparison must be too — `Actions/Checkout@v4` is the same action, and it is
+#: what defeated the step-parsing guard this replaced (#580, review cycle 5).
+_CHECKOUT = "actions/checkout@"
 
 
 def test_the_ci_checkout_supplies_the_ref_the_cycle_start_guard_reads() -> None:
@@ -542,191 +291,52 @@ def test_the_ci_checkout_supplies_the_ref_the_cycle_start_guard_reads() -> None:
     gate — client-side, on whichever machine happened to push, while the spine's
     posture puts the controls of record in CI.
 
-    That is not hypothetical: nightly promotion run 34046398127 (2026-09-06)
-    failed ``Kind.EQUAL`` on ``dev`` roughly a day after the offending landing,
-    having been green on every push in between, because the nightly is the one
-    workflow that fetches full history.
+    Observed, not hypothetical: nightly promotion run 34046398127 (2026-09-06)
+    failed ``Kind.EQUAL`` on ``dev`` about a day after the landing that owed a
+    version bump, having been green on every push in between, because the
+    nightly is the one workflow that fetches full history.
 
-    The fix is the checkout action's own key, not a hand-written fetch step: a
-    narrow ``--depth=1`` fetch of the release branch would serve the three reads
-    (none needs history), but it re-implements ref fetching and adds a
-    ``harness.yaml`` read inside CI, which P2 refuses while a native option
-    exists. Measured 2026-09-07: 1781 commits, 10 remote heads, 22 MB ``.git``.
+    **This guard reads text and parses no YAML, deliberately.** Five review
+    cycles were spent on a predecessor that walked ``steps:`` and classified
+    each item, and six different legal spellings escaped it in turn — a
+    two-line ``uses:``, a quoted value, a flow item, a bare dash, a second job
+    whose ``steps:`` was inline, and finally a capitalised action name. Each
+    fix taught it one more shape, which is a bet that the next spelling has
+    been imagined.
+
+    Counting occurrences of the name is not that bet. A second checkout cannot
+    be added to this workflow in *any* spelling, position, job or casing without
+    the name appearing twice, so every one of those six is answered by
+    construction rather than by anticipation. The cost is over-refusal — the
+    name appearing somewhere that is not a step, such as inside a ``run:`` body,
+    turns this red — which is the direction worth being wrong in, and cheaply
+    fixed by not writing it there.
+
+    Both assertions are equalities rather than presence checks: a *second*
+    declaration is exactly what must not hide, and no presence check can see one.
     """
-    checkouts = _ci_checkout_steps()
+    workflow = _uncommented(CI_WORKFLOW.read_text(encoding="utf-8"))
 
-    assert len(checkouts) == 1, (
-        f"ci.yml declares {len(checkouts)} `actions/checkout` steps; this guard pins the "
-        "fetch depth of exactly one, so a second checkout would be unpinned and could "
-        "reintroduce the shallow clone this ticket removed"
-    )
-    options = checkouts[0]["with"]
-    assert isinstance(options, dict)
-    assert options.get("fetch-depth") == "0", (
-        f"ci.yml's checkout declares fetch-depth={options.get('fetch-depth')!r}, so no ref "
-        "naming the release role is fetched and the start-of-cycle version guard reports "
-        "NO_RELEASE_REF and skips on every push — a false green, not a pass (#580)"
+    mentions = workflow.lower().count(_CHECKOUT)
+    assert mentions == 1, (
+        f"ci.yml names `{_CHECKOUT}` {mentions} time(s); exactly one checkout may appear, or a "
+        "second one could reintroduce the shallow clone whose removal is the whole point of "
+        "this key (#580)"
     )
 
-
-def test_the_control_workflow_reads_as_one_pinned_checkout() -> None:
-    """The table below is worthless if its baseline already fails.
-
-    Two identically-failed runs compare equal (#466): without this, every row
-    of ``test_no_spelling_of_a_second_checkout_escapes_the_count`` could be red
-    because the *fixture* is malformed rather than because the spelling was
-    caught, and the table would score a perfect kill rate while measuring
-    nothing.
-    """
-    steps = _parse_steps(_ONE_PINNED_CHECKOUT)
-    checkouts = [
-        step
-        for step in steps
-        if isinstance(step["uses"], str) and step["uses"].startswith("actions/checkout@")
+    # Quotes stripped: `fetch-depth: "0"` is legal, and this file already quotes
+    # `version: "latest"`, so refusing the quoted spelling would be a false
+    # positive on an edit the workflow's own idiom invites. Found by a control
+    # that had to stay green, not by a mutation that had to go red (#580).
+    depths = [
+        value.strip("\"'")
+        for value in re.findall(r"^\s*fetch-depth:\s*(\S+)\s*$", workflow, re.MULTILINE)
     ]
-
-    assert len(steps) == 2, f"the control should classify two steps, got {len(steps)}"
-    assert len(checkouts) == 1
-    assert checkouts[0]["with"] == {"fetch-depth": "0"}
-
-
-@pytest.mark.parametrize("spelling", sorted(_SECOND_CHECKOUT_SPELLINGS))
-def test_no_spelling_of_a_second_checkout_escapes_the_count(spelling: str) -> None:
-    """A second unpinned checkout must be counted or refused — never dropped.
-
-    This is the regression table for #580's central defect. The guard's
-    recogniser was found vacuous in **three consecutive review cycles**, each
-    time by a spelling its author had not thought to try: the two-line
-    ``- name:``/``uses:`` form, a quoted ``uses:`` value, and both a flow-mapping
-    item and a bare dash with the mapping below. Every one of them failed
-    *open* — the extra step vanished from the parse and the count still read
-    one — which is the only direction that matters.
-
-    The classifier replaces enumeration of spellings with a closed set plus a
-    refusal, so the property asserted here is not "each known spelling is
-    matched" but "**no** spelling escapes": either the step is classified, and
-    the count rises to two, or it cannot be read, and
-    :class:`UnclassifiedStepError` is raised. Both are red. A future spelling nobody
-    has imagined lands in the second bucket by construction.
-    """
-    injected = _ONE_PINNED_CHECKOUT.replace(
-        "      - name: Install uv\n",
-        _SECOND_CHECKOUT_SPELLINGS[spelling] + "      - name: Install uv\n",
+    assert depths == ["0"], (
+        f"ci.yml declares fetch-depth {depths!r}; it must declare exactly one, with the value "
+        "`0`, or no ref naming the release role is fetched and the start-of-cycle version guard "
+        "reports NO_RELEASE_REF and skips on every push — a false green, not a pass (#580)"
     )
-    assert injected != _ONE_PINNED_CHECKOUT, "the spelling was never grafted into the control"
-
-    try:
-        checkouts = _checkout_steps_in(injected)
-    except UnclassifiedStepError:
-        return  # refused, which is red for the guard — the fail-closed arm
-    assert len(checkouts) == 2, (
-        f"a second checkout spelled {spelling!r} was neither counted nor refused: the parse "
-        f"found {len(checkouts)} checkout step(s), so this spelling can hide an unpinned "
-        "checkout from the count assertion (#580)"
-    )
-
-
-#: Where a second checkout can hide that is **not** inside the tracked job.
-#: Cycle 4 shipped a table whose every row injected a step into the one job the
-#: control declares, so a whole second job was outside everything it measured —
-#: the blind spot that let `steps:` written inline escape. Each value is appended
-#: to the control, so the escape is structural rather than a different spelling
-#: of the same step.
-_SECOND_CHECKOUT_ELSEWHERE = {
-    "second job, block steps": """\
-  other-job:
-    steps:
-      - uses: actions/checkout@v4
-""",
-    "second job, inline steps": """\
-  other-job:
-    steps: [{uses: actions/checkout@v4}, {name: x, run: echo hi}]
-""",
-    "second job, steps with no block": """\
-  other-job:
-    steps:
-""",
-    "name buried in a run body": """\
-  other-job:
-    steps:
-      - name: Print
-        run: |
-          echo actions/checkout@v4
-""",
-}
-
-
-@pytest.mark.parametrize("location", sorted(_SECOND_CHECKOUT_ELSEWHERE))
-def test_no_checkout_outside_the_tracked_job_escapes_the_count(location: str) -> None:
-    """A checkout the parser cannot reach must still be noticed.
-
-    The rows above are not spellings of a step; they are *places a step can be*
-    that the previous table could not see, because every one of its rows edited
-    the single job its control declares. A second job whose ``steps:`` is written
-    inline is what failed cycle 4, and it failed **open**.
-
-    Each row must end red: counted, or refused. The last row is deliberately not
-    a step at all — ``actions/checkout@v4`` inside a ``run:`` body — and is here
-    to pin the floor's cost honestly. It refuses, which is over-refusal on a
-    legal workflow, and that is the direction this guard is willing to be wrong
-    in. A row that silently passed would mean the floor had been quietly widened
-    into uselessness.
-    """
-    injected = _ONE_PINNED_CHECKOUT + _SECOND_CHECKOUT_ELSEWHERE[location]
-    assert injected != _ONE_PINNED_CHECKOUT, "the location was never appended to the control"
-
-    try:
-        checkouts = _checkout_steps_in(injected)
-    except UnclassifiedStepError:
-        return  # refused — the fail-closed arm
-
-    assert len(checkouts) == 2, (
-        f"a checkout at {location!r} was neither counted nor refused: the parse found "
-        f"{len(checkouts)} checkout step(s), so it can hide from the count assertion (#580)"
-    )
-
-
-def test_the_floor_notices_what_the_parser_cannot_read() -> None:
-    """The floor must be doing work the classifier is not.
-
-    Without this, the floor could be dead code: every row above might be red
-    because the *parser* refused it, leaving the count comparison never decisive.
-    Here the parser reads the workflow cleanly and returns one checkout, while the
-    text mentions two — so only the floor can object, and the message must name
-    the shortfall rather than blame a shape.
-    """
-    hidden = _ONE_PINNED_CHECKOUT + """\
-  other-job:
-    steps:
-      - name: Print
-        run: echo actions/checkout@v4
-"""
-    assert len(_parse_steps(hidden)) == 3, "the parser should read this workflow without refusing"
-
-    with pytest.raises(UnclassifiedStepError, match="escaped the parse"):
-        _checkout_steps_in(hidden)
-
-
-def test_an_inline_steps_sequence_is_refused_by_name_not_only_by_the_floor() -> None:
-    """The parser and the floor must be distinguishable, not merely both red.
-
-    Reverting the ``steps:`` header refusal on its own left the whole suite
-    green: the floor caught the escape, so nothing pinned the parser's own
-    refusal and that line could have been deleted without a single test
-    objecting. Two defences that only ever fire together are one defence and
-    one unpinned line.
-
-    So this asserts *which* arm answers. An inline ``steps:`` sequence must be
-    refused by the parser, naming the shape — the floor's shortfall message is
-    the wrong answer here even though it is also red, because it means the
-    parser silently skipped a block it should have refused. The match is on the
-    word that discriminates the two messages, which is the instrument; without
-    it the mechanisms are indistinguishable (#580, cycle 4).
-    """
-    inline = _ONE_PINNED_CHECKOUT + "  other-job:\n    steps: [{uses: actions/checkout@v4}]\n"
-
-    with pytest.raises(UnclassifiedStepError, match="inline"):
-        _checkout_steps_in(inline)
 
 
 def test_the_promotion_step_carries_no_logic_of_its_own() -> None:
