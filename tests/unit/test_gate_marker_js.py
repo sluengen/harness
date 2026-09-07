@@ -136,7 +136,7 @@ def _write_internal_gate(repo: Path, *, exit_code: int = 0) -> None:
     gate = scripts / "verify.sh"
     gate.write_text(
         "#!/usr/bin/env sh\n"
-        'test "${HARNESS_GATE_MARKER_RUNNER:-}" = "1"\n'
+        'test -n "${HARNESS_GATE_MARKER_RUNNER:-}"\n'
         f"exit {exit_code}\n",
         encoding="utf-8",
     )
@@ -755,7 +755,7 @@ def test_an_absent_spine_preserves_the_legacy_fixed_gate(repo: Path) -> None:
     scripts.mkdir(exist_ok=True)
     (scripts / "verify.sh").write_text(
         "#!/usr/bin/env sh\n"
-        'test "${HARNESS_GATE_MARKER_RUNNER:-}" = "1"\n'
+        'test -n "${HARNESS_GATE_MARKER_RUNNER:-}"\n'
         'printf "legacy-gate argv0=%s shell=%s\\n" "$0" "${BASH_VERSION:+bash}"\n'
         "exit 0\n",
         encoding="utf-8",
@@ -913,6 +913,178 @@ def test_a_declared_gate_that_delegates_back_to_the_runner_is_refused(
         f"not the runner: {log.read_text(encoding='utf-8')!r}"
     )
     assert "gate-marker:" in proc.stderr and "delegated back" in proc.stderr, proc.stderr
+
+
+def test_a_gate_may_run_the_runner_against_a_different_repository(
+    repo: Path, tmp_path: Path
+) -> None:
+    """#559: the re-entry guard's hazard is re-entering the **same** repository.
+
+    A repository whose verification stage spawns the runner against a throwaway
+    fixture repository — which is how a gate runner is tested, here and in every
+    consumer that ports one — inherits ``HARNESS_GATE_MARKER_RUNNER`` from its
+    own gate. A guard that reads a bare flag cannot tell that apart from a gate
+    delegating back to itself, so it refused the fixture's gate too: no marker
+    for the fixture, and the stage that needed one went red over a green tree.
+
+    Two repositories, both real, both with their own declared gate. The outer
+    runner gates ``repo``; the outer gate spawns the runner against ``fixture``.
+    Both markers must appear, because two different repositories ran two
+    different gates and each earned its own evidence.
+
+    The anti-vacuity control is ``inherited.log``. It is written by the outer
+    gate *before* the nested spawn, and holds whatever the outer runner put on
+    its child's environment. A non-empty log is what makes this a test of the
+    guard rather than a test of an environment variable that never arrived: if
+    the log were empty the nested runner would have inherited nothing, the guard
+    would never have been consulted, and the assertion below would pass for a
+    reason that has nothing to do with #559. It is deliberately kept outside
+    both repositories so neither tree moves under the runner measuring it.
+    """
+    fixture = tmp_path / "fixture"
+    fixture.mkdir()
+    _git(fixture, "init", "-q", "--initial-branch=dev")
+    _git(fixture, "config", "user.email", "t@example.com")
+    _git(fixture, "config", "user.name", "t")
+    (fixture / "b.txt").write_text("fixture\n")
+    _git(fixture, "add", "b.txt")
+    _git(fixture, "commit", "-q", "-m", "first")
+    _declare_verify(fixture, '"sh inner.sh"')
+    (fixture / "inner.sh").write_text("#!/usr/bin/env sh\nexit 0\n", encoding="utf-8")
+
+    inherited = tmp_path / "inherited.log"
+    (repo / "outer.sh").write_text(
+        "#!/usr/bin/env sh\n"
+        'printf "%s" "${HARNESS_GATE_MARKER_RUNNER:-}" > "$INHERITED_LOG"\n'
+        'cd "$FIXTURE_REPO" || exit 1\n'
+        'exec node "$RUNNER_HELPER" run\n',
+        encoding="utf-8",
+    )
+    _declare_verify(repo, '"sh outer.sh"')
+
+    proc = _cli(
+        repo,
+        "run",
+        env={
+            "INHERITED_LOG": str(inherited),
+            "FIXTURE_REPO": str(fixture),
+            "RUNNER_HELPER": str(HELPER),
+        },
+    )
+
+    assert inherited.read_text(encoding="utf-8") != "", (
+        "the outer runner put nothing on its child's environment, so the nested "
+        "runner inherited nothing and this case never reached the re-entry guard"
+    )
+    assert proc.returncode == 0, f"stdout={proc.stdout!r} stderr={proc.stderr!r}"
+    assert sorted(_marker_dir(fixture).glob("*.json")) != [], (
+        "the fixture repository's gate ran green and earned no marker: the "
+        f"re-entry guard refused a different repository's gate. {proc.stderr!r}"
+    )
+    assert sorted(_marker_dir(repo).glob("*.json")) != [], (
+        "the outer repository's own gate exited zero and earned no marker"
+    )
+
+
+def test_the_runner_names_the_repository_it_is_gating_on_the_childs_environment(
+    repo: Path, tmp_path: Path
+) -> None:
+    """#559 write side: the value is the identity, not merely *some* per-run token.
+
+    The fixture gates throughout this suite assert only that internal mode is
+    **set**, which is what they mean and all they should claim. That leaves the
+    value itself pinned nowhere, and a value pinned nowhere is a contract the
+    other two implementations of this convention (ADR 0018) have nothing to
+    agree with — every one of those `-n` fixtures passes just as happily against
+    the retired literal `1`, or against a per-process nonce that would silently
+    defeat the guard's whole purpose by never matching anything.
+
+    The expected identity is derived **through the shipped helper** rather than
+    recomputed here: `path --tree` answers with
+    ``<common-dir>/harness/gate/<oid>.json``, so stripping the filename and the
+    two subdirectory levels yields the runner's own realpath'd answer. Spelling
+    it again in Python would put a fourth reader of the convention in the tree
+    and would be wrong on this host anyway, where `tmp_path` is reached through
+    a `/var` symlink that `Path.resolve()` collapses and git does not.
+    """
+    seen = tmp_path / "seen-by-the-gate"
+    (repo / "record.sh").write_text(
+        "#!/usr/bin/env sh\n"
+        'printf "%s" "${HARNESS_GATE_MARKER_RUNNER:-}" > "$SEEN"\n'
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    _declare_verify(repo, '"sh record.sh"')
+
+    proc = _cli(repo, "run", env={"SEEN": str(seen)})
+
+    assert proc.returncode == 0, proc.stderr
+    common = _marker_dir(repo).parent.parent
+    assert seen.read_text(encoding="utf-8") == str(common), (
+        "the child's internal-mode value is not this repository's identity, so "
+        "the re-entry guard has nothing repository-specific to compare against"
+    )
+
+
+def test_an_inherited_value_that_is_not_this_repository_does_not_refuse(repo: Path) -> None:
+    """#559: only *this* repository's identity is a re-entry.
+
+    The literal ``1`` is the retired value, and a consumer mid-upgrade can still
+    put it on the environment — a stale `verify.sh`, a CI job that exports it by
+    hand, a wrapper written against the old convention. It names no repository,
+    so it is not evidence that this repository's gate is already running, and
+    refusing on it would reproduce exactly the defect #559 fixes.
+
+    Kept distinct from the sibling case above it, which inherits a *different
+    repository's* identity: these are two classes of "not me", and a predicate
+    that special-cased one would leave the other refused.
+    """
+    _write_internal_gate(repo)
+
+    proc = _cli(repo, "run", env={"HARNESS_GATE_MARKER_RUNNER": "1"})
+
+    assert proc.returncode == 0, f"stdout={proc.stdout!r} stderr={proc.stderr!r}"
+    assert sorted(_marker_dir(repo).glob("*.json")) != [], (
+        "an inherited value naming no repository was read as a re-entry"
+    )
+
+
+def test_a_run_outside_a_repository_refuses_before_launching_the_gate(tmp_path: Path) -> None:
+    """#559 review cycle 1, F1: the identity is computed before the gate is spawned.
+
+    The runner has to name the repository it is gating on the child's
+    environment, so it must resolve that identity *before* it launches anything.
+    Outside a repository there is no identity to resolve, and the run now refuses
+    at that point rather than running the declared gate first and discovering at
+    marker time that it has nowhere to write.
+
+    The exit code and the message are unchanged from before #559 — git's own
+    ``not a git repository``, mapped to ``EXIT_REFUSED`` by ``main``'s handler.
+    What changed is that the gate no longer runs, and this pins that, because the
+    ordering is invisible to every other case: a run inside a repository resolves
+    the identity successfully and reveals nothing about when it did so.
+
+    The sentinel is the whole measurement. A declared gate that appends to a file
+    outside the tree either ran or did not, and only the second is consistent
+    with an identity resolved first.
+    """
+    ran = tmp_path / "gate-ran"
+    workdir = tmp_path / "not-a-repo"
+    workdir.mkdir()
+    (workdir / "CLAUDE.md").write_text(
+        "```yaml\ncommands:\n" f'  verify: "sh -c \'printf ran >> {ran}\'"\n' "```\n",
+        encoding="utf-8",
+    )
+
+    proc = _cli(workdir, "run")
+
+    assert proc.returncode == 2, f"stdout={proc.stdout!r} stderr={proc.stderr!r}"
+    assert "not a git repository" in proc.stderr, proc.stderr
+    assert not ran.exists(), (
+        "the declared gate was launched outside a repository, so the runner "
+        "resolved the identity it puts on the child's environment only after "
+        "spending the gate it can record nothing about"
+    )
 
 
 def test_the_retired_direct_write_command_cannot_mint_a_marker(repo: Path) -> None:
@@ -1121,7 +1293,7 @@ def test_the_marker_records_when_the_gate_started_and_finished(repo: Path) -> No
     scripts.mkdir(exist_ok=True)
     (scripts / "verify.sh").write_text(
         "#!/usr/bin/env sh\n"
-        'test "${HARNESS_GATE_MARKER_RUNNER:-}" = "1"\n'
+        'test -n "${HARNESS_GATE_MARKER_RUNNER:-}"\n'
         "sleep 1.2\n"
         "exit 0\n",
         encoding="utf-8",
@@ -1157,7 +1329,7 @@ def test_the_start_is_taken_before_the_gate_runs_not_after(repo: Path) -> None:
     scripts.mkdir(exist_ok=True)
     (scripts / "verify.sh").write_text(
         "#!/usr/bin/env sh\n"
-        'test "${HARNESS_GATE_MARKER_RUNNER:-}" = "1"\n'
+        'test -n "${HARNESS_GATE_MARKER_RUNNER:-}"\n'
         "sleep 2\n"
         "exit 0\n",
         encoding="utf-8",
@@ -1187,7 +1359,7 @@ def _echo_scope(repo: Path) -> str:
     runner = repo / "scoped.sh"
     runner.write_text(
         "#!/usr/bin/env sh\n"
-        'test "${HARNESS_GATE_MARKER_RUNNER:-}" = "1" || exit 9\n'
+        'test -n "${HARNESS_GATE_MARKER_RUNNER:-}" || exit 9\n'
         'xargs -0 -n1 printf "%s\\n" < "$HARNESS_GATE_SCOPE_FILE" >> run.log\n'
         'printf "count=%s\\n" "$HARNESS_GATE_SCOPE_COUNT" >> run.log\n',
         encoding="utf-8",
@@ -1399,7 +1571,7 @@ def test_the_durations_corpus_matches_what_the_runner_records(repo: Path) -> Non
     scripts.mkdir(exist_ok=True)
     (scripts / "verify.sh").write_text(
         "#!/usr/bin/env sh\n"
-        'test "${HARNESS_GATE_MARKER_RUNNER:-}" = "1"\n'
+        'test -n "${HARNESS_GATE_MARKER_RUNNER:-}"\n'
         "sleep 1.2\n"
         "exit 0\n",
         encoding="utf-8",
