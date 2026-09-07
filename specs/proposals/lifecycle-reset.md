@@ -427,3 +427,71 @@ The shape above survived contact; these five are what building it settled. The t
 ### Modelled
 
 Carried from `drift-reconvergence` with its inputs unchanged, still assumptions: exposure window 15 min falls to about 5 s, collision probability at λ≈8/hr falls from 87% to 1.1%, expected attempts to land fall from 7.4 to about 1.01.
+
+---
+
+## Amendment — 2026-09-07: do less
+
+Decided with the operator on 2026-09-07, forty-eight hours after the reset landed, on the reset's own measurements.
+
+### What the first two days measured
+
+| Measure | Starting line (2026-09-04) | 2026-09-07 |
+|---|---|---|
+| Test lines : script and hook lines | 21,065 : 9,417 (2.2 : 1) | 25,967 : 8,455 (3.1 : 1) |
+| Test modules | 46 | 55 |
+| Issues opened / closed since 2026-09-05 | | 47 / 26, of which 35 outside the five reset tickets |
+| Improvement ledger entries | 72 | 108; one drain folded 13 entries into tickets in one minute |
+| Plugin version | 6.0.1 | 8.0.0, three bumps in a day |
+| Review cycles on post-reset tickets | ceiling 3 | 4, 3, 3, 5 |
+
+The new test lines are guards around guards: a 710-line version-cycle guard that broke the next nightly promotion, 527 lines of heredoc lexing, 255 on the merge path, 184 pinning two hooks' composition. #580 spent five review cycles, four sub-agent reviews, and about 300 lines of guard on one YAML key, and its own close-out says a two-line assertion would have done. The ratchet the reset was written to stop reversed inside its first week.
+
+Six mechanisms produced that, and none of them is a jitter:
+
+1. The reviewer's Proposals section is mandatory, so every review cycle manufactures proposals, and the drain's default was to fold them into tickets.
+2. "The tree contradicts its contract" has no materiality floor, so a stale comment is a bug with a lane, a review, and a guard.
+3. Guard-first remains the default action; P2's "an addition names what it retires" was cited and never applied.
+4. The run context told sessions that any misbehaving hook is a P1 bug, filed and held, so every rough edge got the feature lane.
+5. Lane is decided by directory, so a wording fix under `hooks/` costs a design pass and the deeper reviewer.
+6. Continuous improvement has no limit on work in progress, so it is continuous work.
+
+### P0. Do less
+
+Added ahead of P1 to P5 and precedent over them in any conflict. **The best change is the one not made.** Simplicity scales and complexity fails, at the architecture and at the line; maximise the work not done. *Refuses:* a guard larger than the change it guards without a recorded reason; a second defence that shares an operand with the first; a ticket for a comment; a proposal per review; a fold at drain where drop was available; a bug that names no user outcome; a mechanism added where a number would do.
+
+### The defaults that decide cases
+
+Each is one line in the place named; together they are one change.
+
+| Default | Was | Now | Home |
+|---|---|---|---|
+| **WIP limit** | none | `queue.wip_limit: 6`. Open tickets in Todo, In Progress, and In Review, not held, may not exceed it. A filing above the limit lands in the ledger, not the board; discovery picks nothing beyond it; a drain folds only into free slots. An andon bug bypasses the limit and takes a slot from the top. `/digest` reports the count against the limit daily. | `harness.yaml`, `tracker`, `work-discovery`, `/digest` |
+| **Drain default** | fold | drop. An entry is promoted only when it names what a user or a consuming repo gets; everything else is dropped and the drop is written down | `/assess` drain recipe |
+| **Improvement channel** | reviewer's Proposals section plus the builder's reflection | the reflection alone, three lines, bounded by design. The reviewer reports blocking findings and stops | `review-discipline`, `reviewer` agents |
+| **Bug materiality** | the tree contradicts its contract | and the contradiction names a user outcome or consumer behaviour it breaks. A stale comment, a wording mismatch, a test asserting the wrong thing is an improvement | `review-discipline`, `tracker` |
+| **Lane under `hooks/` and `scripts/`** | feature, by directory | feature for a decision change; fix lane for a message, comment, or test-only edit | spine lane table |
+| **Andon** | any misbehaving hook, script, or ref | a hook or script that refuses correct work or lands wrong work. Everything else is a P2 bug on the queue | spine P4, `work-discovery` |
+| **Guard size** | unstated | the cost line states the guard-to-change ratio; above 3 : 1 it needs a recorded reason, and a reason is not a mutation table | `authoring` cost line, `engineering` |
+
+### The WIP limit, because it is the one mechanism here that is new
+
+A queue with no cap converts every finding into a commitment. A cap converts findings into options: the ledger holds what was noticed, the queue holds what will be built, and nothing moves from one to the other until a slot frees. That is lean's pull system, and it is the only control in this amendment that works mechanically rather than by judgment. Little's law gives the number its meaning: cycle time equals work in progress divided by throughput, so with the queue at 21 and throughput of about a dozen closes a day, most of those tickets wait longer than they take. Six is two concurrent builders, their reviews, and one andon slot; it is a starting value to be measured, not a constant, and the measurement is the open count on the R line against the limit.
+
+### Applied to the queue as it stands
+
+Twenty-one open on 2026-09-07. Under the drop default, five name something a user or consumer loses and stay: #566 (a lost push race re-merges onto the previous merge), #567 (a DEFER is invisible to the drain), #576 (a worktree cut from a stale tip), #582 (an npm-declared gate can run under a substituted shell), #586 (the flat-Node safety test gives opposite verdicts on an empty directory). The rest return to the ledger as dropped, each with the reason, and the ledger keeps them as options. #556's version-cycle guard is re-decided under P0: a version bump the promotion script performs at the hop has an owner and needs no guard, and it would not have broken the nightly. #558 (copy the spine into `CLAUDE.md`) stays held for the operator's answer and does not count against the limit.
+
+### One ticket, then measurement
+
+**T6 — the do-less defaults (fix lane where each edit is a line, feature lane for the spine).** P0 into the spine ahead of the laws; `queue.wip_limit` into the yaml template and the reader; the seven defaults into the homes named; the re-drain performed and recorded on the ledger. It is the one ticket that may be filed above the limit, because it establishes the limit. Then no further process change for the four weeks of measurement the reset promised. The measures that say whether this held: the guard-to-product ratio falling from 3.1 : 1; opened at or below closed on the R line; the open count at or under the limit; review cycles at or under 3 without continuations.
+
+### Decisions — 2026-09-07
+
+| # | Decision | Recorded |
+|---|---|---|
+| D12 | P0 Do less enters the spine ahead of P1 to P5 and takes precedence in conflict | this amendment, `AGENTS.md` |
+| D13 | `queue.wip_limit` at 6 as the starting value, measured and revisited at the four-week mark | `harness.yaml` |
+| D14 | Drop is the drain's default; promotion requires a named user or consumer outcome | `/assess` |
+| D15 | The reviewer's Proposals section is removed; the reflection is the one improvement channel | `review-discipline` |
+| D16 | Bugs carry a materiality floor; andon is narrowed to refused-correct or landed-wrong work | spine, `work-discovery` |
