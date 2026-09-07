@@ -93,10 +93,20 @@ const CLAUDE_MANIFEST = ".claude-plugin/plugin.json";
 
 //: The candidate homes, in the order a payload reports them. Each is a *candidate*
 //: — a file becomes a home only by naming the plugin the manifest above names.
+//:
+//: `CLAUDE.md` sits beside `AGENTS.md` because #558 made it the whole of the spine
+//: copied verbatim — marker included — rather than an `@AGENTS.md` pointer. The
+//: two files are held byte-equal over the copied region by
+//: `tests/unit/test_spine_template_parity.py`, and the version line is the one
+//: line every raise touches, so a bump that skipped the copy would red the gate on
+//: the cycle's very next build. It earns membership the same way every other
+//: marker does: a pre-#558 pointer carries no marker and is skipped, and a repo
+//: with no `CLAUDE.md` has one fewer home rather than a missing one.
 const CANDIDATES = [
   { path: CLAUDE_MANIFEST, kind: "manifest" },
   { path: ".codex-plugin/plugin.json", kind: "manifest" },
   { path: "AGENTS.md", kind: "marker" },
+  { path: "CLAUDE.md", kind: "marker" },
   { path: "templates/spine.md", kind: "marker" },
 ];
 
