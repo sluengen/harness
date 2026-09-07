@@ -58,7 +58,7 @@ Acceptance criteria (#573)
 * **AC-1 — the oracle is bash, not a verdict.** Executability is established by
   running the shape and observing the marker. A shape that cannot be measured is
   **UNUSABLE** and fails hard; a shape bash declines to execute is **INERT** and
-  skips visibly. The two are never conflated —
+  satisfies the predicate vacuously. The two are never conflated —
   :func:`test_the_oracle_separates_executing_shapes_from_inert_ones` is what
   stops the whole module being vacuous when everything reads one way (#466/#484:
   two identically-failed runs compare equal).
@@ -90,6 +90,16 @@ exclusions, each for a reason rather than by omission:
 * generated or fuzzed shapes — a generator is a model of shell structure, which
   is the objection this module escapes by writing structure out literally, and
   its nondeterminism would break ``mutate.py``'s observable rule.
+
+**What it costs, measured rather than predicted.** 12 shapes x (1 bash + 2
+registered guards) is a **36-spawn ceiling**, under the 40 asserted by
+:func:`test_the_corpus_stays_within_its_subprocess_budget`; the real figure is
+lower because the three inert shapes never reach their hook runs. Serially
+(``-n0 -p no:cacheprovider``) the module is **2.26 s**, median of three on
+darwin/arm64 at #573. The node spawns dominate — ``push-target-guard.js`` runs
+git internally — and both fixtures are module-scoped so the repo is built once
+per worker rather than once per case. The module adds no ``scripts/`` coverage
+and therefore cannot move the 82% floor in either direction.
 
 Mutation evidence
 -----------------
@@ -273,11 +283,15 @@ class Outcome:
     reason: str
 
 
-def _bash() -> str:
-    found = shutil.which("bash")
-    if found is None:
-        pytest.skip("bash not available")
-    return found
+#: Invoked bare, never resolved through ``shutil.which`` and never skipped on.
+#:
+#: The gate is itself ``bash scripts/verify.sh``, so bash is a precondition of
+#: the gate running at all rather than a tool it could verify a tree without.
+#: Resolving it and skipping would model it as optional — and would make this
+#: module a skip site declaring a host dependency the preflight does not probe,
+#: which ``test_verify_toolchain_preflight.py`` refuses in both directions.
+#: ``test_promotion_step_script.py`` runs a real bash the same way.
+BASH = "bash"
 
 
 def _node() -> str:
@@ -309,7 +323,7 @@ def _run_oracle(shape: Shape, scratch: Path) -> Outcome:
 
     try:
         proc = subprocess.run(
-            [_bash(), "--noprofile", "--norc", "-c", script],
+            [BASH, "--noprofile", "--norc", "-c", script],
             cwd=str(work),
             capture_output=True,
             text=True,
@@ -331,7 +345,7 @@ def _run_oracle(shape: Shape, scratch: Path) -> Outcome:
         return Outcome(False, False, f"bash died on a signal ({proc.returncode})")
     if SENTINEL not in proc.stdout:
         syntax = subprocess.run(
-            [_bash(), "-n", "-c", script], capture_output=True, text=True, timeout=10
+            [BASH, "-n", "-c", script], capture_output=True, text=True, timeout=10
         )
         why = "a syntax error" if syntax.returncode != 0 else "an early exit"
         return Outcome(
@@ -471,7 +485,7 @@ def test_the_oracle_payload_prints_the_marker_when_it_runs(oracle_dir: Path) -> 
     The subject is the instrument, not a guard.
     """
     proc = subprocess.run(
-        [_bash(), "--noprofile", "--norc", "-c", ORACLE_PAYLOAD],
+        [BASH, "--noprofile", "--norc", "-c", ORACLE_PAYLOAD],
         cwd=str(oracle_dir),
         capture_output=True,
         text=True,
@@ -486,7 +500,7 @@ def test_copying_the_oracle_payload_text_does_not_print_the_marker(
     """The instrument's negative control: the seam survives a verbatim copy."""
     script = _render("cat <<'EOF'\nPAYLOAD\nEOF\nSENTINEL\n", ORACLE_PAYLOAD)
     proc = subprocess.run(
-        [_bash(), "--noprofile", "--norc", "-c", script],
+        [BASH, "--noprofile", "--norc", "-c", script],
         cwd=str(oracle_dir),
         capture_output=True,
         text=True,
@@ -566,7 +580,17 @@ def test_a_shape_bash_executes_is_not_allowed_by_both_guards(
         "defect in this corpus, not a shape bash declines to execute."
     )
     if not outcome.executed:
-        pytest.skip(f"{shape.id}: {outcome.reason}; the predicate has no subject")
+        # Deliberately not a `pytest.skip`. Whether a shape executes is a fact
+        # about *this host's* bash, so skipping on it would make the suite run
+        # less on some hosts than others without declaring a host dependency —
+        # which `test_verify_toolchain_preflight.py` refuses, positionally, and
+        # is right to: it is the property that the suite means the same thing
+        # everywhere. The predicate is an implication and an inert shape
+        # satisfies it vacuously. Nothing is hidden by that, because the
+        # classification is asserted in its own right by
+        # `test_the_oracle_separates_executing_shapes_from_inert_ones`, which
+        # goes red if every shape ever reads one way.
+        return
 
     command = _render(shape.template, GUARD_PAYLOAD)
     verdicts = _verdicts(command, repo)
