@@ -57,27 +57,27 @@ resolver is what changes, not the command.
 
 ## The loop
 
-1. **Fetch and branch.** `git fetch origin`, then create a promotion worktree
-   off the **target** branch (`<dst>`, resolved above) at its remote tip. Work
+1. *Fetch and branch.* `git fetch origin`, then create a promotion worktree
+   off the *target* branch (`<dst>`, resolved above) at its remote tip. Work
    in the worktree, never in the main checkout.
-2. **Merge the source in.** Merge `<src>` into it. **On conflict: stop and
+2. *Merge the source in.* Merge `<src>` into it. **On conflict: stop and
    report** — the conflicting files and a diff summary. No repair attempt,
    bounded or otherwise; this path has no repair authority at all.
-3. **Gate it.** Run the repo's `harness.yaml` `commands.verify` gate in that
+3. *Gate it.* Run the repo's `harness.yaml` `commands.verify` gate in that
    worktree — read the command fresh from `harness.yaml` every run and
    never hardcode a gate command here, since this path keeps no state to
    remember one in. Capture the output. **On red: stop and report** the
    captured output. No retry.
-4. **On green, publish.** The hop selects the mechanism:
-   - `<dst>` is an **intermediate** branch (e.g. `staging`): push the merged
+4. *On green, publish.* The hop selects the mechanism:
+   - `<dst>` is an *intermediate* branch (e.g. `staging`): push the merged
      tree directly to the target ref. No PR — the gate already made the call.
-   - `<dst>` is the **release** branch (e.g. `main`): a protected release
+   - `<dst>` is the *release* branch (e.g. `main`): a protected release
      branch's required check commonly comes from a `push`-triggered run on a
      named branch or a `pull_request`-triggered run scoped to particular base
      branches — not from an arbitrary PR head. Check whether the merge is
-     **content-trivial**: `<dst>`, relative to its merge base with `<src>`,
+     *content-trivial*: `<dst>`, relative to its merge base with `<src>`,
      contributes no content, so the merge's tree equals `<src>`'s own tip tree.
-     - **Content-trivial:** open the PR with **head `<src>` itself** and push
+     - *Content-trivial:* open the PR with **head `<src>` itself** and push
        nothing new. `<src>` is already pushed, so its tip already carries
        whatever check its own `push` trigger raised, and the PR inherits that
        check by head-SHA association. A synthetic promotion branch's head
@@ -85,7 +85,7 @@ resolver is what changes, not the command.
        does not *also* run `pull_request` checks based on `<dst>`, that head
        gets no check run at all, and a branch that requires the check blocks
        the PR permanently, not just slowly.
-     - **Not content-trivial** (`<dst>` carries commits `<src>` does not):
+     - *Not content-trivial* (`<dst>` carries commits `<src>` does not):
        `<src>`'s own tip no longer stands in for what will land. Push the
        merge to a promotion branch and open the PR from it, but first confirm
        the target repo's CI actually raises the required check for a PR
@@ -103,7 +103,7 @@ resolver is what changes, not the command.
    tree that lands equals the tree the gate certified** — on the merge the API
    returns, and record in the repo's infrastructure spec that you did.
 
-5. **Back-merge after the release hop.** When the release branch gains commits
+5. *Back-merge after the release hop.* When the release branch gains commits
    the integration branch does not have — the merge commit, a hotfix — merge
    release back into integration promptly. Skipping it makes every later
    promotion carry a phantom divergence that surfaces as a conflict on

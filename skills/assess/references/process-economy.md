@@ -1,8 +1,8 @@
 # Process Economy
 
-**Load this for a `/assess process` pass, alongside [`finding-bar.md`](finding-bar.md).** It was the `process-economy` skill until #547 folded it in here, for the same reason.
+**Load this for a `/assess process` pass.**
 
-The domain standard for `/assess process`. The other scopes ask whether the system is right; this one asks **what the assurance machinery costs and what it buys**. Its subject is not the product but the apparatus around it — the test suite, the guards, the gate stages, the CI steps, the process steps every change pays, and the artifacts they generate. [`finding-bar.md`](finding-bar.md) beside it owns the finding bar, the 2×2, and the insight test; this file is the lens, not the method.
+The domain standard for `/assess process`. The other scopes ask whether the system is right; this one asks **what the assurance machinery costs and what it buys**. Its subject is not the product but the apparatus around it — the test suite, the guards, the gate stages, the CI steps, the process steps every change pays, and the artifacts they generate. This file is the lens, not the method: the finding bar, the 2×2, and the insight test are not restated here.
 
 A pass here is **subtractive**. Most of what it yields is a deletion or a simplification, which inverts the usual reading of a finding: the question is not "what else should we check?" but "what are we checking that nobody can justify?" Assurance grows monotonically by default — every piece of it was added for a reason that sounded good at the time, and nothing in a per-change review is positioned to see the total. That total is this pass's subject, and reading it is only useful if it happens again: leanness is a tracked quantity or it is a mood.
 
@@ -16,9 +16,7 @@ The inverse is the pass's most valuable output and the one nobody goes looking f
 
 A check that cannot fail for the reason it claims. One detection method governs all of them: **name the edit that should fail it, make that edit, and watch.**
 
-**`review-discipline` → `references/craft.md` is this repo's home for defect classes that read as green**, and it carries what a bare definition cannot: the falsifying example, the concrete shape where the wrong thing passed. Read it alongside the list below, and wherever a shape here has an entry there, take that entry as the better description — an example beats a definition. Additions to it are an operator call at the drain, never self-filed, so a new class is *proposed* there rather than grown here.
-
-**The two are not the same set, and this list does not summarise that file.** The split is *audience*: `craft.md` recognises one shape in the diff in front of you; this is the sweep order for a whole suite, where covering the shapes matters more than depth on any one. At least three shapes below have no `craft.md` entry at all today — terminal-state-only loop tests, dead exemptions, and change detectors — and several others correspond only loosely to differently-scoped entries there, so treat the mapping as partial rather than assuming a counterpart exists. They are named here rather than quietly moved into it, because moving them is the operator's call at the drain and not a pass's.
+A reviewer-facing sibling of this list lives in the review skill's own reference on defect classes. It is not the same set and this list does not summarise it: the split is *audience*, one shape in the diff in front of you there against the sweep order for a whole suite here, so several shapes below have no counterpart and several correspond only loosely. A new class is *proposed* to whichever of the two fits its audience and decided by the operator at the drain, never self-filed and never quietly moved between them.
 
 - **Green from birth** — asserts behaviour it never saw absent; no RED was ever observed for it.
 - **Synthesized inputs** — driven by events no production path emits, so it exercises a branch the live system never reaches.
@@ -56,11 +54,13 @@ Rank every candidate by **cost per run × runs per week**, so the report is orde
 
 ## The baseline — what makes this ongoing
 
-Close every pass with three numbers and the delta against the previous one. **A number is comparable only if its derivation is fixed, so the derivation is part of the number**: record the command beside the value, and reuse that command next pass. Where a repo's layout makes a different command right, record *that* one and hold it stable — a delta between two hand-rolled measurements measures the measuring, not the suite. This repo has already produced the failure: ADR 0017 and `specs/features/plugin-surface.md` state the same assurance-lines *metric* over overlapping subject sets, at different dates, with opposite helper-module treatment — 24 modules and ~10,600 lines counting them, 31 modules and ~17.0k lines excluding them — and no derivation recorded beside either, so the two cannot be compared at all.
+Close every pass with three numbers and the delta against the previous one. **A number is comparable only if its derivation is fixed, so the derivation is part of the number**: record the command beside the value, and reuse that command next pass. Where a repo's layout makes a different command right, record *that* one and hold it stable — a delta between two hand-rolled measurements measures the measuring, not the suite. This repo has already produced the failure: two specs state the same assurance-lines metric over overlapping subject sets, at different dates, with opposite helper-module treatment and no derivation recorded beside either, so the two cannot be compared at all.
 
-1. **Assurance lines per product line**, by area — e.g. `git ls-files 'tests/*.py' | xargs wc -l` against the equivalent over the product globs. Note that git expands `tests/*.py` recursively while `tests/**/*.py` requires the intervening slash and so silently drops top-level files: in this repo the recursive glob sees exactly two files the other misses. Look at *which* two, because the difference is not the helper-module decision it resembles — they are `tests/__init__.py`, an empty package marker, and `tests/_gitutil.py`, one of the suite's four shared helpers; the other three sit under `tests/unit/` and survive either glob. **Neither pattern settles helper treatment**, which is precisely why you state that treatment in the command you record and keep it constant. A glob that appears to decide it, and decides a quarter of it, is the drift this number exists to expose.
-2. **Gate wall-clock**, from this pass's own runs on an otherwise idle host: the total, plus the slowest stage. Record the host and worker count, because Ground 3 is precisely about the contention that moves this number on its own.
+1. **Assurance lines per product line**, by area — the lines under the tests path against the equivalent over the product globs. Note that git expands `tests/*.py` recursively while `tests/**/*.py` requires the intervening slash and so silently drops top-level files. **Neither pattern settles helper treatment**, which is precisely why you state that treatment in the command you record and keep it constant: whether the suite's shared helpers count toward the numerator changes the ratio materially, and a glob that appears to decide it, and decides only part of it, is the drift this number exists to expose.
+2. **Gate wall-clock** — the median over the gate runs the marker series has recorded, with that count beside it, plus the slowest stage from this pass's own run on an otherwise idle host. Record the host and worker count, because Ground 3 is precisely about the contention that moves this number on its own.
 3. **Checks whose failure-reason nobody could name** — the ground-1 and burden-of-proof count, over the same subject set each pass.
+
+The exact commands, and where to read the previous pass's column, are `skills/assess/SKILL.md` → step 1b.
 
 The series outlives the reports: retention folds a superseded report into `assessments/LOG.md`, whose entry shape carries these three numbers for a `process` pass (`templates/assessment.md`) so the trend survives past the one prior report the directory keeps.
 
@@ -85,7 +85,7 @@ The split carries more weight here than in any other scope: a pass that filed ea
 
 ## Proving a candidate
 
-Before proposing a deletion, perform the mutation: name the edit that should fail the check, make it in a scratch tree, and record what happened. "I could not see what this covers" is not evidence; "deleting the condition it guards leaves the suite green" is. `scripts/mutate.py` mechanises this where a repo has it (usage in `CONTRIBUTING.md`). The discipline itself — what counts as a killing mutation, and why mutating a rule into its opposite beats deleting it out of existence — is `craft.md` → *Mutation discipline*, and is not restated here. A candidate you could not disprove stays, and the report says so.
+Before proposing a deletion, perform the mutation: name the edit that should fail the check, make it in a scratch tree, and record what happened. "I could not see what this covers" is not evidence; "deleting the condition it guards leaves the suite green" is. `scripts/mutate.py` mechanises this where a repo has it (usage in `CONTRIBUTING.md`). The discipline itself — what counts as a killing mutation, and why mutating a rule into its opposite beats deleting it out of existence — is not restated here. A candidate you could not disprove stays, and the report says so.
 
 ## Boundaries
 

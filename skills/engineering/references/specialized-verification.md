@@ -1,6 +1,20 @@
 # Specialized verification checks
 
-Load only the section whose trigger matches the change.
+Load this when adding or editing a guard, and for security-control tests,
+over-limit files, guards over derived sets, cross-layer aggregates, or
+nullable narrowing. Read the section whose trigger matches the change; the
+first section applies to every guard.
+
+## What makes a guard evidence
+
+Four rules decide whether a guard proves anything at all.
+
+- **A new guard cites the occurrence it prevents**, written beside the assertion — the craft-file entry or the incident where its defect class was observed. A guard nobody can trace to an occurrence is speculative, and an assessment may read it as a deletion candidate.
+- **A guard that regenerates its reference pins the generator in the same commit**, or its green is a fact about the runner as much as about the tree.
+- **A warn-and-pass guard has not been shown to run until it has failed once for the real reason.** It exits green without having compared anything, so its result is indistinguishable from a real pass and "it passed locally" can be true and mean nothing.
+- **A guard owns only a mechanically decidable contract** — artifact integrity, generated-output correspondence, and other executable or structural properties. Do not add a prose predicate, wording guard, or pinned sentence to judge meaning; prose is reviewed directly.
+
+A green suite is evidence only if its inputs are real: a test driving on synthesized events no production path emits exercises a branch the live system never reaches.
 
 ## Specialized verification
 
@@ -12,7 +26,7 @@ When a test proves a security control is in place — an RLS policy, an auth gua
 
 A file past the hard line limit (`SKILL.md` → *Structure* — 500 lines for a module/file by default) must carry, at its top, a one-line size justification: a language-native comment containing `size: <reason>` (`# size: <reason>` in Python or shell, `// size: <reason>` in JS/TS/C, `/* size: <reason> */` in CSS), or reference an open tracking ticket. The reviewer **rejects** an over-limit file that has neither. An unjustified over-limit file is silent drift: the steward re-finds it every assessment cycle, and no one ever decided it should grow. The `size:` line (or the ticket) records that decision and makes it auditable — the same standard the hard-limit cell in *Structure* implies, made concrete and enforced at review.
 
-Marker *presence* and marker *substance* are checked differently, and only presence is mechanizable. **Presence** — that an over-limit file carries a `size:` marker or a ticket at all — should be checked by a repo test that walks the source tree, counts lines, and fails any over-limit file carrying neither, so the rule is enforced at the gate at commit time rather than waiting for a reviewer to remember it or the steward's next pass (the walker's config — limit, globs, the higher declarative-file ceiling from *Structure* — is set as constants the adopting repo edits in its copy, defaulting to the numbers here; a reference implementation ships beside this file in `references/size-guard.md`). **Substance** — whether the `size:` reason names a real cohesion argument or is a rubber stamp — no test can score; that stays reviewer judgment, audited by the steward on assessment passes. Presence is mechanized; substance is judged. The tripwire's value is that the decision gets recorded, not that the file stays small — cohesion itself is reviewer judgment plus the architecture watchlist.
+Marker *presence* and marker *substance* are checked differently, and only presence is mechanizable. **Presence** — that an over-limit file carries a `size:` marker or a ticket at all — should be checked by a repo test that walks the source tree, counts lines, and fails any over-limit file carrying neither, so the rule is enforced at the gate at commit time rather than waiting for a reviewer to remember it or the steward's next pass (the walker's config — limit, globs, the higher declarative-file ceiling from *Structure* — is set as constants the adopting repo edits in its copy, defaulting to the numbers here; a reference implementation ships with this skill, named at its load point in *Structure*). **Substance** — whether the `size:` reason names a real cohesion argument or is a rubber stamp — no test can score; that stays reviewer judgment, audited by the steward on assessment passes. Presence is mechanized; substance is judged. The tripwire's value is that the decision gets recorded, not that the file stays small — cohesion itself is reviewer judgment plus the architecture watchlist.
 
 Where a **linter** can enforce the limit, it should — reach for the walker only where none can. If the repo's linter already implements a file-length rule (`max-lines` in oxlint or ESLint), turn that rule on instead of writing the walker: it runs with the rest of lint on every commit, needs no repo-local code to maintain, and its escape hatch has a property the walker cannot offer. That hatch is the same auditable decision — an inline rule-`disable` carrying the `size: <reason>` justification — plus this: an **unused** disable is itself reported, so a file that shrinks back under the limit cannot silently keep its exemption. The walker is the fallback for a toolchain whose linter has no such rule, and the steward's assessment pass is the **backstop** only where neither mechanism can run. Ordering these the other way round is how a file 44% over the hard limit passes both a review and a green gate while the repo holds not one `size:` marker: an advisory pass that runs weekly is not enforcement.
 

@@ -1,0 +1,22 @@
+[
+{"query":"three modules each build their own version of the run context object and they've drifted apart. i want one shape settled before anyone adds a fourth, and settled somewhere that survives me","should_trigger":true},
+{"query":"notification subscriptions: own table with a join, or a jsonb column on the user row. this leaks into the api response shape too so i don't want to just pick and move on","should_trigger":true},
+{"query":"someone handed me a write-up arguing we should replace the config loader with a plugin registry. how do i work out whether it's worth doing before it turns into tickets","should_trigger":true},
+{"query":"scripts/harness-config.js has been edited by nine of the last twelve changes and it keeps growing. do we do something about that now or flag it for whoever opens it next","should_trigger":true},
+{"query":"i'm adding a scope field to the marker json. the gate writes it, two hooks read it, CI parses it. where does that get pinned down so the next agent doesn't quietly break a consumer","should_trigger":true},
+{"query":"we can either version the hook payload or make every reader tolerant of unknown keys. both work today, i just don't know which one bites us in a year","should_trigger":true},
+{"query":"time for a periodic look at whether the structure is holding up. what should i actually be examining rather than eyeballing the file tree","should_trigger":true},
+{"query":"the retry policy exists in both the fetch wrapper and the queue worker. before i dedupe it i need to settle which layer owns it, because that changes both call sites","should_trigger":true},
+{"query":"is swapping the ticket backend the kind of thing that needs writing down with its reasoning, or do i just do it and mention it in the commit","should_trigger":true},
+{"query":"we settled on the single table with a discriminator. now i have to produce the write-up — what sections does it need and how long should it run","should_trigger":false},
+{"query":"the hand-off i wrote came back as too vague to implement from. help me redo it so nobody has to guess","should_trigger":false},
+{"query":"what's the tidiest way to break this 200 line function into helpers without changing behaviour","should_trigger":false},
+{"query":"i'm implementing the merged context object now. failing test for the new shape first, or scaffold the class and then test it","should_trigger":false},
+{"query":"going through the design doc for the plugin registry against the criteria on the ticket. two of five aren't met — does that come back to them or can it go on with notes","should_trigger":false},
+{"query":"the interface change got agreed and filed as HAR-219. take it through","should_trigger":false},
+{"query":"nothing's assigned to me and four open items touch the config layer. which one do i start","should_trigger":false},
+{"query":"open an issue for splitting the config loader and mark the two that can't start until it lands","should_trigger":false},
+{"query":"does postgres get anything out of a partial index on a boolean column or is it the same as indexing the whole thing","should_trigger":false},
+{"query":"typescript keeps widening my const object's values to string, how do i hold onto the literal types","should_trigger":false},
+{"query":"the schema branch is finished. go over it and tell me whether it can land","should_trigger":false}
+]

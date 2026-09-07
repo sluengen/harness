@@ -1,0 +1,22 @@
+[
+{"query":"six things wrong with this diff, three are naming nits. how do i work out which ones stop it and how do i word them so they're actionable","should_trigger":true},
+{"query":"the change does what the ticket asked but the test only asserts the function got called. what is that and how do i raise it","should_trigger":true},
+{"query":"before i hand this off i want to go over my own work the way the next person would. what order","should_trigger":true},
+{"query":"the criteria on the ticket were edited after the branch was cut. do i judge it against what was there then or what's there now","should_trigger":true},
+{"query":"second round on the same branch and we're going in circles. when do i stop sending it back and escalate instead","should_trigger":true},
+{"query":"the diff touches two test files and the builder says they were renames. how much justification do i need before i accept that","should_trigger":true},
+{"query":"what i'm checking is a design document, not code. does the same bar apply or is it a different exercise","should_trigger":true},
+{"query":"this can't ship as scoped — it needs a call i'm not in a position to make. what's the right way to end this","should_trigger":true},
+{"query":"i can't tell whether this is a real fix or the assertion was loosened until it went green. what do i look for","should_trigger":true},
+{"query":"branch is ready. run the whole final stage on it and produce the record","should_trigger":false},
+{"query":"check my current branch against #612 and tell me whether it can land","should_trigger":false},
+{"query":"i'm writing the code — how do i keep the change small enough that nobody has to argue about scope later","should_trigger":false},
+{"query":"the fix is obvious but nothing fails for it yet. what order do i do this in","should_trigger":false},
+{"query":"the change adds a fourth caller to a helper that already has three incompatible uses. is that a repo-wide thing to settle","should_trigger":false},
+{"query":"my write-up is accurate but it's a wall of text and the builder skimmed it. tighten how it reads","should_trigger":false},
+{"query":"it failed. move it back to in progress and label it","should_trigger":false},
+{"query":"the findings are agreed. now go fix them and take it the rest of the way in","should_trigger":false},
+{"query":"is there a way to see only the test files changed across a range of commits","should_trigger":false},
+{"query":"mypy is clean locally and failing in CI on the same version. what causes that","should_trigger":false},
+{"query":"three branches waiting on me and one open p1. what do i deal with first","should_trigger":false}
+]

@@ -8,9 +8,7 @@ re-find it.
 ## The rule it enforces
 
 `engineering` → *Structure* keeps a **500-line hard limit** as a *tripwire*, not
-a prohibition (the review-time rule is spelled out in
-[`specialized-verification.md`](specialized-verification.md) → *A file over the
-hard limit is an auditable choice, not silent drift*): a file over the limit must carry, near its top, a language-native
+a prohibition: a file over the limit must carry, near its top, a language-native
 `# size: <reason>` justification comment. The reviewer rejects an over-limit
 file with none. The tripwire's value is *when it fires* — it forces the cohesion
 argument to be written down; a justified file passes. Line count is a weak proxy

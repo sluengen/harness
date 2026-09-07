@@ -1,0 +1,22 @@
+[
+{"query":"filing the one about sso sessions timing out at 30 minutes. what has to be in the body so whoever picks it up isn't back asking me questions","should_trigger":true},
+{"query":"my write-up says improve error handling and it got bounced as unbuildable. what should it actually say","should_trigger":true},
+{"query":"branch passed and i'm the one who checked it, so now i owe the record of what got built versus what was promised. what goes in that","should_trigger":true},
+{"query":"i'm putting HAR-88 on the board — it adds a field to the marker json plus a validator for it. how heavy does this one need to be and where do i say so","should_trigger":true},
+{"query":"commit body for a fix to a bug no test caught. how much do i explain and where does the reasoning go","should_trigger":true},
+{"query":"drafting the case for moving the guards into CI. it isn't agreed yet so i don't want to write it like a plan — what shape should it take","should_trigger":true},
+{"query":"my specs keep pointing at files that were renamed two months ago. how do i stop describing a repo that doesn't exist anymore","should_trigger":true},
+{"query":"handing this to another agent overnight. what does it need in writing to pick it up cold with no session context","should_trigger":true},
+{"query":"i need to describe how the push guard behaves as a standing document someone reads in six months, not as a task write-up. what's different about that","should_trigger":true},
+{"query":"should the spec pick between event sourcing and a status column, or is that a bigger call that has to be settled before anyone writes the spec","should_trigger":false},
+{"query":"we keep re-arguing whether validation belongs in the handler or the model. i want that decided once for the whole repo","should_trigger":false},
+{"query":"body's written. get it onto the board with the right labels and make sure it lands in todo and not backlog","should_trigger":false},
+{"query":"the ticket's already closed and i want the follow-up idea recorded somewhere the next sweep will see it","should_trigger":false},
+{"query":"reading someone's spec before they build it and two of the criteria contradict each other. what do i do with that","should_trigger":false},
+{"query":"how much do i implement before i stop and run the checks","should_trigger":false},
+{"query":"spec's agreed, go do HAR-140 end to end","should_trigger":false},
+{"query":"markdown table with a cell that contains a pipe character — how do i escape it","should_trigger":false},
+{"query":"how do i get ruff to ignore one line without turning the rule off for the whole file","should_trigger":false},
+{"query":"six things in todo and nobody told me which to take","should_trigger":false},
+{"query":"read the diff on my branch against what #612 asked for and tell me if it holds","should_trigger":false}
+]

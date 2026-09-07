@@ -1,6 +1,6 @@
 ---
 name: routine
-description: "/routine — one unattended build cycle. Use when the operator invokes `/routine` or asks to run that workflow. Invoked by the operator, and reachable by an unattended scheduled run: this skill is the versioned home of the prompt such a run pastes, so `disable-model-invocation` is deliberately not set here — it would refuse the caller the command exists for (#564)."
+description: "/routine — one unattended tick of the build loop: discover the next wholly actionable ticket on the Build queue, build it, integrate it exactly as the repo's branch model declares, close it. Use when the operator says `/routine`, \"run a tick\", or \"work the queue\". It picks its own ticket, so reach for `/build <TICKET>` to build a named one. It pushes no branch but the integration branch, and holds the ticket rather than forcing past a red gate, a stuck review, or a merge a human owes. Reachable by an unattended scheduled run: this skill is the versioned home of the prompt such a run pastes, so `disable-model-invocation` is deliberately not set here — it would refuse the caller the command exists for (#564)."
 model: inherit
 effort: high
 ---

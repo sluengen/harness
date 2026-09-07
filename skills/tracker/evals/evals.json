@@ -1,0 +1,53 @@
+{
+  "skill_name": "tracker",
+  "evals": [
+    {
+      "id": 1,
+      "name": "file-a-breakdown-ticket-completely",
+      "prompt": "Working against the repo at /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there) \u2014 read its harness.yaml to see which tracker backend is configured and where.\n\nA proposal was accepted and broke down into three pieces. The second one is: \"the push guard accepts a clean two-parent merge over a certified ancestor\". It cannot start until the first piece (the gate record moves to a git ref) is done. It's ordinary priority.\n\nWrite me the exact sequence of operations to file this ticket, for this repo's configured backend. Don't run anything \u2014 write the sequence, with the actual commands. Save it as filing.md in the output directory.",
+      "expected_output": "A written artefact demonstrating tracker judgment on a recorded failure mode.",
+      "files": [],
+      "expectations": [
+        "The sequence sets exactly one assurance label on the ticket",
+        "The sequence places the ticket in a state as an explicit step — Todo where the project has a free slot, Backlog where it has none — not as a side effect of creating it",
+        "The sequence sets the blocked-by relationship in the tracker's own field, not in the ticket's prose",
+        "The sequence sets the priority field",
+        "The final step verifies the result by re-reading the ticket rather than by trusting the exit status of the write",
+        "The commands are correct for the backend this repo's harness.yaml actually declares",
+        "The ticket body is passed as a file rather than interpolated into the shell command"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "hold-a-ticket",
+      "prompt": "Unattended run against /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there). I picked up a ticket and can't finish it: it needs a credential I don't have \u2014 the board token isn't in the environment.\n\nWhat do I do to the ticket so the loop doesn't pick it up again, and so the operator sees why? Give me the exact operations for this repo's backend. Save it as hold.md in the output directory.",
+      "expected_output": "A written artefact demonstrating tracker judgment on a recorded failure mode.",
+      "files": [],
+      "expectations": [
+        "The answer applies all three parts of a hold: a comment, a label, and assignment to a human",
+        "It picks the correct one of the two hold labels for a missing credential and says why that one",
+        "It states that assignment is the part the loop's skip actually reads",
+        "It verifies the hold by re-reading the ticket",
+        "It does not invent a third hold label or a new state",
+        "It says the credential comes from the environment and is never written into the ticket or a comment"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "append-to-the-improvement-ledger",
+      "prompt": "A review on /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there) turned up a non-blocking improvement that's too large to do in the branch: the tracker transport guidance prescribes commands that don't work when the host blocks GraphQL.\n\nWhere does this go, and how? Give me the operations. Save it as ledger.md in the output directory.",
+      "expected_output": "A written artefact demonstrating tracker judgment on a recorded failure mode.",
+      "files": [],
+      "expectations": [
+        "The improvement is appended to an improvement ledger rather than filed as a ticket",
+        "The ledger is found by its label rather than by a hard-coded issue number",
+        "The answer says to create the ledger, with that label, if the search finds none",
+        "The answer says that exactly one open ledger per repo is expected and that finding two is reported rather than resolved by picking one",
+        "It states that the improvement also appears as one line in the review's own report",
+        "It distinguishes this from filing a bug, and states the test that separates the two \u2014 whether the tree contradicts its own contract today",
+        "The answer states the test that separates a bug from an improvement \u2014 whether the tree contradicts its own contract today",
+        "The answer explicitly checks the finding against that test before routing it, rather than routing on size or confidence alone"
+      ]
+    }
+  ]
+}

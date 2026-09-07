@@ -1,0 +1,50 @@
+{
+  "skill_name": "architecture",
+  "evals": [
+    {
+      "id": 1,
+      "name": "predicate-defined-by-absence",
+      "prompt": "Design question on /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there).\n\nThe init workflow needs to decide whether a consuming repo's gate is \"safe to rewire automatically\". The proposal on the table: it's safe when the repo has no first-party JavaScript under `scripts/` and no custom `verify` command in `harness.yaml`. If both hold, init writes the standard `scripts/verify.sh` wiring.\n\nIs this the right contract? Write me your assessment and, if it isn't, what it should be instead. Save it as design.md in the output directory.",
+      "expected_output": "A written artefact demonstrating architecture judgment on a recorded failure mode.",
+      "files": [],
+      "expectations": [
+        "The assessment identifies that the predicate is defined by absence, so a repo that has no JavaScript because its own policy forbids JavaScript satisfies the condition trivially",
+        "It names the consequence: init would then write exactly the file that repo rejects",
+        "It states that the contract assumes the consumer is shaped like this repo",
+        "It proposes a contract based on a positive declaration by the consumer (an opt-in, a declared value) rather than on what the consumer lacks",
+        "It says whether this rises to a recorded decision and where that decision is recorded",
+        "It does not simply agree with the proposal",
+        "The assessment names the assumption that the consumer is shaped like this repo \u2014 that the cases not enumerated are the consumers not pictured \u2014 rather than only replacing the absence test with a positive one"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "decision-worthy-and-where-recorded",
+      "prompt": "Working on /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there). Two calls landed on me in the same change:\n\n1. Gate markers will be keyed by the git tree oid rather than the commit sha, so an amend that rewrites no bytes doesn't void a verdict.\n2. In `scripts/harness-config.js` I'm returning `null` rather than throwing when an optional key is absent, so callers branch on it.\n\nWhich of these is decision-worthy, and where does each get recorded? Write the record for whichever qualifies. Save it as decisions.md in the output directory.",
+      "expected_output": "A written artefact demonstrating architecture judgment on a recorded failure mode.",
+      "files": [],
+      "expectations": [
+        "It judges the tree-oid keying as decision-worthy and the null return as a routine choice that is not recorded as a decision",
+        "The test it applies is whether the choice is consequential and expensive to reverse, and whether relitigating it would be costly",
+        "It states that the decision is recorded in the spec it governs, and identifies which one for this case",
+        "It says a standalone decisions file is used only where the repo declares that path in harness.yaml, and checks whether this repo does",
+        "The record it writes names the alternatives rejected and why"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "watchlist-trigger",
+      "prompt": "I'm about to start a change on /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there) that touches `scripts/gate-marker.js` \u2014 adding a new subcommand. That file is already large and every change seems to land in it.\n\nWhat does the process require of me here, before I write the change spec? Be concrete about this repo. Save your answer as watchlist.md in the output directory.",
+      "expected_output": "A written artefact demonstrating architecture judgment on a recorded failure mode.",
+      "files": [],
+      "expectations": [
+        "The answer checks the repo's harness.yaml for an architecture_watchlist and reports what it actually found",
+        "It states that a repo which has not opted in has no watchlist and the mechanism is a no-op for it, if that is the case here",
+        "It describes the trigger as an intersection between the files the change touches and the watchlist entries",
+        "It names the two valid recorded outcomes: a small behaviour-preserving seam extraction, or an explicit deferral with a stated reason",
+        "It says the outcome is recorded in the change spec and confirmed at review, rather than left to memory",
+        "It notes that a second seam extraction from the same non-watchlisted module is itself the signal to add that module to the list"
+      ]
+    }
+  ]
+}

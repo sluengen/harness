@@ -16,7 +16,7 @@ def install_internal_gate(repo: Path, *, exit_code: int = 0) -> None:
     scripts.mkdir(exist_ok=True)
     (scripts / "verify.sh").write_text(
         "#!/usr/bin/env sh\n"
-        'test "${HARNESS_GATE_MARKER_RUNNER:-}" = "1"\n'
+        'test -n "${HARNESS_GATE_MARKER_RUNNER:-}"\n'
         f"exit {exit_code}\n",
         encoding="utf-8",
     )

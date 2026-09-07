@@ -1,7 +1,6 @@
 ---
 name: assess
-description: "/assess — run a periodic assessment. Use when the operator invokes `/assess` or asks to run that workflow. Operator-triggered only; the model does not fire it."
-disable-model-invocation: true
+description: "/assess — run one periodic assessment: dispatch the steward for a scope (`code`, `architecture`, or `process`), write a dated report, file its findings as tickets, and drain the improvement ledger. Use when the operator invokes `/assess`, or asks for a periodic health check, a codebase sweep, an architecture review, or an audit of what the tests and gate cost. Not for reviewing one change (`/review`) and not for fixing anything — the pass is read-only. Reachable by an unattended run, which reports the ledger's size rather than draining it, so `disable-model-invocation` is deliberately not set here (#565)."
 model: inherit
 effort: high
 ---
@@ -10,78 +9,82 @@ The portable plugin root is two directories above this SKILL.md. Resolve embedde
 
 # /assess — run a periodic assessment
 
-Usage: `/assess <scope>` — `code`, `architecture`, or `process` (e.g. `/assess code`, `/assess process`)
+Usage: `/assess <scope>` — `code`, `architecture`, or `process`.
 
-**Tracker operations follow the spine's contract** (`AGENTS.md` → *Tracker dispatch* and *Filing*): the `tracker:` field names the backend, `tracker` owns the semantics and its matching transport reference owns the API recipes, and `none` degrades to specs and session reports. Do not embed provider API calls here.
-
-Runs the `steward` over the codebase, produces a dated report, files its findings as tickets, and drains the repo's improvement ledger. This is the periodic-review loop: it catches what accumulates across many changes, which no per-change review can see.
+Tracker operations follow the spine's contract (`AGENTS.md` → *Tracker dispatch* and *Filing*): `tracker` owns the semantics and its matching transport reference owns the API recipes. Do not embed provider API calls here.
 
 ## One steward, scope selects the standards
 
-There is **one** `steward` agent — the *process*. The scope you pass names the *what*, and the *domain standards* are skills the steward pulls just-in-time (the "Assessment layering" decision). The command does not pick an agent per domain; it parameterises the one steward.
+There is one `steward` agent — the *process*. The scope names the *what*; the standards are skills it pulls just-in-time. The command parameterises that steward, never picking an agent per domain.
 
-| Scope | Domain skills (pulled JIT) | Audits |
-|---|---|---|
-| `code` | `engineering`, `architecture` (+ the repo's `.claude/rules/design-system.md` when the layer is on) | The codebase: size/structure drift, duplication, dead code, stale TODOs, test health, cross-cutting security, architecture drift, dependencies, test-coverage quantity, design-system adherence (layer-gated), and spec/doc coherence. |
-| `architecture` | `architecture`, `engineering` | The system *shape*: purpose fit, boundary integrity, domain-model coherence, change ergonomics, operational/efficiency fit, verification architecture, spec-record health, watchlist recommendations. A **holistic** judgement — a verdict plus what to preserve, change, or watch — not a finding sweep. |
-| `process` | [`references/process-economy.md`](references/process-economy.md), `engineering`, `review-discipline` (for `references/craft.md`, the vacuity catalogue) | The **assurance machinery**, not the product: vacuous checks, guards no occurrence justifies, ceremony that proves a stage ran rather than the property it protects, and measured gate/CI waste. **Subtractive** — most of what it yields is a deletion, and it closes on a baseline the next pass measures against. |
+| Scope | Standards, pulled just-in-time | Audits | Report contract |
+|---|---|---|---|
+| `code` | `engineering`, `architecture` (+ the repo's `.claude/rules/design-system.md` when the layer is on) | The codebase: size and structure drift, duplication, dead code, stale TODOs, test health, security, architecture drift, dependencies, coverage quantity, design-system adherence (layer-gated), spec and doc coherence | A **finding engine** — findings that clear the bar become tickets; a clean pass files nothing |
+| `architecture` | `architecture`, `engineering` | The system *shape*: purpose fit, boundary integrity, domain-model coherence, change ergonomics, operational and efficiency fit, verification architecture, spec-record health, watchlist recommendations | A **holistic judgement** — a verdict plus narrative (what is working, the risks, a watchlist); only actionable risks are filed |
+| `process` | [`references/process-economy.md`](references/process-economy.md), `engineering` | The assurance machinery, not the product: vacuous checks, guards no occurrence justifies, ceremony that proves a stage ran rather than the property it protects, measured gate and CI waste | A **subtractive slate** — deletion and simplification candidates, each with a measurement, to the ledger; contradictions to the queue |
 
-## The scopes — split by target and by report contract
+This table is the only router: each scope's standards are named here once and not repeated below, and whatever they open is reached through them.
 
-Reviews split by **axis, not dimension**. There are two surfaces: the per-change gate (`/review`, which *blocks* a merge) and this cumulative sweep (which *advises*). The sweep splits along two axes:
+## Target and cadence
 
-- **Target** — `code` and `architecture` both read the **product**; `process` reads the **machinery that proves it** — the test suite, the guards, the gate stages, the CI steps, and the process steps every change pays. Both targets are tracked in the same tree, which is why the split is by what the pass is *for*, not by directory. There is no third target.
-- **Report contract** — `code` is a **finding engine**: accumulated defects and drift that clear the future-ticket bar become tickets, and a clean pass files nothing. `architecture` is a **holistic judgement**: *is the system shape still right for the product, and what should we preserve, change, or watch?* Its output is a verdict plus narrative — what is working, the architectural risks, a watchlist — and only the *actionable* risks become tickets. A useful architecture report can file zero tickets. `process` is a **subtractive slate**: its output is mostly deletion and simplification candidates, each carrying a measurement, and they go to the **ledger** rather than the queue — filing each as a ticket would grow the backlog in order to shrink the suite. Only the small tail that contradicts the tree today (a check asserting something false, an unowned hole over a live risk) is filed.
+Product and machinery live in the same tree, so the split is by what the pass is *for*, not by directory; there is no third target. This sweep *advises*; `/review` is the per-change gate that *blocks*.
 
-Structure and tests stay *lenses inside* `code` — folding them keeps the surface small. **Why `architecture` and `process` are scopes rather than lenses, and the test a fourth would have to pass, is recorded once in `specs/architecture-principles.md` → *Assessment layering*.** Split a lens into its own scope for one repo only as a per-repo escalation, when that codebase is large enough that a single run overflows context or misses findings — a question of size rather than of contract.
+Structure and tests stay lenses *inside* `code`. Why `architecture` and `process` are scopes rather than lenses, and the test a fourth would have to pass, is `specs/architecture-principles.md` → *Assessment layering*. Split a lens out for one repo only when a single run overflows context — a question of size, not contract.
 
-**Cadence.** `/assess code` is the broad periodic pass. `/assess architecture` is **on demand / low-cadence** (a milestone, or a periodic check): a holistic verdict that barely moves week to week would only pile up trivial reports, so do not put it on a frequent schedule. `/assess process` sits between them — often enough that accumulation stays visible, rarely enough that its baseline can move between runs; a monthly cadence, or after any stretch that added a batch of guards. It is the one scope whose value comes from the *series* rather than the run, so a pass that skips the baseline has skipped the point.
+**Cadence.** `/assess code` is the broad periodic pass. `/assess architecture` is on demand or low-cadence: a verdict that barely moves only piles up trivial reports. `/assess process` sits between them: often enough that accumulation stays visible, rarely enough that its baseline can move. Its value is the *series*, so a pass that skips the baseline has skipped the point.
 
 ## Steps
 
 ### 1. Run the steward
-Dispatch the `steward` for the scope; it pulls the scope's domain skills just-in-time. It writes a dated report following [`references/finding-bar.md`](references/finding-bar.md): a summary, findings (each with the four parts and its blocking call), and up to three systemic insights. Zero findings is a valid result.
+Dispatch the `steward` for the scope. It writes a dated report in the `templates/assessment.md` shape, following [`references/finding-bar.md`](references/finding-bar.md): a summary, findings (each with the four parts and its blocking call), and up to three systemic insights. Zero findings is a valid result: record the report anyway — it is evidence the assessment ran — file nothing, and never invent findings.
 
-### 1b. Derive the three standing measurements
-Before filing anything, derive all three and put them in the report. They are the series [`references/process-economy.md`](references/process-economy.md) audits against, and a pass that skips them has skipped the point — the value comes from the trend, not the run.
+### 1b. Close the baseline — the `process` scope only
+`/assess process` owes three standing measurements; `code` and `architecture` owe none, and a baseline table in their reports invents a series nothing reads.
 
-| Measurement | Derivation | What it says |
-|---|---|---|
-| **Gate duration** | `node <plugin-root>/scripts/gate-marker.js durations` — the median, and the `count` beside it | What the assurance machinery costs per change, and what a `verify:` change is judged by. Every gate run since #539 records when it started and finished |
-| **Module count** | the number of test modules under `paths.tests`, and the number of gate stages `commands.verify` runs | How much machinery exists to be maintained. The v5 cull took this repo from 151 modules to 25, and it was back to 45 a fortnight later |
-| **Guard : deliverable** | lines under `paths.tests` against lines of the product the repo ships (here `scripts` + `hooks`), by `wc -l` | What proving the work costs against the work. `21,065 : 9,417` on 2026-09-04 is the starting line |
+They are the rows of the Baseline table in `templates/assessment.md`, under those names and in that order: `assessments/LOG.md`'s fold field carries exactly those three past the one prior report retention keeps. [`references/process-economy.md`](references/process-economy.md) → *The baseline* owns what each measures. Record each command verbatim beside its value and reuse it next pass: a delta between two differently-derived numbers measures the measuring, not the suite.
 
-A `count` of zero durations means this clone has run no gate since the field existed, not that the gate is instant — say which. A median over three runs is a different claim from a median over three hundred, which is why the count travels with it.
+| Row | Derivation |
+|---|---|
+| Assurance lines per product line | `git ls-files '<paths.tests>*.py' \| xargs wc -l \| tail -1` over the same command on the repo's product globs; state both globs, and put the module count (`git ls-files '<paths.tests>*.py' \| wc -l`) beside the ratio |
+| Gate wall-clock | `node <plugin-root>/scripts/gate-marker.js durations` — the median with its `count` — plus the slowest stage and the stage count from this pass's own gate run |
+| Checks with no nameable failure-reason | the ground-1 and burden-of-proof count from this pass's own sweep; state the subject set counted over, and hold it constant |
+
+The `count` travels with the median: three runs is a different claim from three hundred. A `count` of zero means this clone has run no gate since the field existed, not that the gate is instant.
+
+Take the previous column from the last `process` report's Baseline table or its `assessments/LOG.md` fold line; where neither exists, write `first recorded baseline`. No starting value lives in this file: a measurement is true of one tree on one day, and this guidance installs into repos whose product globs it cannot know.
 
 ### 2. File the findings
-For every finding, create an issue through `tracker` **in the Todo state**, with the repo's Build project attached (a project is mandatory when filing), labelled by source (`review-finding`), and carrying exactly one assurance level chosen per `authoring` → *Choosing assurance*. Whether a finding blocks and how much verification its fix must buy are different axes: neither where the finding lands on the 2×2 nor how long it reads decides its assurance level. Filing to Todo — not Backlog — is deliberate: a finding is confirmed work, so a later unattended Build tick may pick one up without a human in between; the guards on that self-feeding loop are the assessment's finding bar at filing time and the merge-time review gate before anything ships. Triage happens in the tracker, not at report time. **If this repo has no tracker** (`harness.yaml` `tracker: none`): skip filing, keep the dated report, and surface the findings to the user directly — the report is the deliverable.
+For every finding, create an issue through `tracker`, with the repo's Build project attached (mandatory when filing), the `review-finding` source label, and exactly one `assurance:` label (`AGENTS.md` → *Filing*). Whether a finding blocks and how much verification its fix must buy are different axes: neither its place on the 2×2 nor its length decides its assurance level. A finding is confirmed work, so it is placed like any other filing — Todo where the project has a free slot, Backlog where it has none (`tracker` → *The limit*) — and a later unattended tick may pick one up with no human in between; the guards on that loop are the finding bar at filing time and the merge-time review gate. Triage happens in the tracker, not at report time. Where `harness.yaml` sets `tracker: none`, skip filing and surface the findings to the user; the dated report is the deliverable.
 
-**A systemic insight is not filed.** An insight proposes an edit to the guidance to prevent a class of findings, which makes it an improvement rather than something the tree already contradicts (`review-discipline` → *bugs are filed; improvements are proposed*). Append each one to the improvement ledger instead, in the entry shape `review-discipline` → [`references/improvement-ledger.md`](../review-discipline/references/improvement-ledger.md) defines, and let step 5 decide it alongside everything else the loop proposed. This is the steward's own output going through the same door it asks every other agent to use; a role that reports on the queue's growth cannot be exempt from the rule that bounds it.
+A systemic insight is not filed: it proposes a guidance edit that would prevent a class of findings, which is an improvement rather than something the tree already contradicts. Append each to the improvement ledger (`tracker` → *`ledger`*) as one entry carrying its case, the work that raised it, and the file a fix would land in; step 5 decides it.
 
-**The `process` scope files the contradictions and proposes the rest.** Which result goes through which door is [`references/process-economy.md`](references/process-economy.md) → *Filing*; its deletion and efficiency candidates carry their measurement to the ledger and are decided at step 5. They are **exempt from the three-insight cap** (`references/finding-bar.md`) — they are the pass's ordinary output rather than guidance edits, and capping them would hide the accumulation the pass exists to measure.
+The `process` scope files the contradictions and proposes the rest; which result goes through which door is [`references/process-economy.md`](references/process-economy.md) → *Filing*. Its deletion and efficiency candidates carry their measurement to the ledger and are exempt from the three-insight cap: they are the pass's ordinary output rather than guidance edits, and capping them would hide the accumulation the pass exists to measure.
 
-**The `architecture` scope files only actionable risks.** An architecture report's value is largely narrative — the verdict, what is working, the trade-offs to preserve (`templates/assessment.md`, the architecture report shape). File **only** the actionable architecture risks and recommendations; do **not** file positive observations or stable trade-offs as tickets — they live in the report, not the backlog. A useful architecture pass may file **zero** tickets while still recording a verdict and a watchlist; that is a valid outcome, not a failed run.
+The `architecture` scope files only actionable risks and recommendations. Positive observations and stable trade-offs stay in the report, not the backlog. Zero tickets alongside a verdict and a watchlist is a valid outcome, not a failed run.
 
 ### 3. Commit the report
-A report is advisory evidence, not a code change, so it needs no merge gate. Commit the dated report directly to the integration branch (`harness.yaml`) — no branch, no PR. The findings already live in the tracker; a PR per run would carry nothing reviewable and, under a scheduled cadence, pile up trivial approvals. Surface the summary, the finding count, and the filed ticket IDs to the user. (When the tracker is off, the report file *is* the deliverable — commit it the same way.)
+A report is advisory evidence, not a code change: no merge gate. Commit it directly to the integration branch (`harness.yaml`) — no branch, no PR, since the findings already live in the tracker and a PR per run would carry nothing reviewable while piling up trivial approvals. Surface the summary, finding count, and filed ticket IDs to the user.
 
-**Run the repo's verify gate on the committed tree before pushing** (`harness.yaml` `commands.verify`). No *merge* gate, as above — a report carries nothing reviewable — but this pass writes to a tracked directory, and step 4's retention deletes files from it, so "advisory" describes the content and not the blast radius. The push is refused without it in any repo that installs the enforcement hooks. If the gate is red on the integration branch before this run touched anything, say so and stop rather than pushing on top of it.
+Run the repo's verify gate (`harness.yaml` `commands.verify`) on the committed tree before pushing. This pass writes to a tracked directory and step 4 deletes files from it, so "advisory" describes the content, not the blast radius; the push is refused without a fresh marker wherever the enforcement hooks are installed. If the gate is red on the integration branch before this run touched anything, say so and stop rather than push on top of it.
 
 ### 4. Apply retention
-After committing the report, prune `assessments/` per the retention rule (`templates/assessment.md`): keep the latest report per scope plus any report with an open finding, and fold every superseded report into a one-line entry in the rolling `assessments/LOG.md`. This runs each pass so the directory stays a live index — the latest verdict per scope plus the open-finding tail — instead of accumulating a point-in-time file per run (at up to seven files a day, ~700 a year) whose findings are already fixed or ticketed. Never fold away a report with an open finding. Commit the compaction in the same step as the report.
+After committing the report, prune `assessments/` per the retention rule (`templates/assessment.md`): the latest report per scope and any with an open finding stay, and every superseded report folds into a one-line entry in the rolling `assessments/LOG.md`. Commit the compaction with the report. Running it every pass keeps the directory a live index, not a growing pile.
 
 ### 5. Drain the improvement ledger
-The ledger accumulates every improvement the loop proposed and nothing in it expires, so this pass is what clears it — the drain, and the only one. Read the accumulation (`tracker` → *`ledger`* owns how it is found), then turn it into something answerable: **group** entries whose suggested home is the same file or surface, **abstract** several small ones into the pattern-level candidate they are really evidence for, **prioritise** what survives by the cost of leaving it, and present a short **slate** — what the operator can decide in one sitting, each with its case — rather than the raw list. **Every entry leaves the drain marked, in exactly one of three ways** — this is what makes it a drain rather than a review of a list that keeps growing:
+The ledger accumulates every improvement the loop proposed and nothing in it expires, so this pass is the only thing that clears it. Read the accumulation (`tracker` → *`ledger`*), then work it in two passes.
+
+**Re-validate each entry against the tree before deciding it.** Entries are written the day something is noticed and not revisited until now, so much of an accumulation arrives already satisfied or overstated: re-read the file an entry names, and re-run any count it quotes rather than carrying the number forward. Entries turn out `done` before anyone argues them, and one claiming many defects routinely describes one. An entry decided on its own text is decided on stale evidence.
+
+Then make the survivors answerable: group entries whose suggested home is the same file, abstract several small ones into the pattern-level candidate they are evidence for, prioritise what is left by the cost of leaving it, and present a short slate the operator can decide in one sitting — each with its case, not the raw list.
+
+**Drop is the default.** An entry is promoted only when it names what a user or a consuming repo gets from it; an entry that names only a tidier tree, a more consistent wording, or a risk nobody has met is dropped, and the drop is written down. Every entry leaves the drain marked in exactly one of three ways — otherwise this is a review of a list that keeps growing, not a drain.
 
 | Outcome | Means | What happens |
 |---|---|---|
-| **done** | the entry is already satisfied — the tree changed since it was written, or another ticket carried it | record which change satisfied it |
-| **folded** | it becomes work | create the ticket through `tracker` in the Todo state, with the Build project attached and exactly one assurance level chosen per `authoring` → *Choosing assurance*; record the ticket id |
-| **dropped** | it will not be done | record the reason. A drop is a decision and is written down; an entry that quietly stops being mentioned is the inventory this drain exists to clear |
+| **done** | already satisfied — the tree changed, another ticket carried it, or re-validation found the condition gone | record what satisfied it |
+| **folded** | it becomes work, and it named the user or consumer outcome that earns a slot | create the ticket through `tracker` in the **Backlog** state, its project attached, exactly one `assurance:` label; record the id. Never straight into Todo — Backlog is where confirmed work waits, and a close is what pulls it |
+| **dropped** | it will not be done | record the reason. A drop is a decision written down; an entry that quietly stops being mentioned is the inventory this drain exists to clear |
 
-Record the outcomes back on the ledger thread as a comment, so the next drain does not re-present an answered entry, and **an entry not promoted at this drain is dropped, not carried** (the accepted proposal's D8): carrying it forward unmarked is how a ledger becomes a backlog nobody drains. An entry the operator wants to keep thinking about is a `folded` ticket in Backlog — a state with an owner — not a ledger line with none.
+Record the outcomes back on the ledger thread as a comment, so the next drain does not re-present an answered entry. An entry not promoted here is dropped, not carried: carrying it forward unmarked is how a ledger becomes a backlog nobody drains. A fold never lands in a queue that is already at its limit, because it lands in Backlog and waits there like everything else.
 
-The slate needs somebody to answer it, so an unattended run does **not** drain: note the ledger's size in the report and stop there. Draining without an operator would mean the pass deciding its own proposals, which is the grant the whole split exists to close.
-
-## When there are no findings
-Still record the report (it is evidence the assessment ran) and say so plainly. Skip filing. Do not invent findings to justify the run.
+The slate needs somebody to answer it, so an unattended run does not drain: note the ledger's size in the report and stop there. A pass deciding its own proposals is the grant this split exists to close.

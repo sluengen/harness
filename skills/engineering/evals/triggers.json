@@ -1,0 +1,22 @@
+[
+{"query":"about to add the scope field to the marker writer. what's the order here so i don't end up backfilling tests afterwards","should_trigger":true},
+{"query":"i said the work was finished and got refused. what actually counts as having proved it","should_trigger":true},
+{"query":"set out to fix the config reader and i now have changes in four files including a hook. is that fine or do i cut it back","should_trigger":true},
+{"query":"this dispatch function is getting a third branch and it's already hard to read. restructure now or leave it and note it","should_trigger":true},
+{"query":"the criterion says lookups stay under 50ms. how do i actually demonstrate that instead of asserting it in the write-up","should_trigger":true},
+{"query":"i wrote the implementation first because it was obvious and i'm backfilling the test now. is that going to bite me","should_trigger":true},
+{"query":"the hook shells out to git. how much of that do i mock before the test stops meaning anything","should_trigger":true},
+{"query":"before i tell the operator it's done, what do i need to have run and read myself in this session","should_trigger":true},
+{"query":"the failing test i wrote would still pass with the function stubbed out. how do i tighten it before i implement against it","should_trigger":true},
+{"query":"reading a teammate's diff for the same change i'd have made myself. what am i checking and in what order","should_trigger":false},
+{"query":"four findings on someone's branch, two are naming nits. which of them actually stop it going in","should_trigger":false},
+{"query":"before i write any of it — should the session id be a uuid or a content hash. it ends up in the marker filename and in the api response","should_trigger":false},
+{"query":"auth and billing both need the same customer lookup. which side should own it and where does that get recorded","should_trigger":false},
+{"query":"ticket's filed with a spec. just go do it and get it landed","should_trigger":false},
+{"query":"this is going to be five or six commits. where should i be doing the work","should_trigger":false},
+{"query":"i need to write up what i built so the person checking it can compare against what was promised","should_trigger":false},
+{"query":"mypy says the value is object even though every branch assigns a str. how do i narrow that","should_trigger":false},
+{"query":"difference between subprocess.run with check=True and calling check_returncode afterwards","should_trigger":false},
+{"query":"move the ticket to in review and put it on the right person","should_trigger":false},
+{"query":"i'm done building. hand it to whoever does the final check and tell me the outcome","should_trigger":false}
+]

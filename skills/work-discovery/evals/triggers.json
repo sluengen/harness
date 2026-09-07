@@ -1,0 +1,22 @@
+[
+{"query":"nothing's been handed to me. look at what's open and tell me what to start, and don't hand me something that's half specified","should_trigger":true},
+{"query":"the top item has an unanswered question sitting in it from three days ago. do i take it or move past it","should_trigger":true},
+{"query":"there's an open p1 assigned to a person. can anything else start or does the whole repo wait","should_trigger":true},
+{"query":"two at the same priority, one of them is waiting on an answer from outside. which is the real next one","should_trigger":true},
+{"query":"everything left looks either blocked or vague. is there genuinely nothing startable right now","should_trigger":true},
+{"query":"i keep picking things that turn out to need the operator two steps in. how do i tell before i commit to one","should_trigger":true},
+{"query":"three look ready. rank them and say which one you'd actually commit to finishing unattended","should_trigger":true},
+{"query":"the loop just finished one and needs the next. decide without me","should_trigger":true},
+{"query":"is the thing at the top buildable as written or does it need to go back to a human first","should_trigger":true},
+{"query":"just pull everything in todo and print the ids and titles","should_trigger":false},
+{"query":"put this one back in backlog and take my name off it","should_trigger":false},
+{"query":"start on HAR-77","should_trigger":false},
+{"query":"you picked HAR-77 earlier. now go build it and land it","should_trigger":false},
+{"query":"five ideas came out of the retro. which of these should even exist as work","should_trigger":false},
+{"query":"HAR-140's branch needs its final check before it can land","should_trigger":false},
+{"query":"how do i decide whether a finding blocks the merge or just gets noted","should_trigger":false},
+{"query":"how do i sort a list of dicts by two keys with the second one descending","should_trigger":false},
+{"query":"git says refusing to merge unrelated histories. what did i do","should_trigger":false},
+{"query":"i've got the next one picked, set me up somewhere to build it","should_trigger":false},
+{"query":"the four oldest open items all touch the same module. is that telling me something structural","should_trigger":false}
+]

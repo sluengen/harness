@@ -1,0 +1,50 @@
+{
+  "skill_name": "work-discovery",
+  "evals": [
+    {
+      "id": 1,
+      "name": "held-p1-bug-still-stops-the-line",
+      "prompt": "Unattended tick against /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there). Here's the open queue I read:\n\n  #91  bug          P1  In Progress  assigned: sluengen   label: input    \"gate marker minted for a tree the gate never ran\"\n  #94  enhancement  P2  Todo         unassigned                            \"digest: ledger count includes closed entries\"\n  #95  bug          P3  Todo         unassigned                            \"promote step prints the wrong branch name\"\n  #96  enhancement  P2  Todo         unassigned          blocked-by: #94   \"digest: add a held-pile summary\"\n\nWhich ticket do I start, and what do I do this tick? Save your answer as pick.md in the output directory.",
+      "expected_output": "A written artefact demonstrating work-discovery judgment on a recorded failure mode.",
+      "files": [],
+      "expectations": [
+        "The answer starts nothing: #91 is an open P1 bug and stops the line for the whole repo",
+        "It states that #91 being held and assigned does not release the line \u2014 it is still not this loop's to pick, and it is also not permission to start something else",
+        "It reports the stopped line and stops, rather than falling through to rank #94 or #95",
+        "It does not pick #96, and if it explains why, it is because #96 has an open blocked-by",
+        "It does not treat #91 being In Progress as a reason to ignore it",
+        "The answer reports the stopped line and nothing else \u2014 it does not rank the remaining tickets, name a front-runner, or offer a likely next pick for a later tick, even as an aside or a reference-only table"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "unreadable-priority-field",
+      "prompt": "Unattended tick against /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there). I can read the issue list fine \u2014 I can see each ticket's kind and its labels \u2014 but every call for the board's Priority field comes back 403. No priority is readable this tick.\n\nThere are four unblocked Todo tickets, none assigned, none held. What do I do? Save your answer as pick.md in the output directory.",
+      "expected_output": "A written artefact demonstrating work-discovery judgment on a recorded failure mode.",
+      "files": [],
+      "expectations": [
+        "The answer stops the tick and reports the stopped line rather than picking a ticket",
+        "It states the reason: an unreadable half of the andon check is itself an andon condition, because ranking cannot see a cord",
+        "It names the specific failure \u2014 a run that degrades to ranking walks past an open P1 bug and says nothing",
+        "It does not fall back to ID order, to the kind field alone, or to any other proxy for priority",
+        "It says what the operator needs to do to clear it",
+        "The answer reports the stopped line and nothing else \u2014 it does not rank the four tickets or name which it would pick once access is restored"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "defer-a-ticket-that-is-not-actionable",
+      "prompt": "Unattended tick against /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there). No P1 bug is open. The highest-ranked candidate is:\n\n  #103  enhancement  P2  Todo  unassigned\n  Title: \"make the retention rule configurable\"\n  Body: \"assessments/ retention should be configurable. Decide whether it goes in harness.yaml or a per-scope override and implement it.\"\n\nCan I build this? What do I do with it this tick? Save your answer as defer.md in the output directory.",
+      "expected_output": "A written artefact demonstrating work-discovery judgment on a recorded failure mode.",
+      "files": [],
+      "expectations": [
+        "The answer judges #103 not wholly actionable, because it carries an undecided question rather than checkable criteria",
+        "It records the deferral three ways: a comment naming what the ticket needs, a hold label, and assignment to the operator",
+        "It picks the correct hold label for 'the operator must make a judgement call' and says why",
+        "It states that all three are needed, and that assignment is what the skip rule reads",
+        "It moves on to the next candidate rather than stopping the tick",
+        "It does not guess the answer to the open question or build a version of the ticket it invented"
+      ]
+    }
+  ]
+}

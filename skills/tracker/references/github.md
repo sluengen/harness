@@ -14,7 +14,39 @@ github:
 
 **The queue is the board.** A GitHub board already scopes the queue, so `repo.project` is not consulted on this backend.
 
-**Credential.** `GITHUB_TOKEN`, with `repo` **and** `project` scopes — the second is easy to miss and is what every board mutation needs. `gh` uses it from the environment; `GITHUB_TOKEN=$(gh auth token)` refreshes an expired one. Never echo it.
+**Credential.** `GITHUB_TOKEN`, with `repo` **and** `project` scopes — the second is easy to miss and is what every board mutation needs. `gh` uses it from the environment. Never echo it.
+
+## Two failures that look the same from the call site
+
+A `gh` command can fail because **the token lacks a scope** or because **the GraphQL transport is refused in front of GitHub**. The error at the call site is a 403 either way, and only the first has a credential remedy — `GITHUB_TOKEN=$(gh auth token)` re-reads the same environment token when one is already set, so it is a no-op against the second and burns a cycle looking like a fix.
+
+**Tell them apart with two probes, before concluding anything about the credential:**
+
+```bash
+gh api repos/<owner>/<name> --jq .full_name          # REST
+gh api graphql -f query='query { viewer { login } }' # GraphQL
+```
+
+- Both fail → a credential or permission problem. `gh auth status` and the REST error body name it; fix the token.
+- **REST succeeds and GraphQL returns 403** → the transport is refused. The body says so in words, naming the session rather than a scope. `gh auth status` may separately report the environment token invalid *while REST keeps working*, so do not read that line as the diagnosis.
+
+### What is reachable when GraphQL is refused
+
+**Every `gh issue` subcommand goes through GraphQL** — `gh issue view`, `gh issue list`, with or without `--json` — so the recipes below fail wholesale on such a host even though the underlying data is fine. **Issue-level work has a full REST surface**; reach it with `gh api` and the operations are complete:
+
+| Operation | REST |
+|---|---|
+| `open` | `gh api repos/<owner>/<name>/issues/<n>` |
+| `create` | `gh api -X POST repos/<owner>/<name>/issues -f title=... -F body=@<path> -f 'labels[]=assurance:<level>'` |
+| `comment` | `gh api -X POST repos/<owner>/<name>/issues/<n>/comments -F body=@<path>` |
+| `hold` | `gh api -X POST repos/<owner>/<name>/issues/<n>/labels -f 'labels[]=<input\|operator>'` plus `gh api -X POST repos/<owner>/<name>/issues/<n>/assignees -f 'assignees[]=<login>'` |
+| `queue` / `held` | `gh api 'repos/<owner>/<name>/issues?state=open&labels=<label>&assignee=<login\|none>&per_page=100'` |
+| `close` | `gh api -X PATCH repos/<owner>/<name>/issues/<n> -f state=closed` |
+| dependencies | the `dependencies/blocked_by` and `dependencies/blocking` calls below — already REST |
+
+Three differences from the `gh issue` forms. REST `/issues` **returns pull requests as well as issues**, so filter `select(.pull_request == null)`. The REST `assignee` parameter takes a login or the literal `none`; there is no `@me`. And **adding a label is its own `POST .../labels` endpoint** — a `PATCH` carrying `labels[]` replaces the whole set and silently drops the assurance label, which is an incomplete filing you inflicted on yourself.
+
+**Projects v2 has no REST API at all** — no `repos/{owner}/{repo}/projectsV2`, nothing under the repo scope, by design; the board is GraphQL-only. So on a GraphQL-refused host every `gh project` call fails (often as the unhelpful `unknown owner type`, which is a 403 underneath), and with it **Status, Priority, and therefore `create`'s mandatory placement**. That is not a step to skip quietly: the issue exists and the board does not know about it, which is precisely the item-add-no-status trap arriving by another route. **Report the filing incomplete** — the identifier, the URL, and which board operations could not run — and stop. Never report a ticket as placed, queued, or prioritised on the strength of the issue having been created.
 
 ## No id here is stable — resolve at runtime
 
@@ -24,7 +56,7 @@ Project ids, status field ids, and single-select option ids differ per board and
 # the board's node id
 gh project view <number> --owner <owner> --format json        # -> .id
 
-# the Status field id + its option ids (Todo / In Progress / In Review / Done)
+# the Status field id + its option ids (Backlog / Todo / In Progress / In Review / Done)
 gh project field-list <number> --owner <owner> --format json
 ```
 
@@ -41,6 +73,8 @@ gh issue view <number> --repo <owner>/<name> \
 
 Four steps, in order. **Skipping the third is the item-add-no-status trap:** an item added to the board lands with **Status unset**, and a Todo-scoped queue read never sees it — the issue exists, looks filed, and is invisible to the loop.
 
+**Backlog is a Status option like any other**, and a board that declares none gives a ticket nowhere to wait. Report the filing incomplete, naming the missing option, rather than placing it in Todo past the limit.
+
 ```bash
 # 1. create the issue, carrying the chosen assurance level (use --body-file;
 #    never interpolate untrusted text into the shell)
@@ -50,9 +84,11 @@ gh issue create --repo <owner>/<name> --title "<title>" --body-file <path> \
 # 2. add it to the board, capturing the returned item id
 gh project item-add <number> --owner <owner> --url <issue-url> --format json
 
-# 3. set Status explicitly (ids from the field-list call above)
+# 3. set Status explicitly (ids from the field-list call above) — the Todo
+#    option where the project has a free slot, the Backlog option where it
+#    does not (`tracker` -> The limit)
 gh project item-edit --id <item-id> --field-id <status-field-id> \
-  --project-id <project-id> --single-select-option-id <todo-option-id>
+  --project-id <project-id> --single-select-option-id <status-option-id>
 
 # 4. verify the postcondition by re-reading the issue, not by exit status
 gh issue view <number> --repo <owner>/<name> --json labels
@@ -117,8 +153,7 @@ A merged PR naming the issue (`Fixes #<n>`, or the bare id in a branch, title, b
 ### `create`, continued — dependencies and priority
 
 **Blocked-by is a first-class REST relationship**, not a board field, so it
-works wherever `gh api` does — probed on 2026-09-05 against `sluengen/harness`
-and read back correctly:
+works wherever `gh api` does — including on a host where GraphQL is refused:
 
 ```bash
 # read what a ticket waits on, and what waits on it
@@ -136,14 +171,15 @@ gh api -X POST repos/<owner>/<name>/issues/<n>/dependencies/blocked_by \
 **Priority is a board field**, so it goes through the same `item-edit` call as
 Status, with the Priority field's id and the option id for the level. Resolve
 both from `gh project field-list` at runtime, exactly as for Status — a field id
-is per-board and changes when a field is renamed.
+is per-board and changes when a field is renamed. Being a board field, it is
+also unreachable when GraphQL is refused; a filing that could not set it is
+incomplete, and says so.
 
-> **The board is the one operation with no MCP equivalent.** Probed 2026-09-05:
-> the official GitHub MCP server exposes no Projects v2 operation of any kind —
-> no board read, no item add, no field write — so a repo whose transport is the
-> MCP plugin still needs `gh` (or an equivalent GraphQL call) for Status and
-> Priority. Recorded in `specs/harness-assumptions.md` with the test that would
-> retire it.
+> **The board is the one operation with no MCP equivalent.** The official GitHub
+> MCP server exposes no Projects v2 operation of any kind — no board read, no
+> item add, no field write — so a repo whose transport is the MCP plugin still
+> needs `gh` (or an equivalent GraphQL call) for Status and Priority. Recorded in
+> `specs/harness-assumptions.md` with the test that would retire it.
 
 ### `ledger`
 
@@ -154,10 +190,14 @@ find the standing issue, `create` to open it once, `comment` to append.
 # find it — by label, never by number
 gh issue list --repo <owner>/<name> --state open --label improvement-ledger \
   --json number,title,url
-# ... and if that is empty, try the pre-#547 name before creating anything
+# ... and if that is empty, try the older name before creating anything
 gh issue list --repo <owner>/<name> --state open --label proposals-ledger \
   --json number,title,url
 # migrate a hit rather than opening a second ledger
 gh issue edit <n> --repo <owner>/<name> \
   --add-label improvement-ledger --remove-label proposals-ledger
 ```
+
+All three are `gh issue` calls, so on a GraphQL-refused host run them through
+the REST equivalents in the table above; the ledger needs no board, and the
+append completes there.
