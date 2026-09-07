@@ -32,11 +32,12 @@
  *     run on (#580, run 34046398127). A mechanism where a number would do (P0).
  *
  * **The level is minor, and this script never decides otherwise.** The
- * compatibility grammar's `patch` — "wording only, no behaviour change" —
- * predates ADR 0015: with a runtime, a reworded skill body changed nothing a
- * consumer executed. The runtime is gone and the shipped product is prose, so a
- * reworded body *is* a behaviour change. A raise above the floor is a judgment
- * about the whole diff, available only at review time
+ * compatibility grammar carried a `patch` level — "wording only, no behaviour
+ * change" — from before ADR 0015: with a runtime, a reworded skill body changed
+ * nothing a consumer executed. The runtime is gone and the shipped product is
+ * prose, so a reworded body *is* a behaviour change, and #590 retired the
+ * level. A raise above the floor is a judgment about the whole diff,
+ * available only at review time
  * (`skills/review-discipline/references/certifying.md`), and is a hand edit to
  * the homes inside the candidate. A `--level` flag would invite a guess at step
  * 1, which is why there is not one.
