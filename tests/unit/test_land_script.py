@@ -39,9 +39,11 @@ from pathlib import Path
 
 import pytest
 
+from tests.unit._gate_marker_runner import install_internal_gate
 from tests.unit._prose import REPO_ROOT
 
 LAND = REPO_ROOT / "scripts" / "land.js"
+WRITER = REPO_ROOT / "scripts" / "gate-marker.js"
 
 
 def _node() -> str:
@@ -97,14 +99,50 @@ def repo(tmp_path: Path) -> Path:
     _git(root, "config", "user.name", "t")
     _git(root, "remote", "add", "origin", str(bare))
     (root / "harness.yaml").write_text(
-        "branches:\n  integration: main\n  release: prod\n", encoding="utf-8"
+        "branches:\n  integration: main\n  release: prod\n"
+        "commands:\n  verify: sh scripts/verify.sh\n  test_scoped: sh scripts/verify.sh\n",
+        encoding="utf-8",
     )
-    _git(root, "add", "harness.yaml")
+    install_internal_gate(root)
+    _git(root, "add", "harness.yaml", "scripts/verify.sh")
     _commit(root, "shared.txt", "base\n")
     _git(root, "push", "-q", "origin", "main")
     _git(root, "checkout", "-q", "-b", "work")
     _commit(root, "candidate.txt", "mine\n")
     return root
+
+
+def _marker(repo: Path, *scope: str) -> str:
+    """Evidence produced by the **production** writer, never hand-authored.
+
+    A marker this module wrote itself would validate `land.js` against this
+    module's idea of the contract. The path, the freshness stamp and the `scope`
+    field are all halves of the thing under test, so they come from
+    `scripts/gate-marker.js` — the same writer `verify.sh` invokes, and the same
+    one `hooks/push-target-guard.js` reads.
+    """
+    args = ["run"]
+    for entry in scope:
+        args += ["--scope", entry]
+    proc = subprocess.run(
+        [_node(), str(WRITER), *args], cwd=repo, capture_output=True, text=True, timeout=60
+    )
+    assert proc.returncode == 0, f"the production writer failed: {proc.stderr}"
+    return _git(repo, "rev-parse", "HEAD^{tree}")
+
+
+def _marker_path(repo: Path, tree: str) -> Path:
+    """Where the **production** writer says this tree's marker lives."""
+    return Path(
+        subprocess.run(
+            [_node(), str(WRITER), "path", "--tree", tree],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=60,
+        ).stdout.strip()
+    )
 
 
 def _move_the_tip(repo: Path, name: str, body: str) -> None:
@@ -128,6 +166,9 @@ def test_an_unchanged_tip_is_a_push(repo: Path) -> None:
 
 
 def test_a_moved_tip_that_merges_cleanly_is_a_push(repo: Path) -> None:
+    #: The candidate passed its gate before landing (law 3); `plan` now reads
+    #: that marker to choose the parent it merges into (#566).
+    _marker(repo)
     _move_the_tip(repo, "theirs.txt", "concurrent\n")
     code, payload, _ = _land(repo, "plan")
     assert code == 0, payload
@@ -156,6 +197,10 @@ def test_a_moved_tip_that_conflicts_asks_for_a_resolution_and_names_its_scope(
     _git(repo, "checkout", "-q", "work")
     (repo / "shared.txt").write_text("ours\n", encoding="utf-8")
     _git(repo, "commit", "-qam", "our side")
+
+    #: The candidate passed its gate before landing (law 3); `plan` now reads
+    #: that marker to choose the parent it merges into (#566).
+    _marker(repo)
 
     code, payload, _ = _land(repo, "plan")
     assert code == 0, payload
@@ -189,6 +234,10 @@ def test_the_scope_command_quotes_the_paths_git_chose(repo: Path) -> None:
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "our side")
 
+    #: The candidate passed its gate before landing (law 3); `plan` now reads
+    #: that marker to choose the parent it merges into (#566).
+    _marker(repo)
+
     payload = _land(repo, "plan")[1]
     assert payload["decision"] == "resolve", payload
     assert payload["conflicts"] == [nasty], payload["conflicts"]
@@ -214,6 +263,9 @@ def test_the_scope_command_quotes_the_paths_git_chose(repo: Path) -> None:
 
 
 def test_finish_hands_over_the_push_once_nothing_has_moved_again(repo: Path) -> None:
+    #: The candidate passed its gate before landing (law 3); `plan` now reads
+    #: that marker to choose the parent it merges into (#566).
+    _marker(repo)
     _move_the_tip(repo, "theirs.txt", "concurrent\n")
     assert _land(repo, "plan")[0] == 0
     code, payload, _ = _land(repo, "finish")
@@ -222,6 +274,9 @@ def test_finish_hands_over_the_push_once_nothing_has_moved_again(repo: Path) -> 
 
 
 def test_finish_sends_a_moved_tip_back_for_another_attempt(repo: Path) -> None:
+    #: The candidate passed its gate before landing (law 3); `plan` now reads
+    #: that marker to choose the parent it merges into (#566).
+    _marker(repo)
     _move_the_tip(repo, "theirs.txt", "concurrent\n")
     assert _land(repo, "plan")[0] == 0
     _move_the_tip(repo, "later.txt", "moved again\n")
@@ -295,6 +350,9 @@ def test_no_verb_pushes_a_branch(repo: Path, tmp_path: Path) -> None:
     The assertion is on every push's **destination**, so appending
     `git push origin HEAD:main` to any verb fails here.
     """
+    #: The candidate passed its gate before landing (law 3); `plan` now reads
+    #: that marker to choose the parent it merges into (#566).
+    _marker(repo)
     _move_the_tip(repo, "theirs.txt", "concurrent\n")
     shim = tmp_path / "shim"
     shim.mkdir()
@@ -352,6 +410,9 @@ def test_the_pointer_does_not_advance_before_the_push_has_landed(repo: Path) -> 
     nothing else would have caught it: the run that calls `done` is the same run
     whose push may have been refused.
     """
+    #: The candidate passed its gate before landing (law 3); `plan` now reads
+    #: that marker to choose the parent it merges into (#566).
+    _marker(repo)
     _move_the_tip(repo, "theirs.txt", "concurrent\n")
     assert _land(repo, "plan")[0] == 0
     code, payload, stderr = _land(repo, "done")
@@ -364,6 +425,9 @@ def test_the_pointer_does_not_advance_before_the_push_has_landed(repo: Path) -> 
 
 
 def test_the_pointer_advances_on_an_uncontended_landing(repo: Path) -> None:
+    #: The candidate passed its gate before landing (law 3); `plan` now reads
+    #: that marker to choose the parent it merges into (#566).
+    _marker(repo)
     _move_the_tip(repo, "theirs.txt", "concurrent\n")
     assert _land(repo, "plan")[0] == 0
     _git(repo, "push", "-q", "origin", "HEAD:main")
@@ -385,6 +449,11 @@ def test_the_pointer_does_not_advance_on_a_conflicted_landing(repo: Path) -> Non
     _git(repo, "checkout", "-q", "work")
     (repo / "shared.txt").write_text("ours\n", encoding="utf-8")
     _git(repo, "commit", "-qam", "our side")
+
+    #: The candidate passed its gate before landing (law 3); `plan` now reads
+    #: that marker to choose the parent it merges into (#566).
+    _marker(repo)
+
     assert _land(repo, "plan")[1]["decision"] == "resolve"
     (repo / "shared.txt").write_text("resolved\n", encoding="utf-8")
     _git(repo, "add", "-A")
@@ -410,3 +479,123 @@ def test_a_landing_publishes_its_gate_record(repo: Path) -> None:
         check=True,
     ).stdout
     assert f"{_git(repo, 'rev-parse', 'HEAD^{tree}')} green" in listed, listed
+
+
+# --- #566: `plan` must not build a merge onto an uncertified first parent -----
+#
+# `hooks/push-target-guard.js` accepts a reconciliation merge only when its
+# **first parent's** tree carries a fresh, unscoped gate marker
+# (`mergeAcceptance`). `plan` merged the tip into whatever `HEAD` was, with no
+# notion of the certified commit, so a re-run after a lost push race stacked a
+# second merge on the first and produced a first parent no gate ever covered —
+# a new unpushable shape on every attempt. These measure the refusal that
+# replaces it, and the recovery it names.
+
+
+def _stack_a_lost_race(repo: Path) -> str:
+    """Certify the candidate, then reproduce the losing first attempt.
+
+    Returns the certified commit — the one `plan` should have merged into, and
+    the one the refusal has to name.
+    """
+    _marker(repo)
+    certified = _git(repo, "rev-parse", "HEAD")
+    _move_the_tip(repo, "theirs.txt", "concurrent\n")
+    code, payload, _ = _land(repo, "plan")
+    assert code == 0 and payload["case"] == "clean-merge", payload
+    # The push that would have followed is the one the race loses; the tip moves
+    # again underneath it.
+    _move_the_tip(repo, "later.txt", "and again\n")
+    return certified
+
+
+def test_plan_refuses_to_stack_a_merge_on_an_uncertified_head(repo: Path) -> None:
+    """AC-1, AC-2, AC-3: the reported defect, and the recovery it now names."""
+    certified = _stack_a_lost_race(repo)
+    before = _git(repo, "rev-parse", "HEAD")
+
+    code, payload, _ = _land(repo, "plan", "--attempt", "2")
+
+    assert code == 2, payload
+    assert payload["case"] == "uncertified-head", payload
+    assert payload["certified"] == certified, payload
+    assert certified in str(payload["recovery_command"]), payload
+    # AC-1's second half: a refusal that had already committed the merge would
+    # leave the branch in the shape it refused.
+    assert _git(repo, "rev-parse", "HEAD") == before
+
+
+def test_a_certified_head_still_merges_the_moved_tip(repo: Path) -> None:
+    """AC-5's control. Without it the refusal above could be refusing everything."""
+    _marker(repo)
+    _move_the_tip(repo, "theirs.txt", "concurrent\n")
+
+    code, payload, _ = _land(repo, "plan")
+
+    assert code == 0, payload
+    assert payload["decision"] == "push" and payload["case"] == "clean-merge", payload
+
+
+def test_a_chain_with_no_gated_commit_at_all_names_none(repo: Path) -> None:
+    """AC-2's null arm: nothing to point at, so nothing is claimed."""
+    _move_the_tip(repo, "theirs.txt", "concurrent\n")
+
+    code, payload, _ = _land(repo, "plan")
+
+    assert code == 2, payload
+    assert payload["case"] == "uncertified-head", payload
+    assert payload["certified"] is None, payload
+    assert "recovery_command" not in payload, payload
+
+
+def test_a_scoped_marker_on_head_is_refused_without_offering_a_discard(
+    repo: Path,
+) -> None:
+    """AC-3's second half — and the path `finish` itself sends a run down.
+
+    `finish` on a moved tip prints ``run `land.js plan --attempt 2` ``, and after
+    a conflict resolution `HEAD` is the resolved merge whose only evidence is a
+    **scoped** gate. Merging onto it produces the same denied shape; rebuilding
+    from the certified commit would throw the resolution away. So: refuse, and
+    offer no recovery that discards.
+    """
+    _marker(repo, "candidate.txt")
+    _move_the_tip(repo, "theirs.txt", "concurrent\n")
+
+    code, payload, _ = _land(repo, "plan")
+
+    assert code == 2, payload
+    assert payload["case"] == "uncertified-head", payload
+    assert "recovery_command" not in payload, payload
+    assert "scope" in str(payload["next"]).lower(), payload
+
+
+def test_a_commit_authored_after_the_verdict_is_never_offered_a_discard(
+    repo: Path,
+) -> None:
+    """AC-4. The certified commit is an ancestor, but reaching it drops work."""
+    _marker(repo)
+    certified = _git(repo, "rev-parse", "HEAD")
+    _commit(repo, "late.txt", "after the verdict\n")
+    _move_the_tip(repo, "theirs.txt", "concurrent\n")
+
+    code, payload, _ = _land(repo, "plan")
+
+    assert code == 2, payload
+    assert payload["certified"] == certified, payload
+    assert "recovery_command" not in payload, payload
+
+
+def test_a_marker_past_its_freshness_bound_does_not_certify(repo: Path) -> None:
+    """AC-6. The bound is the marker helper's; `land.js` must not widen it."""
+    tree = _marker(repo)
+    marker = _marker_path(repo, tree)
+    assert marker.exists(), marker
+    stale = marker.stat().st_mtime - 86400 - 60
+    os.utime(marker, (stale, stale))
+    _move_the_tip(repo, "theirs.txt", "concurrent\n")
+
+    code, payload, _ = _land(repo, "plan")
+
+    assert code == 2, payload
+    assert payload["case"] == "uncertified-head", payload

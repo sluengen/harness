@@ -24,7 +24,24 @@ Act on the one `decision` it prints:
 | `push` | The tip had not moved, or git merged it cleanly and `plan` left the merge committed. Run the `push_command` it gives, then `land.js done`. |
 | `resolve` | The merge conflicted; the worktree is left conflicted for you. Resolve exactly the paths in `conflicts`, commit the merge, run the `scope_command` and **read its output**, then `land.js finish` — and act on its decision the same way. |
 | `hold` | Reconciliation is spent, or the tip moved again past its second attempt. Hold the ticket (`input`, assigned) with the reason it printed, and stop. |
-| `refused` | Not a shape this script decides — a dirty worktree, a detached HEAD, a branch the repo declares no role for. The reason names which. |
+| `refused` | Not a shape this script decides — a dirty worktree, a detached HEAD, a branch the repo declares no role for, or `case: "uncertified-head"`. The reason names which. |
+
+**`uncertified-head`, and why re-running `plan` was not the recovery.** The
+guard accepts a merge whose *first parent* carries a fresh unscoped marker, and
+`plan` merges the tip into `HEAD` — so a `plan` whose push then lost a race left
+`HEAD` as an ungated merge, and a re-run stacked a second merge on it. That first
+parent is a tree no gate ever covered, so every retry built a new unpushable
+shape (#566). `plan` now refuses instead, and names `certified`: the nearest
+first-parent ancestor a fresh unscoped marker does cover.
+
+- A `recovery_command` in the output means everything between `HEAD` and
+  `certified` is a merge this script made. Run it — it rebuilds the merge from
+  `certified` against the current tip, and loses nothing.
+- **No `recovery_command` means do not rebuild.** `HEAD` carries bytes no
+  unscoped gate covers: a resolution under a scoped marker, or work committed
+  after the verdict. Re-gate the whole tree and land again, or hold the ticket.
+  This is also where `finish`'s ``run `land.js plan --attempt 2` `` lands after a
+  conflict resolution, and rebuilding there would discard the resolution.
 
 **Why a clean merge needs no re-gate and no re-review.** `hooks/push-target-guard.js`
 accepts a push carrying a merge git alone produced over a gated tree: two parents,

@@ -16,6 +16,15 @@
  *   3. the tip moved and the merge conflicts — the resolution bytes are the only
  *      thing nobody has verified, so re-gate over exactly those and push.
  *
+ * Cases 2 and 3 have one precondition, and it is the parent rather than the tip:
+ * the guard accepts a merge over a *certified first parent*, and the first parent
+ * is whatever `HEAD` is when `plan` runs. After a lost push race `HEAD` is the
+ * previous merge, which nothing gated, so a re-run stacked a second merge and
+ * produced a new unpushable shape every time — silently (#566). `plan` reads
+ * `HEAD`'s marker before merging and refuses `uncertified-head` instead, naming
+ * the nearest certified ancestor and, where nothing would be lost by it, the
+ * command that rebuilds the merge from there.
+ *
  * **Why a script and not the four paragraphs it retires.** What it replaces was a
  * low-freedom sequence of git invocations written as prose in
  * `skills/build/SKILL.md`: read on every run, costing context every time, and
@@ -60,6 +69,7 @@
  */
 "use strict";
 
+const fs = require("node:fs");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 
@@ -112,6 +122,69 @@ function refsHelper() {
   } catch (err) {
     throw new Unavailable(`the ref helper could not be loaded: ${err.message}`);
   }
+}
+
+function markerHelper() {
+  try {
+    return require(path.join(__dirname, "gate-marker.js"));
+  } catch (err) {
+    throw new Unavailable(`the gate marker helper could not be loaded: ${err.message}`);
+  }
+}
+
+/** True when `commit`'s tree carries a marker this script may merge onto.
+ *
+ * The question is not "was this gated" but the narrower one
+ * `hooks/push-target-guard.js` asks of a merge's **first parent**: a marker that
+ * is present, fresher than the helper's bound, readable, and carrying **no**
+ * `scope`. A scoped marker records a run that verified less than the tree, so the
+ * guard's `mergeAcceptance` denies on it — the two must ask the same question or
+ * this script goes back to building shapes the guard rejects.
+ *
+ * The path and the bound come from `scripts/gate-marker.js`, the writer itself.
+ * A second copy of either here would be a copy that can drift from the evidence
+ * it reads.
+ */
+function certifies(commit, ctx) {
+  const tree = line(["rev-parse", "--verify", `${commit}^{tree}`], ctx.cwd);
+  if (tree === null) return false;
+  const helper = markerHelper();
+  const file = helper.markerPath(tree, ctx.cwd);
+  let stat;
+  try {
+    stat = fs.statSync(file);
+  } catch (err) {
+    return false;
+  }
+  if (Date.now() - stat.mtimeMs >= helper.maxAgeSeconds() * 1000) return false;
+  let body;
+  try {
+    body = JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (err) {
+    //: Unreadable is not certified. The guard reports the two apart because it
+    //: has a refusal to word; here both answers are the same answer.
+    return false;
+  }
+  return body === null || typeof body !== "object" || body.scope === undefined || body.scope === null;
+}
+
+/** The nearest first-parent ancestor of HEAD that `certifies`, with the walk.
+ *
+ * `steps` is what was crossed to reach it, nearest first — the walk's own record,
+ * so the caller decides what may be discarded without walking again. Bounded by
+ * `MAX_ATTEMPTS + 1`: a chain longer than the attempt bound allows is not a stack
+ * this script produced, and following it further would be guessing.
+ */
+function nearestCertified(ctx) {
+  const steps = [];
+  let commit = line(["rev-parse", "--verify", "HEAD"], ctx.cwd);
+  for (let depth = 0; commit !== null && depth <= MAX_ATTEMPTS + 1; depth += 1) {
+    if (certifies(commit, ctx)) return { commit, steps };
+    const parents = (line(["rev-parse", `${commit}^@`], ctx.cwd) || "").split("\n").filter(Boolean);
+    steps.push({ commit, parents: parents.length });
+    commit = parents.length === 0 ? null : parents[0];
+  }
+  return { commit: null, steps };
 }
 
 /** The repository, the remote and the branch this landing is about. */
@@ -234,6 +307,56 @@ function plan(options) {
       reason:
         `reconciliation is bounded at ${MAX_ATTEMPTS} attempts; hold the ticket rather than ` +
         "trying a third time",
+    });
+    return EXIT_REFUSED;
+  }
+
+  //: #566. The guard accepts a merge whose **first parent** carries a fresh
+  //: unscoped marker, and this verb chooses that parent: it merges into HEAD.
+  //: Re-run after a lost push race and HEAD is the previous merge, which nothing
+  //: gated — so every retry built a new shape the guard would refuse, and said
+  //: nothing. The check is here rather than after the merge because a refusal
+  //: that had already committed would leave the branch in the shape it refused.
+  if (!certifies("HEAD", ctx)) {
+    const found = nearestCertified(ctx);
+    //: What may be discarded to reach it. Only a two-parent merge may: a
+    //: single-parent commit is work somebody authored after the verdict, and a
+    //: scoped marker on HEAD means the tree carries a hand resolution whose only
+    //: evidence is that scope. Rebuilding over either would throw work away, so
+    //: those get the refusal without the recovery.
+    const droppable =
+      found.commit !== null && found.steps.every((step) => step.parents === 2);
+    const branchName = line(["symbolic-ref", "--short", "HEAD"], ctx.cwd);
+    report({
+      decision: "refused",
+      case: "uncertified-head",
+      branch: ctx.branch,
+      tip,
+      attempt,
+      head: line(["rev-parse", "HEAD"], ctx.cwd),
+      tree: line(["rev-parse", "HEAD^{tree}"], ctx.cwd),
+      certified: found.commit,
+      reason:
+        "HEAD's tree carries no fresh unscoped gate marker, so merging the tip into it " +
+        "would produce a first parent `hooks/push-target-guard.js` refuses",
+      ...(droppable && branchName !== null
+        ? {
+            recovery_command:
+              `git checkout -B ${branchName} ${found.commit} && ` +
+              `node ${path.join(__dirname, "land.js")} plan --attempt ${attempt}`,
+            next:
+              "rebuild the merge from the certified commit — everything between it and HEAD " +
+              "is a merge this script made, so the rebuilt merge loses nothing",
+          }
+        : {
+            next:
+              found.commit === null
+                ? "no commit in HEAD's first-parent chain carries a fresh unscoped marker; " +
+                  "run the gate over this tree and land again"
+                : "HEAD carries bytes no unscoped gate covers — a resolution under a scoped " +
+                  "marker, or work committed after the verdict. Re-gate the whole tree and " +
+                  "land again, or hold the ticket; do not rebuild from the certified commit",
+          }),
     });
     return EXIT_REFUSED;
   }
