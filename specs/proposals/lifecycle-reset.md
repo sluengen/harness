@@ -458,7 +458,7 @@ Six mechanisms produced that, and none of them is a jitter:
 
 ### P0. Do less
 
-Added ahead of P1 to P5 and precedent over them in any conflict. **The best change is the one not made.** Simplicity scales and complexity fails, at the architecture and at the line; maximise the work not done. *Refuses:* a guard larger than the change it guards without a recorded reason; a second defence that shares an operand with the first; a ticket for a comment; a proposal per review; a fold at drain where drop was available; a bug that names no user outcome; a mechanism added where a number would do.
+Added ahead of P1 to P5 and precedent over them in any conflict. **The best change is the one not made.** Simplicity scales and complexity fails, at the architecture and at the line; maximise the work not done. *Refuses:* a guard larger than the change it guards without a recorded reason; a second defence that shares an operand with the first; a ticket for a comment; a proposal per review; a fold at drain where drop was available; a bug that names no user outcome; a mechanism added where a number would do; an assurance calibrated for a stage the product is not at.
 
 ### The defaults that decide cases
 
@@ -520,3 +520,28 @@ Decided with the operator the same day. A repo-wide limit of six is wrong for th
 - `/digest` reports, per project, open against limit and Backlog depth, and repo-wide, active projects against their limit and the ledger's new entries.
 
 **What this changes in the amendment above.** The re-drain of the harness's own queue stands, and its five survivors sit in one project, the lifecycle reset, with one free slot. The spine's Backlog definition is rewritten as part of T6. `harness.yaml` gains `queue.wip_limit`, `queue.active_projects`, `queue.project_field` (`project` for Linear, `milestone` for GitHub), and the optional per-project overrides. D13 is amended: six is the per-project default, three the active-project default, both starting values read for four weeks.
+
+### The operating context — 2026-09-07, later
+
+Decided with the operator the same day, and it belongs ahead of every principle, because it is the reason lean is the right frame and the reason the first two days went wrong.
+
+**Who we are.** Pre-user, pre-revenue startups, and the tool that serves them. Nobody's data, money, or day depends on these repos yet. A wrong change costs a revert; it does not cost a customer. That will change, and when it does this section changes with it.
+
+**What we are optimising for.** Speed and simplicity, because they are the fastest route to sustainable flow and high quality, not a trade against it. The point of building quality in is to go faster, not to go slower more safely. We do not ship slop that becomes unmaintainable; we also do not build an enterprise transaction system for millions of users, and every guard, review cycle, and lane must be calibrated to the stage we are at rather than the stage we imagine.
+
+**The risk appetite, stated so nobody has to infer it.**
+
+- We accept a defect reaching the integration branch. The composite gate and the next builder catch it, and a revert is cheap.
+- We accept an as-built record that lags a day, a comment that is stale, a message that is imprecise. Those are improvements for a slot, never bugs, and never blockers.
+- We do not accept losing user data, leaking a credential, or moving money wrongly. Those are the protected areas, and the only ones; anything else on a protected-areas list is inherited from a posture we are not in.
+- We do not accept a week of cycle time to prevent a defect a revert would fix in an hour. Cost is measured in cycle time and tokens as much as in defects.
+
+**What this decides.** The fix lane is the common case and the feature lane is rare; a design pass is owed when a contract or a protected area moves, not when a file under `hooks/` does. A reviewer's finding must matter at this stage, and "it could be wrong in a case no user will hit for a year" is not a finding. A guard earns its place by an occurrence, and its size is bounded by the change it guards. A P1 is something that stops the line for everyone, and at this stage that is a hook refusing correct work or a landing that lost bytes, not a wording mismatch. The reflection names waste so the next run has less of it, not so the ledger has more.
+
+**Where it lives.** One paragraph at the head of the spine's principles, and one line in every consuming repo's spine: *Stage: pre-user, pre-revenue. Posture: speed and simplicity; a wrong change costs a revert. Protected: user data, credentials, money.* It is a sentence agents read, not a mechanism code reads, and it is the line to rewrite on the day the product gains a user. T6 carries it.
+
+**What it changes above.** P0 gains one refusal: an assurance calibrated for a stage the product is not at. The reviewer's mandate in T2's scoped form is read through it. The guard-size default's "recorded reason" must name the user outcome the guard protects at this stage.
+
+### One queue for the harness — 2026-09-07, later
+
+The per-project limit is for the product repos, where initiatives have their own loops and a proposal files a dozen tickets. This repo's work arrives from feedback and is one initiative at a time, so it declares no project field and runs a single queue at the default limit. The GitHub milestone requirement above applies to a GitHub-backed product repo, not here; `queue.project_field: none` means the repo is its own project, and `queue.active_projects` does not apply. D13 is read accordingly.
