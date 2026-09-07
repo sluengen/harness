@@ -31,7 +31,7 @@ Keep the `$?` capture, because empty output has two unrelated causes and `${BASE
 
 **The worktree starts detached, and the branch is cut later** — in *Gating the base*, once the base has passed. Cutting it here instead, with `-b <task-id>`, leaves residue behind a red base: `git worktree remove` deletes the directory and keeps the branch, so the retry after somebody clears the red dies on `fatal: a branch named '<task-id>' already exists`. Nothing needs the branch before the gate runs.
 
-**Report the base you took**: which commit, and whether it came from the pointer. A run that does not say where it started cannot tell a red base from a red change.
+**Report the base you took**: which commit, whether it came from the pointer, and — when it came from the pointer — how far behind `<remote>/<integration-branch>` it is (`git rev-list --count <base>..<remote>/<integration-branch>`; the fetch above already brings that ref current, so this needs no fetch of its own). A run that does not say where it started cannot tell a red base from a red change, and a pointer left to drift compounds silently otherwise — reporting the count here makes it legible at the cut rather than only at the red gate a stale base later causes.
 
 Work inside that directory for the whole task.
 
