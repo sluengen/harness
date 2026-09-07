@@ -495,3 +495,28 @@ Twenty-one open on 2026-09-07. Under the drop default, five name something a use
 | D14 | Drop is the drain's default; promotion requires a named user or consumer outcome | `/assess` |
 | D15 | The reviewer's Proposals section is removed; the reflection is the one improvement channel | `review-discipline` |
 | D16 | Bugs carry a materiality floor; andon is narrowed to refused-correct or landed-wrong work | spine, `work-discovery` |
+
+### Refinement — 2026-09-07, later: the limit is per project, and Backlog is real work
+
+Decided with the operator the same day. A repo-wide limit of six is wrong for the product repos, which run well past it and whose feature proposals file more than six tickets at once. The limit applies per **project**, the tracker's own unit of initiative (a Linear project; a GitHub milestone, chosen because it is REST-settable and native), and the tracker's **Backlog** state is where the rest of a project's confirmed work waits, ordered, until a slot frees. This corrects the spine's earlier definition: Backlog is not "work whose existence is uncertain"; that is what the ledger holds.
+
+**Three reservoirs, one direction of flow.**
+
+| Reservoir | Holds | Bounded by | Enters from |
+|---|---|---|---|
+| Improvement ledger | findings: options, not work | nothing | reflections, reviewers' blocking findings that are not the ticket's, filings above a limit |
+| Backlog, per project | confirmed work not yet pulled, ordered by dependencies then priority | nothing | a proposal's breakdown, a drain that promotes, a filing when the project's slots are full |
+| The queue, per project (Todo, In Progress, In Review; held tickets excluded) | work committed and in flight | `queue.wip_limit`, default 6 | Backlog, by pull, when a close frees a slot |
+
+**The rules.**
+
+- Every ticket names its project at filing; a ticket filed from inside a build inherits the parent ticket's project, so a defect found while building an initiative lands in that initiative's queue, not in a generic remediation pile. A repo may declare one project as the default for work that belongs to no initiative.
+- A proposal's breakdown files every ticket into the proposal's project. The first `wip_limit` in dependency order enter Todo; the rest wait in Backlog. The reset itself would have filed T1 to T3 into Todo and T4 and T5 into Backlog until a slot freed, which is the order they were built in anyway.
+- A close frees a slot, and discovery pulls the highest-ranked Backlog ticket of that project whose blockers are closed. The operator can pull by hand at `/digest --drain`. Nothing else moves a ticket from Backlog to Todo.
+- `queue.active_projects`, default 3, bounds initiatives in flight: a project with any ticket in its queue is active, and a new project's tickets wait in Backlog until an active one empties. This is the WIP limit one level up, and it is the number that stops a repo running six initiatives at once.
+- A project may override its limit in `harness.yaml` under `queue.projects.<name>.wip_limit`, because some initiatives carry their own loop and pace.
+- The andon cord is repo-wide and bypasses every limit: an open bug that refuses correct work or lands wrong work is the only pick in the repo until it closes.
+- Adoption is a placement, not a purge: on the first tick after the limit lands, each project's lowest-ranked tickets above its limit move from Todo to Backlog. Nothing is closed or dropped by the mechanism.
+- `/digest` reports, per project, open against limit and Backlog depth, and repo-wide, active projects against their limit and the ledger's new entries.
+
+**What this changes in the amendment above.** The re-drain of the harness's own queue stands, and its five survivors sit in one project, the lifecycle reset, with one free slot. The spine's Backlog definition is rewritten as part of T6. `harness.yaml` gains `queue.wip_limit`, `queue.active_projects`, `queue.project_field` (`project` for Linear, `milestone` for GitHub), and the optional per-project overrides. D13 is amended: six is the per-project default, three the active-project default, both starting values read for four weeks.
