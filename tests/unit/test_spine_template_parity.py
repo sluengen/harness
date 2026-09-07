@@ -3,9 +3,10 @@
 **The occurrence this guard cites (#489, from the v5 merge review of #481).**
 ``templates/spine.md`` is the ``AGENTS.md`` the plugin writes into a consuming
 repo, and ``AGENTS.md`` is this repo's own copy of it. #537 made ``AGENTS.md`` the
-source instruction file both hosts read and reduced ``CLAUDE.md`` to ``@AGENTS.md``
-plus the deltas that apply on one host, so the generated block has one home again
-rather than a copy in each. The region between
+source instruction file both hosts read, and #558 made ``CLAUDE.md`` carry it
+verbatim followed by the deltas that apply on one host, so the block has one
+*source* — edited in ``AGENTS.md`` and derived into ``CLAUDE.md``, never the
+reverse. That derivation is this module's second subject, held further down. The region between
 ``<!-- spine:generated:begin harness@<version> -->`` and
 ``<!-- spine:generated:end -->`` is the plugin-owned half — the principles, the
 laws, the lifecycle, the contract, and the enforcement summary — and everything after it
@@ -84,8 +85,13 @@ from tests.unit._prose import REPO_ROOT
 #: The spine the plugin writes into a consuming repo.
 TEMPLATE_PATH = "templates/spine.md"
 
-#: This repo's own spine.
+#: This repo's own spine, and the source of the derived copy below.
 SPINE_PATH = "AGENTS.md"
+
+#: The host file Claude Code loads. Since #558 it carries :data:`SPINE_PATH`
+#: verbatim as a byte-exact prefix, then the deltas that apply on that host
+#: alone, so the spine arrives without an ``@``-import resolution step.
+DERIVED_PATH = "CLAUDE.md"
 
 #: The updater-facing source of the one plugin release version.
 PLUGIN_MANIFEST_PATH = ".claude-plugin/plugin.json"
@@ -223,11 +229,18 @@ def _block(path: str) -> GeneratedBlock:
 # ---------------------------------------------------------------------------
 
 
-def test_both_spines_are_tracked() -> None:
-    """The subjects must be in the index, not merely on this disk (#484)."""
+def test_every_spine_operand_is_tracked() -> None:
+    """The subjects must be in the index, not merely on this disk (#484).
+
+    Three operands since #558, which is why this is no longer named for two: a
+    guard reading a ``CLAUDE.md`` that never ships would hold a correspondence
+    nobody receives.
+    """
     tracked = {
         path.relative_to(REPO_ROOT).as_posix()
-        for path in tracked_files_under("templates") | tracked_files_under(SPINE_PATH)
+        for path in tracked_files_under("templates")
+        | tracked_files_under(SPINE_PATH)
+        | tracked_files_under(DERIVED_PATH)
     }
     assert TEMPLATE_PATH in tracked, (
         f"{TEMPLATE_PATH} is not tracked by git, so the spine a consuming repo "
@@ -235,6 +248,10 @@ def test_both_spines_are_tracked() -> None:
     )
     assert SPINE_PATH in tracked, (
         f"{SPINE_PATH} is not tracked by git. Tracked: {sorted(tracked)}"
+    )
+    assert DERIVED_PATH in tracked, (
+        f"{DERIVED_PATH} is not tracked by git, so the host file a clone loads is "
+        f"not the one this guard read. Tracked: {sorted(tracked)}"
     )
 
 
@@ -734,3 +751,451 @@ def test_the_manifest_and_both_spines_name_the_current_release() -> None:
         indexed_text(PLUGIN_MANIFEST_PATH), indexed_text(TEMPLATE_PATH), indexed_text(SPINE_PATH)
     )
     assert disagreements == {}, disagreements
+
+
+# ---------------------------------------------------------------------------
+# The second correspondence — the host file carries the spine verbatim (#558)
+# ---------------------------------------------------------------------------
+#
+# Admitted under ADR 0017 D5 class (e), tree-consistency, on the same footing as
+# the block comparison above: both operands are tracked documents, and the
+# assertion is that one *corresponds* to a region of the other byte for byte.
+# Nothing here reads what any sentence means, so a reword applied to both files
+# passes and a reword applied to one fails.
+#
+# Why a prefix and not the delimited-block comparison already in this module:
+# `generated_block` extracts the plugin-owned region, so comparing that region
+# would pass a `CLAUDE.md` whose *tail* — the repo-owned half, everything after
+# an end marker — had drifted from the source. The contract #558 buys is the
+# whole of `AGENTS.md`, not the generated block of it.
+#
+# Not asserted here, per law 1: `CLAUDE.md` carries the `spine:generated` version
+# stamp after #558, but it is **not** a fourth operand in `version_disagreements`
+# below. A byte-exact prefix makes its stamp agree with `AGENTS.md` by
+# construction, so enumerating it would be a second measurement of one fact
+# (#492 — de-duplication is a deletion; the survivor here is the prefix
+# relation). That subsumption holds *only* while the relation asserted is a
+# prefix; weaken it to "contains" and the version stamp needs its own operand.
+#
+# The boundary marker (#594) changes none of this. `<!-- spine:copy:end -->` is
+# written into the remainder, at position `len(source)` — inside the tail this
+# predicate already treats as opaque, not the prefix. All three clauses hold
+# unchanged: clause 1 (the prefix relation) is the same bytes it always was,
+# clause 3 (a non-empty remainder) is satisfied more strongly, not less, since
+# the remainder now opens with the marker. The subsumption argument above is
+# likewise unmoved: the marker carries no version and sits below the
+# `spine:generated` stamp, so the relation excluding `CLAUDE.md` from
+# `version_disagreements` is still a prefix, not a containment.
+
+
+def derived_spine_divergence(
+    source: str,
+    derived: str,
+    *,
+    source_label: str = SPINE_PATH,
+    derived_label: str = DERIVED_PATH,
+) -> dict[str, list[str]]:
+    """Report how ``derived`` departs from carrying ``source`` as a byte-exact prefix.
+
+    Returns ``{}`` when the contract holds and ``{"prefix": [...]}`` when it does
+    not. The contract is three clauses and nothing else: ``derived`` starts with
+    ``source`` byte for byte with no normalisation; neither operand is empty or
+    whitespace-only; and the remainder after the prefix carries non-whitespace
+    content. The boundary is positional — character ``len(source)`` — with no
+    marker, delimiter or sentinel defining the join.
+
+    Whitespace at the join may migrate across the boundary and the relation still
+    holds, correctly: adding a trailing newline to ``source`` leaves ``derived``
+    still carrying it verbatim, with the blank line moved from the tail's side to
+    the prefix's. That is the property, not a hole in it.
+
+    A human can check the same thing without a test runner::
+
+        git show :AGENTS.md > /tmp/a && git show :CLAUDE.md > /tmp/c
+        cmp -n "$(wc -c < /tmp/a)" /tmp/a /tmp/c
+
+    Silence means the prefix holds; a non-empty tail after that many bytes means
+    the deltas survived.
+
+    The empty refusals are per-document and evaluated first, so ``("", "")`` can
+    never reach the comparison — ``"" == ""`` is the one comparison this guard
+    must never make (#466). The third refusal is a property of the *pair*, so
+    unlike :func:`generated_block`'s it cannot live in a per-document extractor;
+    it sits immediately after the prefix test instead.
+    """
+    assert source.strip(), (
+        f"{source_label} is empty or whitespace-only, so it is a prefix of every "
+        f"file and this correspondence would hold for anything"
+    )
+    assert derived.strip(), (
+        f"{derived_label} is empty or whitespace-only, so nothing was compared"
+    )
+
+    cut = len(source)
+    if derived.startswith(source):
+        assert derived[cut:].strip(), (
+            f"{derived_label} is only the copy: it carries {source_label} and no "
+            f"host deltas after it. A hydration that dropped the deltas looks "
+            f"exactly like this, so it is refused rather than passed"
+        )
+        return {}
+
+    limit = min(len(source), len(derived))
+    offset = limit
+    for index in range(limit):
+        if source[index] != derived[index]:
+            offset = index
+            break
+
+    repair = (
+        f"{source_label} is the source; re-derive {derived_label} as the whole of "
+        f"{source_label} followed by the existing host deltas."
+    )
+    if len(derived) < cut and source.startswith(derived):
+        headline = (
+            f"{derived_label} stops inside the copy: it carries the first "
+            f"{len(derived)} of {cut} characters of {source_label} and nothing "
+            f"more. {repair}"
+        )
+    else:
+        headline = (
+            f"{derived_label} disagrees with {source_label} at a character inside "
+            f"the copied region. {repair}"
+        )
+
+    line_number = source[:offset].count("\n") + 1
+    locator = (
+        f"first difference at character {offset} of {source_label}, "
+        f"line {line_number}"
+    )
+    diff = list(
+        difflib.unified_diff(
+            source.splitlines(keepends=True),
+            derived[:cut].splitlines(keepends=True),
+            fromfile=source_label,
+            tofile=f"{derived_label} (first {cut} characters)",
+            lineterm="",
+        )
+    )
+    return {"prefix": [headline, locator, *diff]}
+
+
+def _pair() -> tuple[str, str]:
+    """The staged source and derived spines. Never the working files (#482)."""
+    return indexed_text(SPINE_PATH), indexed_text(DERIVED_PATH)
+
+
+def _rejects_pair(source: str, derived: str, needle: str) -> None:
+    """Assert :func:`derived_spine_divergence` fails loudly on this pair."""
+    try:
+        derived_spine_divergence(source, derived)
+    except AssertionError as exc:
+        assert needle in str(exc), f"the failure did not explain itself: {exc}"
+    else:
+        raise AssertionError(
+            f"a degenerate pair was accepted: {source!r} / {derived!r}"
+        )
+
+
+#: A minimal source document for the synthetic pairs below, and the tail a legal
+#: derived file carries after it. Both are deliberately unlike this repo's real
+#: documents: a sample whose correct answer is the production answer measures
+#: nothing (``craft.md`` → *Born green*).
+_SOURCE = "# Spine\n\nA law.\nAnother law.\n"
+_TAIL = "\n# Host deltas\n\nOne delta.\n"
+
+#: The boundary the derivation writes at the end of the copied region (#594).
+#: `--refresh` re-derives from it whatever has drifted above it, so it is
+#: recovery machinery for that procedure and **not** an operand of the predicate
+#: below — the contract is still the prefix relation and nothing else.
+_COPY_END = "<!-- spine:copy:end -->"
+_BOUNDARY = f"\n{_COPY_END}\n"
+
+
+def test_the_prefix_reader_reaches_real_spine_bytes() -> None:
+    """Paired splice: prove both readers reach real bytes.
+
+    ``craft.md`` → *A prose mutation needs a paired splice to prove it was live*.
+    The sweep below is born green — the two files agree today — so nothing else
+    here separates "the host file carries the spine" from "neither file was
+    read". Splicing a line into the *real* staged spine and requiring it reported
+    is what makes that distinction.
+    """
+    source, derived = _pair()
+    spliced = "A line this spine never carried."
+    doctored = source.replace("\n## This repo\n", f"\n{spliced}\n## This repo\n")
+    assert doctored != source, (
+        "the splice did not land, so nothing below measures the reader"
+    )
+    assert derived_spine_divergence(source, derived) == {}, (
+        "the real pair must agree before the splice, or the report afterwards "
+        "proves nothing about the reader"
+    )
+    after = derived_spine_divergence(doctored, derived)
+    assert after, (
+        "a line spliced into the real spine was not reported — the reader is not "
+        "reaching real bytes, and a clean sweep would be indistinguishable from a "
+        "sweep that read nothing"
+    )
+    assert any(spliced in line for line in after["prefix"]), (
+        f"the report did not carry the spliced line: {after['prefix'][:3]}"
+    )
+
+
+def test_an_edit_below_the_prefix_reports_nothing() -> None:
+    """The legitimate-edit control, on the real subject.
+
+    ``craft.md`` → a kill table cannot see a false positive (#511). Every sample
+    below is a kill; this is the row that goes red if the predicate is widened to
+    whole-file equality, which would refuse every host delta the contract exists
+    to permit.
+    """
+    source, derived = _pair()
+    assert derived_spine_divergence(source, derived + "\n- A new host delta.\n") == {}
+
+
+def test_a_source_edit_that_was_never_mirrored_is_reported() -> None:
+    """The source gained a line inside the copied region; the copy did not.
+
+    *Exclusive killer:* a predicate that compares only the opening of each file,
+    or normalises whitespace, or compares lengths — each is green on a pair whose
+    divergence sits in the middle and leaves both files plausible.
+    """
+    grown = _SOURCE.replace("A law.\n", "A law.\nA third law.\n")
+    report = derived_spine_divergence(grown, _SOURCE + _TAIL)
+    assert set(report) == {"prefix"}, report
+    assert any("A third law." in line for line in report["prefix"]), report["prefix"]
+    assert "re-derive" in report["prefix"][0]
+
+
+def test_a_derived_edit_inside_the_prefix_is_reported() -> None:
+    """The other direction: the copy was reworded, the source untouched.
+
+    *Exclusive killer:* a guard that only notices the source growing — a ``len()``
+    comparison rather than a prefix test — which is green here because both
+    documents are the same length.
+    """
+    reworded = _SOURCE.replace("Another law.", "Another rule.") + _TAIL
+    report = derived_spine_divergence(_SOURCE, reworded)
+    assert set(report) == {"prefix"}, report
+    assert "line 4" in report["prefix"][1], report["prefix"][1]
+    assert "character" in report["prefix"][1]
+
+
+def test_the_boundary_marker_does_not_excuse_a_drifted_copy() -> None:
+    """The boundary marker is ``--refresh``'s recovery locator, not a relaxation
+    of this gate's contract (#594). A drifted copy is reported even when it
+    carries a well-formed boundary marker below the drift.
+
+    *Exclusive killer:* the relaxation this ticket invites —
+    ``if _COPY_END in derived: return {}``, on the reasoning that ``--refresh``
+    will re-derive it anyway. That mutant is green on every other row in this
+    module and returns ``{}`` here. The gate's job is unchanged by #594: it says
+    the copy is correct **now**, not that something will fix it later. *What it
+    does not kill:* a boundary-splitting reimplementation
+    (``derived.split(_COPY_END)[0] == source``), which also reports on this
+    input — :func:`test_the_boundary_marker_is_not_an_operand_of_this_predicate`
+    below is that one's killer.
+    """
+    drifted = _SOURCE.replace("Another law.", "Another rule.")
+    report = derived_spine_divergence(_SOURCE, drifted + _BOUNDARY + _TAIL)
+    assert set(report) == {"prefix"}, report
+
+
+def test_the_boundary_marker_is_not_an_operand_of_this_predicate() -> None:
+    """The marker locates nothing for this guard; only the prefix does (#594).
+
+    *Exclusive killer:* any reimplementation that locates the copy region by the
+    marker rather than by position — ``derived.split(_COPY_END)[0] == source``
+    and every variant. Those report on this input; the shipped predicate
+    returns ``{}``, because the contract is the prefix and everything after
+    ``len(source)`` is the tail as far as *this guard* is concerned. The
+    division is the subtle part of the whole ticket: the guard asserts the
+    prefix; the boundary marker is ``--refresh``'s recovery locator. A file in
+    this shape is legal to the gate and would have its ``extra\\n`` replaced and
+    reported by the next ``--refresh`` (see ``refresh.md``'s *Reporting an
+    overwrite*). Both are correct; they answer different questions.
+    """
+    assert derived_spine_divergence(_SOURCE, _SOURCE + "extra\n" + _BOUNDARY + _TAIL) == {}
+
+
+def test_a_derived_file_shorter_than_its_source_names_the_truncation() -> None:
+    """A copy that stops partway carries no tail, and is named as truncated.
+
+    *Exclusive killers, two.* Collapsing the two branches into one message tells
+    an operator "they differ at character k" for a file that is merely short —
+    the wrong-cause-named defect this module already refuses elsewhere. And
+    evaluating the relation in the **wrong direction** (``source.startswith(
+    derived)``) returns ``{}`` on exactly this shape, because a truncated copy
+    *is* a prefix of its source — the one shape where the inverted relation is
+    silently satisfied rather than merely reported differently.
+    """
+    truncated = _SOURCE[: len(_SOURCE) // 2]
+    report = derived_spine_divergence(_SOURCE, truncated)
+    assert set(report) == {"prefix"}, report
+    assert "stops inside the copy" in report["prefix"][0], report["prefix"][0]
+    assert str(len(truncated)) in report["prefix"][0]
+    assert str(len(_SOURCE)) in report["prefix"][0]
+
+
+def test_a_line_ending_change_inside_the_prefix_is_reported() -> None:
+    """CRLF inside the copied region is a divergence, and the diff shows it.
+
+    *Exclusive killer:* a locator built from plain ``splitlines()``. A difference
+    living only in a line ending splits into equal lists, so the report would
+    promise a diff it does not carry — #466 arriving through a diagnostic.
+    """
+    crlf = _SOURCE.replace("\n", "\r\n") + _TAIL
+    report = derived_spine_divergence(_SOURCE, crlf)
+    assert set(report) == {"prefix"}, report
+    assert any("\r" in line for line in report["prefix"][2:]), (
+        "the diff carried no carriage return, so it does not show the difference "
+        "the headline claims"
+    )
+
+
+def test_two_agreeing_spines_report_nothing() -> None:
+    """The passing direction. Without it, a predicate that reported everything
+    would satisfy every kill above.
+
+    Also the marker-less-pair control (#594): neither operand here carries
+    ``<!-- spine:copy:end -->``, unlike the two boundary-marker samples below
+    (``test_the_boundary_marker_does_not_excuse_a_drifted_copy`` and
+    ``test_the_boundary_marker_is_not_an_operand_of_this_predicate``), so this
+    row's agreement is evidence about the prefix relation with no marker
+    involved at all — do not cull it as redundant with those two.
+    """
+    assert derived_spine_divergence(_SOURCE, _SOURCE + _TAIL) == {}
+
+
+def test_whitespace_at_the_join_may_move_across_the_boundary() -> None:
+    """A trailing newline added to the source keeps the relation true.
+
+    The boundary is positional, so whitespace at the join may sit on either side:
+    the loaded bytes are still the source verbatim followed by the deltas. Pinned
+    so a later editor does not "tighten" the contract with a rule requiring the
+    tail to begin with exactly one newline — that clause has no protective value
+    and goes red on formatter churn.
+    """
+    assert derived_spine_divergence(_SOURCE + "\n", _SOURCE + "\n" + _TAIL) == {}
+    assert derived_spine_divergence(_SOURCE, _SOURCE + "\n" + _TAIL) == {}
+
+
+def test_an_empty_operand_is_refused_rather_than_compared_equal() -> None:
+    """``craft.md`` → the identically-empty class (#466).
+
+    *Exclusive killer:* a refusal written ``== ""`` rather than ``.strip()``, or
+    one that floors a single operand — ``("", "")`` then returns ``{}`` and reads
+    as perfect agreement, which is the comparison this guard must never make.
+
+    The absent-file case is held here plus the tracked floor above, deliberately
+    not by an :func:`indexed_text` call: that raises ``CalledProcessError`` for an
+    untracked path, which is an unreadable subprocess traceback rather than a
+    guard explaining itself.
+    """
+    for source, derived in (("", "x\n"), ("  \n", "x\n"), ("", "")):
+        _rejects_pair(source, derived, "empty")
+    for source, derived in (("x\n", ""), ("x\n", " \t\n")):
+        _rejects_pair(source, derived, "empty")
+
+
+def test_a_derived_file_that_is_only_the_copy_is_refused() -> None:
+    """A host file that is the copy and nothing else lost its deltas.
+
+    *Exclusive killer:* a remainder check written ``derived != source`` instead of
+    ``.strip()`` on the remainder — the whitespace-tailed spelling then passes and
+    a hydration that dropped the deltas ships.
+    """
+    _rejects_pair(_SOURCE, _SOURCE, "only the copy")
+    _rejects_pair(_SOURCE, _SOURCE + "\n\n   \n", "only the copy")
+
+
+def test_the_smallest_legal_pair_is_accepted() -> None:
+    """The false-positive control sitting beside each refusal above (#511).
+
+    Three near-misses that must stay green: a minimal source with a minimal tail
+    and no newline at the join (beside the ``only the copy`` refusal); a minimal
+    source whose tail is a heading (beside it too); and a single-character source
+    (beside the ``empty`` refusals). *Fails when:* a refusal is written too wide —
+    flooring on a line count, a heading, or a minimum length.
+    """
+    assert derived_spine_divergence("#\n", "#\nx") == {}
+    assert derived_spine_divergence("#\n", "#\n\n# deltas\n") == {}
+    assert derived_spine_divergence("x", "xy") == {}
+
+
+def test_content_above_the_copy_is_a_divergence_not_a_containment() -> None:
+    """The relation is a **prefix**, never a containment — and a decision rests on it.
+
+    *Exclusive killer:* ``derived.startswith(source)`` weakened to
+    ``source in derived``. That mutation survives every other row in this module,
+    because in all of them the copy already starts at character 0. Here it does
+    not: a ``CLAUDE.md`` carrying frontmatter or a title *above* the copy still
+    contains the spine, so the weakened form returns ``{}``.
+
+    Why it is worth a row of its own: the *Not asserted here* note above
+    :func:`derived_spine_divergence` excludes ``CLAUDE.md`` from
+    :func:`version_disagreements` on the grounds that a byte-exact prefix makes
+    its ``spine:generated`` stamp agree *by construction*. Containment does not
+    buy that — a stamp that merely appears somewhere in the file is not a stamp
+    that agrees. Without this row the module states a load-bearing property that
+    nothing measures, and a later simplification to ``in`` would keep the suite
+    green while quietly removing the basis for that exclusion (pin the
+    derivation, not the derived answer).
+    """
+    prefixed = "---\ntitle: Host notes\n---\n" + _SOURCE + _TAIL
+    report = derived_spine_divergence(_SOURCE, prefixed)
+    assert set(report) == {"prefix"}, report
+
+
+def test_the_host_file_carries_the_spine_verbatim() -> None:
+    """The sweep (#558). ``CLAUDE.md`` carries ``AGENTS.md`` as a byte-exact prefix.
+
+    Born green once the copy lands, which is why every row above exists. This is
+    the row that goes red when either file is edited without the other.
+    """
+    source, derived = _pair()
+    report = derived_spine_divergence(source, derived)
+    assert report == {}, "\n".join(
+        [f"{DERIVED_PATH} no longer carries {SPINE_PATH} verbatim:", *report["prefix"]]
+    )
+
+
+def test_the_host_file_marks_where_the_copy_ends() -> None:
+    """The boundary marker sweep (#594). ``CLAUDE.md`` marks where the copied
+    region ends, so ``--refresh`` can re-derive the deltas from a declared
+    position rather than by comparing bytes against a possibly-drifted source.
+
+    Two properties, both live. *Position*: the marker opens the remainder,
+    asserted positionally rather than by containment — ``_COPY_END in derived``
+    would pass for a marker anywhere, including inside the copy region, which is
+    this module's own prefix-versus-containment lesson
+    (``test_content_above_the_copy_is_a_divergence_not_a_containment``) one
+    level down. *Exactly one*: what makes the file bounded under the procedure
+    in ``refresh.md`` — two or more anchored markers and nothing can tell which
+    delimits the deltas. This also subsumes "``AGENTS.md`` carries none":
+    ``AGENTS.md`` is a prefix of ``CLAUDE.md``, so an occurrence there would be
+    a second occurrence here (law 1 — no separate assertion for it).
+
+    The first line is read with ``lstrip("\\n")`` and ``.strip()`` deliberately:
+    asserting the remainder starts with the boundary bytes exactly would go red
+    when a trailing newline legitimately migrates across the join, which
+    ``test_whitespace_at_the_join_may_move_across_the_boundary`` exists to say
+    must not happen. Interior comment spacing is *not* tolerated here — these
+    bytes are hand-written in this repo and canonical; the tolerant reading is
+    ``refresh.md``'s job, over files this repo does not own.
+
+    Born red at the tree this test was authored on: ``CLAUDE.md`` does not yet
+    carry the marker. Green once #594's ``CLAUDE.md`` edit lands (AC-5).
+    """
+    source, derived = _pair()
+    remainder = derived[len(source) :]
+    first_line = remainder.lstrip("\n").split("\n", 1)[0].strip()
+    assert first_line == _COPY_END, (
+        f"{DERIVED_PATH}'s remainder after the {SPINE_PATH} prefix does not open "
+        f"with {_COPY_END!r}; its first line is {first_line!r}"
+    )
+    assert derived.count(_COPY_END) == 1, (
+        f"{DERIVED_PATH} carries {derived.count(_COPY_END)} occurrences of "
+        f"{_COPY_END!r}, not exactly one, so the file is not bounded"
+    )

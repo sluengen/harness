@@ -1642,3 +1642,141 @@ def test_the_durations_corpus_matches_what_the_runner_records(repo: Path) -> Non
     reported = _durations(repo)
     assert reported["count"] == 1, reported
     assert reported["median_seconds"] >= 1, reported
+
+
+# --- the child's environment (#582) -------------------------------------------
+#
+# ADR 0018's marker-emission boundary already says it: "no per-invocation value —
+# an operand, argv, or an environment variable, including one naming the directory
+# the reader is loaded from — may decide that command." An inherited
+# `npm_config_script_shell` decides which interpreter npm hands the declared
+# command to, so it decides the command, and the boundary had a hole in it for
+# every consumer whose `commands.verify` is an npm invocation. The severe part is
+# that such a variable can make `npm run` exit 0 without running the chain, and
+# `runGate` reads that zero as a gate it may mint a marker on.
+#
+# Measured on a scratch npm repo whose `verify` script wrote a sentinel and then
+# exited 0, so the discriminator was *did the chain run*, never the exit code —
+# the exit code is the thing that lies here. On the runner before this change,
+# `npm_config_script_shell` (either case) and `npm_config_workspace` paired with
+# `npm_config_if_present` each minted a marker with the sentinel absent, while a
+# clean environment minted one with the sentinel present.
+#
+# These cases do not drive npm. They assert the property the runner owns — what
+# it hands its child — because that is the cheapest evidence that can fail for
+# this reason (law 1), and because resolving `npm` off PATH here would add it to
+# the gate's own toolchain preflight forever (#491) to re-measure something the
+# record already carries.
+
+
+def _declare_gates(repo: Path, verify: str, *, scoped: str | None = None) -> None:
+    """Declare `commands.verify`, and optionally the scoped command beside it."""
+    scoped_line = f"  test_scoped: {scoped}\n" if scoped is not None else ""
+    (repo / "CLAUDE.md").write_text(
+        "```yaml\ncommands:\n" f"  verify: {verify}\n" f"{scoped_line}" "```\n",
+        encoding="utf-8",
+    )
+
+
+def _environment_reporting_gate(repo: Path) -> Path:
+    """Install a declared gate that records the environment it was handed.
+
+    JSON out of the child's own runtime rather than `env` piped through `sed`: a
+    value carrying a newline would make a line-oriented reader report a key the
+    child never had, and this suite inherits whatever the host set.
+    """
+    dump = repo / "child-env.json"
+    (repo / "dump-env.js").write_text(
+        'require("node:fs").writeFileSync(\n'
+        f"  {json.dumps(str(dump))},\n"
+        '  JSON.stringify(process.env)\n'
+        ");\n",
+        encoding="utf-8",
+    )
+    return dump
+
+
+def _child_environment(repo: Path, poison: dict[str, str], *args: str) -> dict[str, str]:
+    """The environment the runner handed the declared gate."""
+    dump = _environment_reporting_gate(repo)
+    result = _cli(repo, "run", *args, env=poison)
+    assert result.returncode == 0, f"the gate did not run: {result.stderr}"
+    return dict(json.loads(dump.read_text(encoding="utf-8")))
+
+
+def _npm_options(environment: dict[str, str]) -> dict[str, str]:
+    return {k: v for k, v in environment.items() if k.lower().startswith("npm_config_")}
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("npm_config_script_shell", "/usr/bin/true"),
+        # The uppercase spelling is read by npm too, and a predicate keyed on the
+        # exact-case literal admits it — the #580 shape, where a backstop shares
+        # an exact-case operand with what it backstops.
+        ("NPM_CONFIG_SCRIPT_SHELL", "/usr/bin/true"),
+        # Neither of these is `script_shell`, and together they resolve the script
+        # in a workspace that does not define it and exit 0 having run nothing.
+        # This row is what makes the fix a namespace rather than a name.
+        ("npm_config_workspace", "frontend"),
+        ("npm_config_if_present", "true"),
+    ],
+)
+def test_an_inherited_npm_option_does_not_reach_the_declared_gate(
+    repo: Path, name: str, value: str
+) -> None:
+    _declare_gates(repo, "node dump-env.js")
+    environment = _child_environment(repo, {name: value})
+    assert _npm_options(environment) == {}, (
+        f"{name} reached the declared gate, so an inherited variable still decides "
+        "what the declared command runs under"
+    )
+
+
+def test_the_scrub_takes_the_npm_option_namespace_and_nothing_wider(repo: Path) -> None:
+    """The control that can see a false positive, which a kill table cannot.
+
+    Every name here is one a predicate reaching past npm's documented prefix
+    would take with it, and the gate needs each of them: `PATH` most of all,
+    since the runner resolves its own `sh` through it.
+
+    Two directions, because a predicate widens two ways and the names that
+    catch one are blind to the other (#487 — mutate the **anchor**, not only
+    the pattern). Truncating the prefix reaches `npm_config` and
+    `npm_configuration`; losing the anchor — `includes` where the shipped
+    predicate says `startsWith` — reaches a name that merely *contains* the
+    prefix, which the first three names cannot see.
+    """
+    _declare_gates(repo, "node dump-env.js")
+    kept = {
+        # Exactly the prefix, without its trailing underscore: not an npm option.
+        "npm_config": "kept",
+        "npm_configuration": "kept",
+        "NPM_TOKEN": "kept",
+        # Contains the prefix but does not begin with it, so npm never reads it
+        # as a config parameter. This is the name an unanchored predicate takes.
+        "CI_npm_config_registry": "kept",
+        "HARNESS_582_UNRELATED": "kept",
+    }
+    environment = _child_environment(repo, {**kept, "npm_config_script_shell": "/usr/bin/true"})
+    for name in kept:
+        assert environment.get(name) == "kept", f"{name} was removed and is not an npm option"
+    assert environment.get("PATH"), "the child lost PATH, which the gate resolves its tools through"
+
+
+def test_the_runners_own_variables_survive_the_scrub(repo: Path) -> None:
+    """The re-entry guard and the scoped re-gate both ride the same object.
+
+    `runGate` assembles one environment: the runner identity goes on in the same
+    `Object.assign` the scrub filters, and the two scope variables are added
+    after it. Nothing the runner sets carries npm's prefix, so nothing here
+    should move — pinned rather than re-derived by the next reader.
+    """
+    _declare_gates(repo, "node dump-env.js", scoped="node dump-env.js")
+    environment = _child_environment(
+        repo, {"npm_config_script_shell": "/usr/bin/true"}, "--scope", "a.txt"
+    )
+    assert environment.get("HARNESS_GATE_MARKER_RUNNER"), "the re-entry guard lost its identity"
+    assert environment.get("HARNESS_GATE_SCOPE_FILE"), "the scoped re-gate lost its path file"
+    assert environment.get("HARNESS_GATE_SCOPE_COUNT") == "1", "the scoped re-gate lost its count"

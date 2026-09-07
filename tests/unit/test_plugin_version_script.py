@@ -65,13 +65,24 @@ from tests.unit._prose import REPO_ROOT
 
 SCRIPT = REPO_ROOT / "scripts" / "plugin-version.js"
 
-#: The four homes, repo-relative, in the order the script reports them.
+#: The homes, repo-relative, in the order the script reports them. ``CLAUDE.md``
+#: joined them at #558: the host file stopped being an ``@AGENTS.md`` pointer and
+#: became the whole of the spine copied verbatim, marker included. A copy that the
+#: bump does not reach goes stale on the cycle's first raise, and
+#: ``tests/unit/test_spine_template_parity.py``'s prefix guard then reds the gate
+#: for every later build — the change would ship its own andon pull.
 HOMES = (
     ".claude-plugin/plugin.json",
     ".codex-plugin/plugin.json",
     "AGENTS.md",
+    "CLAUDE.md",
     "templates/spine.md",
 )
+
+#: What ``CLAUDE.md`` carries below the copied spine. Any non-empty tail does; the
+#: fixtures use one so the file is a *derived copy* rather than a bare duplicate,
+#: which is the shape the parity guard admits.
+DELTAS = "\n# Claude Code deltas\n\nOne delta.\n"
 
 
 def _node() -> str:
@@ -170,7 +181,9 @@ def _write_homes(root: Path, name: str, version: str, *, prose: bool = False) ->
     (root / ".codex-plugin" / "plugin.json").write_text(
         _codex_manifest(name, version), encoding="utf-8"
     )
-    (root / "AGENTS.md").write_text(_spine(name, version, prose=prose), encoding="utf-8")
+    spine = _spine(name, version, prose=prose)
+    (root / "AGENTS.md").write_text(spine, encoding="utf-8")
+    (root / "CLAUDE.md").write_text(spine + DELTAS, encoding="utf-8")
     (root / "templates" / "spine.md").write_text(
         _spine(name, version), encoding="utf-8"
     )
@@ -240,7 +253,7 @@ def _make_repo(
 # --- AC-1: the raise ----------------------------------------------------------
 
 
-def test_matching_versions_raise_the_minor_across_all_four_homes(tmp_path: Path) -> None:
+def test_matching_versions_raise_the_minor_across_every_home(tmp_path: Path) -> None:
     repo = _make_repo(tmp_path, homes="1.2.3", release="1.2.3")
 
     code, payload, err = _run(repo)
@@ -269,6 +282,70 @@ def test_a_raise_reports_every_home_it_wrote(tmp_path: Path) -> None:
     _, payload, _ = _run(repo)
 
     assert payload["homes"] == list(HOMES), payload
+
+
+def test_the_derived_host_copy_is_raised_with_the_spine_it_copies(
+    tmp_path: Path,
+) -> None:
+    """#558: ``CLAUDE.md`` carries the spine verbatim, so it carries the marker too.
+
+    The two files are held byte-equal over the copied region by
+    ``tests/unit/test_spine_template_parity.py``. A bump that moved ``AGENTS.md``
+    and left ``CLAUDE.md`` behind would break that equality *at the version line*
+    — the one line the bump is guaranteed to touch — so the next gate run after
+    every cycle's first build would go red. Asserted on the bytes rather than on
+    membership of :data:`HOMES`, because a list this test derived from could not
+    fail for the reason it exists.
+    """
+    repo = _make_repo(tmp_path, homes="1.2.3", release="1.2.3")
+
+    code, payload, err = _run(repo)
+
+    assert code == 0, f"exit {code}, stderr={err}, payload={payload}"
+    spine = (repo / "AGENTS.md").read_text(encoding="utf-8")
+    derived = (repo / "CLAUDE.md").read_text(encoding="utf-8")
+    assert derived.startswith(spine), (
+        "CLAUDE.md no longer carries AGENTS.md verbatim after the raise: "
+        f"spine marker {_versions(repo)['AGENTS.md']!r}, "
+        f"derived marker {_versions(repo)['CLAUDE.md']!r}"
+    )
+    assert derived[len(spine) :] == DELTAS, "the raise disturbed the repo-owned tail"
+
+
+def test_a_repo_with_no_derived_copy_raises_the_homes_it_has(tmp_path: Path) -> None:
+    """Absence is not a fault — the control that keeps the addition from over-firing.
+
+    Membership is positive identification (#589): a repo that carries no
+    ``CLAUDE.md`` at all — a Codex-only consumer — is not missing a home, it has
+    one fewer. Without this control, adding the candidate could have been
+    satisfied by a version that refuses such a repo outright, which would refuse
+    correct work.
+    """
+    repo = _make_repo(tmp_path, homes="1.2.3", release="1.2.3")
+    (repo / "CLAUDE.md").unlink()
+
+    code, payload, err = _run(repo)
+
+    assert code == 0, f"exit {code}, stderr={err}, payload={payload}"
+    assert payload["case"] == "raised", payload
+    assert payload["homes"] == [h for h in HOMES if h != "CLAUDE.md"], payload
+
+
+def test_a_host_file_carrying_no_marker_is_not_a_home(tmp_path: Path) -> None:
+    """The second control: a pre-#558 pointer is skipped, not rewritten.
+
+    ``@AGENTS.md`` carries no ``spine:generated`` marker, so a consumer that has
+    not migrated keeps a file this script leaves alone. The marker is what makes
+    a file a home, exactly as it is for every other candidate.
+    """
+    repo = _make_repo(tmp_path, homes="1.2.3", release="1.2.3")
+    (repo / "CLAUDE.md").write_text("@AGENTS.md\n\n# Deltas\n", encoding="utf-8")
+
+    code, payload, err = _run(repo)
+
+    assert code == 0, f"exit {code}, stderr={err}, payload={payload}"
+    assert payload["homes"] == [h for h in HOMES if h != "CLAUDE.md"], payload
+    assert (repo / "CLAUDE.md").read_text(encoding="utf-8") == "@AGENTS.md\n\n# Deltas\n"
 
 
 # --- AC-2: one bump per cycle -------------------------------------------------
@@ -431,12 +508,12 @@ def test_homes_that_disagree_refuse_and_report_every_value(tmp_path: Path) -> No
 
     assert code == 2, f"exit {code}, stderr={err}, payload={payload}"
     assert payload["case"] == "homes-disagree", payload
-    assert payload["carried"] == {
-        HOMES[0]: "1.3.0",
-        HOMES[1]: "1.2.3",
-        HOMES[2]: "1.2.3",
-        HOMES[3]: "1.2.3",
-    }, payload
+    # Derived from HOMES, not restated: the index list this carried until #558
+    # was a hardcoded count, and adding a home made it wrong without making the
+    # property it names wrong. Equality still catches a home the payload omits.
+    assert payload["carried"] == {**dict.fromkeys(HOMES, "1.2.3"), HOMES[0]: "1.3.0"}, (
+        payload
+    )
     assert _snapshot(repo) == before
 
 

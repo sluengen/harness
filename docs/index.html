@@ -212,8 +212,9 @@
         <h3>The spine</h3>
         <p>
           A repo-owned <code>AGENTS.md</code> carries the five principles, the laws derived from
-          them, and the lifecycle contract — always loaded, never optional. <code>CLAUDE.md</code> is
-          a pointer to it plus that host's deltas, and the repo's configuration is
+          them, and the lifecycle contract — always loaded, never optional. <code>CLAUDE.md</code>
+          carries it verbatim plus that host's deltas — derived, not a pointer, and re-derived by
+          <code>--refresh</code> — and the repo's configuration is
           <code>harness.yaml</code>. Skills carry the depth and load by task.
         </p>
       </article>
@@ -256,8 +257,8 @@ Codex: codex plugin add harness@harness</pre>
 Codex: ask to initialize Harness</pre>
         <p>
           Interviews for the repo's values and writes the files that must be repo-owned:
-          <code>harness.yaml</code>, the spine (<code>AGENTS.md</code>) and its
-          <code>CLAUDE.md</code> pointer, the path-scoped rules, Codex role adapters, the specs
+          <code>harness.yaml</code>, the spine (<code>AGENTS.md</code>) and the
+          <code>CLAUDE.md</code> derived from it, the path-scoped rules, Codex role adapters, the specs
           scaffold, the infrastructure record, and — where there is no gate yet — a
           <code>scripts/verify.sh</code> skeleton with the marker write. After a plugin update,
           refresh migrates the configuration into <code>harness.yaml</code> as a verbatim move and
