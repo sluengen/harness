@@ -1,8 +1,7 @@
 ---
 proposal: do-less-at-ingestion
-status: accepted         # draft | under-decision | accepted | shipped | rejected | split | superseded
+status: draft            # draft | under-decision | accepted | shipped | rejected | split | superseded
 date: 2026-09-07
-decided: 2026-09-07
 related: [lifecycle-reset, purpose-before-proof]
 research: research/INDEX.md
 ---
@@ -58,7 +57,7 @@ The lifecycle reset measured the symptom: "ballooning complexity and work creati
 
 ## Recommendation
 
-**Adopt Option C.** Three changes, no configuration.
+**Adopt Option C.** Five changes, no configuration.
 
 **1. `templates/proposal.md` — a `Not doing` section**, immediately after Recommendation. One line per item: the capability, why it is out, and the trigger that would reopen it. Its raw material is the Options section — rejected options are already non-goals with reasons attached — plus whatever the operator cut during the decision. A spawned ticket's `Out of scope` cites it rather than re-deriving it.
 
@@ -67,6 +66,22 @@ The lifecycle reset measured the symptom: "ballooning complexity and work creati
 **3. `authoring` and `templates/proposal.md` — order the breakdown by cost of being wrong.** Replace "each sized to ship alone" with: *ordered by dependency; where the work introduces a shape that trips the foundations test below, that shape is item 1.* `/propose` step 2 cites it; step 4 files item 1 held.
 
 `/capture` gets one sentence and nothing else: extend step 2's stop condition — currently *architecture, contract, data model, test design* — to include what the change explicitly does not do. A capture is already decided, and it already has a cost line that refuses, an escape hatch to `/propose`, and an unbounded clarify loop.
+
+### The decision gate
+
+Two behaviours added 2026-09-07, after the proposal was written. Both land on `/propose` step 3, and they are one mechanism rather than two: the rendering is what the decision is taken against.
+
+**4. Clarification is input, not approval.** A proposal's status never moves because a question was answered. Answers change the proposal's *content*; only an explicit decision on the proposal *as written* changes its state. Neither an answered question, nor engagement with the content, nor silence, nor a direction chosen on one open decision is that act — an approval names the proposal and says proceed. Where a run cannot point to one, the status stays `under-decision` and step 4 does not run.
+
+This is not politeness. Step 4 **files tickets**, so a run that reads clarification as approval creates work nobody agreed to, and it enters the queue and consumes WIP slots — over-production (P2) with a tracker record behind it, which is the expensive kind.
+
+The mechanism already exists and is unused: `under-decision` is declared in `templates/proposal.md`'s status vocabulary and **set by nothing** — no skill writes it, and no proposal in this tree has ever carried it. So `/propose` gets three states with meaning rather than a new gate: `draft` while it is worked and clarified, `under-decision` once the completed proposal and its rendering are handed over, and `accepted` / `rejected` / `split` only from an explicit act. Native first (P2).
+
+**5. The proposal ships with a shareable rendering, and the decision is taken against it.** A markdown file at the end of a repo path is a poor decision instrument: hard to read, hard to circulate, and — the reason that matters most — it does not show the operator whether the agent understood. The rendering is where a misunderstanding surfaces **before** tickets are filed rather than after. That is the comprehension dimension again, turned on the proposal itself instead of on a data model.
+
+Stated portably, because Codex reads the same file: `/propose` produces the proposal spec **and** a shareable rendering of it, published wherever the host can publish one; where the host cannot, the run says so and the proposal file is the rendering — the same degradation as `tracker: none`. The host-specific mechanism belongs in the Claude Code delta, which is what that file is for; the portable skill must not name it.
+
+No size carve-out is needed. `/propose` is already reserved for the unconfirmed or the large — small clear work goes to `/capture`, the smallest to the fix lane — so every invocation is by definition worth a decision, and a decision instrument is proportionate to one.
 
 ### The foundations item, and the trigger that fires it
 
@@ -97,11 +112,11 @@ Adding a column fires none of them and is ordered by dependency like anything el
 - **The per-ticket scope re-derivation.** A spawned ticket cites the proposal's `Not doing` instead of reconstructing a boundary from the recommendation.
 - **Withdrawn from this proposal before it was proposed:** the `stage:` config key and its four-value table, which the grounding found already served by the stage line under *This repo*.
 
-Net: about +35 lines against ~10 retired, and no new configuration key, label, lane, hook, or command. It is an addition; calling it a wash would be the rationalisation the cost line exists to prevent. *Serves:* P0, P1. *Spends against:* P2, by adding guidance to two surfaces. *Waste:* removes over-production and rework; adds waiting, where a foundations item holds.
+Net: about +50 lines against ~10 retired, and no new configuration key, label, lane, hook, or command. It is an addition; calling it a wash would be the rationalisation the cost line exists to prevent. *Serves:* P0, P1. *Spends against:* P2, by adding guidance to two surfaces. *Waste:* removes over-production and rework; adds waiting, where a foundations item holds.
 
-## Decisions
+## Open decisions, answered
 
-All four resolved 2026-09-07 by the operator, each as recommended. The proposal is **accepted**.
+The operator answered all four on 2026-09-07, each as recommended. **These are answers, not an approval** — they settle the proposal's *content* and leave its *status* at `draft`. Choosing a direction on D1 is itself an answer to a question, not a decision on the document that question sits in; the proposal is approved when it is complete and someone says so against it as written. See *The decision gate* above, which exists because this run got it wrong first: it read four answered questions as an acceptance, moved the status, and produced a decided plan.
 
 | | Question | Resolution |
 |---|---|---|
@@ -134,15 +149,19 @@ The trigger fires on **comprehension** and nothing else: migration, blast and ac
 | **T2** | Extend `/capture`'s clarify stop condition to what the change will not do | `simple` | — |
 | **T3** | Narrow the spine's proposal-spawned lane clause | `complex` | T1 |
 
-**T1 — the proposal tier.** `templates/proposal.md` gains a **Not doing** section after Recommendation, and its Breakdown section gains the ordering note. `skills/authoring/SKILL.md`'s proposal tier gains the binding rule (nothing in *Not doing* enters a spawned ticket without amending the proposal) and the four-dimension foundations test, replacing "each sized to ship alone" at line 38. `skills/propose/SKILL.md` step 2 fills *Not doing* from the rejected options; step 4 orders foundations-first and files the foundations item held. *Lane on its own merits:* it changes the proposal contract and adds a review obligation — a contract change, not the spawned-by-a-proposal clause.
+**T1 — the proposal tier and its decision gate.** `templates/proposal.md` gains a **Not doing** section after Recommendation, the ordering note on its Breakdown section, and a lifecycle note giving `under-decision` its meaning. `skills/authoring/SKILL.md`'s proposal tier gains the binding rule (nothing in *Not doing* enters a spawned ticket without amending the proposal) and the four-dimension foundations test, replacing "each sized to ship alone" at line 38. `skills/propose/SKILL.md`: step 2 fills *Not doing* from the rejected options; **step 3 becomes the decision gate** — hand over the proposal and its rendering, set `under-decision`, and advance only on an explicit act; step 4 orders foundations-first and files the foundations item held. `CLAUDE.md` gains the one-line delta naming the Artifact as this host's rendering mechanism. *Lane on its own merits:* it changes the proposal contract, the command's decision gate, and its required outputs.
+
+The two decision-gate behaviours stay inside T1 rather than becoming a fourth ticket: they edit the same command, in the step between the two T1 already touches, so split apart they would collide on landing. `tracker`'s rule is to split by what can proceed independently, and these cannot.
 
 **T2 — `/capture`.** One sentence at `skills/capture/SKILL.md:32`, extending the stop condition. *Lane:* `simple` — it changes documented behaviour of a command, so it earns a ticket and a review, and nothing more.
 
 **T3 — the spine's lane clause.** "anything a proposal spawned" in the *Lanes* paragraph, in both `AGENTS.md` and `templates/spine.md` (one occurrence each — the generated block and its template must move together). *Lane:* `complex`, a spine contract change. *Blocked by T1* because the replacement wording reads from the foundations concept T1 establishes — a real dependency, not a tidiness one.
 
-### Filing — blocked on board access, not started
+### Filing — not started, and gated twice
 
-**No issue was created.** This session's GitHub transport serves REST but refuses GraphQL (`403: only the pinned set of PR-review operations is served`), and **Projects v2 has no REST API at all**. Status and Priority are board fields, so `create`'s mandatory placement cannot run. `tracker` → *`create`* calls an issue filed without placement an **incomplete filing** — the issue exists, looks filed, and is invisible to the Todo-scoped queue read the loop uses. Creating three of those and reporting them as filed is the trap that operation exists to name, so the breakdown stays in this file and is reported to the operator, exactly as `tracker: none` degrades.
+**Filing waits on approval first.** The proposal is `draft`: the four answers settle its content, and nothing has been decided against the document as written. Step 4 does not run until it is. This is the amendment's own rule, applied to the run that wrote it.
+
+**And the board is unreachable.** Even given approval, no issue could be created here. This session's GitHub transport serves REST but refuses GraphQL (`403: only the pinned set of PR-review operations is served`), and **Projects v2 has no REST API at all**. Status and Priority are board fields, so `create`'s mandatory placement cannot run. `tracker` → *`create`* calls an issue filed without placement an **incomplete filing** — the issue exists, looks filed, and is invisible to the Todo-scoped queue read the loop uses. Creating three of those and reporting them as filed is the trap that operation exists to name, so the breakdown stays in this file and is reported to the operator, exactly as `tracker: none` degrades.
 
 To file, from a session with board access: three `create` calls with the lanes above, the dependency T3 ← T1, priority set at filing, and each linked back to this proposal. **Placement needs a board read first.** The repo is its own single queue (`queue.project_field: none`) at the reader's default `wip_limit` of 6; REST shows 7 open issues, 5 unheld — but Todo / In Progress / In Review cannot be told apart from Backlog without the board, so whether that leaves one free slot or none is not knowable here. Read Status, then place: free slots take Todo in dependency order, the rest wait in Backlog.
 
@@ -158,4 +177,4 @@ To file, from a session with board access: three `create` calls with the lanes a
 
 *Named, at the operator's request, for the argument rather than the author: **Nafis' Do Less approach** — the cheapest moment to not build something is before anyone has agreed it exists.*
 
-**Lifecycle.** Accepted 2026-09-07; D1–D4 resolved above. Advances to **shipped** when T1–T3 have landed. Lives in `specs/proposals/`.
+**Lifecycle.** Draft. D1–D4 answered 2026-09-07 and the decision gate amended in on the same day; **not approved**. Advances to `under-decision` when it is handed over complete, and to `accepted` only on an explicit act against it. Lives in `specs/proposals/`.
