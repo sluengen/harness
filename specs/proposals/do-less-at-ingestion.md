@@ -1,7 +1,8 @@
 ---
 proposal: do-less-at-ingestion
-status: draft            # draft | under-decision | accepted | shipped | rejected | split | superseded
+status: accepted         # draft | under-decision | accepted | shipped | rejected | split | superseded
 date: 2026-09-07
+decided: 2026-09-07
 related: [lifecycle-reset, purpose-before-proof]
 research: research/INDEX.md
 ---
@@ -114,9 +115,11 @@ Adding a column fires none of them and is ordered by dependency like anything el
 
 Net: about +50 lines against ~10 retired, and no new configuration key, label, lane, hook, or command. It is an addition; calling it a wash would be the rationalisation the cost line exists to prevent. *Serves:* P0, P1. *Spends against:* P2, by adding guidance to two surfaces. *Waste:* removes over-production and rework; adds waiting, where a foundations item holds.
 
-## Open decisions, answered
+## Open decisions, answered — then approved
 
-The operator answered all four on 2026-09-07, each as recommended. **These are answers, not an approval** — they settle the proposal's *content* and leave its *status* at `draft`. Choosing a direction on D1 is itself an answer to a question, not a decision on the document that question sits in; the proposal is approved when it is complete and someone says so against it as written. See *The decision gate* above, which exists because this run got it wrong first: it read four answered questions as an acceptance, moved the status, and produced a decided plan.
+The operator answered all four on 2026-09-07, each as recommended, and **separately approved the proposal as written on the same day**, after the decision gate was amended in. The two acts are distinct and the sequence is the point: answering D1 through D4 settled the proposal's *content* and left its status at `draft`; the approval moved it to `accepted` and licensed step 4.
+
+*The decision gate* above exists because this run collapsed those two acts first: it read four answered questions as an acceptance, moved the status, and produced a decided plan before anyone had decided anything. The rule was written from the failure, not ahead of it.
 
 | | Question | Resolution |
 |---|---|---|
@@ -157,11 +160,21 @@ The two decision-gate behaviours stay inside T1 rather than becoming a fourth ti
 
 **T3 — the spine's lane clause.** "anything a proposal spawned" in the *Lanes* paragraph, in both `AGENTS.md` and `templates/spine.md` (one occurrence each — the generated block and its template must move together). *Lane:* `complex`, a spine contract change. *Blocked by T1* because the replacement wording reads from the foundations concept T1 establishes — a real dependency, not a tidiness one.
 
-### Filing — not started, and gated twice
+### Filing — issues created, board placement outstanding
 
-**Filing waits on approval first.** The proposal is `draft`: the four answers settle its content, and nothing has been decided against the document as written. Step 4 does not run until it is. This is the amendment's own rule, applied to the run that wrote it.
+Filed 2026-09-07 on approval, through `tracker`'s `create` against the GitHub REST surface.
 
-**And the board is unreachable.** Even given approval, no issue could be created here. This session's GitHub transport serves REST but refuses GraphQL (`403: only the pinned set of PR-review operations is served`), and **Projects v2 has no REST API at all**. Status and Priority are board fields, so `create`'s mandatory placement cannot run. `tracker` → *`create`* calls an issue filed without placement an **incomplete filing** — the issue exists, looks filed, and is invisible to the Todo-scoped queue read the loop uses. Creating three of those and reporting them as filed is the trap that operation exists to name, so the breakdown stays in this file and is reported to the operator, exactly as `tracker: none` degrades.
+| | Issue | Lane | Blocked by |
+|---|---|---|---|
+| **T1** | [#595](https://github.com/sluengen/harness/issues/595) | `assurance:complex` | — |
+| **T2** | [#596](https://github.com/sluengen/harness/issues/596) | `assurance:simple` | — |
+| **T3** | [#597](https://github.com/sluengen/harness/issues/597) | `assurance:complex` | #595 |
+
+Each carries a change spec per `templates/change.md`, exactly one assurance label, and its cost line. The T3 → T1 dependency is set as a first-class REST relationship and verified from both directions. Every postcondition was checked by re-reading the issue, never by exit status.
+
+**The filing is incomplete in one respect, and it is not a step that was skipped quietly.** `queue.project_field` is `none`, so the repo is its own single queue and placement is a board operation — but **Projects v2 is GraphQL-only and this session's GraphQL transport is refused** (`403: only the pinned set of PR-review operations is served`), while REST works. So **Status and Priority are unset on all three**: they are open issues that no Todo-scoped queue read will return, and `work-discovery` cannot see them. Nothing here reports them as placed, queued, or prioritised.
+
+To complete: from a session with board access, read Status to count the queue against `wip_limit` 6, then place #595 first (nothing blocks it), #596 next, and #597 in Backlog behind its blocker; set Priority on each. This session's GitHub transport serves REST but refuses GraphQL (`403: only the pinned set of PR-review operations is served`), and **Projects v2 has no REST API at all**. Status and Priority are board fields, so `create`'s mandatory placement cannot run. `tracker` → *`create`* calls an issue filed without placement an **incomplete filing** — the issue exists, looks filed, and is invisible to the Todo-scoped queue read the loop uses. Creating three of those and reporting them as filed is the trap that operation exists to name, so the breakdown stays in this file and is reported to the operator, exactly as `tracker: none` degrades.
 
 To file, from a session with board access: three `create` calls with the lanes above, the dependency T3 ← T1, priority set at filing, and each linked back to this proposal. **Placement needs a board read first.** The repo is its own single queue (`queue.project_field: none`) at the reader's default `wip_limit` of 6; REST shows 7 open issues, 5 unheld — but Todo / In Progress / In Review cannot be told apart from Backlog without the board, so whether that leaves one free slot or none is not knowable here. Read Status, then place: free slots take Todo in dependency order, the rest wait in Backlog.
 
@@ -177,4 +190,4 @@ To file, from a session with board access: three `create` calls with the lanes a
 
 *Named, at the operator's request, for the argument rather than the author: **Nafis' Do Less approach** — the cheapest moment to not build something is before anyone has agreed it exists.*
 
-**Lifecycle.** Draft. D1–D4 answered 2026-09-07 and the decision gate amended in on the same day; **not approved**. Advances to `under-decision` when it is handed over complete, and to `accepted` only on an explicit act against it. Lives in `specs/proposals/`.
+**Lifecycle.** Accepted 2026-09-07 on an explicit act against the document, after D1–D4 were answered and the decision gate amended in. Spawned #595, #596, #597. Advances to **shipped** when all three have landed. Lives in `specs/proposals/`.
