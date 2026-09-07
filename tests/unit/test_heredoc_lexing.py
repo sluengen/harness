@@ -59,6 +59,13 @@ Acceptance criteria:
   :func:`test_a_real_push_to_a_protected_branch_is_still_denied` and
   :func:`test_a_real_force_push_is_still_denied`.
 
+  **Extended at #573.** ``harvestSubstitutions`` has *two* trigger arms —
+  ``$(…)`` and a backtick — and only the first had a killer, so the backtick arm
+  could be deleted with every assertion in this module and its five siblings
+  green. :func:`test_an_unquoted_body_running_a_force_push_in_a_backtick_is_denied`
+  and :func:`test_a_quoted_body_holding_a_backtick_force_push_is_allowed` close
+  that, both directions and both guards.
+
 * **AC-4 — the unparseable is refused, not guessed.** An unterminated heredoc is
   a shell syntax error. The guard cannot know where the body ends, so it refuses
   rather than picking an interpretation:
@@ -283,6 +290,39 @@ def test_an_unquoted_body_running_a_force_push_in_a_substitution_is_denied(
 
 def test_an_unquoted_body_spelling_a_bare_force_push_is_allowed(repo: Path) -> None:
     assert not _denied(FORCE_HOOK, f"cat > d.md <<EOF\n{FORCE}\nEOF\n", repo)
+
+
+def test_an_unquoted_body_running_a_force_push_in_a_backtick_is_denied(
+    repo: Path,
+) -> None:
+    """The escape's other spelling. ``harvestSubstitutions`` has two arms.
+
+    ``$(…)`` and a backtick both expand inside an unquoted body, so both are
+    harvested — but until #573 only the ``$(…)`` arm had a killer. Deleting the
+    backtick arm flipped this shape from deny to allow in **both** guards while
+    all 253 assertions across the six push-guard suites stayed green: fail-open
+    in a fail-closed guard, invisible to every one of them.
+
+    A **characterisation** test — the arm works, so this was green the moment it
+    was born and its evidence is the mutation that kills it,
+    ``backtick-not-harvested-from-body``, rather than a RED.
+    """
+    assert _denied(FORCE_HOOK, f"cat > d.md <<EOF\n`{FORCE}`\nEOF\n", repo)
+    assert _denied(TARGET_HOOK, f"cat > d.md <<EOF\n`{PUSH}`\nEOF\n", repo)
+
+
+def test_a_quoted_body_holding_a_backtick_force_push_is_allowed(repo: Path) -> None:
+    """The half that stops the repair being "harvest everything".
+
+    A quoted delimiter means no expansion at all, so a backtick in the body is
+    ordinary text — authoring, not pushing. Without this assertion the deny
+    above could be satisfied by harvesting every body regardless of quoting,
+    which is the simpler diff this module's docstring already rejects for
+    ``$(…)``. A kill table cannot see a false positive (LEDGER-511-F), and the
+    asymmetry is the fix's core claim, so the allow half is not optional.
+    """
+    assert not _denied(FORCE_HOOK, f"cat > d.md <<'EOF'\n`{FORCE}`\nEOF\n", repo)
+    assert not _denied(TARGET_HOOK, f"cat > d.md <<'EOF'\n`{PUSH}`\nEOF\n", repo)
 
 
 #: The three spellings that quote a delimiter. Parametrised over the body-inert
