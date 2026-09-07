@@ -179,7 +179,11 @@ def _project(tmp_path: Path, name: str = "proj") -> Path:
         "```yaml\nbranches:\n  integration: dev\n  staging: staging\n  release: main\n"
         "commands:\n  verify: bash scripts/verify.sh\n```\n"
     )
-    (root / ".gitignore").write_text(".worktrees/\n")
+    # ``.harness/`` is ignored exactly as the real repo ignores it (``.gitignore``
+    # gate-ignore block), so a run file never perturbs the tree oid the hook
+    # computes. Without that, writing one would itself un-gate a worktree and the
+    # #587 fixtures below would differ in more than the string under test.
+    (root / ".gitignore").write_text(".worktrees/\n.harness/\n")
     (root / "a.txt").write_text("one\n")
     _git(root, "add", "-A")
     _git(root, "commit", "-q", "-m", "base")
@@ -885,4 +889,287 @@ def test_the_hook_reads_a_large_transcript_without_a_per_line_spawn_or_a_quadrat
     assert big_elapsed < base_elapsed * size_ratio, (
         f"{big_elapsed:.2f}s for {size_ratio:.1f}x the bytes of a baseline that "
         f"took {base_elapsed:.2f}s: a ratio of {big_elapsed / base_elapsed:.1f}x"
+    )
+
+
+# --- #587: enrolment is ownership, not visitation ------------------------------
+#
+# #439 made membership of the candidate set *visitation*: any worktree of this
+# repository whose path appears as a transcript ``cwd``. On a host where many
+# agents work sibling worktrees at once — which law 5 and ``worktree-isolation``
+# require — a single read-only ``cd`` therefore enrols another agent's live run
+# for the rest of the session. Observed: a session building #561 entered
+# ``harness-work-580`` once, to ``cat`` one file, wrote nothing, and was blocked
+# on #580's tree while its own carried a fresh marker.
+#
+# The remedy the block printed is what makes this worse than a spurious refusal.
+# It says to run the verify command in the named directory, which would write a
+# gate marker over bytes this session did not author and which changed moments
+# later. The hooks read a marker's existence and mtime and parse nothing, so a
+# marker earned that way is indistinguishable from one that worktree earned
+# itself, and it then licenses a completion claim or a protected-branch push. A
+# guard whose remedy is to forge evidence for someone else's work inverts law 3.
+#
+# The filter: a derived candidate is skipped when both its worktree and the
+# session's own carry a readable ``.harness/run.json`` whose ``ticket`` is a
+# non-empty string, and the two differ. A **positive contradiction** only —
+# counting a missing own ticket as a difference would skip every ticketed
+# worktree for the root-driven build of AC-1 above, returning the hook to
+# installed-and-inert, which is the state #439 exists to end.
+
+
+def _run_file(worktree: Path, payload: object) -> Path:
+    """Write ``<worktree>/.harness/run.json`` holding ``payload`` as JSON."""
+    return _run_bytes(worktree, json.dumps(payload))
+
+
+def _run_bytes(worktree: Path, text: str) -> Path:
+    """Write ``<worktree>/.harness/run.json`` holding exactly ``text``."""
+    home = worktree / ".harness"
+    home.mkdir(parents=True, exist_ok=True)
+    path = home / "run.json"
+    path.write_text(text)
+    return path
+
+
+def _concurrent(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
+    """The two-agent shape #587 was filed from.
+
+    ``mine`` is this session's worktree, carrying its own run file and a fresh
+    marker so #436's predicate has no opinion about it — without that it blocks
+    first and the derived candidate is never reached. ``theirs`` is a sibling
+    holding ungated work, recorded in the transcript as visited. The run file is
+    written before the marker so that a fixture whose ``.gitignore`` failed to
+    take effect would fail loudly rather than silently un-gating ``mine``.
+    """
+    root = _project(tmp_path)
+    mine = _worktree(root, "561")
+    theirs = _worktree(root, "580")
+    _run_file(mine, {"version": 1, "ticket": "561"})
+    _write_marker(mine)
+    transcript = _transcript(tmp_path, theirs, mine)
+    return root, mine, theirs, transcript
+
+
+def test_a_derived_worktree_holding_another_runs_ticket_is_not_a_candidate(
+    tmp_path: Path,
+) -> None:
+    """AC-1, with AC-2 as the flip that must make it block.
+
+    The two runs are distinguished by one string in a file neither tree
+    contains. Nothing else differs between the allow and the block: the same
+    repository, the same worktrees, the same transcript, the same ungated work
+    in ``theirs``.
+    """
+    _root, mine, theirs, transcript = _concurrent(tmp_path)
+    _run_file(theirs, {"version": 1, "ticket": "580"})
+
+    out = _run(mine, transcript)
+
+    assert not _blocked(out), (
+        f"a session that only visited another run's worktree was blocked on it: "
+        f"{out.get('reason')}"
+    )
+
+    # The one flip: the sibling is now this run's own second worktree.
+    _run_file(theirs, {"version": 1, "ticket": "561"})
+    flipped = _run(mine, transcript)
+
+    assert _blocked(flipped), (
+        "the same fixture with a matching ticket did not block, so the allow "
+        "above was not the ownership filter"
+    )
+    assert str(theirs) in flipped["reason"]
+
+
+def test_a_root_driven_build_still_blocks_on_a_worktree_that_declares_a_ticket(
+    tmp_path: Path,
+) -> None:
+    """AC-3 — the case that kills the naive form of this filter.
+
+    #439's motivating shape is an orchestrator whose shell sits at the repo
+    root, driving work in a linked worktree. The root carries no ``run.json``,
+    so *this run's ticket* is unknown. A filter that counted an unknown own
+    ticket as a difference would skip the worktree holding the work and return
+    the hook to installed-and-inert. Only a positive contradiction may skip.
+    """
+    root = _project(tmp_path)
+    theirs = _worktree(root, "580")
+    _run_file(theirs, {"version": 1, "ticket": "580"})
+    transcript = _transcript(tmp_path, theirs)
+
+    out = _run(root, transcript)
+
+    assert _blocked(out), (
+        "a build driven from the repo root was not blocked on the worktree it "
+        "worked in, because the worktree declared a ticket the root cannot name"
+    )
+    assert str(theirs) in out["reason"]
+
+    # The flip: give the root a run file naming a different ticket, and the same
+    # worktree becomes another run's. This is the only difference.
+    _run_file(root, {"version": 1, "ticket": "561"})
+    flipped = _run(root, transcript)
+
+    assert not _blocked(flipped), (
+        f"the contradiction was established on both sides and the candidate was "
+        f"still enrolled: {flipped.get('reason')}"
+    )
+
+
+#: Every shape of a sibling run file that leaves ownership *unestablished*. Each
+#: must admit the candidate, which is #439's behaviour — the hook opens on what
+#: it cannot establish, and only a positive contradiction closes a candidate out.
+UNESTABLISHED: list[tuple[str, object]] = [
+    ("absent", None),
+    ("a directory where the file should be", "<dir>"),
+    ("bytes that are not JSON", "{not json"),
+    ("JSON that is not an object", "[1, 2, 3]"),
+    # ``JSON.parse("null")`` returns null, and ``null.ticket`` *throws* — the one
+    # shape in this table that could escape the reader, reach ``main``'s outer
+    # catch, and fail the whole hook open over a gitignored file. Added at
+    # implementation, when a mutation showed the table pinned every other clause
+    # of the reader and not this one.
+    ("a null document", "null"),
+    ("a JSON string", '"580"'),
+    ("an object with no ticket", '{"version": 1}'),
+    ("a null ticket", '{"version": 1, "ticket": null}'),
+    ("a numeric ticket", '{"version": 1, "ticket": 580}'),
+    ("an empty ticket", '{"version": 1, "ticket": ""}'),
+]
+
+
+@pytest.mark.parametrize("label, content", UNESTABLISHED, ids=[c[0] for c in UNESTABLISHED])
+def test_an_unestablished_sibling_run_file_admits_the_candidate(
+    tmp_path: Path, label: str, content: object
+) -> None:
+    """AC-4. Nine shapes, each paired with its own control in the same test.
+
+    The block alone proves nothing: a fixture that never reached the filter
+    would satisfy every one of these nine assertions. So each case ends by
+    rewriting the same file to a well-formed differing ticket, which must flip
+    the answer to allow. The pair differs only in the bytes of one gitignored
+    file.
+    """
+    _root, mine, theirs, transcript = _concurrent(tmp_path)
+    if content == "<dir>":
+        (theirs / ".harness" / "run.json").mkdir(parents=True)
+    elif content is not None:
+        _run_bytes(theirs, str(content))
+
+    out = _run(mine, transcript)
+
+    assert _blocked(out), (
+        f"{label} left ownership unestablished, so the candidate should have "
+        f"been enrolled exactly as it is today"
+    )
+    assert str(theirs) in out["reason"]
+
+    # The control: the only difference is that ownership is now established.
+    if content == "<dir>":
+        shutil.rmtree(theirs / ".harness" / "run.json")
+    _run_file(theirs, {"version": 1, "ticket": "580"})
+    control = _run(mine, transcript)
+
+    assert not _blocked(control), (
+        f"the control never reached the filter, so the block for {label} is "
+        f"not evidence about it"
+    )
+
+
+def test_a_foreign_worktree_does_not_spend_the_derived_budget(tmp_path: Path) -> None:
+    """AC-6 — the discriminator between admission and ``verdictFor``.
+
+    The ownership question could equally be asked inside the per-directory
+    verdict, and with one foreign worktree and one owned one the answer would be
+    identical. What separates them is the **budget**. ``MAX_DERIVED_CHECKED``
+    bounds *tree computations*, five git spawns each, so a directory that can
+    never block must not consume one.
+
+    Four foreign worktrees, all visited more recently than the one holding real
+    work, is exactly the ceiling — the shape of
+    :func:`test_a_declared_branch_worktree_does_not_spend_the_derived_budget`,
+    and like it this does not pin the constant's value. Skipped at admission
+    they cost nothing and the ungated worktree is still reached; counted, they
+    exhaust the budget and it never is.
+    """
+    root = _project(tmp_path)
+    mine = _worktree(root, "587")
+    _run_file(mine, {"version": 1, "ticket": "587"})
+    _write_marker(mine)
+
+    ungated = _worktree(root, "439")  # no run file: ownership unestablished
+    foreign = []
+    for ticket in ("1", "2", "3", "4"):
+        wt = _worktree(root, f"other-{ticket}")
+        _run_file(wt, {"version": 1, "ticket": ticket})
+        foreign.append(wt)
+    transcript = _transcript(tmp_path, ungated, *foreign)
+
+    out = _run(mine, transcript)
+
+    assert _blocked(out), (
+        "four foreign worktrees spent the whole derived budget, so the one "
+        "holding work this session has a claim to was never reached"
+    )
+    assert str(ungated) in out["reason"]
+
+
+def test_an_ungated_session_cwd_blocks_whatever_the_run_files_say(tmp_path: Path) -> None:
+    """AC-5. The payload ``cwd`` is yielded before any run file is read.
+
+    A generator suspends at its first ``yield``, so a session inside its own
+    ungated worktree is answered having read no run file at all. The flip is a
+    marker over that worktree: the sibling is then the only candidate left, and
+    it is another run's, so the same fixture allows.
+    """
+    root = _project(tmp_path)
+    mine = _worktree(root, "561")
+    theirs = _worktree(root, "580")
+    _run_file(mine, {"version": 1, "ticket": "561"})
+    _run_file(theirs, {"version": 1, "ticket": "580"})
+    transcript = _transcript(tmp_path, theirs, mine)
+
+    out = _run(mine, transcript)
+
+    assert _blocked(out), "an ungated session cwd was not blocked on"
+    assert str(mine) in out["reason"]
+    assert str(theirs) not in out["reason"], (
+        "the block named the sibling rather than the session's own worktree"
+    )
+
+    _write_marker(mine)
+    flipped = _run(mine, transcript)
+
+    assert not _blocked(flipped), (
+        f"with its own worktree gated the session was still blocked, so the "
+        f"block above was not about the cwd: {flipped.get('reason')}"
+    )
+
+
+def test_a_malformed_own_run_file_does_not_disarm_the_hook(tmp_path: Path) -> None:
+    """The own-side read is the one that could take the hook's outer catch.
+
+    ``runTicket`` is called on the session's own worktree before the derived
+    loop runs. A throw there would reach ``main``'s handler, which fails open
+    and allows — disarming the guard entirely over a gitignored file. Every
+    malformed shape must instead leave ownership unestablished, which admits.
+    """
+    _root, mine, theirs, transcript = _concurrent(tmp_path)
+    _run_file(theirs, {"version": 1, "ticket": "580"})
+    _run_bytes(mine, "{not json")
+
+    proc = _feed(mine, _payload(mine, transcript))
+    out = json.loads(proc.stdout)
+
+    assert _blocked(out), (
+        "an unparseable own run file left the sibling unenrolled, which is a "
+        "skip on a contradiction that was never established"
+    )
+    assert str(theirs) in out["reason"]
+    assert "fail-open" not in proc.stderr, (
+        f"the hook crashed and failed open over a malformed run file: {proc.stderr}"
+    )
+    assert "not json" not in proc.stderr, (
+        f"the parse error put file content on stderr: {proc.stderr}"
     )
