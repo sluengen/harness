@@ -592,8 +592,11 @@ def test_a_tree_that_is_the_release_tree_owes_no_bump(tmp_path: Path) -> None:
 
 
 def test_no_ref_naming_the_release_role_is_a_skip(tmp_path: Path) -> None:
-    """R1: the shallow CI checkout on a ``push: dev`` run holds no release ref. A
-    verdict here would be a claim made against an operand this checkout does not have."""
+    """R1: a checkout that never fetched the release ref at all — the shape any
+    consumer repo is in before it names a ``branches.release``, and the shape this
+    repo's own ``push: dev`` CI run was in before #580 gave its checkout
+    ``fetch-depth: 0``. A verdict here would be a claim made against an operand
+    this checkout does not have."""
     repo = _released_repo(tmp_path, _manifest("2.3.4"), branch="other", remote_ref=False)
     _stage(repo, _manifest("2.3.4"))
     verdict = _verdict(repo)

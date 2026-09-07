@@ -458,7 +458,7 @@ Six mechanisms produced that, and none of them is a jitter:
 
 ### P0. Do less
 
-Added ahead of P1 to P5 and precedent over them in any conflict. **The best change is the one not made.** Simplicity scales and complexity fails, at the architecture and at the line; maximise the work not done. *Refuses:* a guard larger than the change it guards without a recorded reason; a second defence that shares an operand with the first; a ticket for a comment; a proposal per review; a fold at drain where drop was available; a bug that names no user outcome; a mechanism added where a number would do.
+Added ahead of P1 to P5 and precedent over them in any conflict. **The best change is the one not made.** Simplicity scales and complexity fails, at the architecture and at the line; maximise the work not done. *Refuses:* a guard larger than the change it guards without a recorded reason; a second defence that shares an operand with the first; a ticket for a comment; a proposal per review; a fold at drain where drop was available; a bug that names no user outcome; a mechanism added where a number would do; an assurance calibrated for a stage the product is not at.
 
 ### The defaults that decide cases
 
@@ -495,3 +495,53 @@ Twenty-one open on 2026-09-07. Under the drop default, five name something a use
 | D14 | Drop is the drain's default; promotion requires a named user or consumer outcome | `/assess` |
 | D15 | The reviewer's Proposals section is removed; the reflection is the one improvement channel | `review-discipline` |
 | D16 | Bugs carry a materiality floor; andon is narrowed to refused-correct or landed-wrong work | spine, `work-discovery` |
+
+### Refinement — 2026-09-07, later: the limit is per project, and Backlog is real work
+
+Decided with the operator the same day. A repo-wide limit of six is wrong for the product repos, which run well past it and whose feature proposals file more than six tickets at once. The limit applies per **project**, the tracker's own unit of initiative (a Linear project; a GitHub milestone, chosen because it is REST-settable and native), and the tracker's **Backlog** state is where the rest of a project's confirmed work waits, ordered, until a slot frees. This corrects the spine's earlier definition: Backlog is not "work whose existence is uncertain"; that is what the ledger holds.
+
+**Three reservoirs, one direction of flow.**
+
+| Reservoir | Holds | Bounded by | Enters from |
+|---|---|---|---|
+| Improvement ledger | findings: options, not work | nothing | reflections, reviewers' blocking findings that are not the ticket's, filings above a limit |
+| Backlog, per project | confirmed work not yet pulled, ordered by dependencies then priority | nothing | a proposal's breakdown, a drain that promotes, a filing when the project's slots are full |
+| The queue, per project (Todo, In Progress, In Review; held tickets excluded) | work committed and in flight | `queue.wip_limit`, default 6 | Backlog, by pull, when a close frees a slot |
+
+**The rules.**
+
+- Every ticket names its project at filing; a ticket filed from inside a build inherits the parent ticket's project, so a defect found while building an initiative lands in that initiative's queue, not in a generic remediation pile. A repo may declare one project as the default for work that belongs to no initiative.
+- A proposal's breakdown files every ticket into the proposal's project. The first `wip_limit` in dependency order enter Todo; the rest wait in Backlog. The reset itself would have filed T1 to T3 into Todo and T4 and T5 into Backlog until a slot freed, which is the order they were built in anyway.
+- A close frees a slot, and discovery pulls the highest-ranked Backlog ticket of that project whose blockers are closed. The operator can pull by hand at `/digest --drain`. Nothing else moves a ticket from Backlog to Todo.
+- `queue.active_projects`, default 3, bounds initiatives in flight: a project with any ticket in its queue is active, and a new project's tickets wait in Backlog until an active one empties. This is the WIP limit one level up, and it is the number that stops a repo running six initiatives at once.
+- A project may override its limit in `harness.yaml` under `queue.projects.<name>.wip_limit`, because some initiatives carry their own loop and pace.
+- The andon cord is repo-wide and bypasses every limit: an open bug that refuses correct work or lands wrong work is the only pick in the repo until it closes.
+- Adoption is a placement, not a purge: on the first tick after the limit lands, each project's lowest-ranked tickets above its limit move from Todo to Backlog. Nothing is closed or dropped by the mechanism.
+- `/digest` reports, per project, open against limit and Backlog depth, and repo-wide, active projects against their limit and the ledger's new entries.
+
+**What this changes in the amendment above.** The re-drain of the harness's own queue stands, and its five survivors sit in one project, the lifecycle reset, with one free slot. The spine's Backlog definition is rewritten as part of T6. `harness.yaml` gains `queue.wip_limit`, `queue.active_projects`, `queue.project_field` (`project` for Linear, `milestone` for GitHub), and the optional per-project overrides. D13 is amended: six is the per-project default, three the active-project default, both starting values read for four weeks.
+
+### The operating context — 2026-09-07, later
+
+Decided with the operator the same day, and it belongs ahead of every principle, because it is the reason lean is the right frame and the reason the first two days went wrong.
+
+**Who we are.** Pre-user, pre-revenue startups, and the tool that serves them. Nobody's data, money, or day depends on these repos yet. A wrong change costs a revert; it does not cost a customer. That will change, and when it does this section changes with it.
+
+**What we are optimising for.** Speed and simplicity, because they are the fastest route to sustainable flow and high quality, not a trade against it. The point of building quality in is to go faster, not to go slower more safely. We do not ship slop that becomes unmaintainable; we also do not build an enterprise transaction system for millions of users, and every guard, review cycle, and lane must be calibrated to the stage we are at rather than the stage we imagine.
+
+**The risk appetite, stated so nobody has to infer it.**
+
+- We accept a defect reaching the integration branch. The composite gate and the next builder catch it, and a revert is cheap.
+- We accept an as-built record that lags a day, a comment that is stale, a message that is imprecise. Those are improvements for a slot, never bugs, and never blockers.
+- We do not accept losing user data, leaking a credential, or moving money wrongly. Those are the protected areas, and the only ones; anything else on a protected-areas list is inherited from a posture we are not in.
+- We do not accept a week of cycle time to prevent a defect a revert would fix in an hour. Cost is measured in cycle time and tokens as much as in defects.
+
+**What this decides.** The fix lane is the common case and the feature lane is rare; a design pass is owed when a contract or a protected area moves, not when a file under `hooks/` does. A reviewer's finding must matter at this stage, and "it could be wrong in a case no user will hit for a year" is not a finding. A guard earns its place by an occurrence, and its size is bounded by the change it guards. A P1 is something that stops the line for everyone, and at this stage that is a hook refusing correct work or a landing that lost bytes, not a wording mismatch. The reflection names waste so the next run has less of it, not so the ledger has more.
+
+**Where it lives.** One paragraph at the head of the spine's principles, and one line in every consuming repo's spine: *Stage: pre-user, pre-revenue. Posture: speed and simplicity; a wrong change costs a revert. Protected: user data, credentials, money.* It is a sentence agents read, not a mechanism code reads, and it is the line to rewrite on the day the product gains a user. T6 carries it.
+
+**What it changes above.** P0 gains one refusal: an assurance calibrated for a stage the product is not at. The reviewer's mandate in T2's scoped form is read through it. The guard-size default's "recorded reason" must name the user outcome the guard protects at this stage.
+
+### One queue for the harness — 2026-09-07, later
+
+The per-project limit is for the product repos, where initiatives have their own loops and a proposal files a dozen tickets. This repo's work arrives from feedback and is one initiative at a time, so it declares no project field and runs a single queue at the default limit. The GitHub milestone requirement above applies to a GitHub-backed product repo, not here; `queue.project_field: none` means the repo is its own project, and `queue.active_projects` does not apply. D13 is read accordingly.
