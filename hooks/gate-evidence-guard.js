@@ -543,12 +543,45 @@ function integrationTip(cwd, integration) {
 }
 
 /** True iff this session has produced something a completion claim would cover:
- * uncommitted work, or commits ahead of the integration branch. */
+ * uncommitted work, or commits ahead of the integration branch.
+ *
+ * **The second arm asks about a branch, so it declines when there is none
+ * (#569).** Being strictly ahead of the tip is a proxy for *this session
+ * committed work on its task branch*, and detached there is no task branch: the
+ * commits between the tip and HEAD say nothing about who made them. Two ordinary
+ * states land there — the gate's own ``--detach`` checkout of a merge result,
+ * which the comment in ``candidates()`` already calls an artifact nobody claims
+ * work in, and a checkout left detached at landed work while the tip that
+ * ``integrationTip`` resolves lags behind it. Both were refused on every
+ * completion claim for the life of a build that never touched them, and the
+ * remedy printed was to gate a checkout the session had authored nothing in.
+ *
+ * Below the dirtiness arm, deliberately: dirty bytes are session work whatever
+ * HEAD points at, and a detached checkout somebody edited is precisely the shape
+ * this hook exists to catch. Filtering the payload ``cwd`` at admission instead
+ * — where ``candidates()`` filters a *derived* detached worktree — cannot see
+ * that difference without a second dirtiness probe beside the one this line
+ * already computed.
+ *
+ * ``symbolic-ref --quiet`` rather than a ``rev-parse`` spelling, and the probe
+ * ``scripts/land.js`` already makes of the same question. Measured on git 2.43.0:
+ * detached, ``rev-parse --abbrev-ref HEAD`` and ``rev-parse --symbolic-full-name
+ * HEAD`` both answer the *string* ``HEAD`` with exit 0, so either would have to
+ * read the fact out of a sentinel value rather than out of the exit status — the
+ * #490 shape of taking a string for an answer, which this file has paid for once.
+ * ``--quiet`` puts the answer in the exit status instead, which ``git()`` already
+ * maps to null. Null here also covers git failing outright, and that allows,
+ * which is this hook's stated posture and
+ * close to unreachable in practice: several git spawns in this directory have
+ * already answered by the time control arrives here, this function's own
+ * ``HEAD^{tree}`` among them. */
 function hasWorkToClaim(cwd, tree, declared) {
   const headTree = git(cwd, ["rev-parse", "--verify", "HEAD^{tree}"]);
   if (headTree === null || headTree !== tree) return true;
   const integration = declared.integration;
   if (!integration) return false;
+  // Above the head and tip lookups, so a detached checkout spends none of them.
+  if (git(cwd, ["symbolic-ref", "--quiet", "HEAD"]) === null) return false;
   const head = git(cwd, ["rev-parse", "--verify", "HEAD"]);
   const tip = integrationTip(cwd, integration);
   if (head === null || tip === null) return false;
@@ -811,6 +844,9 @@ function* candidates(input, sessionCwd) {
     if (real === null) continue;
     const worktree = containingWorktree(real, universe);
     if (worktree === null) continue; // not a worktree of this repository
+    // ``detached`` survives #569's repair of ``hasWorkToClaim`` rather than
+    // being subsumed by it: this skips a **dirty** detached worktree, which that
+    // condition deliberately does not, and it spends none of the budget below.
     if (worktree.bare || worktree.prunable || worktree.detached) continue;
     if (worktree.branch !== null && skip.has(worktree.branch)) continue;
     if (worktree.path === sessionTop) continue; // already evaluated, as the cwd
