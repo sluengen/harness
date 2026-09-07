@@ -17,5 +17,6 @@ Loaded when a file under `design/` or `docs/` is opened.
 - `docs/index.html` advertises the plugin surface, and the inventory is compared against
   the tracked tree unit by unit. A unit added or renamed is a page edit in the same change,
   and the printed count on a card is the length of the list beneath it.
-- The design layer is on for this repo (`layers.design_system` in `harness.yaml`). Use the
-  `design-system` skill for the tokens and primitives, and `ux-design` for a new surface.
+- The design layer is on for this repo (`layers.design_system` in `harness.yaml`). The
+  tokens, primitives, states, accessibility and visual-evidence obligations are the
+  repo-owned `.claude/rules/design-system.md`, which loads on the same paths as this file.

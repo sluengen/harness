@@ -351,7 +351,7 @@ function claim(options, cwd) {
   return EXIT_CONTENDED;
 }
 
-function greenRef(cwd, remote) {
+function greenRef(cwd) {
   return `${NAMESPACE}/green/${encodeKey(integrationBranch(cwd))}`;
 }
 
@@ -361,7 +361,7 @@ function advanceGreenPointer(options, cwd) {
   if (gitOut(["cat-file", "-t", options.commit], cwd) !== "commit") {
     refuse(`this repository has no commit object ${options.commit}`);
   }
-  const ref = greenRef(cwd, options.remote);
+  const ref = greenRef(cwd);
   const pushed = pushRef(options.commit, ref, options.remote, cwd);
   // Not forced, ever: a pointer that cannot fast-forward is one another session
   // already advanced past, and overwriting it would name an *older* tree as the

@@ -1,0 +1,51 @@
+{
+  "skill_name": "worktree-isolation",
+  "evals": [
+    {
+      "id": 1,
+      "name": "set-up-an-isolated-branch",
+      "prompt": "I'm about to start ticket HAR-421 on /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there) \u2014 a multi-commit change to the promotion step. Several other agents are working this repo at the same time.\n\nSet me up. Give me the exact commands for this repo and tell me what to report back. Save it as setup.md in the output directory.",
+      "expected_output": "A written artefact demonstrating worktree-isolation judgment on a recorded failure mode.",
+      "files": [],
+      "expectations": [
+        "The setup creates a new branch in its own git worktree, not a branch in the shared checkout",
+        "It branches off the last integration commit known green, reading that pointer rather than assuming the tip",
+        "It states what to do when that pointer is empty \u2014 branch off the integration branch named in harness.yaml \u2014 and names the branch this repo actually declares",
+        "It requires reporting which commit the work started from and whether it came from the pointer",
+        "It symlinks the gitignored local state from the shared root, anchoring the path to the shared root computed from git rather than to the current directory",
+        "The branch name identifies the task",
+        "The answer distinguishes the two causes of empty output from the green pointer \u2014 no pointer published yet, versus the remote being unreachable \u2014 and reads the exit status to tell them apart rather than reporting only the first",
+        "The answer states that the base fallback is correct either way, so the run takes a safe base in both cases, but the reported reason would be wrong if the two are conflated"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "cleanup-after-merge",
+      "prompt": "HAR-421 on /home/user/harness-ref merged. During the task I started a local dev server on port 8081 and built a Docker Compose project for the worktree. There are two other worktrees on this host for other tickets, and a stash somebody left.\n\nClean up. Save the sequence as cleanup.md in the output directory.",
+      "expected_output": "A written artefact demonstrating worktree-isolation judgment on a recorded failure mode.",
+      "files": [],
+      "expectations": [
+        "Task-owned services are stopped before their files are removed",
+        "Cleanup removes the worktree, prunes git's administrative records, and deletes the merged branch",
+        "It only removes resources this task created, named by the identifiers retained when they were provisioned",
+        "It explicitly does not run a broad host-wide cleanup, and does not touch the other worktrees",
+        "It does not drop the stash somebody else left without confirming first",
+        "It says uncommitted work in the worktree is lost when the worktree is removed, so commit or discard first"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "parallel-sub-agents",
+      "prompt": "I'm orchestrating a change on /home/user/harness-ref and I want to fan three implementation sub-agents out across three modules at once, then review the combined result myself.\n\nIs that safe? Tell me how to set it up, or what to do instead. Save it as parallel.md in the output directory.",
+      "expected_output": "A written artefact demonstrating worktree-isolation judgment on a recorded failure mode.",
+      "files": [],
+      "expectations": [
+        "The answer requires each concurrently-running agent to have its own worktree",
+        "It states the reason: two agents editing the same working tree corrupt each other's diffs",
+        "It says a single sub-agent may share the orchestrator's worktree only while the orchestrator is idle",
+        "It gives the concrete setup \u2014 one worktree per agent, each on its own branch",
+        "It says how the three results are brought back together"
+      ]
+    }
+  ]
+}

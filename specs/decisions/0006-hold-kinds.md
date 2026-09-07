@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-23
-- **Source:** `specs/proposals/promote-and-decision-commands.md`
+- **Source:** the `promote-and-decision-commands` proposal (settled; removed from the tree by #547, kept in git history)
 
 ## Context
 

@@ -35,10 +35,23 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      # The default shallow checkout: no gate stage reads git history since
-      # the feature-spec currency stage was retired (ADR 0017; the nightly
-      # keeps its own full fetch for the merge-base reads its promotion makes).
+      # Full history, and as of #588 **no gate stage requires it**. It was added
+      # by #580 for the start-of-cycle version guard, which compared the index
+      # against the branch named under `branches.release` and skipped on every
+      # push under the bare shallow checkout that stood here. #588 deleted that
+      # guard and the cycle-start obligation with it, and a sweep at that ticket
+      # found no other gate-time reader of a release ref: every remaining test
+      # that touches git either reads the index or builds its own scratch repo.
+      #
+      # The key stays, and that is a decision rather than an oversight. Removing
+      # it is an untested change to the one checkout every gate run depends on,
+      # against a saving this repo does not have to make (1781 commits, 22 MB of
+      # history at #580); the best change is the one not made (P0). What is gone
+      # with the guard is the *guard on this key* — nothing now fails if a later
+      # edit re-shallows the clone, which is correct while nothing reads it.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install uv
         uses: astral-sh/setup-uv@v3

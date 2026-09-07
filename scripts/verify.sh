@@ -6,7 +6,15 @@ set -euo pipefail
 # The public gate delegates marker ownership to the fixed Node runner.  The
 # runner re-enters this script in internal mode after it has established the
 # boundary that only a measured successful run may create evidence.
-if [ "${HARNESS_GATE_MARKER_RUNNER:-}" != "1" ]; then
+#
+# Emptiness, never a value (#559).  The runner now sets this to the identity of
+# the repository it is gating rather than to `1`, and a shell has no portable
+# `realpath` with which to recompute that identity — on this host `/tmp` is a
+# symlink, so a shell-derived answer would differ from the runner's and this
+# script would `exec` into a refusal on every run.  Testing for emptiness needs
+# no fourth implementation of the convention (ADR 0018) and accepts the old
+# value, the new one, and whatever a later change makes it.
+if [ -z "${HARNESS_GATE_MARKER_RUNNER:-}" ]; then
   exec node scripts/gate-marker.js run
 fi
 

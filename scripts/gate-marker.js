@@ -143,6 +143,17 @@ const EXIT_RUNNER_UNAVAILABLE = 3;
 //: reads it to take its internal path, which used to be the *only* recursion
 //: guard: the sole launchable child was that one script.  The child is now an
 //: arbitrary declared command, so the runner reads its own variable too.
+//:
+//: The value is the **identity of the repository being gated** — `gitCommonDir`'s
+//: answer — not a bare flag (#559).  A flag says only that *some* gate is running
+//: somewhere, and a repository whose own verification stage spawns this runner
+//: against a throwaway fixture repository, which is how a gate runner is tested,
+//: inherits it: the fixture's gate was refused, the fixture earned no marker, and
+//: the stage that needed one went red over a green tree.  The hazard the guard
+//: exists for is re-entering the *same* repository's gate, so that is what the
+//: value has to be able to say.  Consumers may test this variable for emptiness
+//: and must never compare it to a value; the shape is private to this runner and
+//: has now changed once.
 const RUNNER_ENV = "HARNESS_GATE_MARKER_RUNNER";
 
 /** A git invocation this program needs did not succeed.
@@ -655,7 +666,34 @@ function runGate(cwd, scope) {
   // the tree while the outer stages are still running, minting evidence for a
   // tree its own gate then reports red. `verify.sh`'s check on the same variable
   // covered this only while the sole launchable child was `verify.sh`.
-  if (process.env[RUNNER_ENV] === "1") {
+  //
+  // The equivalence class is the git **common directory**, which is where
+  // `markerDir` puts the evidence, so it is two worktrees of one repository —
+  // not two checkouts of one path. That is the case at its worst: two clean
+  // worktrees at the same commit have the same tree oid, so an inner run in one
+  // would mint `<tree>.json` in the directory both share while the other's gate
+  // is still running. Comparing worktree roots would admit exactly that.
+  //: Resolved once, before anything is launched, because both readers below need
+  //: it: the re-entry guard compares against it and the child's environment
+  //: carries it.  An inherited value naming a *different* repository — or the
+  //: retired literal `1`, which names none — is not a re-entry and its gate runs
+  //: (#559).
+  //:
+  //: Resolving it here rather than lazily has one consequence worth stating
+  //: plainly, because the first version of this comment denied it and was wrong:
+  //: a `run` outside a repository now refuses *before* the declared gate is
+  //: launched, where it used to run the gate first and fail at marker time. The
+  //: exit code and git's message are unchanged (EXIT_REFUSED, via `main`'s
+  //: `GitError` handler); what changed is that the gate is no longer spent on a
+  //: run that could never have recorded anything about it.
+  //: `tests/unit/test_gate_marker_js.py`'s
+  //: `test_a_run_outside_a_repository_refuses_before_launching_the_gate` pins it.
+  //:
+  //: There is no lenient fallback: an identity this program cannot resolve is not
+  //: an identity it may prove belongs to some *other* repository, and under a
+  //: guard against minting evidence, unprovable means refuse.
+  const repository = gitCommonDir(cwd);
+  if (process.env[RUNNER_ENV] === repository) {
     process.stderr.write(
       "gate-marker: the declared gate delegated back to `gate-marker.js run`; " +
         "refusing to re-enter the runner. Point commands.verify at the " +
@@ -683,7 +721,7 @@ function runGate(cwd, scope) {
     return EXIT_RUNNER_UNAVAILABLE;
   }
   let scopeFile = null;
-  const environment = Object.assign({}, process.env, { [RUNNER_ENV]: "1" });
+  const environment = Object.assign({}, process.env, { [RUNNER_ENV]: repository });
   if (recordedScope !== null) {
     try {
       scopeFile = writeScopeFile(cwd, recordedScope);
@@ -697,9 +735,32 @@ function runGate(cwd, scope) {
   const startedAt = Date.now();
   let result;
   try {
+    //: `stdio: "inherit"` rather than capture (#561). Without it `spawnSync`
+    //: buffers the child's output under a default `maxBuffer` of one mebibyte and
+    //: fails the *spawn* past that bound — `status: null`, `error.code =
+    //: 'ENOBUFS'` — which the arm below maps to `EXIT_RUNNER_UNAVAILABLE`. A gate
+    //: that exited 0 was therefore reported as unable to run and earned no
+    //: marker, and a mebibyte is not a high bar for a full-suite gate across
+    //: several languages. Inheriting removes the buffer rather than raising it,
+    //: so there is no new bound to outgrow, and it makes a long gate's stages
+    //: appear as they are produced instead of arriving at once at the end.
+    //:
+    //: The only thing given up is the captured text, which this function used
+    //: solely to write straight back out; `encoding` went with it, having nothing
+    //: left to decode. The exit status is unaffected — it is `result.status`
+    //: either way — and so is the `error`/`null` arm below, which still catches a
+    //: shell that could not be launched or a gate killed by a signal.
+    //:
+    //: stdin is **not** inherited, and the triple is spelled out rather than the
+    //: bare `"inherit"` shorthand to say so. Capturing gave the child a pipe at
+    //: immediate EOF; `"inherit"` throughout would instead hand it this process's
+    //: stdin, so a consumer gate that reads stdin would consume or block on the
+    //: caller's — and under an unattended run there is no operator behind it.
+    //: `"ignore"` gives the same immediate EOF the child saw before, so the only
+    //: stream whose behaviour changes is the one this fix is about.
     result = spawnSync("sh", ["-c", gate.command], {
       cwd: String(cwd),
-      encoding: "utf8",
+      stdio: ["ignore", "inherit", "inherit"],
       env: environment,
     });
   } finally {
@@ -711,8 +772,6 @@ function runGate(cwd, scope) {
       }
     }
   }
-  if (result.stdout) process.stdout.write(String(result.stdout));
-  if (result.stderr) process.stderr.write(String(result.stderr));
   if (result.error || result.status === null) {
     const reason = result.error ? result.error.message : "terminated without an exit status";
     process.stderr.write(`gate-marker: could not launch declared gate: ${reason}\n`);

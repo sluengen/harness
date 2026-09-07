@@ -1,0 +1,22 @@
+[
+{"query":"nothing's assigned to me right now. take whatever's at the top of the board, do it end to end, and land it","should_trigger":true},
+{"query":"i want one full unattended cycle — pick something, build it, get it onto the integration branch, close it out. don't come back to me mid-way","should_trigger":true},
+{"query":"set up a cron that fires every weeknight at 2am and does one item off the queue without me watching","should_trigger":true},
+{"query":"run a tick","should_trigger":true},
+{"query":"work the queue for an hour, one item, all the way through","should_trigger":true},
+{"query":"i'm going offline. do one thing off the board start to finish and hold it if anything needs me","should_trigger":true},
+{"query":"go grab the next thing that's actually ready and ship it. you choose","should_trigger":true},
+{"query":"kick off an autonomous pass — one item, self-selected, landed or held with a reason","should_trigger":true},
+{"query":"what's the exact prompt a scheduled job should paste to run one unattended cycle here","should_trigger":true},
+{"query":"build HAR-318 for me, it's the grounding one","should_trigger":false},
+{"query":"you picked HAR-77 earlier. now go build it and land it","should_trigger":false},
+{"query":"what should i work on next? just tell me, don't start anything","should_trigger":false},
+{"query":"which of these four is actually ready to build and which are blocked","should_trigger":false},
+{"query":"the branch is built and green already. it just needs the independent pass before it lands","should_trigger":false},
+{"query":"give me the standing report — what's held, what's waiting on me, what moved this week","should_trigger":false},
+{"query":"there are two held items assigned to me. walk me through clearing them","should_trigger":false},
+{"query":"promote dev to main, the release hop","should_trigger":false},
+{"query":"file this as a ticket, it's a defect i just hit in the config reader","should_trigger":false},
+{"query":"typo in the error string in scripts/verify.sh, it says covrage. just fix it","should_trigger":false},
+{"query":"why does uv sync keep reinstalling everything when i switch branches","should_trigger":false}
+]

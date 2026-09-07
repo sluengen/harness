@@ -20,7 +20,9 @@ the area, what happens today, what is wanted, and the situation that surfaced it
 
 *Required at creation; a filing without it is incomplete.* One line: what this costs, what it buys, which principle it serves and which it spends against, and which waste it removes or adds. The waste categories are the spine's P2 — rework, waiting, over-processing, over-production, motion, inventory, defects. Naming what a change *spends* is the half that gets skipped, and it is the half that lets an operator refuse work that only adds inventory.
 
-- *Cost:* {…} *Buys:* {…} *Serves:* P{n}. *Spends against:* P{n}, by {…}. *Waste:* removes {category} / adds {category}.
+- *Cost:* {…} *Buys:* {…} *Serves:* P{n}. *Spends against:* P{n}, by {…}. *Waste:* removes {category} / adds {category}. *Guard-to-change:* {n} : {n}.
+
+The last figure is guard lines against changed lines, stated because P0 refuses a guard larger than the change it guards. Above 3 : 1 the filing records a reason that names the user outcome the guard protects **at this repo's stage** — and a mutation table is not that reason, because it says the guard works, never that it was worth writing.
 
 ## Approach
 
@@ -28,13 +30,13 @@ How the change lands — the shape of the solution at a glance.
 
 ## Grounding
 
-*Record current reality for the facts this change rests on — every one that names a file / function / flag / version / decision — verified against the code as it is now, not recalled from memory. State what was checked with a `path:line` anchor (or a current version / flag value), surface any decision the ticket assumed settled that is actually open or superseded, and list open questions. Where a sub-agent host is available this is a host-native read-only sub-agent's brief, recorded here verbatim; otherwise the executor self-grounds inline (the fallback). Always present, scaled to size — a one-line fix gets one line ("verified `foo.py:rename_flag` still exists"). See `spec-authoring` → Grounding.*
+*Record current reality for the facts this change rests on — every one that names a file / function / flag / version / decision — verified against the code as it is now, not recalled from memory. State what was checked with a `path:line` anchor (or a current version / flag value), surface any decision the ticket assumed settled that is actually open or superseded, and list open questions. Where a sub-agent host is available this is a host-native read-only sub-agent's brief, recorded here verbatim; otherwise the executor self-grounds inline (the fallback). Always present, scaled to size — a one-line fix gets one line ("verified `foo.py:rename_flag` still exists"). See `authoring` → Grounding.*
 
 ## Lane
 
 `trivial` (fix) | `simple` (change) | `complex` (feature)
 
-*Choose exactly one before build, per `spec-authoring` → *Choosing assurance* —
+*Choose exactly one before build, per `authoring` → *Choosing assurance* —
 the one home for how that choice is made. What each lane then obliges the run to
 pay for: the **fix** lane ships on the gate and the push guard alone, with no
 reviewer and no as-built record; **change** requires an independent review;
@@ -72,7 +74,7 @@ Specific outcomes. For each, name what it protects and state the evidence select
 
 ## Protected areas
 
-*A tripwire, not a scope note.* Name the surfaces where a diff must **stop and hold** rather than proceed on a stated assumption: authentication, billing, migrations, permissions, the gate, the hooks, and whatever else this repo treats that way. Reaching one is an andon pull (P4) — comment, label, assign — never an assumption recorded in the section above. Write `none` when the change touches no such surface; the section is never omitted, because a blank one and an absent one read the same and only one of them means the question was asked.
+*A tripwire, not a scope note.* Name the surfaces where a diff must **stop and hold** rather than proceed on a stated assumption: the three the spine's contract names — user data and its migrations, credentials and auth, money and billing — plus any this repo's own stage line adds, and nothing beyond that. A directory is not a protected area. Reaching one is an andon pull (P4) — comment, label, assign — never an assumption recorded in the section above. Write `none` when the change touches no such surface; the section is never omitted, because a blank one and an absent one read the same and only one of them means the question was asked.
 
 ## Out of scope
 

@@ -1,0 +1,51 @@
+{
+  "skill_name": "authoring",
+  "evals": [
+    {
+      "id": 1,
+      "name": "criteria-that-name-producible-evidence",
+      "prompt": "I'm filing a ticket against /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there).\n\nWhat we want: the capture workflow's instructions should tell whoever files a ticket to set exactly one assurance label, and should say what happens when none is set.\n\nWrite the acceptance criteria for that ticket. Save them as criteria.md in the output directory.",
+      "expected_output": "A written artefact demonstrating authoring judgment on a recorded failure mode.",
+      "files": [],
+      "expectations": [
+        "No criterion asks for a test, guard, or predicate that asserts what a document says (no wording, keyword, or pinned-sentence check)",
+        "The criteria say prose is verified by review or by direct use, not by a mechanical check over its text",
+        "Each criterion names what it protects \u2014 the outcome, contract, or recorded risk \u2014 rather than only naming a change",
+        "Each criterion names evidence the building session can actually produce, or names who produces it and when",
+        "No criterion is a raw word count, line count, or file-size bound",
+        "The criteria are checkable \u2014 a reviewer could mark each met, partial, or missing without asking a question",
+        "Every evidence line names a concrete artefact and who produces it, rather than only an evidence class such as 'direct review' or 'representative use'"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "grounding-measures-rather-than-asserts",
+      "prompt": "Ticket HAR-318 against /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there) reads:\n\n  \"`.claude/hooks/*.js` are byte-identical copies of `hooks/*.js`, kept in step by hand. Make the copy step part of init so they cannot drift.\"\n\nWrite the Grounding section of the change spec for this ticket. Save it as grounding.md in the output directory.",
+      "expected_output": "A written artefact demonstrating authoring judgment on a recorded failure mode.",
+      "files": [],
+      "expectations": [
+        "The grounding inspects the repository rather than restating the ticket's premise",
+        "It establishes what `.claude/hooks` actually is by a means that distinguishes a directory of copies from a symlink (for example `ls -l`, `readlink`, `git ls-files -s`, or `test -L`) rather than by a comparison that would follow a link",
+        "It reports that the ticket's premise about byte-identical copies is false, or states precisely what it found instead",
+        "Every fact it records is anchored to a path, a path:line, or a measured value",
+        "It lists what remains open or unverified rather than filling the gap with an assumption"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "lane-choice-and-change-spec",
+      "prompt": "Something came in from actual use of /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there): the digest report prints the improvement-ledger count wrong \u2014 it counts closed entries as well as open ones. Looks like a one-line fix.\n\nPick the assurance level for this ticket and write the change spec. Save it as spec.md in the output directory.",
+      "expected_output": "A written artefact demonstrating authoring judgment on a recorded failure mode.",
+      "files": [],
+      "expectations": [
+        "Exactly one assurance level is chosen",
+        "The choice is justified by the blast radius of the diff, not by the report calling the fix small or one-line",
+        "The spec states the problem, the approach, and acceptance criteria",
+        "Each acceptance criterion names evidence the building session can produce, or names who produces it and when",
+        "The spec says what is out of scope",
+        "If the fix lane is chosen, the answer states what that lane gives up (no ticket-side reviewer, no as-built record) and what remains as its assurance",
+        "Every evidence line names a concrete artefact and who produces it, rather than only an evidence class such as 'direct review' or 'representative use'"
+      ]
+    }
+  ]
+}

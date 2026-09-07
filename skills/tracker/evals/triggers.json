@@ -1,0 +1,22 @@
+[
+{"query":"branch merged. the ticket has to reflect that now — what do i set and how do i confirm it actually took","should_trigger":true},
+{"query":"HAR-77 can't be picked up by anything unattended until the operator answers the question about the credential. what do i do to it","should_trigger":true},
+{"query":"the breakdown produced three items and two can't start until the first lands. get them on the board with that relationship","should_trigger":true},
+{"query":"show me what's open right now that isn't parked on a person","should_trigger":true},
+{"query":"i filed it and it's sitting in backlog. how do i get it where the unattended loop will see it, and how do i verify rather than trusting the exit code","should_trigger":true},
+{"query":"the reflection turned up two things worth changing later. where do those get recorded and in what form","should_trigger":true},
+{"query":"which items are currently waiting on a human and what's each one waiting for","should_trigger":true},
+{"query":"i need to comment the failure on #604, label it, and put it on someone. is that one operation or three","should_trigger":true},
+{"query":"HAR-140's branch is up, move it along a state","should_trigger":true},
+{"query":"rank what's open and give me the one to start, skipping anything that isn't genuinely ready","should_trigger":false},
+{"query":"is there anything open that an unattended run could take without needing me","should_trigger":false},
+{"query":"all i have is the title fix the drift guard. what goes in the body to make it buildable","should_trigger":false},
+{"query":"how much assurance does this one need — it changes the permissions file","should_trigger":false},
+{"query":"the reviewer turned something up. is that a defect that needs its own item or just something to note for later","should_trigger":false},
+{"query":"take #612 from where it is all the way to merged","should_trigger":false},
+{"query":"gh keeps authenticating as my work account on this box. how do i switch which one it uses","should_trigger":false},
+{"query":"how do i page through a graphql query that returns more than 100 nodes","should_trigger":false},
+{"query":"json.load is choking on a file that doesn't end in a newline. why would that matter","should_trigger":false},
+{"query":"we're thinking about moving off github issues entirely. what has to be true before that's a sensible call","should_trigger":false},
+{"query":"i've got the item, where do i actually do the work so i'm not sitting on main","should_trigger":false}
+]

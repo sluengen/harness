@@ -1,0 +1,58 @@
+{
+  "skill_name": "review-discipline",
+  "evals": [
+    {
+      "id": 1,
+      "name": "absolute-sentence-weaker-check",
+      "prompt": "Review this change for me. The repo is /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there). The candidate diff is in the file diff.patch in the input directory \u2014 read it there.\n\nThe ticket's acceptance criteria are:\n  AC-1: `scripts/land.js` gains a `done` verb that publishes the gate record and advances the green pointer.\n  AC-2: no verb of `land.js` pushes to a remote.\n\nGive me your review. Save it as review.md in the output directory.",
+      "expected_output": "A written artefact demonstrating review-discipline judgment on a recorded failure mode.",
+      "files": [
+        "evals/files/r1-diff.patch"
+      ],
+      "expectations": [
+        "The review finds that the `done` verb does push to a remote, contradicting AC-2",
+        "The review finds that the test named as AC-2's evidence does not exercise the `done` verb, so the guard cannot fail for the risk it is named after",
+        "The review treats the absolute claim ('never pushes') as the signal to check the guard's coverage rather than trusting it",
+        "Each finding carries all four parts: what, where (file:line or section), why (the rule or criterion it violates), and a concrete fix",
+        "Each finding is placed as blocking or non-blocking and small or large",
+        "The review ends in exactly one of PASS, FAIL or DEFER",
+        "The review states what happened to every test file in the diff, naming the property that moved",
+        "Every finding states BOTH axes \u2014 blocking or not, AND small or large \u2014 at the finding itself or in a placement table; a blanket 'all findings are blocking' does not discharge it"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "review-scope-is-the-diff",
+      "prompt": "You're the reviewer on ticket T-604 against /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there). The branch diff is in diff.patch in the input directory.\n\nT-604's single acceptance criterion: the `assessments/` retention rule keeps the latest report per scope plus any report with an open finding.\n\nWhile reading around the change I noticed the repo has a lot of prose elsewhere that looks out of date \u2014 stale counts in specs, docstrings describing older behaviour. Some of it predates this branch by months.\n\nGive me your review. Save it as review.md in the output directory.",
+      "expected_output": "A written artefact demonstrating review-discipline judgment on a recorded failure mode.",
+      "files": [
+        "evals/files/r2-diff.patch"
+      ],
+      "expectations": [
+        "The review is scoped to what this diff changes or makes false; it does not file findings about stale prose that predates the branch",
+        "Where the same claim has several homes, the review reports it as one finding with a count rather than one finding per instance",
+        "The review does not go hunting for improvements beyond the mandate",
+        "Any non-blocking improvement it trips over is dropped rather than carried: it is neither filed as a ticket nor written into the report",
+        "The report carries no Proposals section at all",
+        "The review ends in exactly one of PASS, FAIL or DEFER",
+        "Every finding states BOTH axes \u2014 blocking or not, AND small or large \u2014 at the finding itself or in a placement table"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "self-check-before-handoff",
+      "prompt": "I'm the builder, not the reviewer, and I'm about to hand ticket T-712 to review in /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there). My diff is in diff.patch in the input directory.\n\nDo a self-check on it before I hand it over and tell me what a reviewer is going to find. Save it as self-check.md in the output directory.",
+      "expected_output": "A written artefact demonstrating review-discipline judgment on a recorded failure mode.",
+      "files": [
+        "evals/files/r3-diff.patch"
+      ],
+      "expectations": [
+        "The self-check examines each test-file change in the diff and states the property that moved and why the change to it is justified",
+        "The self-check checks the diff by name against the manufactured-green categories: a modified test, a widened assertion, hidden state, and an implementation special-casing the test's own inputs",
+        "It identifies the widened assertion in the diff (an equality or bound relaxed so it can no longer fail)",
+        "Findings are specific \u2014 what, where, why, and a concrete fix \u2014 rather than general advice",
+        "It checks the criteria as they stand on the ticket rather than a remembered version"
+      ]
+    }
+  ]
+}

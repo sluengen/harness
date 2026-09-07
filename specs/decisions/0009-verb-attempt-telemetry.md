@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-30
-- **Source:** `specs/proposals/verb-telemetry.md`
+- **Source:** the `verb-telemetry` proposal (settled; removed from the tree by #547, kept in git history)
 
 > **Landed retrospectively on 2026-08-01.** Decided 2026-07-30; the file sat on an unmerged local branch while its breakdown tickets were built and closed, so the decision was in force well before its record was. Nothing below is reconstructed — this is the file as written on the decision date, with only its status reconciled to what shipped. Implemented by #261-#265, all closed.
 

@@ -13,7 +13,7 @@ concrete shape where the wrong thing read as green. The example is the
 load-bearing half; read it to recognise the shape in the diff in front of you.
 
 Additions to this file are raised as a **proposal** for an operator call — an
-entry here is an improvement, so it is appended to the proposals ledger with
+entry here is an improvement, so it is appended to the improvement ledger with
 `craft.md` as its suggested home and decided when `/assess` drains it, never
 self-filed. The entry bar here is *a defect class
 that reads as green*, which is a standing incentive to grow the file, and every
@@ -25,6 +25,77 @@ final-evidence ordering rule and the reviewer's obligations stay in
 `review-discipline`; the fresh-evidence rule stays in `engineering`; the
 test-first law stays in `engineering`; the shape-triggered structural
 checks stay in the diff-shape checks.
+
+## Contents
+
+Fifty-odd entries in six families. Read the family the diff touches rather than the file — each entry is a defect class that reads as green, named so a reviewer can match it against a diff.
+
+**[Vacuity — the test that cannot fail](#vacuity-the-test-that-cannot-fail)**
+
+- [Exercise the production path, not merely a production constant](#exercise-the-production-path-not-merely-a-production-constant)
+- [The empty subject set](#the-empty-subject-set)
+- [The empty comparison set](#the-empty-comparison-set)
+- [The conditional guard whose skip reads as green](#the-conditional-guard-whose-skip-reads-as-green)
+- [The floor inside the parametrization](#the-floor-inside-the-parametrization)
+- [Floors decay into decoration](#floors-decay-into-decoration)
+- [A guard over an enumerable dimension must fail on an unclassified member](#a-guard-over-an-enumerable-dimension-must-fail-on-an-unclassified-member)
+- [A control goes inert when the change deletes what it names](#a-control-goes-inert-when-the-change-deletes-what-it-names)
+- [A positive control must exercise the predicate, not re-implement it](#a-positive-control-must-exercise-the-predicate-not-re-implement-it)
+- [Born green](#born-green)
+- [Reentrancy makes a same-thread assertion unfalsifiable](#reentrancy-makes-a-same-thread-assertion-unfalsifiable)
+- [`all()` over a possibly-empty iterable is constant-true](#all-over-a-possibly-empty-iterable-is-constant-true)
+- [A comparison whose operands live in different frames is constant](#a-comparison-whose-operands-live-in-different-frames-is-constant)
+- [A question answered over a simplified graph measures the topology](#a-question-answered-over-a-simplified-graph-measures-the-topology)
+- [A regenerated reference measures the generator, not the tree](#a-regenerated-reference-measures-the-generator-not-the-tree)
+
+**[Retired prose predicates and text guards](#retired-prose-predicates-and-text-guards)**
+
+- [A blacklist inversion sweep fails open on an appended grant](#a-blacklist-inversion-sweep-fails-open-on-an-appended-grant)
+- [The negation window assumes a false converse](#the-negation-window-assumes-a-false-converse)
+- [A containment window whose subject carries its own negation has no polarity](#a-containment-window-whose-subject-carries-its-own-negation-has-no-polarity)
+- [The text unit is part of the predicate](#the-text-unit-is-part-of-the-predicate)
+- [A paired delimiter can be counterfeited by prose that mentions it](#a-paired-delimiter-can-be-counterfeited-by-prose-that-mentions-it)
+- [A paraphrase tuple drawn from the sweep's own alternation measures itself](#a-paraphrase-tuple-drawn-from-the-sweeps-own-alternation-measures-itself)
+- [Mutate the rule into its opposite, not only out of existence](#mutate-the-rule-into-its-opposite-not-only-out-of-existence)
+- [Every prose obligation needs a pair with separate exclusive killers](#every-prose-obligation-needs-a-pair-with-separate-exclusive-killers)
+- [Write the rule, then run its own guard over it](#write-the-rule-then-run-its-own-guard-over-it)
+
+**[Deletion, retirement, and re-homing](#deletion-retirement-and-re-homing)**
+
+- [A deletion pass that moves a definition must move its killer](#a-deletion-pass-that-moves-a-definition-must-move-its-killer)
+- [A guard deleted over a surviving subject](#a-guard-deleted-over-a-surviving-subject)
+- [Assert absence from the git index, never by grep](#assert-absence-from-the-git-index-never-by-grep)
+
+**[Mutation discipline](#mutation-discipline)**
+
+- [The wiring-field survivor](#the-wiring-field-survivor)
+- [A green mutation table certifies only what its author thought to mutate](#a-green-mutation-table-certifies-only-what-its-author-thought-to-mutate)
+- [Never re-run the builder's table as verification](#never-re-run-the-builders-table-as-verification)
+- [A survivor is ambiguous](#a-survivor-is-ambiguous)
+- [An inert mutation reports a survivor it never earned](#an-inert-mutation-reports-a-survivor-it-never-earned)
+- [A mutation that changes no behaviour reports a kill it never made](#a-mutation-that-changes-no-behaviour-reports-a-kill-it-never-made)
+- [A prose mutation needs a paired splice to prove it was live](#a-prose-mutation-needs-a-paired-splice-to-prove-it-was-live)
+- [A mispredicted killer is how a guard gap surfaces](#a-mispredicted-killer-is-how-a-guard-gap-surfaces)
+- [Stale bytecode masks a size-preserving mutation](#stale-bytecode-masks-a-size-preserving-mutation)
+- [Redundancy needs a mutation only the suspect test can see](#redundancy-needs-a-mutation-only-the-suspect-test-can-see)
+- [Two redundant conditions hide each other from mutation](#two-redundant-conditions-hide-each-other-from-mutation)
+
+**[The ticket and its criteria](#the-ticket-and-its-criteria)**
+
+- [A ticket's grounding is its least reliable part](#a-tickets-grounding-is-its-least-reliable-part)
+- [An acceptance criterion can be unsatisfiable by construction](#an-acceptance-criterion-can-be-unsatisfiable-by-construction)
+- [An acceptance criterion can contradict the ticket's own problem statement](#an-acceptance-criterion-can-contradict-the-tickets-own-problem-statement)
+- [An acceptance criterion naming a dead artifact](#an-acceptance-criterion-naming-a-dead-artifact)
+- [The ticket's subject moved because another change built most of it](#the-tickets-subject-moved-because-another-change-built-most-of-it)
+
+**[Unmeasured claims — prose asserting what nothing checks](#unmeasured-claims-prose-asserting-what-nothing-checks)**
+
+- [A declined action is not a prevented one](#a-declined-action-is-not-a-prevented-one)
+- [A design's security claim and its mechanism are written by the same optimism](#a-designs-security-claim-and-its-mechanism-are-written-by-the-same-optimism)
+- [A comment asserting an unmeasured precondition](#a-comment-asserting-an-unmeasured-precondition)
+- [A forward reference becomes a lie the day its dependency ships](#a-forward-reference-becomes-a-lie-the-day-its-dependency-ships)
+- [An ordinal reference into an enumeration is invalidated by a correct insertion](#an-ordinal-reference-into-an-enumeration-is-invalidated-by-a-correct-insertion)
+- [A docstring claiming coverage the code lacks](#a-docstring-claiming-coverage-the-code-lacks)
 
 ## Vacuity — the test that cannot fail
 
@@ -774,3 +845,4 @@ positive and the guard gets loosened instead of fixed. When mutation shows a tes
 isolates a different property than its docstring claims, rewrite the docstring in
 the same change — a docstring asserting a property the guard lacks is the same
 class as a text guard asserting a fragment of its rule.
+

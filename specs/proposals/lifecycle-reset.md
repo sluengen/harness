@@ -151,7 +151,7 @@ Keep the product, the lifecycle the model would get wrong without it: `engineeri
 
 *The provider swap, as probed.* The official marketplace carries `github` ("Official GitHub MCP server"), `linear` ("Linear issue tracking integration"), and `atlassian`. All three are **MCP transports, not recipes**: the marketplace entries carry no version, and the local plugin cache holds no skill content for either `github` or `linear`. So the swap is narrower than replacing our two provider skills. Those skills carry two things: API recipes (`gh` invocations, the Projects v2 GraphQL for board status, Linear's state and label id resolution), which are commodity and rot; and the harness's ticket semantics (states, hold = comment + label + assignment, explicit Todo placement verified by re-reading, the ledger found by label), which are product. The transport is swapped for the official MCP where the repo has it; the semantics collapse into one thin `tracker` skill of ours that works over whichever transport the repo declares, `gh` or MCP. Two probes before the swap lands: whether the GitHub MCP server can set a Projects v2 item's Status (the one write our recipes do that a generic issue API may not), and whether an unversioned MCP plugin can be pinned at all; where it cannot, the `gh` recipe for that single operation stays and the risk is recorded.
 
-Every kept skill and agent gains `effort:` and `model:` frontmatter, so the lane sets cost through the runtime rather than through prose the agent may not honour. ADR 0005 already measured 110 Opus reviews against 114 Sonnet at 18.4% vs 17.3% fail rate, under the noise floor: the change-lane reviewer defaults to the cheaper model.
+Every agent definition carries `model:` and `effort:`, with a change-lane reviewer (`reviewer`, the cheaper model) and a feature-lane reviewer (`reviewer-feature`) differing in those lines; skills inherit, and only the nine workflow skills carry an `effort:` of their own. The lane sets cost by which agent it dispatches, applied by the runtime rather than by prose the agent may not honour. *(Amended 2026-09-06 at T4's review: the first wording asked every kept skill to pin both fields, which would have had a skill override the agent that loaded it; the ratified shape is agents pin, skills inherit.)* ADR 0005 already measured 110 Opus reviews against 114 Sonnet at 18.4% vs 17.3% fail rate, under the noise floor: the change-lane reviewer defaults to the cheaper model.
 
 *How that is applied from a plugin file.* On Claude Code, `model:` and `effort:` are frontmatter fields on both skills and agents, read by the runtime when the file is loaded, plugin files included; a skill with `context: fork` applies them to the forked sub-agent, and the orchestrator can also pass a model override at dispatch. The lane therefore selects cost in one of two native ways: by which agent definition it dispatches (a change-lane reviewer and a feature-lane reviewer are two small agent files that differ in those two lines), or by the override on the call. Codex accepts only the six standard skill fields, so there the same choice is made in the Codex agent definitions and profile configuration; where a host offers neither, the lane still runs, at that host's default cost. Nothing here asks the model to honour a tier. That was the mechanism ADR 0005 retired, and rightly: it cost a tracker round trip and five degradation branches to read a label nobody set.
 
@@ -213,7 +213,7 @@ Keep the Stop gate-evidence guard, the push-target guard, and the force-push ref
 
 ### Work creation
 
-- Bugs are filed; improvements are proposed. Kept, and given a home that drains. The standing ledger becomes the **improvement ledger** (kaizen, P5): the reviewer's Proposals section and the build's reflection step both append to it; an improvement to the guidance, hooks, or skills the plugin ships goes to the harness repo's own ledger, resolved from the plugin's declared source and never hardcoded (the shipped `guidance-feedback-upstream` rule, re-homed). `/assess` drains it and marks every entry done, folded into a ticket, or dropped, and dropped is written down. Settled proposals leave `specs/proposals/` (git history keeps them); `specs/retired/` (6,329 lines) leaves the tree.
+- Bugs are filed; improvements are proposed. Kept, and given a home that drains. The standing ledger becomes the **improvement ledger** (kaizen, P5): the reviewer's Proposals section and the build's reflection step both append to it; an improvement to the guidance, hooks, or skills the plugin ships goes to the harness repo's own ledger, resolved from the plugin's declared source and never hardcoded (the shipped `guidance-feedback-upstream` rule, re-homed). `/assess` drains it and marks every entry done, folded into a ticket, or dropped, and dropped is written down. Settled proposals leave `specs/proposals/` (git history keeps them); the *specs/retired/* directory (6,329 lines) leaves the tree.
 - A filed ticket, a proposed guard, and a new gate stage each carry **one line of cost and benefit** at creation: what it costs, what it buys, which principle it serves and which it spends against, and which waste it removes or adds. Waste is a work decision, not only an audit finding: the fix lane exists to remove over-processing, and a ticket that adds inventory without removing a waste is refused at filing. Convention, no guard.
 - A ticket filed from a breakdown carries its dependencies and its urgency in the tracker's own fields, never only in prose, so sequencing is enforced by `work-discovery` reading them rather than by an operator repeating the order. The `tracker` skill's filing recipe requires both (T4). Flow decides the split: by what can proceed independently, not by what is shippable alone; a ticket is blocked only by what it genuinely reads from. Andon decides the exception: an open P1 bug is picked before anything else and nothing new starts until it is closed (P4).
 - `/assess` computes the module count and the guard-to-deliverable ratio every pass, using the derivations in this document.
@@ -301,7 +301,7 @@ T2 and T3 run in parallel after T1 (P3): T3 touches the hooks, the marker helper
 
 *Lane:* feature. *Serves:* P2, P3, P4, P5. *Spends against:* nothing; deletions are most of the diff.
 
-**Delivers.** Skills 28 → about 9: the kept set (`engineering`, `review-discipline`, `authoring`, `work-discovery`, `worktree-isolation`, `architecture`, `assess`) plus the command workflows as skills with `disable-model-invocation: true`; the 13 generated mirrors, `writing-quality` (absorbed), `systematic-debugging`, `infrastructure`, `ux-design`, and `design-system` deleted, with the deletion-test answers recorded. The last two are re-homed per *Path-scoped rules for design and UX*: a *templates/rules/design-system.md* asset that `init` seeds into `.claude/rules/` with globs from `harness.yaml` (design directory plus UI source paths) and, for Codex, as a nested instruction file in the design directory; it carries the tokens pointer, the states checklist, accessibility, and the visual-evidence capture rules moved out of `/build`; it is repo-owned after seeding and never overwritten by `--refresh`. **The `tracker` skill:** one thin skill carrying the ticket semantics over the transport the repo declares (`gh` or the official MCP plugins, after the two D4 probes). It owns sequencing for flow and andon: `create` sets native blocked-by relationships and the board's Priority, and reports a breakdown ticket filed without both as incomplete; a breakdown is split by what can proceed independently, not by what is shippable alone, and a ticket is blocked only by what it genuinely reads from; `work-discovery` picks an open P1 bug before anything, then skips blocked tickets, then prefers the higher Priority and the ticket that unblocks the most. **The ledgers:** the standing `proposals-ledger` issue becomes the **improvement ledger** (`improvement-ledger` label; the recipe migrates the old label), and the harness repo's own ledger is the destination for guidance improvements, resolved from the plugin's declared marketplace source, never hardcoded (re-homing the shipped `guidance-feedback-upstream` rule from the retired lock file). `/assess` drains the ledger and records each entry as done, folded, or dropped. Every kept skill and agent carries `effort:` and `model:`, with a change-lane and a feature-lane reviewer definition. *specs/harness-assumptions.md* with one row per component. `specs/retired/` and settled proposals leave the tree. `/assess` derives the module count, the guard-to-deliverable ratio, and the gate duration.
+**Delivers.** Skills 28 → about 9: the kept set (`engineering`, `review-discipline`, `authoring`, `work-discovery`, `worktree-isolation`, `architecture`, `assess`) plus the command workflows as skills with `disable-model-invocation: true`; the 13 generated mirrors, `writing-quality` (absorbed), `systematic-debugging`, `infrastructure`, `ux-design`, and `design-system` deleted, with the deletion-test answers recorded. The last two are re-homed per *Path-scoped rules for design and UX*: a *templates/rules/design-system.md* asset that `init` seeds into `.claude/rules/` with globs from `harness.yaml` (design directory plus UI source paths) and, for Codex, as a nested instruction file in the design directory; it carries the tokens pointer, the states checklist, accessibility, and the visual-evidence capture rules moved out of `/build`; it is repo-owned after seeding and never overwritten by `--refresh`. **The `tracker` skill:** one thin skill carrying the ticket semantics over the transport the repo declares (`gh` or the official MCP plugins, after the two D4 probes). It owns sequencing for flow and andon: `create` sets native blocked-by relationships and the board's Priority, and reports a breakdown ticket filed without both as incomplete; a breakdown is split by what can proceed independently, not by what is shippable alone, and a ticket is blocked only by what it genuinely reads from; `work-discovery` picks an open P1 bug before anything, then skips blocked tickets, then prefers the higher Priority and the ticket that unblocks the most. **The ledgers:** the standing `proposals-ledger` issue becomes the **improvement ledger** (`improvement-ledger` label; the recipe migrates the old label), and the harness repo's own ledger is the destination for guidance improvements, resolved from the plugin's declared marketplace source, never hardcoded (re-homing the shipped `guidance-feedback-upstream` rule from the retired lock file). `/assess` drains the ledger and records each entry as done, folded, or dropped. Every agent definition carries `model:` and `effort:`, with a change-lane and a feature-lane reviewer definition; skills inherit, and the nine workflow skills carry `effort:` (amended 2026-09-06, see *Skills*). *specs/harness-assumptions.md* with one row per component. The *specs/retired/* directory and the settled proposals leave the tree. `/assess` derives the module count, the guard-to-deliverable ratio, and the gate duration.
 
 **Acceptance criteria.** AC-1 the skill listing is under the 1% budget with the summed description length recorded. AC-2 every hook, script, skill, and agent has a row in the assumptions table. AC-3 `tracker` performs create, transition, hold, Todo placement, and ledger append on a GitHub and a Linear repo (scratch issues, recorded). AC-4 the two D4 probes are recorded before any provider recipe is deleted. AC-5 `create` sets blocked-by and Priority when supplied and reports a breakdown filing incomplete without them; `work-discovery` picks an open P1 bug first, skips a blocked ticket, and prefers the higher Priority among unblocked candidates (scratch issues, the pick recorded). AC-6 no `command-*` or `agent-*` directory remains and both hosts expose every workflow. AC-7 a reflection line filed from a consuming repo about the guidance lands on the harness repo's ledger without a hardcoded owner (direct use from calibrate). AC-8 an `/assess` drain leaves every ledger entry marked done, folded, or dropped. AC-9 `init` on a repo with `layers.design_system: true` writes the rule with the repo's globs and the Codex nested file, and a second `--refresh` leaves a repo edit to the rule untouched (direct use on a scratch repo, diffed).
 
@@ -427,3 +427,121 @@ The shape above survived contact; these five are what building it settled. The t
 ### Modelled
 
 Carried from `drift-reconvergence` with its inputs unchanged, still assumptions: exposure window 15 min falls to about 5 s, collision probability at λ≈8/hr falls from 87% to 1.1%, expected attempts to land fall from 7.4 to about 1.01.
+
+---
+
+## Amendment — 2026-09-07: do less
+
+Decided with the operator on 2026-09-07, forty-eight hours after the reset landed, on the reset's own measurements.
+
+### What the first two days measured
+
+| Measure | Starting line (2026-09-04) | 2026-09-07 |
+|---|---|---|
+| Test lines : script and hook lines | 21,065 : 9,417 (2.2 : 1) | 25,967 : 8,455 (3.1 : 1) |
+| Test modules | 46 | 55 |
+| Issues opened / closed since 2026-09-05 | | 47 / 26, of which 35 outside the five reset tickets |
+| Improvement ledger entries | 72 | 108; one drain folded 13 entries into tickets in one minute |
+| Plugin version | 6.0.1 | 8.0.0, three bumps in a day |
+| Review cycles on post-reset tickets | ceiling 3 | 4, 3, 3, 5 |
+
+The new test lines are guards around guards: a 710-line version-cycle guard that broke the next nightly promotion, 527 lines of heredoc lexing, 255 on the merge path, 184 pinning two hooks' composition. #580 spent five review cycles, four sub-agent reviews, and about 300 lines of guard on one YAML key, and its own close-out says a two-line assertion would have done. The ratchet the reset was written to stop reversed inside its first week.
+
+Six mechanisms produced that, and none of them is a jitter:
+
+1. The reviewer's Proposals section is mandatory, so every review cycle manufactures proposals, and the drain's default was to fold them into tickets.
+2. "The tree contradicts its contract" has no materiality floor, so a stale comment is a bug with a lane, a review, and a guard.
+3. Guard-first remains the default action; P2's "an addition names what it retires" was cited and never applied.
+4. The run context told sessions that any misbehaving hook is a P1 bug, filed and held, so every rough edge got the feature lane.
+5. Lane is decided by directory, so a wording fix under `hooks/` costs a design pass and the deeper reviewer.
+6. Continuous improvement has no limit on work in progress, so it is continuous work.
+
+### P0. Do less
+
+Added ahead of P1 to P5 and precedent over them in any conflict. **The best change is the one not made.** Simplicity scales and complexity fails, at the architecture and at the line; maximise the work not done. *Refuses:* a guard larger than the change it guards without a recorded reason; a second defence that shares an operand with the first; a ticket for a comment; a proposal per review; a fold at drain where drop was available; a bug that names no user outcome; a mechanism added where a number would do; an assurance calibrated for a stage the product is not at.
+
+### The defaults that decide cases
+
+Each is one line in the place named; together they are one change.
+
+| Default | Was | Now | Home |
+|---|---|---|---|
+| **WIP limit** | none | `queue.wip_limit: 6`. Open tickets in Todo, In Progress, and In Review, not held, may not exceed it. A filing above the limit lands in the ledger, not the board; discovery picks nothing beyond it; a drain folds only into free slots. An andon bug bypasses the limit and takes a slot from the top. `/digest` reports the count against the limit daily. | `harness.yaml`, `tracker`, `work-discovery`, `/digest` |
+| **Drain default** | fold | drop. An entry is promoted only when it names what a user or a consuming repo gets; everything else is dropped and the drop is written down | `/assess` drain recipe |
+| **Improvement channel** | reviewer's Proposals section plus the builder's reflection | the reflection alone, three lines, bounded by design. The reviewer reports blocking findings and stops | `review-discipline`, `reviewer` agents |
+| **Bug materiality** | the tree contradicts its contract | and the contradiction names a user outcome or consumer behaviour it breaks. A stale comment, a wording mismatch, a test asserting the wrong thing is an improvement | `review-discipline`, `tracker` |
+| **Lane under `hooks/` and `scripts/`** | feature, by directory | feature for a decision change; fix lane for a message, comment, or test-only edit | spine lane table |
+| **Andon** | any misbehaving hook, script, or ref | a hook or script that refuses correct work or lands wrong work. Everything else is a P2 bug on the queue | spine P4, `work-discovery` |
+| **Guard size** | unstated | the cost line states the guard-to-change ratio; above 3 : 1 it needs a recorded reason, and a reason is not a mutation table | `authoring` cost line, `engineering` |
+
+### The WIP limit, because it is the one mechanism here that is new
+
+A queue with no cap converts every finding into a commitment. A cap converts findings into options: the ledger holds what was noticed, the queue holds what will be built, and nothing moves from one to the other until a slot frees. That is lean's pull system, and it is the only control in this amendment that works mechanically rather than by judgment. Little's law gives the number its meaning: cycle time equals work in progress divided by throughput, so with the queue at 21 and throughput of about a dozen closes a day, most of those tickets wait longer than they take. Six is two concurrent builders, their reviews, and one andon slot; it is a starting value to be measured, not a constant, and the measurement is the open count on the R line against the limit.
+
+### Applied to the queue as it stands
+
+Twenty-one open on 2026-09-07. Under the drop default, five name something a user or consumer loses and stay: #566 (a lost push race re-merges onto the previous merge), #567 (a DEFER is invisible to the drain), #576 (a worktree cut from a stale tip), #582 (an npm-declared gate can run under a substituted shell), #586 (the flat-Node safety test gives opposite verdicts on an empty directory). The rest return to the ledger as dropped, each with the reason, and the ledger keeps them as options. #556's version-cycle guard is re-decided under P0: a version bump the promotion script performs at the hop has an owner and needs no guard, and it would not have broken the nightly. #558 (copy the spine into `CLAUDE.md`) stays held for the operator's answer and does not count against the limit.
+
+### One ticket, then measurement
+
+**T6 — the do-less defaults (fix lane where each edit is a line, feature lane for the spine).** P0 into the spine ahead of the laws; `queue.wip_limit` into the yaml template and the reader; the seven defaults into the homes named; the re-drain performed and recorded on the ledger. It is the one ticket that may be filed above the limit, because it establishes the limit. Then no further process change for the four weeks of measurement the reset promised. The measures that say whether this held: the guard-to-product ratio falling from 3.1 : 1; opened at or below closed on the R line; the open count at or under the limit; review cycles at or under 3 without continuations.
+
+### Decisions — 2026-09-07
+
+| # | Decision | Recorded |
+|---|---|---|
+| D12 | P0 Do less enters the spine ahead of P1 to P5 and takes precedence in conflict | this amendment, `AGENTS.md` |
+| D13 | `queue.wip_limit` at 6 as the starting value, measured and revisited at the four-week mark | `harness.yaml` |
+| D14 | Drop is the drain's default; promotion requires a named user or consumer outcome | `/assess` |
+| D15 | The reviewer's Proposals section is removed; the reflection is the one improvement channel | `review-discipline` |
+| D16 | Bugs carry a materiality floor; andon is narrowed to refused-correct or landed-wrong work | spine, `work-discovery` |
+
+### Refinement — 2026-09-07, later: the limit is per project, and Backlog is real work
+
+Decided with the operator the same day. A repo-wide limit of six is wrong for the product repos, which run well past it and whose feature proposals file more than six tickets at once. The limit applies per **project**, the tracker's own unit of initiative (a Linear project; a GitHub milestone, chosen because it is REST-settable and native), and the tracker's **Backlog** state is where the rest of a project's confirmed work waits, ordered, until a slot frees. This corrects the spine's earlier definition: Backlog is not "work whose existence is uncertain"; that is what the ledger holds.
+
+**Three reservoirs, one direction of flow.**
+
+| Reservoir | Holds | Bounded by | Enters from |
+|---|---|---|---|
+| Improvement ledger | findings: options, not work | nothing | reflections, reviewers' blocking findings that are not the ticket's, filings above a limit |
+| Backlog, per project | confirmed work not yet pulled, ordered by dependencies then priority | nothing | a proposal's breakdown, a drain that promotes, a filing when the project's slots are full |
+| The queue, per project (Todo, In Progress, In Review; held tickets excluded) | work committed and in flight | `queue.wip_limit`, default 6 | Backlog, by pull, when a close frees a slot |
+
+**The rules.**
+
+- Every ticket names its project at filing; a ticket filed from inside a build inherits the parent ticket's project, so a defect found while building an initiative lands in that initiative's queue, not in a generic remediation pile. A repo may declare one project as the default for work that belongs to no initiative.
+- A proposal's breakdown files every ticket into the proposal's project. The first `wip_limit` in dependency order enter Todo; the rest wait in Backlog. The reset itself would have filed T1 to T3 into Todo and T4 and T5 into Backlog until a slot freed, which is the order they were built in anyway.
+- A close frees a slot, and discovery pulls the highest-ranked Backlog ticket of that project whose blockers are closed. The operator can pull by hand at `/digest --drain`. Nothing else moves a ticket from Backlog to Todo.
+- `queue.active_projects`, default 3, bounds initiatives in flight: a project with any ticket in its queue is active, and a new project's tickets wait in Backlog until an active one empties. This is the WIP limit one level up, and it is the number that stops a repo running six initiatives at once.
+- A project may override its limit in `harness.yaml` under `queue.projects.<name>.wip_limit`, because some initiatives carry their own loop and pace.
+- The andon cord is repo-wide and bypasses every limit: an open bug that refuses correct work or lands wrong work is the only pick in the repo until it closes.
+- Adoption is a placement, not a purge: on the first tick after the limit lands, each project's lowest-ranked tickets above its limit move from Todo to Backlog. Nothing is closed or dropped by the mechanism.
+- `/digest` reports, per project, open against limit and Backlog depth, and repo-wide, active projects against their limit and the ledger's new entries.
+
+**What this changes in the amendment above.** The re-drain of the harness's own queue stands, and its five survivors sit in one project, the lifecycle reset, with one free slot. The spine's Backlog definition is rewritten as part of T6. `harness.yaml` gains `queue.wip_limit`, `queue.active_projects`, `queue.project_field` (`project` for Linear, `milestone` for GitHub), and the optional per-project overrides. D13 is amended: six is the per-project default, three the active-project default, both starting values read for four weeks.
+
+### The operating context — 2026-09-07, later
+
+Decided with the operator the same day, and it belongs ahead of every principle, because it is the reason lean is the right frame and the reason the first two days went wrong.
+
+**Who we are.** Pre-user, pre-revenue startups, and the tool that serves them. Nobody's data, money, or day depends on these repos yet. A wrong change costs a revert; it does not cost a customer. That will change, and when it does this section changes with it.
+
+**What we are optimising for.** Speed and simplicity, because they are the fastest route to sustainable flow and high quality, not a trade against it. The point of building quality in is to go faster, not to go slower more safely. We do not ship slop that becomes unmaintainable; we also do not build an enterprise transaction system for millions of users, and every guard, review cycle, and lane must be calibrated to the stage we are at rather than the stage we imagine.
+
+**The risk appetite, stated so nobody has to infer it.**
+
+- We accept a defect reaching the integration branch. The composite gate and the next builder catch it, and a revert is cheap.
+- We accept an as-built record that lags a day, a comment that is stale, a message that is imprecise. Those are improvements for a slot, never bugs, and never blockers.
+- We do not accept losing user data, leaking a credential, or moving money wrongly. Those are the protected areas, and the only ones; anything else on a protected-areas list is inherited from a posture we are not in.
+- We do not accept a week of cycle time to prevent a defect a revert would fix in an hour. Cost is measured in cycle time and tokens as much as in defects.
+
+**What this decides.** The fix lane is the common case and the feature lane is rare; a design pass is owed when a contract or a protected area moves, not when a file under `hooks/` does. A reviewer's finding must matter at this stage, and "it could be wrong in a case no user will hit for a year" is not a finding. A guard earns its place by an occurrence, and its size is bounded by the change it guards. A P1 is something that stops the line for everyone, and at this stage that is a hook refusing correct work or a landing that lost bytes, not a wording mismatch. The reflection names waste so the next run has less of it, not so the ledger has more.
+
+**Where it lives.** One paragraph at the head of the spine's principles, and one line in every consuming repo's spine: *Stage: pre-user, pre-revenue. Posture: speed and simplicity; a wrong change costs a revert. Protected: user data, credentials, money.* It is a sentence agents read, not a mechanism code reads, and it is the line to rewrite on the day the product gains a user. T6 carries it.
+
+**What it changes above.** P0 gains one refusal: an assurance calibrated for a stage the product is not at. The reviewer's mandate in T2's scoped form is read through it. The guard-size default's "recorded reason" must name the user outcome the guard protects at this stage.
+
+### One queue for the harness — 2026-09-07, later
+
+The per-project limit is for the product repos, where initiatives have their own loops and a proposal files a dozen tickets. This repo's work arrives from feedback and is one initiative at a time, so it declares no project field and runs a single queue at the default limit. The GitHub milestone requirement above applies to a GitHub-backed product repo, not here; `queue.project_field: none` means the repo is its own project, and `queue.active_projects` does not apply. D13 is read accordingly.

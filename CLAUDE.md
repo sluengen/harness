@@ -13,12 +13,15 @@ Nothing in `AGENTS.md` is repeated below. These are the differences that apply o
 this host alone.
 
 - **Slash commands are skills.** Each of the nine lifecycle workflows ships once,
-  as a skill under `skills/`, so one artefact serves both hosts. Seven carry
-  `disable-model-invocation: true` and are yours to trigger; `build` and `review`
-  stay model-invocable because `/routine` drives `/build` and `/build` drives the
-  review stage, and the flag would break that composition.
+  as a skill under `skills/`, so one artefact serves both hosts. Four carry
+  `disable-model-invocation: true` and are yours to trigger; `routine`, `build`,
+  `review`, `digest` and `assess` stay model-invocable because each answers to a
+  caller that is not a human at a prompt — a scheduled run fires `/routine` and
+  `/digest`, a work-pull run falls back to `/assess`, `/routine` drives `/build`,
+  and `/build` drives the review stage — and the flag would refuse that caller
+  (#564, #565).
 - **Hooks.** `hooks/hooks.json` registers the six guards at install; no per-repo
   wiring. Permissions and the unattended authorisations live in
   `settings/harness.json`.
-- **Sub-agents.** `agents/` defines the four roles Claude Code dispatches. Codex
+- **Sub-agents.** `agents/` defines the five roles Claude Code dispatches. Codex
   reads its own equivalents from `.codex/agents/`.

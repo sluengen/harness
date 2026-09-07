@@ -110,6 +110,15 @@ const DEFAULT_MAX_AGE_SECONDS = 86400;
 //: Where markers live under the git common directory.
 const MARKER_SUBDIR = ["harness", "gate"];
 
+//: Where a run declares which ticket it is building — ``.harness/run.json``, the
+//: orchestrator's own state file, gitignored and local to one worktree. Read
+//: only by ``runTicket`` and only for its ``ticket`` field; the contract is
+//: ``skills/build/references/run-state.md``, and this hook imposes nothing on it
+//: that the writer does not already meet. A run file that stopped carrying a
+//: ticket would make the ownership filter inert, which is today's behaviour.
+const RUN_STATE_DIR = ".harness";
+const RUN_STATE_FILE = "run.json";
+
 //: Used when a repo declares no branches, matching ``push-target-guard.js``. A
 //: session on one of these is not building, so it is never blocked.
 const FALLBACK_PROTECTED = [
@@ -156,6 +165,17 @@ const MAX_DERIVED_CHECKED = 4;
 //: the worktree — in an unattended run, the agent. Collapsing whitespace removes
 //: the newline-injection shape and the bound keeps the reason readable.
 const MAX_REPORTED_PATH = 200;
+
+//: The cap on a path this hook tells the operator to **open** or to run in.
+//: The twin of `push-target-guard.js`'s constant, for the same reason and at
+//: the same number: `Expected marker:` hands over a
+//: `<root>/.git/harness/gate/<40 hex>.json` whose fixed 64-character tail was
+//: exactly what 200 cut off, and `Run the repo verify command ... in <dir>`
+//: names a directory to change into. Both are remedies, not diagnostics. See
+//: that file's block for why PATH_MAX is the bound and why the marked-cut arm
+//: is covered by driving the helper directly rather than by an argument about
+//: which callers can reach it (#568).
+const MAX_REPORTED_FILE_PATH = 4096;
 
 /**
  * Fail open, loudly. See the identical helper in the other hooks (#303): the
@@ -354,6 +374,10 @@ const reportedUnreadable = new Set();
  * measures the bound.
  */
 function noticeUnreadableDeclaration(file) {
+  // Stays on MAX_REPORTED_PATH, deliberately (#568 AC-4), for the reason its
+  // twin in `push-target-guard.js` states: this names *which* declaration was
+  // skipped and prescribes nothing to open, so a cut name degrades a diagnostic
+  // where a cut path in a refusal is a wrong instruction.
   const name = String(file);
   if (reportedUnreadable.has(name)) return;
   reportedUnreadable.add(name);
@@ -678,6 +702,72 @@ function containingWorktree(dir, universe) {
   return best;
 }
 
+/** The ticket the run rooted at ``dir`` declares, or null when none is established.
+ *
+ * **The answer to "whose work is this?" (#587).** Membership of the derived
+ * candidate set was *visitation*: any worktree of this repository whose path
+ * appeared as a transcript ``cwd``. On a host running many agents over sibling
+ * worktrees at once — which law 5 and ``worktree-isolation`` require — one
+ * read-only ``cd`` therefore enrolled another agent's live run for the rest of
+ * the session, and the remedy the block prints told that session to gate a tree
+ * it did not author. A marker earned that way is indistinguishable from one the
+ * other run earned itself, so the compliant path forges evidence. This reader is
+ * how the loop below asks the question instead of assuming the answer.
+ *
+ * ``dir`` is always a worktree root **git printed** — ``sessionTop``, or a
+ * ``path`` from ``git worktree list``. It never receives a transcript value, and
+ * the two tail components are hook-owned constants.
+ *
+ * The value is read, compared, and discarded. It reaches no ``reason``, no
+ * ``spawnSync`` argv and no path construction — a set-membership key exactly as
+ * ``sessionCwds()`` treats a transcript ``cwd``, and weaker than one: a cwd
+ * selects among git's worktrees, while a ticket can only *remove* one. Influence
+ * is bounded above by admitting every visited worktree, which is today's
+ * behaviour, and below by admitting none, which is #436's.
+ *
+ * **Never throws, and never reports what it read.** ``readFileSync`` and
+ * ``JSON.parse`` are the throwing sites and both answer null: a throw would take
+ * ``main``'s outer catch and disarm the whole hook over a file that is absent in
+ * every ordinary session. There is deliberately no ``failOpen`` call either.
+ * V8 quotes the offending bytes for some malformed shapes and not others —
+ * measured on node v24: ``notjson`` yields ``Unexpected token 'o', "notjson" is
+ * not valid JSON`` while ``{oops`` yields only a position — and this file is
+ * agent-written, so reporting the error can put its content on stderr. That is
+ * the caught-and-discard idiom of ``resolved()``, for the same reason. */
+function runTicket(dir) {
+  let raw;
+  try {
+    raw = fs.readFileSync(path.join(dir, RUN_STATE_DIR, RUN_STATE_FILE), "utf8");
+  } catch (err) {
+    // Absent is the ordinary case, and unreadable is a fact rather than an error.
+    void err;
+    return null;
+  }
+  let entry;
+  try {
+    entry = JSON.parse(raw);
+  } catch (err) {
+    void err; // Deliberately unreported; see the note on stderr above.
+    return null;
+  }
+  // The only shape that can *throw*: ``JSON.parse("null")`` returns null and
+  // ``null.ticket`` raises, which would escape to ``main``'s outer catch and
+  // fail the whole hook open. Everything else answers below.
+  if (entry === null) return null;
+  const ticket = entry.ticket;
+  // The whole type gate, and deliberately the only one. Mirroring
+  // ``sessionCwds()``'s ``Array.isArray`` and ``hasOwnProperty`` tests was
+  // measured dead here rather than assumed: a JSON array's ``.ticket`` is
+  // ``undefined``, a JSON string's and a number's are too, and ``JSON.parse``
+  // defines ``__proto__`` as an own data property without invoking the setter,
+  // so no document can hand this line an inherited string. Each shared its
+  // operand with this test, which is the second defence P0 refuses, and a clause
+  // no input can reach scores as a survivor on every future mutation table. The
+  // shapes are still enumerated in the suite, as behaviour rather than as lines.
+  if (typeof ticket !== "string" || ticket === "") return null;
+  return ticket;
+}
+
 /** The directories to ask about, in order, lazily.
  *
  * The payload ``cwd`` is always first and always evaluated, which preserves v1
@@ -708,6 +798,10 @@ function* candidates(input, sessionCwd) {
   const sessionTop = top === null ? null : resolved(top) || top;
   const declared = sessionTop === null ? {} : declaredConfig(sessionTop);
   const skip = protectedBranches(declared, anchor);
+  // Read once, below the yield above, so the payload ``cwd`` is answered having
+  // read no run file at all. Null where the session sits in no work tree — the
+  // ``CLAUDE_PROJECT_DIR`` anchor path — which admits every candidate, as today.
+  const ownTicket = sessionTop === null ? null : runTicket(sessionTop);
 
   let checked = 0;
   const yielded = new Set();
@@ -721,6 +815,18 @@ function* candidates(input, sessionCwd) {
     if (worktree.branch !== null && skip.has(worktree.branch)) continue;
     if (worktree.path === sessionTop) continue; // already evaluated, as the cwd
     if (yielded.has(worktree.path)) continue;
+    // #587: another run's worktree, on a **positive contradiction** only — two
+    // tickets, both established, unequal. Anything less is unestablished and
+    // admits, which is the behaviour above this line. Counting a missing own
+    // ticket as a difference would skip every ticketed worktree for the
+    // orchestrator-at-root shape of #439 and return this hook to installed and
+    // inert. Placed last of the five filters, so the file read happens only for
+    // a worktree that would otherwise be checked, and ahead of ``checked``, so a
+    // skip spends none of a budget that bounds five git spawns per unit.
+    // ``worktree.path === sessionTop`` has already run, so this can never
+    // compare a worktree with itself.
+    const theirTicket = runTicket(worktree.path);
+    if (ownTicket !== null && theirTicket !== null && theirTicket !== ownTicket) continue;
     yielded.add(worktree.path);
     checked += 1;
     yield { dir: worktree.path, derived: true };
@@ -747,7 +853,9 @@ function verdictFor(dir) {
  * ``failOpen`` idiom, because ``reason`` is written straight into the model's
  * context. */
 function reportable(value) {
-  return String(value).replace(/\s+/g, " ").slice(0, MAX_REPORTED_PATH);
+  const flat = String(value).replace(/\s+/g, " ");
+  if (flat.length <= MAX_REPORTED_FILE_PATH) return flat;
+  return `${flat.slice(0, MAX_REPORTED_FILE_PATH)}[... truncated at ${MAX_REPORTED_FILE_PATH} characters]`;
 }
 
 function block(reason) {
@@ -841,6 +949,7 @@ if (require.main === module) {
 // still measures the arm a shared reader cannot make vacuous — that each hook's
 // protected set really is derived from the declaration.
 module.exports = {
+  reportable,
   markerPath,
   maxAgeSeconds,
   currentTree,
