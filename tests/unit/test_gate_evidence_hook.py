@@ -654,6 +654,130 @@ def test_clean_branch_behind_integration_is_not_claimed(tmp_path: Path) -> None:
     assert _run_real(root, tmp_path) == {"continue": True}
 
 
+def _detached_ahead(
+    tmp_path: Path, name: str, *, dirty: bool = False, linked: bool = False
+) -> Path:
+    """A checkout left **detached** at a commit ahead of ``dev``, and ahead of
+    every ref the declaration names under either spelling.
+
+    That last clause is the precondition, not a detail. ``atConfiguredProtectedTip``
+    already exempts a primary checkout sitting *at* a protected tip under the
+    local **or** the remote spelling, so a fixture that only makes ``dev`` stale
+    is answered there and is green against the unfixed hook — it never reaches
+    the arm under test. What is left once that exemption is spent is the state
+    #569 was refused on three times: nothing authored here, and one commit
+    between the resolved tip and a HEAD that belongs to no branch. A stale local
+    ``dev``, which ``integrationTip`` deliberately prefers, and the gate's own
+    ``--detach`` checkout of a merge result both land in it.
+    """
+    root = tmp_path / name
+    root.mkdir()
+    _git(root, "init", "-q", "--initial-branch=dev")
+    _git(root, "config", "user.email", "t@example.com")
+    _git(root, "config", "user.name", "t")
+    _commit(root, "a.txt", "base\n")
+    (root / "CONTEXT.md").write_text(_DECLARES_DEV)
+    (root / ".gitignore").write_text(".worktrees/\n")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "context")
+    behind = _git(root, "rev-parse", "HEAD")
+    _commit(root, "later.txt", "landed since\n")
+    ahead = _git(root, "rev-parse", "HEAD")
+
+    # Detaching the primary checkout first is what frees ``dev`` to be moved
+    # back; a branch checked out anywhere cannot be repointed.
+    _git(root, "checkout", "-q", "--detach", ahead)
+    _git(root, "branch", "-f", "dev", behind)
+    if linked:
+        cwd = root / ".worktrees" / "task"
+        _git(root, "worktree", "add", "-q", "--detach", str(cwd), ahead)
+    else:
+        cwd = root
+    if dirty:
+        (cwd / "a.txt").write_text("edited here after all\n")
+    return cwd
+
+
+def _is_detached_ahead(cwd: Path) -> None:
+    """Every precondition of the arm under test, asserted rather than assumed.
+
+    Three of the four are cheap. The one that earns its place is the middle one:
+    without it a fixture is answered by ``atConfiguredProtectedTip`` and passes
+    against the unfixed hook, having never reached the predicate it is named for.
+    """
+    detached = subprocess.run(
+        ["git", "symbolic-ref", "--quiet", "HEAD"], cwd=cwd, capture_output=True, text=True
+    )
+    assert detached.returncode != 0, f"HEAD is attached, to {detached.stdout.strip()}"
+
+    head = _git(cwd, "rev-parse", "HEAD")
+    for ref in ("refs/heads/dev", "refs/remotes/origin/dev"):
+        if _resolves(cwd, ref):
+            assert _git(cwd, "rev-parse", ref) != head, (
+                f"HEAD sits at {ref}, so the protected-tip exemption answers "
+                f"before the arm this test is about"
+            )
+
+    ahead = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", "dev", "HEAD"], cwd=cwd, capture_output=True
+    )
+    assert ahead.returncode == 0, "HEAD is not ahead of dev, so nothing reaches the arm"
+
+
+def test_a_clean_detached_checkout_ahead_of_integration_is_not_claimed(
+    tmp_path: Path,
+) -> None:
+    """#569. Commits between the integration tip and a **detached** HEAD say
+    nothing about who made them.
+
+    Being strictly ahead of the tip is a proxy for *this session committed work
+    on its task branch*, and the proxy holds only while there is a branch. This
+    function's own docstring says "commits ahead of the integration **branch**";
+    detached, it is answering about a subject that does not exist, and it reports
+    the repo root as unfinished work on every completion claim for the life of a
+    build that never touches it.
+    """
+    cwd = _detached_ahead(tmp_path, "clean-detached")
+    _is_detached_ahead(cwd)
+
+    assert _git(cwd, "status", "--porcelain") == ""
+    assert _run_real(cwd, tmp_path) == {"continue": True}
+
+
+def test_a_dirty_detached_checkout_still_counts(tmp_path: Path) -> None:
+    """The positive control, and the reason #569's stated fix was not taken.
+
+    Applying the derived candidates' ``detached`` filter to the payload ``cwd``
+    at admission drops this shape too — a session that edited files in a detached
+    checkout and claimed done, which is exactly what this hook exists to catch.
+    Dirtiness is session work whatever HEAD points at, so the new condition sits
+    *below* the dirtiness arm and a mutation that lifts it above fails here.
+    """
+    cwd = _detached_ahead(tmp_path, "dirty-detached", dirty=True)
+    _is_detached_ahead(cwd)
+
+    assert _blocked(_run_real(cwd, tmp_path))
+
+
+def test_a_linked_detached_worktree_ahead_of_integration_is_not_claimed(
+    tmp_path: Path,
+) -> None:
+    """The same allow, from a linked worktree rather than the primary checkout.
+
+    ``isPrimaryCheckout`` is the one asymmetry this file already carries
+    deliberately (:func:`test_linked_worktree_at_a_protected_tip_gets_no_primary_shortcut`),
+    so an implementer may reach for it here too and every other criterion still
+    passes. Detachment is not a property of being primary: ``candidates()``
+    already refuses **every** detached worktree at admission, and the two paths
+    are meant to agree.
+    """
+    cwd = _detached_ahead(tmp_path, "linked-detached", linked=True)
+    _is_detached_ahead(cwd)
+
+    assert _git(cwd, "status", "--porcelain") == ""
+    assert _run_real(cwd, tmp_path) == {"continue": True}
+
+
 def _git_argv_log(tmp_path: Path) -> tuple[dict[str, str], Path]:
     """Intercept the hook's bare ``git`` spawn and record its argument vectors."""
     real = shutil.which("git")

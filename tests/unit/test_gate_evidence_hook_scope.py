@@ -314,6 +314,64 @@ def test_a_build_driven_from_the_repo_root_blocks_on_the_worktree_it_worked_in(
     assert _tree(wt)[:12] in out["reason"], "and the tree no marker covers"
 
 
+def test_a_detached_repo_root_does_not_short_circuit_the_worktree_it_worked_in(
+    tmp_path: Path,
+) -> None:
+    """#569, and AC-1's shape once the root is **detached** rather than sitting
+    on the integration branch.
+
+    This is the ticket's reported consequence rather than its predicate. The
+    ticket asked for a live demonstration and this stands in for it deliberately:
+    a host state is not a durable criterion — the checkout the three firings were
+    recorded in has since moved twice, and each time a *different* exemption
+    answered before the arm under test, so a run of the real hook against a real
+    repo proves whatever that repo happens to be that hour. The composition is
+    asserted here instead, where it holds every time.
+
+    ``candidates()`` yields the payload ``cwd`` first and the caller returns on
+    the first candidate that produces a verdict. A root that blocks is therefore
+    a root no derived worktree is reached past — and the session was told to gate
+    a checkout it had authored nothing in while the worktree holding the change
+    went unexamined. The assertion that separates a fix from a hook that merely
+    stopped blocking is the *reason*: it must name the worktree and its tree.
+
+    The preconditions are asserted rather than assumed, for the reason
+    ``_is_detached_ahead`` gives in the sibling module: a root that any *other*
+    exemption answers is one the loop reaches the worktree past anyway, so the
+    block below would arrive for the wrong reason while still reading as a
+    control.
+    """
+    root = _project(tmp_path)
+    wt = _worktree(root, "569")
+    behind = _git(root, "rev-parse", "HEAD")
+    (root / "landed.txt").write_text("landed since\n")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "landed")
+    _git(root, "checkout", "-q", "--detach", "HEAD")
+    _git(root, "branch", "-f", "dev", behind)
+
+    assert _git(root, "status", "--porcelain") == "", "the root must be clean to be #569"
+    head = _git(root, "rev-parse", "HEAD")
+    for role in ("dev", "staging", "main"):
+        for ref in (f"refs/heads/{role}", f"refs/remotes/origin/{role}"):
+            resolved = subprocess.run(
+                ["git", "rev-parse", "--verify", "--quiet", ref],
+                cwd=root,
+                capture_output=True,
+                text=True,
+            )
+            assert resolved.returncode != 0 or resolved.stdout.strip() != head, (
+                f"HEAD sits at {ref}, so the protected-tip exemption answers "
+                f"before the short-circuit this test is about"
+            )
+
+    out = _run(root, _transcript(tmp_path, root, wt))
+
+    assert _blocked(out), out
+    assert str(wt) in out["reason"], "the detached root short-circuited the worktree"
+    assert _tree(wt)[:12] in out["reason"], "and the block is about that worktree's tree"
+
+
 # --- AC-2: the intersection, and what it keeps out ----------------------------
 
 
