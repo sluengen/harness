@@ -76,8 +76,8 @@ directions (a row with no file on disk, or a file with no row, both fail).
   the four harness gate-ignore patterns (`.harness/`, `.worktrees/`), hand-written with
   no `harness:gate-ignore:begin`/`:end` markers, and omits the other two (`.evidence/`,
   `.claude/worktrees/`). A refresh run against this file must append exactly the two
-  missing patterns, wrapped in the marker comments, and leave the two pre-existing lines
-  untouched and outside any marker.
+  missing patterns, write no `harness:gate-ignore` marker in either spelling, and leave
+  the two pre-existing lines untouched (#601).
 
 ## Notes
 
