@@ -1,8 +1,9 @@
 # Synthetic fixture (tests/fixtures/refresh/MANIFEST.md documents it as such).
 # Carries two of the four harness gate-ignore patterns, hand-authored, no
 # harness:gate-ignore markers. A refresh run against this file must append
-# only the two missing patterns (.evidence/ and .claude/worktrees/), wrapped
-# in the marker comments, and leave these two untouched.
+# only the two missing patterns (.evidence/ and .claude/worktrees/), write no
+# harness:gate-ignore marker in either spelling, and leave these two
+# untouched (#601).
 node_modules/
 dist/
 .harness/
