@@ -75,7 +75,8 @@ This traces to P0 (do less; the machinery is a guard larger than what it guards)
 ## Not doing
 
 - **Anything inside a consumer repo's CI, branch protection or billing** — out because we stay in our lane. This repo decides what the plugin delivers; `calibrate` and `nano-erp` already run their own gated paths to `main` via `staging`, and #618's purchase question is theirs, not this proposal's. Reopen only if a consumer asks the plugin to carry a control it cannot hold itself.
-- **A replacement enforcement mechanism in any form** — no advisory push guard, no lighter marker, no "just a warning". Out because the guard is where the accretion restarts and because a warning nothing acts on is over-processing with extra steps. Reopen if a measured incident shows a red tree reaching an integration branch and *staying* there past the next builder.
+- **Any guard that reads gate state** — no lighter marker, no "is this tree certified" warning, no tree resolution. Out because that is the accretion restart: a guard that must know whether a tree was gated needs the marker, the config reader and the tree computation behind it, which is how 3,110 lines happened the first time. **The boundary is testable and belongs in item 1's ADR: a surviving hook may read the push target and the branch names in `harness.yaml`, and nothing else.** A future ticket that wants a hook to know whether the tree was gated is making a new decision, not extending this one. Reopen if a measured incident shows a red tree reaching an integration branch and *staying* there past the next builder.
+- **A target-aware advisory hook is explicitly *in*** — it reads the push target, warns on a declared role branch, and is the surviving fragment of `push-target-guard.js` rather than a new mechanism. It is named here only because the line above would otherwise appear to rule it out.
 - **Deleting `test-lock-guard.js`, `prompt-guard.js`, `workflow-guard.js`** — out of scope; these are the portable hooks the target state keeps.
 - **Rewriting the assessment cadence or the ledger** — out; `/assess` is guidance and stays. Only its subject changes.
 - **Changing the tracker, the lanes, or the review discipline** — out. This proposal deletes enforcement, not process.
@@ -90,17 +91,18 @@ This traces to P0 (do less; the machinery is a guard larger than what it guards)
 | D3 — Does `plugin-version.js` (522 lines) go? Without vendored assets there is no version-mismatch failure mode; `claude plugins update` still compares the manifest string, so a bump is still needed — but it may be a line in `/build` rather than a script. | user | ADR (new) |
 | D4 — The design system: skill-with-attached-assets, copied out at hydration. Does `build_design_tokens.py` (352 lines) travel with it as a skill asset, or is the 8-tier structure carried as assets alone? | user / architect | `specs/features/` |
 | ~~D6~~ — **Resolved 2026-09-08 by the operator.** No new `/land`: the landing half folds into **`/promote`**, which already moves a branch to its next destination. One skill, two altitudes. **One consequence must ship with it — see D7.** | resolved | `skills/promote` |
-| D7 — `/promote` carries `disable-model-invocation: true`, and `/routine` states that role branches "move only through `/promote`" while driving `/build` alone. Once `/promote` *is* the landing step, the unattended loop must drive it — so the flag comes off and `/routine` gains the call. Confirm, since it widens what an unattended run may invoke. | user | `skills/promote`, `skills/routine` |
+| ~~D7~~ — **Resolved 2026-09-08 by the operator.** Whatever it is called, unattended agents must be able to run the landing step in a routine. `disable-model-invocation` comes off `/promote`, `/routine` gains the call, and misuse is discouraged by an **advisory** target hook rather than by withholding the command. | resolved | `skills/promote`, `skills/routine` |
+| D8 — Does a force-push to a declared role branch stay a **refusal**, or become advisory like the rest? This is a ~971-line question, not a philosophical one: see *Why the advisory hook is cheap* below. Recommendation is advisory. | user | ADR (item 1) |
 | ~~D5~~ — **Resolved 2026-09-08 by the operator.** Stop the line, don't stop: the builder who hits red at integration fixes it then, whether the cause is their diff or a clobber. No tick stalls. Residual risk is duplicated effort in the window before a fix is visible, bounded by rebasing from the integration branch before running the gate. Item 4 writes this into `/build`. | resolved | `skills/build`, `skills/routine` |
 
-With D2 withdrawn and D5, D6 resolved, **no open decision blocks item 1.** D1, D3, D4 and D7 can each be answered when their item comes up — D7 at item 4, and it is a confirmation rather than a design question.
+With D2 withdrawn and D5, D6, D7 resolved, **no open decision blocks item 1.** D1, D3 and D4 are answered when their item comes up. **D8 is answered at item 2**, which is where the lexer either survives or does not.
 
 ## Breakdown
 
 Item 1 sets the shape — *the plugin is the whole product, a consumer's own CI is its control, hydrate+audit is the consumer contract* — and is expensive to unpick once the deletions follow it. It is held for the operator, and every item below declares a dependency on it.
 
 1. **Record the shape** *(feature; held — `input`)* — an ADR stating that the plugin is the whole deliverable, that nothing is vendored into consumers, that a consumer's own CI and branch protection are out of lane, and what the accepted residual risk is. Supersedes ADR 0020 and, in effect, ADR 0018. Held because the shape is expensive to unpick, not because a decision is outstanding. **Depends on: nothing. Everything below depends on this.**
-2. **Retire the marker complex** *(feature)* — delete `gate-marker.js`, `gate-evidence-guard.js`, `push-target-guard.js`, `git-push-guard.js` and their tests; rewrite spine laws 3 and 5 and the *Enforcement* section to describe CI and the three surviving hooks. ~13,600 lines. **Depends on 1.**
+2. **Retire the marker complex, and reduce the push guards to one advisory** *(feature)* — delete `gate-marker.js` and `gate-evidence-guard.js` outright. **`push-target-guard.js` is reduced, not deleted:** its branch-name recognition survives as a small advisory hook that warns on a push to a declared role branch; its marker half goes with the binding. `git-push-guard.js`'s fate is D8. Rewrite spine laws 3 and 5 and the *Enforcement* section around CI and the surviving hooks. ~13,600 lines, less whatever D8 keeps. **Depends on 1.**
 3. **Retire the landing and promotion machinery** *(feature)* — delete `land.js`, `harness-refs.js`, `promotion-step.sh` and their tests; `/promote` and `/build`'s ship step become plain git against a green CI status. ~3,300 lines. **Depends on 2** — these exist only to serve the binding. Item 4 then gives `/promote` the landing half, so sequencing these two adjacently avoids rewriting the same skill twice.
 4. **Split the lifecycle at PASS, and rebase before review instead of after** *(feature)* — `/build` ends at a reviewed branch; `/promote` takes it from there. The stage order becomes:
 
@@ -116,6 +118,16 @@ Item 1 sets the shape — *the plugin is the whole product, a consumer's own CI 
 9. **Re-baseline the ratio** *(change)* — one `/assess` process pass measuring assurance-per-product-line against the 6.86 baseline, so the change is evidenced rather than asserted. **Depends on 2–8.**
 
 Items 2, 4 and 8 are independent of 5–7 once 1 lands, so the deletion track and the hydrate track run in parallel (P3).
+
+### Why the advisory hook is cheap, and what would make it expensive
+
+Adding a hook to a proposal about deleting hooks needs its reason on the record.
+
+`git-push-guard.js` is 971 lines, and its own header says why: *"most of this file is a POSIX shell lexer — quoting, `$(…)`, backticks, ANSI-C escapes, parameter expansion — because deciding a force-push from the raw command string is what CAL-1001 proved cannot be done."* Deny globs missed `-fq`, `--force` in trailing position, `+HEAD:dev` with the remote omitted, and `git -C … push` reordering. The lexer exists because **a refusal must not be bypassable.**
+
+An advisory warning has the opposite tolerance. A false negative costs one un-warned push; nobody is relying on it to hold a line. So a target hook can match the command with an ordinary pattern, accept imperfect coverage, and stay small — **but only while it stays advisory.** The moment it must refuse, the lexer comes back, and with it the reason this repo has 971 lines to decide the meaning of one flag. That is the accretion trigger, and it is worth writing into item 1's ADR beside the read-only boundary.
+
+Which turns D8 into an arithmetic question. Keep force-push-to-a-role-branch as a refusal and the lexer stays. Make it advisory and it goes with the rest. **The recommendation is advisory**, for two reasons: this repo is public, so GitHub branch protection already refuses a force-push to `main` and `dev` server-side, in the right place and for free; and a consumer's protection is out of lane by the operator's own scoping. That leaves the lexer defending a case already covered here and not ours to cover there. The counter-argument deserves stating: a force-push is the one action a revert cannot undo, so it is not stage-calibrated the way a red tree is. It is still *recoverable* — server-side reflog, and other agents' clones carry the commits — which is why the recommendation stands rather than being obvious.
 
 ### The seam, and why item 4 waits for item 3
 
