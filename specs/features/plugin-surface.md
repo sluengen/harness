@@ -512,6 +512,60 @@ inside the run rather than after it: a no-skill envelope that barred
 24 copied `metrics.json` files naming the iteration and the arm, which identified the
 with-skill arm to any grader who opened one and forced a full re-grade of all eight.
 
+### The craft file's fiftieth entry
+
+#603 adds one entry to `skills/review-discipline/references/craft.md` and moves nothing
+else: *A corpus is blind to any dimension its fixtures hold constant*, in the *Vacuity*
+family between *A positive control must exercise the predicate, not re-implement it* and
+*Born green*, with its Contents line in the same position. The header sentence the count
+was ever evidence for — *Fifty-odd entries in six families* — stays true, so no figure
+here needs a date. Contents order matches heading order in all six families and every
+entry link resolves, derived at this record's tree.
+
+**The title was cited three times before it existed.**
+`tests/unit/test_gate_command_declaration_contract.py:270` and `:447` cite it verbatim,
+`tests/unit/test_context_branch_parsing_contract.py:222` in variant wording, each as
+though the entry shipped — this file's own *A forward reference becomes a lie the day its
+dependency ships*, in the direction where the dependency never arrived. The entry resolves
+all three without editing any of them, and does not make the tree cite-clean: other
+non-existent entries are cited elsewhere, and no criterion claimed otherwise. Nothing
+mechanical holds any of it. No gate stage reads `craft.md`, no test reads its Contents,
+and ADR 0017 D5 admits no guard over prose meaning, so the anchor derivation and the cite
+resolution are a reviewer's read with the same standing as the process-economy claims
+below.
+
+**The falsifying example contradicts this repo's own history, deliberately.** V8 answers
+a malformed document either with a window of its source quoted back or with a message
+carrying none of its bytes, and which one a document draws turns on the parse error rather
+than on its opening character:
+`{"a":}` opens with `{` and is quoted, `{,}` opens with `{` and is not, both measured on
+node v24.19.0. `f8cf773`'s commit message and the comment it added to
+`tests/unit/test_gate_evidence_hook_scope.py` state the opening-character rule instead.
+That commit's fixture repair was right and the generalisation beside it was not; the entry
+is written against the measurement, and the two test files are left as they stand.
+
+**The evidence is direct use, and the residual is stated rather than hidden.** Four
+recorded rounds of fresh contexts, each handed the shipped entry and one probe diff and
+asked for blocking findings. Every diff the entry fired on genuinely held its dimension
+constant, and it fired on none that was sound along that dimension. The must-not-fire
+direction rests on one context that weighed the entry by name and declined, and on others
+that matched their diff to a *different* entry: no code-side control ever came back with
+zero blocking findings, because each successive control draft carried a real defect of its
+own and another entry in this file caught every one. The B-side stopped there rather than
+spend another attempt on the instrument, the probe domain having turned out to carry more
+interacting dimensions than the control needed.
+
+**Four refusals, each with its principle.** No guard over the Contents/anchor
+correspondence — admissible under ADR 0017 D5 as tree-consistency, but a guard module
+against a one-entry diff blows the 3:1 ratio (P0). No second home in `skills/build/SKILL.md`, which carries no corpus, sample or probe
+vocabulary and would be taxed on every build run for a class the reviewer's own file
+already gates (P0, P2). No widening of `craft.md`'s load trigger, so a builder
+commissioning a guidance probe on a prose-only diff still never loads the file — the
+header makes the operator the budget-holder for that tax (P0), and the residual goes to
+the improvement ledger alongside G2's, the choice to mutate the short-circuiting operand
+of a conjunction as distinct from detecting a mispredicted killer. And no rewrite of the
+three citing tests, which the entry makes correct where they stand.
+
 ### The assessment layer
 
 `/assess` writes one dated report per pass to `assessments/<YYYY-MM-DD>-<scope>.md` in the `templates/assessment.md` format. That template owns the **retention convention**; `skills/assess/SKILL.md` step 4 applies it after each pass, folding every superseded report into a one-line entry in the rolling `assessments/LOG.md` and deleting the file. The rule keeps the latest report per scope plus any report with an open finding, and since #468 a **retired scope** is its one exception: a report whose scope the current `/assess` can no longer produce — ADR 0015 narrowed the scopes to `code | architecture`, and `process` joined them below — is superseded once none of its findings are open, with the open-finding bound still binding until then. The clause had one live subject and the same change folded it: `assessments/2026-08-04-system.md`, the last `system` pass. Its findings, the tickets carrying them, and their closure against the tracker are recorded in that report's entry in `assessments/LOG.md` — the line keyed `2026-08-04 · system` — and cited from here rather than copied, so the two cannot disagree. They did disagree once, in the commit that wrote both (`10170c7`): the LOG entry counted tickets from the same day's other passes among this report's findings until `ad9c7f6` corrected the attribution, and this record happened to hold the version that was right. `assessments/` holds four reports at this record's date — `2026-07-19-pre-publication-readiness.md`, which exempts itself from the rotation in its own header, `2026-08-04-architecture.md`, `2026-08-17-code.md`, and the retained first process pass `2026-08-31-process.md` — plus `LOG.md`.

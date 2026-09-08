@@ -41,6 +41,7 @@ Fifty-odd entries in six families. Read the family the diff touches rather than 
 - [A guard over an enumerable dimension must fail on an unclassified member](#a-guard-over-an-enumerable-dimension-must-fail-on-an-unclassified-member)
 - [A control goes inert when the change deletes what it names](#a-control-goes-inert-when-the-change-deletes-what-it-names)
 - [A positive control must exercise the predicate, not re-implement it](#a-positive-control-must-exercise-the-predicate-not-re-implement-it)
+- [A corpus is blind to any dimension its fixtures hold constant](#a-corpus-is-blind-to-any-dimension-its-fixtures-hold-constant)
 - [Born green](#born-green)
 - [Reentrancy makes a same-thread assertion unfalsifiable](#reentrancy-makes-a-same-thread-assertion-unfalsifiable)
 - [`all()` over a possibly-empty iterable is constant-true](#all-over-a-possibly-empty-iterable-is-constant-true)
@@ -219,6 +220,26 @@ things: the sample is judged non-compliant, **and** the same sample contains the
 word somewhere — the containment half is what makes the rejected weaker
 predicate's blind spot explicit. Then mutate the helper, not the data, and
 confirm the control is what dies.
+
+### A corpus is blind to any dimension its fixtures hold constant
+
+A sample can falsify a claim only along a dimension its members differ on. Name
+the dimension the property turns on, then check the fixtures span both halves of
+it — above all the half where the asserted condition is reachable at all.
+
+**Falsifying example.** A hook must never put a malformed file's own bytes on
+stderr, and one test asserted that over one fixture, `{not json`. V8 rejects a
+document two ways: `Unexpected token 'L', "LEAK-SENTINEL" is not valid JSON`
+quotes a window of the source back, and `Expected property name or '}' in JSON
+at position 1` names a position and no bytes. Which one you get turns on the
+parse error, not on the opening character — `{"a":}` opens with `{` and is
+quoted. That fixture drew the positional form, so the assertion sat in the
+half where the leak cannot happen, and splicing a write of the parse error
+into the reader's catch left the module green. The same shape reaches a probe
+over guidance: distinctive names say nothing about generic ones, a two-file
+corpus nothing about the tree the criterion names, a happy-path walk nothing
+about ordering on the failure path. Pick the input that would go red if the
+code were wrong, then confirm the sample holds it.
 
 ### Born green
 

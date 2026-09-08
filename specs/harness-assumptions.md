@@ -59,7 +59,7 @@ delta, which is a stronger answer than the judgment below.
 | Component | Assumes | Retirement test |
 |---|---|---|
 | `skills/engineering` | Models write implementation before its test when not stopped, and rationalise it afterwards. | T5's with/without delta at the noise floor. |
-| `skills/review-discipline` | A reviewer without a mandate reviews what it notices rather than what was asked, and cannot tell a bug from an improvement without the factual line. | T5's delta, plus the 49 admitted defect classes in its `craft.md` ceasing to recur. |
+| `skills/review-discipline` | A reviewer without a mandate reviews what it notices rather than what was asked, and cannot tell a bug from an improvement without the factual line. | T5's delta, plus the admitted defect classes in its `craft.md` ceasing to recur. |
 | `skills/authoring` | A spec written from memory asserts stale facts, and ambiguity is the measured precondition for cheating (0.7–3.4% clear, 22–44% ambiguous — EvilGenie). | A model that grounds and disambiguates unprompted. |
 | `skills/architecture` | Design decisions get made in passing and recorded nowhere, so the next change contradicts them. | T5's delta. |
 | `skills/work-discovery` | An unattended loop picks the lowest id, or a ticket it cannot finish, without a stated ranking and actionability bar. | The tracker's own ordering answers it, or the loop's picks match a human's over a recorded window. |
