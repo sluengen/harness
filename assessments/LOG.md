@@ -13,9 +13,7 @@ Entries are chronological (oldest first); each new fold appends below. Format:
 
 A `process` entry carries a fourth field — `· baseline: <assurance:product ratio> /
 <gate wall-clock> / <unjustified checks>` — so that scope's tracked quantities
-survive the fold (`templates/assessment.md`). The first process pass,
-`2026-08-31-process.md`, remains in `assessments/` as the latest report for its
-scope, so no entry below carries one yet.
+survive the fold (`templates/assessment.md`). The first process pass did not record an unjustified-check count; its fold preserves that absence rather than inventing a value.
 
 **Each entry preserves the scope vocabulary in force when that pass ran**, so
 `system`, `code-deep`, and the same-day `-am` / `-pm` / `-eve` stems appear below
@@ -78,3 +76,5 @@ findings referenced across the folded reports were confirmed completed/canceled.
 - 2026-08-01 · code-pm2 · the third same-day pass (the routine's idle arm), superseded by the kept `2026-08-04-code.md`; healthy — it confirmed the five-ticket batch had landed as claimed, and three of its four findings were one class, a field or list asserted to exist but never measured · findings: CODE-1/2/3/4 → #279/#280/#281/#282, CODE-INSIGHT-1/2/3 → #283/#284/#285, all seven closed
 - 2026-08-04 · code · the last runtime-era deep pass (deleted `harness/` package, 95.08% coverage): highly verified but with accumulated drag — an unconditional 747-line design-stage spend, promotion escalation bypassing the tracker seam, and guards narrower than their names; superseded by the kept `2026-08-17-code.md`, the first post-teardown pass · findings: CODE-1..6 → #328/#332/#335–#341, all closed (#335 NOT_PLANNED in the ADR 0015 sweep; its surviving subject refiled by the 2026-08-17 pass as #466)
 - 2026-08-04 · system · the last `system`-scope pass, run before ADR 0015 retired the stem: the mechanical distribution layer healthy (84 focused integrity tests green) and the semantic process on top of it not — a tracker migration that had reached configuration but not the lifecycle, two simultaneously-normative review stop rules, mutually exclusive decision-storage contracts, and a final review that did not cover the final commit; folded under the retired-scope clause rather than by supersession, since no later pass can carry the stem, and #458's provenance annotation lapsed when the two guards citing SYSTEM-1 and SYSTEM-3 went in the v5 guard cull · findings: SYSTEM-1..6 → #327/#329/#330/#331/#332/#333 and SYSTEM-INSIGHT-1/2/3 → #342/#343/#344, all nine closed (CODE-4 framed the set as the contiguous range #327–#334; #328 and #334 are the same day's `code` and `architecture` passes, not this one)
+
+- 2026-08-31 · process · six contract groups mutation-proven, five default-kept; no deletions proposed · findings: none · baseline: 5.36 (21,171/3,950) / 47.39 s single run / unjustified checks not recorded
