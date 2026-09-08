@@ -634,11 +634,19 @@ function invalidScopeEntry(entry) {
   return null;
 }
 
-/** Write ``scope`` NUL-delimited and return the file, for the declared command. */
+/** Write ``scope`` NUL-delimited and return the file, for the declared command.
+ *
+ * Through `gitCommonDir`, not a second inline `rev-parse`: the scope file and
+ * the markers name one repository, and #599 found this function spelling that
+ * resolution itself while `gitCommonDir`'s docstring claimed every
+ * implementation agreed by construction. The inline spelling also carried a
+ * `common === null` refusal that could not fire — `git` throws `GitError` on a
+ * spawn failure and on a non-zero status, and never returns `null` — and that
+ * is doubly unreachable here, because `runGate` resolves the same identity
+ * through `gitCommonDir` before it reaches this call.
+ */
 function writeScopeFile(cwd, scope) {
-  const common = git(["rev-parse", "--path-format=absolute", "--git-common-dir"], cwd);
-  if (common === null) throw new Error("gate-marker: no git common directory for the scope file");
-  const dir = path.join(common, ...SCOPE_SUBDIR);
+  const dir = path.join(gitCommonDir(cwd), ...SCOPE_SUBDIR);
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, `${process.pid}-${crypto.randomBytes(6).toString("hex")}`);
   fs.writeFileSync(file, scope.map((entry) => `${entry}\u0000`).join(""), "utf8");
