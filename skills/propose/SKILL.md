@@ -52,4 +52,6 @@ On that act, set `status` to the outcome:
 - Give each spawned ticket an `Out of scope` that cites the proposal's *Not doing* rather than re-deriving the boundary. Nothing named there enters a ticket without amending the proposal first.
 
 ## Report
-Print the proposal path, its status, the open decisions (and how they resolved), any decisions recorded, and the issues created from the breakdown.
+Print the proposal path and where the rendering was published — or, where the host could not publish one, say so and name the file as the rendering — then the status, the open decisions (and how they resolved), any decisions recorded, and the issues created from the breakdown.
+
+Where the run stopped at `under-decision`, say so, name the act you could not point to, and list no issues: step 4 did not run, and a report that omits the stop reads as a run that finished.

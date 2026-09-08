@@ -13,7 +13,7 @@ operations, their postconditions, and the sequencing a breakdown has to carry.
 | `tracker:` | Load | Address |
 |---|---|---|
 | `github` | [`references/github.md`](references/github.md) | `github.repo`, `github.project` |
-| `linear` | [`references/linear.md`](references/linear.md) | `repo.linear`, `repo.project` |
+| `linear` | [`references/linear.md`](references/linear.md) | `repo.project`; the team is resolved at runtime from the workspace-scoped token, and `tracker_address.team` is read **only** where that query returns more than one team (#592) |
 | `none` | nothing | degrade to specs and session reports, and say which steps were skipped |
 
 A workflow calls an operation by name; the reference says how that backend

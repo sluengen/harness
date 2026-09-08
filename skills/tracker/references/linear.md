@@ -2,7 +2,7 @@
 
 **Load this when `harness.yaml` says `tracker: linear`.** The semantics — what each operation must achieve, what makes a filing incomplete, the hold contract, the ledger — are `tracker`'s `SKILL.md`, already loaded. This file is only *how* each operation is performed against Linear's API.
 
-The team key is `repo.linear`; the queue scope is `repo.project`.
+The queue scope is `repo.project`. The team is resolved at runtime and read from no configuration key — see [Resolving the team](#resolving-the-team) below.
 
 **You already have access — it is one `curl` away.** Linear's GraphQL API is the same for everyone; the only repo-specific part is the token (in an env file). The workspace identifiers you need are **resolved at runtime** from the API — a state by its stable `type`, a team by its key — so no per-repo ID setup is required (see [Resolving states by type](#resolving-states-by-type-the-default)). Do not conclude you lack access or that a tool is missing. If a repo ships a wrapper CLI, `harness.yaml` (`tools.linear_cli`) names it, but the curl below always works.
 
@@ -57,6 +57,18 @@ LINEAR 'query { issues(filter: { team: { key: { eq: \"<team-key>\" } }, state: {
 LINEAR 'query { issues(filter: { team: { key: { eq: \"<team-key>\" } }, labels: { name: { eq: \"input\" } }, assignee: { isMe: { eq: true } } }) { nodes { identifier title url description updatedAt } } }'
 ```
 
+### Resolving the team
+
+The API token is **workspace-scoped**, so nothing needs to say which workspace this is, and the team follows from the workspace rather than from a declaration:
+
+```bash
+LINEAR 'query { teams { nodes { id key name } } }'
+```
+
+**Exactly one node is the team.** Use its `key` wherever a recipe below writes `<team-key>` and its `id` wherever one writes `<team-uuid>`. No configuration field is read for it: `repo.linear` held a workspace hostname in one repo and was absent in another, so a recipe reading it returned an empty queue on both — which only an unattended discovery run would ever have noticed. That key is retired from this recipe's read set; a repo keeping it as a human-facing pointer to its workspace URL is unaffected and it is reported as an ordinary unread key.
+
+**More than one node is genuinely ambiguous — report and hold.** Nothing here can say which team this repo's queue lives in. The escape hatch is the same override the states use: declare the team key in `harness.yaml` as `tracker_address.team`, and this recipe reads that key **only** in the ambiguous case, exactly as a cached state UUID is read only where `type` and name cannot disambiguate. Never guess by name, position or issue count.
+
 ### Resolving states by type (the default)
 
 Workflow-state IDs are **per-team UUIDs** — not portable across repos or trackers, and they change if a team renames a state. So resolve a state at runtime by its stable `type` enum; never hard-code the UUID. Every Linear workspace has the same four state types:
@@ -106,7 +118,7 @@ LINEAR 'query { viewer { id name } }'
 LINEAR 'mutation { commentCreate(input: { issueId: \"<issue-id>\", body: \"...\" }) { success } }'
 ```
 
-State, team, and label IDs are **resolved at runtime** from the queries above — the same call for every Linear workspace, no per-repo setup. `harness.yaml` carries an ID only as an *override* for a custom or renamed state the `type` enum cannot disambiguate; it is not where the standard states live.
+State, team, and label IDs are **resolved at runtime** from the queries above — the same call for every Linear workspace, no per-repo setup. `harness.yaml` carries an ID as an *override* in exactly two cases, each named where it applies above: a custom or renamed state the `type` enum cannot disambiguate, and a team key for the ambiguous-workspace case (`tracker_address.team`, [Resolving the team](#resolving-the-team)); it is not where the standard states or the unambiguous team live.
 
 ## Relations — blocked-by
 

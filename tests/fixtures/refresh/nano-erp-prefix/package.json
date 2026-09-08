@@ -1,0 +1,63 @@
+{
+  "name": "nano-erp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Composable nano-ERP platform — tenancy core (hierarchical orgs, RLS, Supabase identity mapping)",
+  "type": "module",
+  "engines": {
+    "node": ">=24.18.0"
+  },
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "lint": "oxlint --type-aware --report-unused-disable-directives .",
+    "typecheck": "tsc --noEmit",
+    "build": "rm -rf dist && tsc && cp -R drizzle dist/drizzle",
+    "test": "npm run build && npm run test:compiled",
+    "test:compiled": "node --enable-source-maps dist/scripts/test.js",
+    "frontend:lint": "npm run lint --workspace @nano-erp/frontend",
+    "frontend:typecheck": "npm run typecheck --workspace @nano-erp/frontend",
+    "frontend:test": "node dist/scripts/frontendTest.js",
+    "frontend:build": "npm run build --workspace @nano-erp/frontend",
+    "frontend:verify": "npm run frontend:lint && npm run frontend:typecheck && npm run frontend:test && npm run frontend:build",
+    "tokens:build": "node dist/scripts/tokens/build.js",
+    "tokens:lint": "node dist/scripts/tokens/lint.js",
+    "gate:preflight": "node scripts/gate/gate-marker.js preflight",
+    "tokens:check": "before=\"$(git status --porcelain --untracked-files=all -- design/build)\" && npm run tokens:build && after=\"$(git status --porcelain --untracked-files=all -- design/build)\" && test \"$before\" = \"$after\"",
+    "verify": "bash scripts/verify.sh",
+    "verify:stages": "npm run lint && npm run typecheck && npm run db:check && npm run gate:preflight && npm run tokens:check && npm run tokens:lint && npm run frontend:verify && npm run test:compiled",
+    "db:generate": "drizzle-kit generate",
+    "db:check": "drizzle-kit check && before=\"$(git status --porcelain --untracked-files=all -- drizzle)\" && drizzle-kit generate && after=\"$(git status --porcelain --untracked-files=all -- drizzle)\" && test \"$before\" = \"$after\"",
+    "migrate": "node --enable-source-maps dist/src/db/migrate.js",
+    "worker:migrate": "graphile-worker --schema-only",
+    "worker": "node --enable-source-maps dist/src/worker.js",
+    "platform-admin": "node --enable-source-maps dist/src/cli/platform-admin.js",
+    "start": "node --enable-source-maps dist/src/server.js",
+    "seed": "npm run build && node --enable-source-maps --env-file-if-exists=.env dist/scripts/seed.js",
+    "seed:reset": "npm run build && node --enable-source-maps --env-file-if-exists=.env dist/scripts/seed.js --reset",
+    "smoke:docker": "npm run build && node --enable-source-maps dist/scripts/docker-smoke.js",
+    "smoke:compose": "npm run build && node --enable-source-maps dist/scripts/compose-smoke.js",
+    "smoke:local": "npm run build && node --enable-source-maps dist/scripts/local-compose-smoke.js",
+    "flake:probe": "npm run build && node --enable-source-maps dist/scripts/flakeProbe.js",
+    "capture": "npm run build && node --enable-source-maps dist/scripts/capture.js"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.45.2",
+    "express": "^5.1.0",
+    "graphile-worker": "^0.17.3",
+    "pg": "^8.16.0",
+    "stripe": "^22.2.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/express": "5.0.6",
+    "@types/node": "24.13.3",
+    "@types/pg": "8.20.0",
+    "drizzle-kit": "0.31.10",
+    "oxlint": "1.74.0",
+    "oxlint-tsgolint": "0.24.0",
+    "playwright-core": "1.62.1",
+    "typescript": "7.0.2"
+  }
+}
