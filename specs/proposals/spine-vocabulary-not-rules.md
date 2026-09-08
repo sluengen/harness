@@ -2,7 +2,7 @@
 proposal: spine-vocabulary-not-rules
 status: under-decision   # draft | under-decision | accepted | shipped | rejected | split | superseded
 date: 2026-09-08
-related: [plugin-surface, lifecycle-reset, do-less-at-ingestion]
+related: [plugin-surface, lifecycle-reset, do-less-at-ingestion, refresh-alignment]
 ---
 
 # Proposal: the spine carries vocabulary, the skills carry rules
@@ -74,7 +74,7 @@ This traces to P0 (a subtraction where Option A adds a mechanism), P2 (the resta
 - **Moving the lifecycle section out** — 9 lines of routing table, and relocating it makes finding a command require loading a skill. Reopen if the section grows past routing into rules.
 - **Splitting the plugin into three** — the delivery/assurance boundary is a reference cycle and a shared wire format, not a seam. Reopen if the goal becomes distributing the gate machinery without the delivery process, which is a market decision rather than an engineering one.
 - **Shrinking the spine for its own sake** — it is 85 lines against a 120-line ceiling. Size is not the problem and no line is cut to hit a number.
-- **Touching the three-copy chain** (`templates/spine.md` → `AGENTS.md` → `CLAUDE.md`) — the parity test holds it and it carries no drift risk. Reopen if that test is retired.
+- **Touching the three-copy chain** (`templates/spine.md` → `AGENTS.md` → `CLAUDE.md`) — the parity test holds it and it carries no drift risk. Reopen if that test is retired, or if the shared import decision below lands *yes*, which would collapse `CLAUDE.md` to a bridge and take one home out of every count in this proposal.
 
 ## Open decisions
 
@@ -83,6 +83,7 @@ This traces to P0 (a subtraction where Option A adds a mechanism), P2 (the resta
 | Does the vocabulary/rule line sit where the table above draws it, in particular whether *the binding*'s two acceptance paths are vocabulary or rule | user | `specs/features/plugin-surface.md` |
 | Is the deterministic-loader rule cross-cutting enough for an ADR, or a Decision block in the plugin-surface spec | architect | `specs/decisions/` or `specs/features/plugin-surface.md` |
 | Whether a consumer repo's hydrated spine is migrated by `--refresh` in the same change as each move, or once at the end | user | `skills/init/references/refresh.md` |
+| **Shared with `refresh-alignment`.** Is host-dependent `@path` import resolution acceptable for load-bearing guidance? #558 rejected it for the spine on independence grounds while measuring that it resolved (`specs/features/plugin-surface.md:72`); `refresh-alignment` recommends it for the design layer on a fresh probe. Neither proposal owns this, and both need the same answer | user | `specs/decisions/` — settling it reopens #558 |
 
 ## Breakdown
 
@@ -101,6 +102,7 @@ Item 1 is held for the operator. The four-dimension test fires on three counts: 
 - **Consumer repos lag.** A hydrated spine keeps the old rules until `--refresh` runs. During the gap a consumer's spine states a rule its installed skill also states, which is the status quo, so the gap degrades to today rather than to something worse.
 - **The dual-home count is a floor.** It came from grepping the five owners the contract itself names. It did not sweep every skill for every contract concept, so unnamed restatements elsewhere are not counted, and the fan-out may be larger than measured.
 - **The median-13 figure reflects whole commits.** Six of the nine contract-clause commits were larger restructures where the clause edit was incidental. #597 is the only isolated case in the window (2 spine lines changed, 7 files), so the clean before-figure rests on one commit.
+- **A decision this proposal does not own can change its arithmetic.** If the shared import decision lands *yes*, `CLAUDE.md` becomes a one-line bridge, #597's four homes become three, and the parity test, `plugin-version.js`'s `CANDIDATES` entry and two of `--refresh`'s five copy states retire with it. That is a larger subtraction than this proposal makes, and it lands in `refresh-alignment`'s territory rather than here. Item 1 should not start before it is answered.
 - **What would invalidate the recommendation:** evidence that an agent inside a lifecycle command does not reliably load the owning skill. That turns every move into a governance hole and returns the answer to Option A or to leaving it alone.
 
 ## Grounding
