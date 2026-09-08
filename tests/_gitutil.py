@@ -104,6 +104,24 @@ def tracked_py_sources(
     return sorted(path for path in found if path.suffix == ".py")
 
 
+def indexed_bytes(path: str, *, repo_root: Path = _DEFAULT_REPO_ROOT) -> bytes:
+    """The exact bytes git has staged for ``path``, undecoded.
+
+    Same operand as :func:`indexed_text` -- the index, never the working
+    file -- read without ``text=True``'s decode/newline translation. A caller
+    that hashes the content (SHA-256 is defined over bytes, not ``str``) needs
+    the untranslated bytes; a caller that reads it as prose wants
+    :func:`indexed_text` instead.
+    """
+    completed = subprocess.run(
+        ["git", "show", f":{path}"],
+        cwd=repo_root,
+        check=True,
+        capture_output=True,
+    )
+    return completed.stdout
+
+
 def indexed_text(path: str, *, repo_root: Path = _DEFAULT_REPO_ROOT) -> str:
     """The bytes git has **staged** for ``path``.
 

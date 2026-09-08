@@ -1,0 +1,83 @@
+repo:
+  name: calibrate
+  project: calibrate.
+  linear: calibrate-coffee.linear.app
+  # No project filter: Build and Quality operate over the full CAL team queue.
+tracker: linear
+stack:
+  language: Python 3.11 / TypeScript
+  framework: FastAPI (containerised) / Expo (React Native)
+commands:
+  install: "docker compose build"
+  lint: "docker compose run --rm backend ruff check ."
+  # Tests provision sibling databases and therefore need the CREATEDB role.
+  test: "docker compose run --rm -e DATABASE_URL=postgresql://calibrate:calibrate@db:5432/calibrate backend pytest"
+  test_one: "docker compose run --rm -e DATABASE_URL=postgresql://calibrate:calibrate@db:5432/calibrate backend pytest tests/path/test_file.py::test_name"
+  run: "docker compose up"
+  # Change-aware gate. See scripts/verify.sh; force with VERIFY_SCOPE=<comma-list>.
+  verify: "bash scripts/verify.sh"
+  lint_mobile: "cd mobile && npm run lint"
+  typecheck_mobile: "cd mobile && npm run typecheck"
+  test_mobile: "cd mobile && npm run verify"
+  test_control_plane: "cd controlplane && npm run verify"
+branches:
+  integration: dev
+  staging: staging
+  release: main
+loop:
+  max_review_cycles: 5
+queue:
+  # A project's queue is its Todo, In Progress and In Review tickets, held ones
+  # excluded. A filing with no free slot lands in Backlog; a close frees one.
+  wip_limit: 6
+  active_projects: 3
+  # Linear projects are this repo's queues, so `active_projects` is read against
+  # a real field rather than being inert under `none`.
+  project_field: project
+layers:
+  design_system: true
+  feature_specs: true
+conventions:
+  commit_format: "type(scope): description — feat/fix/refactor/chore/docs/test/perf; body: why + Closes CAL-NNN"
+tools:
+  linear_cli: "GraphQL via curl"
+  linear_team_id: "e12609db-7234-4a5a-9b9b-407396491f21"
+paths:
+  source: app/
+  tests: tests/
+  proposals: specs/proposals/
+  features: specs/features/
+  decisions: decisions/
+  design_system: design/
+  control_plane: controlplane/
+architecture_watchlist:
+  trigger: "When planned or actual touched files intersect this list, the change spec and review notes must include a Watchlist trigger note: seam extracted, or an explicit deferral reason that names the id of a tracking issue filed at defer-time to carry the extraction."
+  review_diff: "git diff --name-only --diff-filter=ACMR $(git merge-base HEAD dev)..HEAD"
+  files:
+    - path: "mobile/app/(tabs)/passport/index.tsx"
+      concern: "Pure app-bar, sub-navigation, and tab-switch orchestrator; prevent tab, map, view, or query logic from returning here."
+      preferred_seams: "tab and map modules in components/passport/, cross-tab styles in passportStyles.ts, pure view-model helpers in mobile/lib"
+    - path: "mobile/app/(tabs)/brew/index.tsx"
+      concern: "Brew hub orchestrates selection, draft hydration/persistence, prefills, and rendering; prevent new inline state or business transitions."
+      preferred_seams: "Coffee/Setup/Recipe sections; grouped state and pure transitions in mobile/lib"
+    - path: "mobile/app/(tabs)/brew/rating.tsx"
+      concern: "Large user-facing rating flow; prevent rating logic from accumulating inline."
+      preferred_seams: "pure rating view models, flavour/rating helpers in mobile/lib, focused section components"
+    - path: "mobile/app/(tabs)/brew/logged.tsx"
+      concern: "Large result screen sharing presentation behaviour with Passport and History."
+      preferred_seams: "shared brew-result helpers and reusable summary sections"
+    - path: "mobile/app/(tabs)/brew/new-coffee.tsx"
+      concern: "Large capture form whose validation and payload shaping must remain testable."
+      preferred_seams: "pure validation/payload helpers and field-section components"
+    - path: "mobile/app/(tabs)/profile/index.tsx"
+      concern: "Settings hub combines account mutations, local preferences, and section rendering."
+      preferred_seams: "settings-row primitives, account section, setup-defaults orchestration hook"
+    - path: "app/services/analytics_service.py"
+      concern: "Large service; extract only when adding branching, authorization, or repeated query assembly."
+      preferred_seams: "small service helpers with focused tests; no split for line count alone"
+    - path: "app/services/brew_service.py"
+      concern: "Large service; extract only when adding business branches or repeated persistence logic."
+      preferred_seams: "small service helpers with focused tests; no split for line count alone"
+env:
+  file: .env
+  linear_token: LINEAR_API_KEY
