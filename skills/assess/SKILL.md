@@ -45,7 +45,7 @@ They are the rows of the Baseline table in `templates/assessment.md`, under thos
 
 | Row | Derivation |
 |---|---|
-| Assurance lines per product line | `git ls-files '<paths.tests>*.py' \| xargs wc -l \| tail -1` over the same command on the repo's product globs; state both globs, and put the module count (`git ls-files '<paths.tests>*.py' \| wc -l`) beside the ratio |
+| Assurance lines per product line | `git ls-files '<paths.tests>*.py' \| xargs wc -l \| tail -1` over the same command on the repo's product globs; state both globs, and put the module count (`git ls-files '<paths.tests>*.py' \| wc -l`) beside the ratio. **Two denominators, both reported** — see `references/process-economy.md` → *The baseline*, item 1 |
 | Gate wall-clock | `node <plugin-root>/scripts/gate-marker.js durations` — the median with its `count` — plus the slowest stage and the stage count from this pass's own gate run |
 | Checks with no nameable failure-reason | the ground-1 and burden-of-proof count from this pass's own sweep; state the subject set counted over, and hold it constant |
 
@@ -63,9 +63,9 @@ The `process` scope files the contradictions and proposes the rest; which result
 The `architecture` scope files only actionable risks and recommendations. Positive observations and stable trade-offs stay in the report, not the backlog. Zero tickets alongside a verdict and a watchlist is a valid outcome, not a failed run.
 
 ### 3. Commit the report
-A report is advisory evidence, not a code change: no merge gate. Commit it directly to the integration branch (`harness.yaml`) — no branch, no PR, since the findings already live in the tracker and a PR per run would carry nothing reviewable while piling up trivial approvals. Surface the summary, finding count, and filed ticket IDs to the user.
+A report is advisory evidence, not a code change: **no PR and no merge gate**, since the findings already live in the tracker and a PR per run would carry nothing reviewable while piling up trivial approvals. Write it on **its own branch in its own worktree** all the same (`worktree-isolation`): law 5 is unconditional — *ticketed or not, every change* — and a branch is not a PR, so isolating the work costs nothing the paragraph above was protecting. Land it on the integration branch (`harness.yaml`) once the gate is green, the same landing every worktree makes. Surface the summary, finding count, and filed ticket IDs to the user.
 
-Run the repo's verify gate (`harness.yaml` `commands.verify`) on the committed tree before pushing. This pass writes to a tracked directory and step 4 deletes files from it, so "advisory" describes the content, not the blast radius; the push is refused without a fresh marker wherever the enforcement hooks are installed. If the gate is red on the integration branch before this run touched anything, say so and stop rather than push on top of it.
+Run the repo's verify gate (`harness.yaml` `commands.verify`) on the committed tree before landing. This pass writes to a tracked directory and step 4 deletes files from it, so "advisory" describes the content, not the blast radius; the push is refused without a fresh marker wherever the enforcement hooks are installed. If the gate is red on the integration branch before this run touched anything, say so and stop rather than land on top of it.
 
 ### 4. Apply retention
 After committing the report, prune `assessments/` per the retention rule (`templates/assessment.md`): the latest report per scope and any with an open finding stay, and every superseded report folds into a one-line entry in the rolling `assessments/LOG.md`. Commit the compaction with the report. Running it every pass keeps the directory a live index, not a growing pile.

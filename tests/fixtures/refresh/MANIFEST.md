@@ -33,7 +33,7 @@ directions (a row with no file on disk, or a file with no row, both fail).
 | `design-twin-matching/.claude/rules/design-system.md` | — | — | — | `662cb369dd0a5cc50789a741c03fbd62cd98ff991085ec9c76a3ebd74b8d922c` | 6454 |
 | `design-twin-matching/design/AGENTS.md` | — | — | — | `3f277521424ef829c735c6a980b954e766871b14caa6409eb456f4e2e0f6b4dc` | 5528 |
 | `gitignore-prepopulated/.gitignore` | `/Users/scottluengen/Code/nano-erp` | `016673ca5fa0f7156f6b4ab1b436afaf7d821d2a` | `.gitignore` | `88d80fc18c22e97bf552cddbc3d22a1954376ea237d7c3abc5ec121338841c82` | 4595 |
-| `gitignore-partial/.gitignore` | — | — | — | `99cc455e4e3c9f4067a28e4f90f78e9e6713c73fdb8a7ba12f93cb36014fde7c` | 410 |
+| `gitignore-partial/.gitignore` | — | — | — | `f35ade47f7f99cabb2831f52927da325bbac77035efeb49d21ed203278dc3e55` | 443 |
 
 ## Synthetic fixtures
 
@@ -76,8 +76,8 @@ directions (a row with no file on disk, or a file with no row, both fail).
   the four harness gate-ignore patterns (`.harness/`, `.worktrees/`), hand-written with
   no `harness:gate-ignore:begin`/`:end` markers, and omits the other two (`.evidence/`,
   `.claude/worktrees/`). A refresh run against this file must append exactly the two
-  missing patterns, wrapped in the marker comments, and leave the two pre-existing lines
-  untouched and outside any marker.
+  missing patterns, write no `harness:gate-ignore` marker in either spelling, and leave
+  the two pre-existing lines untouched (#601).
 
 ## Notes
 

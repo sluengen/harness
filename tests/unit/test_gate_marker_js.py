@@ -1517,6 +1517,56 @@ def test_a_scoped_path_never_reaches_the_shell_as_syntax(repo: Path) -> None:
     assert nasty in (repo / "run.log").read_text(encoding="utf-8")
 
 
+def _scope_file_recorder(repo: Path) -> str:
+    """A declared scoped command that records the scope file's own path.
+
+    ``_echo_scope`` records the scope file's *contents*, which is the wrong
+    operand here: the property under test is where the runner put the file, not
+    what it wrote into it.
+    """
+    runner = repo / "scoped.sh"
+    runner.write_text(
+        "#!/usr/bin/env sh\n"
+        'test -n "${HARNESS_GATE_MARKER_RUNNER:-}" || exit 9\n'
+        'printf "%s" "$HARNESS_GATE_SCOPE_FILE" > scope-file-path\n',
+        encoding="utf-8",
+    )
+    runner.chmod(0o755)
+    return "sh scoped.sh"
+
+
+def test_the_scope_file_and_the_marker_resolve_one_git_common_directory(
+    repo: Path,
+) -> None:
+    """One resolution of the repository's identity, not two (#599).
+
+    ``writeScopeFile`` used to spell ``rev-parse --git-common-dir`` inline while
+    ``markerDir`` reached the same directory through ``gitCommonDir``, so one
+    file carried two spellings of one identity and ``gitCommonDir``'s docstring
+    claimed they agreed by construction.
+
+    This is **green on the tree before the fix as well as after**, because
+    ``--path-format=absolute`` already answers with a symlink-free path — the
+    symlink mismatch #599 was filed for does not reproduce, measured four ways.
+    It is therefore commissioned by mutation rather than by RED: splicing
+    ``path.dirname`` around ``writeScopeFile``'s resolution kills it, which is
+    what makes it evidence about where the two paths come from rather than a
+    restatement of today's output (craft.md -> *Born green*).
+
+    The first assertion is the vacuity control. A run that handed the command no
+    scope file at all would otherwise reach the comparison with an empty path
+    and could not distinguish "resolved the same way" from "never ran".
+    """
+    _declare_scoped(repo, _scope_file_recorder(repo))
+    _run_scoped(repo, "src/one.py")
+    recorded = (repo / "scope-file-path").read_text(encoding="utf-8")
+    assert recorded, "the declared command was never handed a scope file"
+    assert Path(recorded).parent.parent == _marker_dir(repo).parent, (
+        "the scope file and the marker must resolve one git common directory: "
+        f"scope {recorded!r} against markers in {_marker_dir(repo)}"
+    )
+
+
 def test_two_scoped_declarations_refuse_rather_than_pick_one(repo: Path) -> None:
     """Ambiguity fails closed, as ``commands.verify`` already does.
 
