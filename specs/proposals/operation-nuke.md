@@ -238,7 +238,7 @@ Items 2 and 4 are independent of 5–7 once 1 lands, so the deletion track and t
 | **Root `CLAUDE.md`** | The whole of the root `AGENTS.md`, byte for byte, plus the host deltas after `<!-- spine:copy:end -->`. This is the spine copy contract, held by #558's prefix guard. |
 | **A sub-directory instruction file** | **Directory-local guidance** — what changes when you work *here*. Not a spine, not a copy, and it carries nothing the root spine already says. |
 
-**The repo already has the worked example.** `design/AGENTS.md` opens *"Building a user-facing surface here"* and runs 113 lines of its own content — longer than the root spine and sharing none of it.
+**The repo already has the worked example.** The `AGENTS.md` inside this repo's design directory opens *"Building a user-facing surface here"* and runs 113 lines of its own content — longer than the root spine and sharing none of it. (#626 moved that directory into `skills/design-system/assets/`; the file is named here without spelling a path, since the path is `harness.yaml`'s to declare.)
 
 **Two carriers, one body — which `init` step 4 already prescribes and `hydrate` inherits unchanged.** Guidance scoped to part of the tree goes to `.claude/rules/<name>.md` with a `paths:` frontmatter of globs for Claude, and the same body as `<dir>/AGENTS.md` for Codex, which has no path-scoped rules and reads nearest-wins. **The region from the first `##` heading down is identical in both**; only the preamble differs, because it names a host mechanism — the Claude form carries the `paths:` frontmatter, the Codex form is scoped by its location. Both are repo-owned once seeded and reconciliation never overwrites either.
 

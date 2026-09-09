@@ -1,16 +1,16 @@
 ---
 paths:
-  - "design/**"
+  - "skills/design-system/assets/**"
   - "docs/**"
 description: How the design layer and the landing page relate; loaded when either is opened.
 ---
 
 # The design layer
 
-Loaded when a file under `design/` or `docs/` is opened.
+Loaded when a file under `skills/design-system/assets/` or `docs/` is opened.
 
-- `design/03-tokens/tokens.json` is the **source**; the generated `:root` block in
-  `docs/index.html` is built from it by `scripts/build_design_tokens.py`, and the gate
+- `skills/design-system/assets/03-tokens/tokens.json` is the **source**; the generated `:root` block in
+  `docs/index.html` is built from it by `build_design_tokens.py` beside it, and the gate
   fails on drift. Edit the source, never the generated block.
 - A token **value** appears nowhere in `docs/index.html` outside that generated region. A
   hand-copied hex is a second copy that no longer tracks its source (ADR 0004, narrowed).

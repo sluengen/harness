@@ -1,10 +1,10 @@
 """The token build step (#242): generate docs/index.html's :root block from
-design/03-tokens/tokens.json rather than hand-authoring two copies of the same
+its tokens.json rather than hand-authoring two copies of the same
 palette.
 
-``scripts/build_design_tokens.py`` writes only the marker-delimited generated
+``skills/design-system/assets/build_design_tokens.py`` writes only the marker-delimited generated
 region inside ``docs/index.html``'s ``<style>`` block — see
-``design/03-tokens/_naming.md`` for the token-path -> CSS-variable derivation
+``03-tokens/_naming.md`` (beside it) for the token-path -> CSS-variable derivation
 this settles (the page's existing hand-authored variable names, e.g.
 ``--build``, are kept; a page-wide rename to the new namespaced scheme
 (``--color-loop-build-accent``) is out of scope for this ticket).
@@ -30,10 +30,13 @@ import pytest
 
 from tests.unit._prose import REPO_ROOT
 
-SCRIPT = REPO_ROOT / "scripts" / "build_design_tokens.py"
+#: #626 relocated the design system into the skill that ships it; the builder
+#: travels with the tiers it resolves, so both operands moved together.
+ASSETS = REPO_ROOT / "skills" / "design-system" / "assets"
+SCRIPT = ASSETS / "build_design_tokens.py"
 VERIFY = REPO_ROOT / "scripts" / "verify.sh"
 PAGE = REPO_ROOT / "docs" / "index.html"
-TOKENS = REPO_ROOT / "design" / "03-tokens" / "tokens.json"
+TOKENS = ASSETS / "03-tokens" / "tokens.json"
 
 # size: one script's acceptance suite — case enumeration over the four surfaces
 # of build_design_tokens.py (the token resolver, the region write, the region
@@ -59,7 +62,7 @@ bdt = _module()
 
 
 def _tokens() -> dict:
-    return json.loads((REPO_ROOT / "design" / "03-tokens" / "tokens.json").read_text())
+    return json.loads(TOKENS.read_text())
 
 
 def _relative_luminance(color: str) -> float:

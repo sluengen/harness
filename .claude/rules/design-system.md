@@ -1,18 +1,19 @@
 ---
 paths:
-  - "design/**"
+  - "skills/design-system/assets/**"
   - "docs/**"
 description: What binds while building or changing a user-facing surface in this repo.
 ---
 
 # Building a user-facing surface here
 
-Loaded whenever a file under `design/` or `docs/` is opened — this repo's design
-directory and the landing page built from it. Seeded from
+Loaded whenever a file under `skills/design-system/assets/` or `docs/` is opened — this repo's design
+directory and the landing page built from it. #626 moved that directory into the
+skill that ships it; `harness.yaml`'s `paths.design_system` is the one place it is named. Seeded from
 `templates/rules/design-system.md` when the design layer went on, and repo-owned
 since: a later hydration never overwrites it. `.claude/rules/design.md` sits on the same
 paths and carries the token-source relationship; this file carries the craft.
-`design/AGENTS.md` is the Codex host form of this rule, seeded with it by
+`skills/design-system/assets/AGENTS.md` is the Codex host form of this rule, seeded with it by
 `/harness:hydrate` step 5 and never overwritten by a later hydration.
 Everything from the first `##` heading down is identical in both, and that is the
 region to keep in step; the preamble above it differs because it names a host

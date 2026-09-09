@@ -15,7 +15,7 @@ last_updated: 2026-09-01
 This describes the generator that writes the token source into the page.
 
 ```
- ┌──────────────────┐   scripts/build_design_tokens.py   ┌───────────────────────┐
+ ┌──────────────────┐     ../build_design_tokens.py      ┌───────────────────────┐
  │ 03-tokens/        │ ─────────────────────────────────► │ docs/index.html      │
  │ tokens.json       │      (stdlib-only Python, #242)     │ :root{ ... } — a     │
  │ (source of truth) │                                     │ marker-bounded region │
@@ -52,7 +52,7 @@ There is no component tier to emit in this capture — `tokens.json`'s
 1. `tokens.json` is authored by hand; it is the only file a person edits.
 2. `docs/index.html`'s `:root` block becomes a **generated region**, written
    only inside explicit start/end markers.
-3. `scripts/verify.sh` drift-checks the generated region against
+3. The repo's verification gate drift-checks the generated region against
    `tokens.json`.
 4. The generated region is never hand-edited; an edit there is lost the next
    build.

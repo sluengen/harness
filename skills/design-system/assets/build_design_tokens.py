@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Generate ``docs/index.html``'s ``:root`` token block from
-``design/03-tokens/tokens.json`` (#242).
+its sibling ``03-tokens/tokens.json`` (#242).
 
 After #241 the harness has ``tokens.json`` as a declared source of truth for
 the landing page's palette, but the page itself still carried its own
@@ -8,7 +8,7 @@ hand-authored ``:root`` block — two copies of the same colors, and the one
 that renders was not the one that was canonical. This build closes that gap:
 it resolves the *semantic* tier of ``tokens.json`` (the tier consuming code
 binds to; primitives are not emitted directly, per
-``design/03-tokens/_naming.md``) down to literal values and writes them into a
+``03-tokens/_naming.md``) down to literal values and writes them into a
 narrow, marker-delimited region inside the page's ``<style>`` block.
 
 The page's existing CSS (hundreds of lines outside that region) already binds
@@ -47,15 +47,38 @@ import sys
 from pathlib import Path
 from typing import Any, NamedTuple
 
-#: ``scripts/build_*.py`` -> ``parent.parent`` is the repo (or worktree) root.
-REPO_ROOT = Path(__file__).resolve().parent.parent
+#: This file sits *inside* the design directory it resolves, so its token source
+#: is a sibling lookup rather than a repo-relative path (#626). That is what lets
+#: one copy serve this repo — whose design directory is nested under ``skills/``
+#: — and a consumer whose ``paths.design_system`` is a repo-root ``design/``.
+DESIGN_ROOT = Path(__file__).resolve().parent
+TOKENS_DEFAULT = DESIGN_ROOT / "03-tokens" / "tokens.json"
+
+
+def _repo_root() -> Path:
+    """The nearest ancestor carrying ``harness.yaml``, else the design root's parent.
+
+    The design directory's depth is configuration (``paths.design_system``), so a
+    fixed number of ``parent`` hops is wrong in every repo but the one it was
+    written for. The fallback keeps this importable in a tree that has no
+    ``harness.yaml`` at all.
+    """
+    for candidate in DESIGN_ROOT.parents:
+        if (candidate / "harness.yaml").is_file():
+            return candidate
+    return DESIGN_ROOT.parent
+
+
+REPO_ROOT = _repo_root()
+
+#: **Repo-specific, like ``SEMANTIC_TO_CSS_VAR`` below.** A consumer adapting this
+#: reference implementation points it at its own page, or passes ``--page``.
 PAGE_DEFAULT = REPO_ROOT / "docs" / "index.html"
-TOKENS_DEFAULT = REPO_ROOT / "design" / "03-tokens" / "tokens.json"
 
 #: The generated-region markers, written at the same 2-space indent as the
 #: ``:root{`` / ``}`` lines they sit between.
 BEGIN_MARKER = (
-    "/* design-tokens:begin — generated from design/03-tokens/tokens.json; do not edit */"
+    "/* design-tokens:begin — generated from 03-tokens/tokens.json; do not edit */"
 )
 END_MARKER = "/* design-tokens:end */"
 
@@ -315,7 +338,7 @@ def main(argv: list[str] | None = None) -> int:
                 for line in drift:
                     print(f"  {line}", file=sys.stderr)
                 print(
-                    "  fix: run scripts/build_design_tokens.py to regenerate.",
+                    "  fix: run build_design_tokens.py to regenerate.",
                     file=sys.stderr,
                 )
             if duplicates:

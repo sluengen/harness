@@ -50,11 +50,27 @@ def _tracked() -> set[Path]:
     return {REPO_ROOT / name for name in out.split("\0") if name}
 
 
+#: Compiled bytecode is never a shipped asset, in this repo or any other, and it
+#: appears under a swept directory only as a side effect of running the code.
+#: #626 put Python under ``skills/`` for the first time (the design-system token
+#: builder), so the sweep began meeting ``__pycache__`` — and any test session
+#: that imports the builder recreates it, which would make this guard flaky
+#: rather than strict. Excluding it narrows nothing this guard is for: its
+#: subject is a *source* file swallowed by a broad ignore pattern.
+_NEVER_SHIPPED = ("__pycache__",)
+
+
 def _on_disk() -> set[Path]:
     found: set[Path] = set()
     for relative in SHIPPED:
         root = REPO_ROOT / relative
-        found |= {p for p in root.rglob("*") if p.is_file() and ".git" not in p.parts}
+        found |= {
+            p
+            for p in root.rglob("*")
+            if p.is_file()
+            and ".git" not in p.parts
+            and not any(part in _NEVER_SHIPPED for part in p.parts)
+        }
     return found
 
 

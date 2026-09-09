@@ -30,7 +30,7 @@ component.<domain>.<role>...          ← component tier is its own top-level na
 
 ## CSS custom-property names in the page
 
-`scripts/build_design_tokens.py` maps each emitted semantic token to the
+`../build_design_tokens.py` maps each emitted semantic token to the
 existing custom property used by `docs/index.html`; it does not derive the
 property name from the token path:
 

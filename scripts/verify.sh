@@ -93,7 +93,7 @@ uv run --extra dev ruff check .
 echo "=== mypy ==="
 # `scripts` is the only Python tree left, and smaller since #537 retired the
 # Codex compile step entirely; `templates/` holds markdown and yaml templates.
-uv run --extra dev mypy scripts
+uv run --extra dev mypy scripts skills/design-system/assets
 
 echo "=== pytest ==="
 # One stage, across the host's cores. The two-stage `-m docker` / `-m "not
@@ -110,14 +110,15 @@ echo "=== pytest ==="
 # removed 1,000-odd lines whose coverage was dragging the ratio down, and the
 # measured value moved to 85.31%. Leaving the floor at 82 after that would have
 # banked three points of slack the tree no longer needs.
-uv run --extra dev pytest -n "${HARNESS_TEST_WORKERS:-auto}" --durations=20 --cov=scripts --cov-fail-under=85
+uv run --extra dev pytest -n "${HARNESS_TEST_WORKERS:-auto}" --durations=20 --cov=scripts --cov=skills/design-system/assets --cov-fail-under=85
 
 echo "=== design-token drift guard ==="
 # Fail the gate if docs/index.html's generated :root block has drifted from
-# design/03-tokens/tokens.json — the source of truth (#242). ADR 0004,
+# skills/design-system/assets/03-tokens/tokens.json — the source of truth
+# (#242; relocated into the skill that ships it at #626). ADR 0004,
 # narrowed (#243): the guidance catalog above stays guarded and hand-authored;
 # this block is mechanical, generated content instead.
-uv run --extra dev python scripts/build_design_tokens.py --check
+uv run --extra dev python skills/design-system/assets/build_design_tokens.py --check
 
 echo ""
 echo "All checks passed."

@@ -21,11 +21,11 @@ artifact. This is the substantive layer of the system (#241); the page's
 | [`_naming.md`](_naming.md) | The naming scheme. Predictable names, followed everywhere. |
 | [`how-it-works.md`](how-it-works.md) | How a token flows from JSON into the generated `:root` region in `docs/index.html`. |
 
-[`../../scripts/build_design_tokens.py`](../../scripts/build_design_tokens.py)
+[`../build_design_tokens.py`](../build_design_tokens.py)
 resolves `tokens.json` and writes only the marker-bounded generated region in
-[`../../docs/index.html`](../../docs/index.html)'s `:root` block. The rest of
+[`docs/index.html`](../../../../docs/index.html)'s `:root` block. The rest of
 the page remains hand-authored. Its write and drift-check behaviour is covered
-by [`../../tests/unit/test_build_design_tokens.py`](../../tests/unit/test_build_design_tokens.py).
+by [`tests/unit/test_build_design_tokens.py`](../../../../tests/unit/test_build_design_tokens.py).
 
 ## The three tiers
 
@@ -44,7 +44,7 @@ by [`../../tests/unit/test_build_design_tokens.py`](../../tests/unit/test_build_
 ## Capture, not redesign
 
 Every emitted token value in `tokens.json` is byte-identical to what
-[`../../docs/index.html`](../../docs/index.html) renders through its generated
+[`docs/index.html`](../../../../docs/index.html) renders through its generated
 `:root` region. `tests/unit/test_build_design_tokens.py` verifies the generated
 region is derived from the token source, is confined to its markers, and fails
 the drift check when either source or region changes without regeneration.
@@ -52,4 +52,4 @@ the drift check when either source or region changes without regeneration.
 ## What's next
 
 [`how-it-works.md`](how-it-works.md) explains the generated region and the
-drift check that `scripts/verify.sh` runs against it.
+drift check the repo's verification gate runs against it.

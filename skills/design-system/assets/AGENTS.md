@@ -1,8 +1,8 @@
 # Building a user-facing surface here
 
 Codex reads the nearest instruction file, so this one binds while you work anywhere
-under `design/` — and, by the same rule on the Claude side,
-`.claude/rules/design-system.md` binds under `design/` and `docs/` alike. `/harness:hydrate`
+under this repo's design directory — and, by the same rule on the Claude side,
+`.claude/rules/design-system.md` binds there and under `docs/` alike. `/harness:hydrate`
 step 5 seeds the two together and no later hydration overwrites either.
 Everything from the first `##` heading down is identical in both, and that is the
 region to keep in step; the preamble above it differs because it names a host

@@ -9,7 +9,7 @@ last_updated: 2026-07-29
 # harness design system
 
 A layered design system for the harness's **one external-facing artifact**:
-[`docs/index.html`](../docs/index.html), the landing page explaining the
+[`docs/index.html`](../../../docs/index.html), the landing page explaining the
 operating model, the harness's own verbs, and the guidance catalog. The
 structure follows `templates/design-system.md` (#239) — a one-way dependency
 stack, a three-tier token model, and (once #243 lands) a lint that forbids
@@ -45,7 +45,7 @@ chrome, is in the wrong layer.
    lands (#242), consuming code — the generated region of
    `docs/index.html` — binds to semantic (or component) tokens only, never
    a raw hex or pixel value; #243 wires a drift check into
-   `scripts/verify.sh` to enforce it.
+   the repo's verification gate to enforce it.
 
 3. **Chrome belongs to the archetype, never the screen.** Not yet
    exercised — the harness has one page, so layer 06 is a scaffold. The rule

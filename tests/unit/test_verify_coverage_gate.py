@@ -165,16 +165,24 @@ def test_gate_measures_the_scripts_tree() -> None:
         )
 
 
-def test_gate_typechecks_the_one_surviving_python_tree() -> None:
-    """The mypy stage names ``scripts``, the only Python tree left.
+#: Every tree the repo owns Python in, and therefore every tree the mypy stage
+#: must name. ``scripts/`` is the gate and its instruments; the second is the
+#: design-system token builder, which #626 moved out of ``scripts/`` so it could
+#: travel with the skill that ships it. Both directions matter: a tree missing
+#: here ships untyped, and a tree named here with no Python fails mypy outright.
+TYPECHECKED_TREES = ["scripts", "skills/design-system/assets"]
+
+
+def test_gate_typechecks_every_python_tree_the_repo_owns() -> None:
+    """The mypy stage names each tree holding this repo's Python, and no other.
 
     The twin of :func:`test_gate_measures_the_scripts_tree`. #435 pointed this
     stage at ``scripts templates``; v5 chunk 3 moved the last Python out of
-    ``templates/`` (``generate_codex_artifacts.py`` → ``scripts/``, per the
-    plugin-shaped-guidance proposal), so the stage names exactly ``scripts`` —
-    a lingering ``templates`` target would make mypy fail on a directory with
-    no Python files, and a dropped stage would leave the tree untyped. The
-    spine's ``commands.typecheck`` promises the same target.
+    ``templates/``, leaving ``scripts`` alone — and #626 ended that by relocating
+    the token builder into ``skills/design-system/assets/``, where the design
+    system it resolves now lives. A lingering target with no Python files would
+    make mypy fail outright; a dropped one would leave a tree this repo runs and
+    ships untyped.
     """
     stages = [
         line.strip()
@@ -183,9 +191,10 @@ def test_gate_typechecks_the_one_surviving_python_tree() -> None:
     ]
     assert len(stages) == 1, f"expected exactly one mypy stage; found {stages}"
     tokens = shlex.split(stages[0])
-    assert tokens[tokens.index("mypy") + 1 :] == ["scripts"], (
-        f"scripts/verify.sh's mypy stage must typecheck exactly `scripts` — the "
-        f"only Python tree the repo still owns (v5 chunk 3):\n  {stages[0]}"
+    assert tokens[tokens.index("mypy") + 1 :] == TYPECHECKED_TREES, (
+        f"scripts/verify.sh's mypy stage must typecheck exactly "
+        f"{TYPECHECKED_TREES} — every tree the repo owns Python in, and no "
+        f"other (v5 chunk 3; #626):\n  {stages[0]}"
     )
 
 
