@@ -12,10 +12,11 @@
  * **Scope, stated rather than implied.** This matcher sees `Write`, `Edit` and
  * `apply_patch`. A test rewritten through `Bash` — `sed -i`, a heredoc, `git
  * checkout -- tests/` — is not seen, and extending to `Bash` would mean parsing
- * arbitrary shell, which `push-target-guard.js` measures at ~800 lines that
- * still refuse on ambiguity. The hook raises the cost of the cheapest and most
- * common cheat; the controls of record are the reviewer's explicit item per
- * test-file diff, the gate, and branch protection.
+ * arbitrary shell, which the deleted `git-push-guard.js` measured at 971 lines
+ * that still refused on ambiguity. The hook raises the cost of the cheapest and
+ * most common cheat; what stands behind it is the reviewer's explicit item per
+ * test-file diff and the declared gate. Whatever a repository runs server-side
+ * is its own and is not claimed here (ADR 0022 point 2).
  *
  * **The refusal is a speed bump with a recorded escape, by design.** Releasing
  * the lock is one edit to a gitignored file — and that edit is exactly what

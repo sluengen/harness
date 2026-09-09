@@ -20,7 +20,7 @@
  *
  *   - The raise lands inside the tree the gate certifies and the reviewer reads,
  *     so law 3 covers it and no second commit follows the verdict. That is why
- *     it is not in `land.js`, which mutates no content file today and must not
+ *     it is not in the landing step, which mutates no content file and must not
  *     start: a content edit after the certifying gate voids the marker the
  *     verdict binds to.
  *   - It happens without anyone remembering, which is why it is not a sentence
@@ -69,9 +69,9 @@
  *
  *     plugin-version.js [--repo <dir>] [--remote <name>]
  *
- * `case` is the machine token and `reason` is a sentence, as in `land.js`.
+ * `case` is the machine token and `reason` is a sentence.
  * Exit 0 for an answer the caller can act on, 2 for a refusal, 3 when the thing
- * that had to run could not, 64 for usage — the vocabulary `scripts/gate-marker.js`
+ * that had to run could not, 64 for usage — the vocabulary the retired marker
  * fixed and this file does not extend.
  *
  * Node standard library only, CommonJS. Ships from the plugin root and is **not**
@@ -430,13 +430,12 @@ function run(options) {
 
   if (order < 0) {
     //: The version relation alone cannot tell these apart, and only one is a
-    //: fault. `land.js done` withholds the green pointer after a contended
-    //: landing by design, and a landing can skip `done` outright (#557) — either
-    //: leaves the pointer behind the commit that carried the bump, so a worktree
-    //: cut from it after a promotion reads a higher release version over its own
-    //: base. That is a rebase. Content on the release branch that the integration
-    //: history does not contain is `promotion-step.sh`'s own divergence condition,
-    //: and that is the fault. Ancestry is the discriminator.
+    //: fault. A worktree cut from a base behind the commit that carried the bump
+    //: reads a higher release version over its own base — before #621 a lagging
+    //: green pointer was the usual way to end up there, and a stale local fetch
+    //: is the way that remains. That is a rebase. Content on the release branch
+    //: that the integration history does not contain is `promotion-step.sh`'s own
+    //: divergence condition, and that is the fault. Ancestry is the discriminator.
     const stale =
       git(["merge-base", "--is-ancestor", "HEAD", release.commit], root, true) !== null;
     throw new Refusal(

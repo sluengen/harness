@@ -21,7 +21,6 @@ so it never reaches the tree the verdict binds to.
 | `tests_locked` | boolean | strictly boolean. `false` at set-up, `true` in the same write that sets `stage: "implement"` |
 | `base_commit` | string | the commit the worktree branched from. The test lock asks this tree whether a test file is new |
 | `reviewed_tree` | string \| null | tree oid |
-| `gate_marker_tree` | string \| null | the tree the last read marker named. The marker itself is the gate's, at the path the spine's *binding* contract gives; this field caches which tree it named and never stands in for reading it |
 | `verdict` | string \| null | `PASS` \| `FAIL` \| `DEFER` — transcribed from the reviewer's report, never authored |
 | `review_cycles` | integer | cycles **spent**, against `loop.max_review_cycles` |
 | `engine` | string | `claude` \| `codex` |
@@ -70,9 +69,9 @@ is fresh, the integration tip, and the ticket's real tracker state.
 Always trusted, because they are history rather than tree facts: `ticket`,
 `lane`, `engine`, `review_cycles`, and `base_commit` once it still resolves.
 
-**The gate on the three tree-bound fields.** `reviewed_tree`,
-`gate_marker_tree` and `verdict` are trusted **only** while the freshly derived
-tree oid equals `reviewed_tree`. One byte of difference sets all three to null
+**The gate on the two tree-bound fields.** `reviewed_tree`
+and `verdict` are trusted **only** while the freshly derived
+tree oid equals `reviewed_tree`. One byte of difference sets both to null
 and returns the run to `substantive_review`. This is the rule reconciliation
 already states — no tree identity, marker, readiness report or verdict is
 inherited across a change — and the resume path inherits it rather than

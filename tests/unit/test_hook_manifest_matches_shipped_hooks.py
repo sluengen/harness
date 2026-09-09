@@ -235,8 +235,8 @@ def test_the_manifest_and_the_hook_sources_are_tracked() -> None:
         f"{MANIFEST_PATH} is not tracked by git, so the manifest a consuming repo "
         f"installs is not the one this guard read. Tracked: {sorted(tracked)}"
     )
-    assert "hooks/gate-evidence-guard.js" in tracked, (
-        f"the Stop hook's source is not tracked under {HOOKS_DIR}/. Tracked: "
+    assert "hooks/test-lock-guard.js" in tracked, (
+        f"the test-lock guard's source is not tracked under {HOOKS_DIR}/. Tracked: "
         f"{sorted(tracked)}"
     )
 
@@ -250,8 +250,8 @@ def test_the_shipped_set_is_live_and_excludes_the_non_hooks() -> None:
     both as shipped-but-unwired on every run.
     """
     shipped = shipped_hook_names()
-    assert "gate-evidence-guard" in shipped, (
-        f"the shipped-hook derivation no longer contains the Stop hook — it "
+    assert "test-lock-guard" in shipped, (
+        f"the shipped-hook derivation no longer contains the test-lock guard — it "
         f"yielded {sorted(shipped)}"
     )
     assert "hooks" not in shipped and "package" not in shipped, (
@@ -269,7 +269,7 @@ def test_the_wired_set_is_live() -> None:
     that read only the first event fails here rather than in the sweep.
     """
     wired = manifest_hook_names(_manifest())
-    assert "gate-evidence-guard" in wired, (
+    assert "test-lock-guard" in wired, (
         f"the manifest walk no longer reaches the Stop event — it yielded "
         f"{sorted(wired)}"
     )

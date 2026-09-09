@@ -58,16 +58,12 @@ What it refuses, and when
 Every refusal happens **before any file is written**, in this order, so a wrong
 tree is never mutated and a wrong table never costs a suite run:
 
-0. **Gate lock** (#473, ``run`` only) — a fresh gate marker covers the tree's
-   current oid, reusing ``scripts/gate-marker.js``'s convention
-   (``<git-common-dir>/harness/gate/<tree-oid>.json``, the hooks' freshness
-   bound). A mutation report is evidence *about a green tree*: the green-baseline
-   refusal below proves only the selection, and a table run over a tree the whole
-   gate would refuse produces verdicts nothing should cite. First, before the
-   table is even read — the lock is about the tree, and every later refusal
-   presumes the tree is worth reasoning about. ``check`` is not behind it: it
-   writes nothing and runs nothing, and a table must be able to land before a
-   gate run is spent.
+(The **gate lock** that stood here as refusal 0 was retired at #621 with the
+marker it read. It asked whether a fresh marker covered the tree — a verdict,
+which ADR 0022 point 3 forbids a plugin-shipped executable from reading. The
+claim it protected is unchanged and now rests where every other one does: the
+builder runs the declared gate and reads it. The green-baseline refusal below is
+untouched, and it is the one that catches a table run against a red suite.)
 1. **Table** — ``id`` unique, ``kills`` non-empty, ``new != old`` (the one no-op
    catchable without running anything), sentinel declared.
 2. **Containment** — the sentinel file carries the sentinel text, and every
@@ -130,13 +126,10 @@ write, held in memory and copied under the work dir; the path is printed so a
 hard kill is recoverable by hand. This module spawns no ``git`` of its own — no
 ``git checkout``, no ``git stash``. ``git checkout -- .`` is the revert that cost
 #163 forty minutes of finished work, and ``tests/unit/test_mutate.py`` pins the
-two argv shapes this module may build: its own interpreter, and one read-only
-``node scripts/gate-marker.js status`` query for #473's gate lock. That query
-reaches git only through the helper's tree computation, which is read-only over
-the working files — a temporary index, never a revert — and the exemption is
-earned from the exact argv rather than granted to the ``node`` binary, so
-``write``, ``node -e``, or a third element that is not ``status`` all fail the
-guard.
+one argv shape this module may build: its own interpreter. #621 retired the
+second — a read-only ``node`` query for the gate lock — with the marker it
+asked about, so the ``node`` exemption that query earned is gone too, and the
+guard is now the simpler claim that this module spawns nothing but Python.
 
 Every entry runs against the pristine tree (mutate → run → restore), so a table
 may carry two entries on one file without entry 2 matching against entry 1's
@@ -239,14 +232,13 @@ import sys
 import tempfile
 import time
 import tomllib
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import FrameType
 from typing import TextIO
 
 __all__ = [
-    "check_gate_marker",
     "Baseline",
     "EntryResult",
     "Mutation",
@@ -275,18 +267,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 #: Where the child interpreter finds :mod:`_mutate_outcomes`.
 PLUGIN_DIR = Path(__file__).resolve().parent
 
-#: The gate-marker convention's one implementation (#473, ADR 0018) — a sibling
-#: file in ``scripts/``, so it resolves wherever this module was hydrated. The
-#: gate lock reaches it with exactly one read-only ``status`` query rather than
-#: re-implementing the marker path and the freshness parse here, which would be a
-#: fourth parser of ``HARNESS_GATE_MARKER_MAX_AGE_SECONDS`` and the only one no
-#: equivalence test covers.
-GATE_MARKER_JS = str(PLUGIN_DIR / "gate-marker.js")
-
-#: The helper's *refusal* exit: a fact about the repository, not a broken host.
-#: Every other non-zero is infrastructure — it stays a plain inequality here so
-#: this module does not depend on which code Node picks for an uncaught throw.
-GATE_MARKER_REFUSED_EXIT = 2
 
 #: The environment variable the plugin writes its observations to.
 OUTCOME_ENV = "MUTATE_OUTCOME_PATH"
@@ -326,11 +306,11 @@ class RefusalError(Exception):
 class RunnerUnavailableError(Exception):
     """An infrastructure precondition could not be met — never a red tree.
 
-    Two occurrences: the baseline run could not complete, and (#500) the
-    gate-marker helper could not run. Distinct from ``RefusalError``, whose every
-    reason is a fact about the tree the operator must fix: an unrunnable pytest
-    and a host without ``node`` both say nothing about the tree at all, and
-    reporting either as a refusal would send an operator to look at their code.
+    One occurrence since #621 retired the gate lock: the baseline run could not
+    complete. Distinct from ``RefusalError``, whose every reason is a fact about
+    the tree the operator must fix — an unrunnable pytest says nothing about the
+    tree at all, and reporting it as a refusal would send an operator to look at
+    their code.
     """
 
 
@@ -690,109 +670,6 @@ def _check_landing(table: MutationTable, tree: Path) -> dict[str, Path]:
             )
         targets[mutation.id] = target
     return targets
-
-
-def _gate_marker_status(tree: Path, environ: Mapping[str, str]) -> tuple[str, Path, int]:
-    """Ask the gate-marker helper for the three facts the lock decides on.
-
-    ``(tree oid, marker path, freshness bound)`` — no verdict; see
-    :func:`check_gate_marker` for why the composition stays here.
-
-    This is the **only** subprocess in this module that is not the interpreter,
-    and it is deliberately the narrowest shape that can answer the question:
-    ``status`` is read-only by construction, so the no-git-restore rule this
-    module exists to protect is untouched. ``test_mutate.py`` holds the argv to
-    that exact shape — three elements, the literal ``node``, the module constant
-    bound to ``gate-marker.js``, and the literal ``status`` — so any drift toward
-    power (``write``, ``node -e``, a variable subcommand) fails the guard rather
-    than being waved through by a binary name.
-
-    The exit-code split is the same one ``scripts/verify.sh`` makes: exactly 2 is
-    the helper refusing on a fact about the repository; anything else non-zero,
-    or a helper that could not be spawned at all, is infrastructure.
-    """
-    try:
-        completed = subprocess.run(  # noqa: S603 - list form, shell=False, argv[0] is literal
-            ["node", GATE_MARKER_JS, "status"],  # noqa: S607 - `node`, as verify.sh spawns it
-            cwd=tree,
-            capture_output=True,
-            text=True,
-            env=dict(environ),
-        )
-    except OSError as exc:
-        raise RunnerUnavailableError(
-            f"the gate-marker helper could not be run (node {GATE_MARKER_JS}): {exc} — "
-            f"infrastructure, not a fact about {tree}"
-        ) from exc
-    if completed.returncode == GATE_MARKER_REFUSED_EXIT:
-        raise RefusalError(
-            "gate",
-            f"{tree} is not a git repository the marker convention can answer "
-            f"for — a mutation run is evidence about a gated tree, and there is "
-            f"no tree oid to look up ({completed.stderr.strip()})",
-        )
-    if completed.returncode != 0:
-        raise RunnerUnavailableError(
-            f"the gate-marker helper (node {GATE_MARKER_JS} status) exited "
-            f"{completed.returncode}: {completed.stderr.strip() or 'no detail'} — "
-            f"infrastructure, not a fact about {tree}"
-        )
-    try:
-        status = json.loads(completed.stdout)
-        return str(status["tree"]), Path(str(status["marker"])), int(status["max_age_seconds"])
-    except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
-        raise RunnerUnavailableError(
-            f"the gate-marker helper (node {GATE_MARKER_JS} status) answered "
-            f"something this cannot read ({exc}): {completed.stdout!r}"
-        ) from exc
-
-
-def check_gate_marker(tree: Path, *, env: Mapping[str, str] | None = None) -> Path:
-    """The tree-keyed lockfile (#473): refuse to mutate a tree the gate has not passed.
-
-    Returns the covering marker's path. Reuses ``scripts/gate-marker.js``'s
-    convention wholesale — the same tree computation the gate's own writer uses,
-    the same ``<git-common-dir>/harness/gate/<tree-oid>.json`` location the hooks
-    read, and the same freshness bound — so there is no fourth implementation to
-    drift. The helper answers all three as *facts* in one ``status`` query; the
-    verdict is composed here, because the three distinct refusal messages below
-    are this module's contract, not the helper's.
-
-    Three refusals, all ``reason="gate"``, each naming its own cause: no
-    repository (the convention has nothing to answer for the tree), no marker
-    over the current oid (the gate has not run green over these exact bytes —
-    one edit after a green run lands here too, by construction of the oid), and
-    a stale marker (the hooks' rule: past the bound, a marker attests a
-    toolchain that has since moved). A refusal is a fact about the tree, never
-    infrastructure, so none of these is :class:`RunnerUnavailableError` — and a
-    host that cannot run the helper is the mirror of that rule, so it *is*.
-
-    ``env`` is forwarded to the helper rather than read here: the bound has to
-    cross the process boundary intact, which is the one thing this architecture
-    could silently get wrong, and
-    ``test_the_freshness_bound_crosses_the_process_boundary`` is what holds it.
-    """
-    environ: Mapping[str, str] = os.environ if env is None else env
-    moment = time.time()
-    oid, marker, bound = _gate_marker_status(tree, environ)
-    if not marker.exists():
-        raise RefusalError(
-            "gate",
-            f"no gate marker covers tree {oid} — the gate has not run green over "
-            f"these exact bytes (one edit after a green run is enough). Run "
-            f"`bash scripts/verify.sh` in {tree} first; a mutation report over "
-            f"an ungated tree is not evidence.",
-        )
-    age = moment - marker.stat().st_mtime
-    if age > bound:
-        raise RefusalError(
-            "gate",
-            f"the gate marker for tree {oid} is stale ({int(age)}s old, bound "
-            f"{bound}s) — the tree is unchanged but the toolchain may not be. "
-            f"Re-run `bash scripts/verify.sh` in {tree} (the hooks apply the "
-            f"same bound).",
-        )
-    return marker
 
 
 def check_plan(table: MutationTable, tree: Path, *, only: Sequence[str] = ()) -> dict[str, Path]:
@@ -1465,13 +1342,6 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        if args.mode == "run":
-            # The first refusal (#473): the lock is about the tree, and every
-            # later refusal presumes the tree is worth reasoning about. `check`
-            # is deliberately not behind it — it writes nothing and runs
-            # nothing, and a table must be able to land before a gate run is
-            # spent.
-            check_gate_marker(args.tree)
         table = load_table(args.table)
         if args.mode == "check":
             check_plan(table, args.tree, only=args.only)

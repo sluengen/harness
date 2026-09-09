@@ -234,7 +234,7 @@ def test_the_tree_inventories_are_live() -> None:
     anchors = {
         "skill": "build",
         "agent": "reviewer",
-        "hook": "gate-evidence-guard",
+        "hook": "test-lock-guard",
     }
     for kind, anchor in anchors.items():
         assert anchor in tree[kind], (
@@ -256,7 +256,7 @@ def test_the_page_declares_units_of_every_kind() -> None:
     anchors = {
         "skill": "build",
         "agent": "reviewer",
-        "hook": "gate-evidence-guard",
+        "hook": "test-lock-guard",
     }
     for kind, anchor in anchors.items():
         assert anchor in page[kind], (
@@ -303,7 +303,7 @@ def test_the_parser_reads_the_real_page() -> None:
 _TREE_SAMPLE = {
     "skill": {"engineering", "review-discipline"},
     "agent": {"reviewer", "dev"},
-    "hook": {"gate-evidence-guard"},
+    "hook": {"test-lock-guard"},
 }
 
 

@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>harness — a spec-driven development process, shipped as native plugins for Claude Code and Codex</title>
-<meta name="description" content="harness: a spec-driven development process for agent-driven repos, shipped as native plugins for Claude Code and Codex. Nine lifecycle workflows, sixteen skill packages, five agent roles, and hooks that make a green gate the only path to a shared branch." />
+<meta name="description" content="harness: a spec-driven development process for agent-driven repos, shipped as native plugins for Claude Code and Codex. Nine lifecycle workflows, sixteen skill packages, five agent roles, and the guards that keep a build honest." />
 <link rel="icon" type="image/png" sizes="32x32" href="favicon.png" />
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <meta property="og:type" content="website" />
@@ -187,7 +187,7 @@
       <li><b>9</b> workflows</li>
       <li><b>16</b> skills</li>
       <li><b>5</b> agents</li>
-      <li><b>6</b> hooks</li>
+      <li><b>4</b> hooks</li>
       <li><b>1</b> gate</li>
     </ul>
   </header>
@@ -378,15 +378,13 @@ Codex: ask to initialize Harness</pre>
           <li class="unit" data-unit="agent:steward"><code>steward</code><span>Periodic health assessment: the cross-file patterns no per-change review sees.</span></li>
         </ul>
 
-        <h3 style="margin-top:22px">Hooks <span class="n">6</span></h3>
+        <h3 style="margin-top:22px">Hooks <span class="n">4</span></h3>
         <p>Four refuse, two advise. What a refusal rests on is evidence — a gate marker over the
           worked or pushed tree, or the shape of the command itself — never a branch name granting an
           exemption.</p>
         <ul class="units">
           <li class="unit" data-unit="hook:test-lock-guard"><code>test-lock-guard</code><span>Refuses an edit to a test file while a run has declared its tests locked.<span class="verdict verdict--refuses">refuses</span></span></li>
-          <li class="unit" data-unit="hook:gate-evidence-guard"><code>gate-evidence-guard</code><span>Refuses ending a turn that claims completion with no fresh marker over the worked tree.<span class="verdict verdict--refuses">refuses</span></span></li>
-          <li class="unit" data-unit="hook:push-target-guard"><code>push-target-guard</code><span>Refuses a push to a protected branch unless a fresh marker covers the pushed tree, or git alone made it from one that is covered.<span class="verdict verdict--refuses">refuses</span></span></li>
-          <li class="unit" data-unit="hook:git-push-guard"><code>git-push-guard</code><span>Refuses a history rewrite — <code>--force</code> in any spelling.<span class="verdict verdict--refuses">refuses</span></span></li>
+          <li class="unit" data-unit="hook:push-target-guard"><code>push-target-guard</code><span>Flags a push aimed at a branch the repo declares under <code>branches:</code>.<span class="verdict verdict--advises">advises</span></span></li>
           <li class="unit" data-unit="hook:prompt-guard"><code>prompt-guard</code><span>Flags injection-shaped content on write.<span class="verdict verdict--advises">advises</span></span></li>
           <li class="unit" data-unit="hook:workflow-guard"><code>workflow-guard</code><span>Flags a source edit made on the default branch or outside a worktree.<span class="verdict verdict--advises">advises</span></span></li>
         </ul>

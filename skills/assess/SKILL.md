@@ -46,10 +46,10 @@ They are the rows of the Baseline table in `templates/assessment.md`, under thos
 | Row | Derivation |
 |---|---|
 | Assurance lines per product line | `git ls-files '<paths.tests>*.py' \| xargs wc -l \| tail -1` over the same command on the repo's product globs; state both globs, and put the module count (`git ls-files '<paths.tests>*.py' \| wc -l`) beside the ratio. **Two denominators, both reported** — see `references/process-economy.md` → *The baseline*, item 1 |
-| Gate wall-clock | `node <plugin-root>/scripts/gate-marker.js durations` — the median with its `count` — plus the slowest stage and the stage count from this pass's own gate run |
+| Gate wall-clock | the wall-clock and the slowest stage from this pass's own gate run. #621 retired the marker that recorded a run's duration, so there is no history to take a median over: one run is one observation, and the report says so rather than implying a distribution |
 | Checks with no nameable failure-reason | the ground-1 and burden-of-proof count from this pass's own sweep; state the subject set counted over, and hold it constant |
 
-The `count` travels with the median: three runs is a different claim from three hundred. A `count` of zero means this clone has run no gate since the field existed, not that the gate is instant.
+**One observation is not a distribution.** Report the number this pass measured and label it as one run. If gate wall-clock becomes a question worth a trend, the answer is to record it somewhere a run can append to — not to rebuild a marker whose duration field was a by-product of certifying trees (ADR 0022 point 3).
 
 Take the previous column from the last `process` report's Baseline table or its `assessments/LOG.md` fold line; where neither exists, write `first recorded baseline`. No starting value lives in this file: a measurement is true of one tree on one day, and this guidance installs into repos whose product globs it cannot know.
 

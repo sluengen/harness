@@ -17,16 +17,15 @@ be stated is already waste.
 ## Hooks
 
 Enforcement, so the assumption is about what instruction alone fails to hold.
-The controls of record are branch protection and gate output in CI; a hook is a
-cheaper rung that catches the mistake earlier.
+The harness's assurance is the declared gate plus the independent review; a hook
+is a cheaper rung that catches the mistake earlier. Server-side controls are the
+repository's own — this register claims none of them (ADR 0022 point 2).
 
 | Component | Assumes | Retirement test |
 |---|---|---|
-| `hooks/gate-evidence-guard.js` | An agent will report a task complete without having run the gate over the tree it authored, because "I ran it earlier" feels sufficient. | Over 50 recorded runs, no completion claim without a fresh marker. Host caveat: Stop-hook blocks are capped at eight, so this was always a nudge. |
-| `hooks/git-push-guard.js` | An agent will push to a shared branch on evidence that covers a different tree — a stale marker, or a tree an amend changed. | A release where no run attempts a push the guard refuses for a stale or absent marker. This is also the control of record's local half; retire only with server-side enforcement that reads the same marker. |
-| `hooks/push-target-guard.js` | An agent under pressure will reach for `--force` to make a rejected push succeed. | No force-push attempt in a release's recorded runs. Weakest candidate for retirement: the cost of being wrong is rewritten history on a shared branch. |
+| `hooks/push-target-guard.js` | An agent loses track of which branch a push is aimed at, and a push to a declared role branch is worth one line of warning before it lands. | Advisory and warn-only, so the same standing test as the two below: it has not been shown to run until it has fired once for the real reason. The `--force` refusal it used to sit beside was retired with `git-push-guard.js` at #621 — the eleven deny globs in `settings/harness.json` carry that now. |
 | `hooks/test-lock-guard.js` | Instruction does not stop test modification: over 79% of measured agent cheating is editing the test directly, despite an explicit rule (ImpossibleBench). | A published benchmark showing test-editing under an explicit instruction at the noise floor. Known gap today: the matcher is `Write`/`Edit`/`apply_patch`, so a `Bash` heredoc or `sed -i` is not seen — measured on this ticket's own run, where every edit went through `Bash` and the hook never fired. |
-| `hooks/hooks.json` | The two hosts will not register six hooks per repo by hand, and a hook registered in one repo and not another is a control nobody can rely on. | The host registers a plugin's hooks from the plugin manifest without a second file. Not a model assumption. |
+| `hooks/hooks.json` | The two hosts will not register four hooks per repo by hand, and a hook registered in one repo and not another is a control nobody can rely on. | The host registers a plugin's hooks from the plugin manifest without a second file. Not a model assumption. |
 | `hooks/package.json` | Node's module resolution needs the declaration beside the hooks, and `test_hooks_module_type.py` holds it. | Not a model assumption. |
 | `hooks/prompt-guard.js` | An agent will act on instructions embedded in content it is writing or has fetched. | Advisory and warn-only. This repo's own standing test for a warn-and-pass guard: **it has not been shown to run until it has fired once for the real reason.** It has not. Retire at the next `/assess process` unless it fires first. |
 | `hooks/workflow-guard.js` | An agent will edit source outside a worktree, on a shared branch. | Native worktree isolation confirmed on both hosts (the accepted proposal names this one for retirement already). Advisory; same warn-and-pass test as above. |
@@ -38,9 +37,8 @@ script exists where an agent re-deriving the answer each time would drift.
 
 | Component | Assumes | Retirement test |
 |---|---|---|
-| `scripts/verify.sh` | Nothing about the model. It is the repo's gate — the thing every other row's evidence comes from. | Never retired while the repo ships code. |
-| `scripts/gate-marker.js` | An agent cannot bind a claim to a tree oid by hand reliably, and a marker written by prose instruction would be written when the agent felt finished. | A host feature that records verified-tree evidence natively. |
-| `scripts/harness-config.js` | Hand-rolled configuration readers disagree with each other: three of them produced #487, #488 and #510. | One reader is not an assumption about the model; retire only if configuration itself goes. |
+| `scripts/verify.sh` | Nothing about the model. It is the repo's gate — the thing every other row's evidence comes from, and since #621 the whole of the harness's mechanical assurance. | Never retired while the repo ships code. |
+| `scripts/harness-config.js` | Hand-rolled configuration readers disagree with each other: three of them produced #487, #488 and #510. Narrowed to two exports at #621, both still serving a guard. | One reader is not an assumption about the model; retire only if configuration itself goes. |
 | `scripts/harness-refs.js` | Agents cannot discover another clone's gate result without an object transfer, so a flat ref is the cheap channel. | A host or forge feature publishing per-tree build evidence readable in one call. |
 | `scripts/land.js` | An agent asked to decide the unchanged / clean-merge / conflict landing case from prose will take the wrong branch under pressure, and the wrong branch pushes unreviewed bytes. | A recorded release in which the three cases are taken correctly from prose alone. Bounded: this is the one place where being wrong lands unreviewed code on the integration branch. |
 | `scripts/mutate.py` | A guard test that cannot fail is indistinguishable from one that passes, and nothing else in this repo proves the difference. | The evals in T5 cover guard quality. Harness-local: it is not shipped, and a consuming repo uses its language's ecosystem tool (mutmut, Stryker). |

@@ -69,13 +69,11 @@ If you do open a PR:
   when at least one was `inert`. `4` dominates `1`: "your table proved nothing"
   is the louder answer, and it calls for different work.
 
-  It refuses before it writes a byte, in this order: an ungated tree (the
-  **gate lock** — `run` requires a fresh gate marker over the tree's exact
-  bytes, the same `scripts/gate-marker.js` convention the hooks read, reached
-  with one read-only `status` query, so `run` needs a runnable `node` while
-  `check` is exempt from both), a malformed **table**, a
+  It refuses before it writes a byte, in this order: a malformed **table**, a
   **containment** failure (the wrong tree), a **landing** failure (`old` absent
-  or ambiguous), a red **baseline**, a mistyped **prediction**, and an unusable
+  or ambiguous), a red **baseline** — which is now the first thing standing
+  between a mutation report and an ungated tree, #621 having retired the gate
+  lock with the marker it read — a mistyped **prediction**, and an unusable
   **observable** (nondeterministic, or already failing on the pristine tree). It
   backs up every target before touching any and restores only from those
   backups. The table stays outside the repo — only the mechanism is versioned.

@@ -120,7 +120,6 @@ def _run_gate(tmp_path: Path, bindir: Path) -> subprocess.CompletedProcess[str]:
         ["/bin/bash", str(script)],
         cwd=REPO_ROOT,
         env={
-            "HARNESS_GATE_MARKER_RUNNER": "1",
             "PATH": str(bindir),
         },
         capture_output=True,
@@ -416,7 +415,7 @@ def test_the_completion_sweep_read_a_corpus_that_has_skips_in_it() -> None:
     sites = skip_sites_from_tree()
     origins = {site.origin for site in sites}
 
-    assert "tests/unit/test_gate_evidence_hook_scope.py" in origins, (
+    assert "tests/unit/test_hooks_module_type.py" in origins, (
         f"the sweep read no skip in a module known to carry one (it saw {sorted(origins)}) "
         f"— {_STAGE_FIRST}"
     )

@@ -27,10 +27,12 @@ depend on an agent remembering them:
   files they scope.
 - **Builder / recorder separation.** The agent that promises delivery is not the
   one that records it, which keeps the as-built record honest.
-- **Hooks that refuse.** A completion claim without fresh gate evidence, a push
-  to a protected branch without a marker over the pushed tree, and any history
-  rewrite are refused at the agent host. The controls of record stay
-  server-side: branch protection and gate output in CI.
+- **One hook that refuses, three that advise.** An edit to a test file while a
+  run has declared its tests locked is refused at the agent host; injection-shaped
+  content, a source edit outside a worktree, and a push aimed at a declared branch
+  are flagged and let through. The assurance is not the hooks — it is the gate the
+  repo declares in `commands.verify`, run and read by the builder, plus the
+  independent review. Server-side controls are the repository's own.
 
 It is **dogfooded on its own development**: every change here ships through the
 process the plugin publishes, against the same gate.
@@ -66,7 +68,7 @@ Then ask Codex to initialize Harness in the repository. Both hosts read the same
 repo-owned: `harness.yaml`, the spine (`AGENTS.md`) and the `CLAUDE.md` derived from it,
 the path-scoped rules, Codex role adapters,
 the specs scaffold, the infrastructure record, and — where the repo has no gate yet — a
-`scripts/verify.sh` skeleton that delegates to `node scripts/gate-marker.js run`.
+`scripts/verify.sh` skeleton the repository then owns.
 After a plugin update, `/harness:init --refresh` regenerates the marked blocks,
 generated Codex role adapters, and recognized Harness-owned gate assets. It leaves
 custom gate wiring and unsafe JavaScript module contexts untouched, with a

@@ -1,6 +1,6 @@
 ---
 name: worktree-isolation
-description: Sets a task up on its own branch in its own git worktree — choosing the base from the green pointer, gating that base before the branch is cut, linking gitignored local state into the new directory, giving each concurrent agent its own tree, and tearing the worktree and the resources it started down after merge. Use when starting any multi-commit task, when asked to "work on this in a worktree" or "branch off green", when several agents will run at once, or when cleaning up after a merged branch. Not for deciding what to build, gating a change, reviewing, or landing — the spine's lifecycle and `build` own those.
+description: Sets a task up on its own branch in its own git worktree — choosing and gating the base before the branch is cut, linking gitignored local state into the new directory, giving each concurrent agent its own tree, and tearing the worktree and the resources it started down after merge. Use when starting any multi-commit task, when asked to "work on this in a worktree" or "branch off green", when several agents will run at once, or when cleaning up after a merged branch. Not for deciding what to build, gating a change, reviewing, or landing — the spine's lifecycle and `build` own those.
 model: inherit
 ---
 # Worktree Isolation
@@ -13,27 +13,16 @@ Any multi-commit task runs on its own branch in its own git worktree, so paralle
 
 ## Creating the worktree
 
-Branch off the **last integration commit known green**, not off the tip: concurrent runs land on the integration branch continuously, so its tip may carry a defect nobody has met yet, and starting there makes your first gate run red for somebody else's reason. The green pointer names that commit.
+Branch off the integration branch, fetched first.
 
 ```bash
 git fetch --quiet <remote>
-BASE="$(node <plugin-root>/scripts/harness-refs.js green-read)"; GREEN_STATUS=$?
-git worktree add --detach ../<repo>-<task-id> "${BASE:-<integration-branch>}"
+git worktree add --detach ../<repo>-<task-id> <remote>/<integration-branch>
 ```
 
-**Fetch before the pointer read.** `green-read` asks the remote directly, so the oid it hands back is current whether or not you fetched — but the commit that oid names still has to be in this checkout. Without the fetch `git worktree add` dies on `fatal: invalid reference: <oid>`, and `${BASE:-<integration-branch>}` does not rescue it, because `BASE` is set. The fetch also brings the integration ref behind that fallback up to date, so the fallback takes the tip other sessions have landed on rather than the one this checkout last saw.
+**Fetch before you branch**, so the base is the commit other sessions have landed on rather than the one this checkout last saw.
 
-Keep the `$?` capture, because empty output has two unrelated causes and `${BASE:-…}` erases the difference between them:
-
-- **Exit 0 with a commit id.** That is the pointer; you branched off green.
-- **Exit 0 and empty.** No pointer has been published yet, so the fallback to the integration branch named in `harness.yaml` is the whole story.
-- **Exit 2 and empty.** The pointer could not be read at all — an unreachable remote, or a repository whose integration branch could not be resolved — with the reason on stderr. The fallback still takes a safe base, so the run continues, but report that the pointer was not consulted: calling it "none published" describes a reachable remote holding no green commit, a different fault with a different fix.
-
-**The worktree starts detached, and the branch is cut later** — in *Gating the base*, once the base has passed. Cutting it here instead, with `-b <task-id>`, leaves residue behind a red base: `git worktree remove` deletes the directory and keeps the branch, so the retry after somebody clears the red dies on `fatal: a branch named '<task-id>' already exists`. Nothing needs the branch before the gate runs.
-
-**Report the base you took**: which commit, whether it came from the pointer, and — when it came from the pointer — how far behind `<remote>/<integration-branch>` it is (`git rev-list --count <base>..<remote>/<integration-branch>`; the fetch above already brings that ref current, so this needs no fetch of its own). A run that does not say where it started cannot tell a red base from a red change, and a pointer left to drift compounds silently otherwise — reporting the count here makes it legible at the cut rather than only at the red gate a stale base later causes.
-
-Work inside that directory for the whole task.
+**The base may be red, and that is what the next section is for.** #621 retired the green pointer along with the `refs/harness/*` namespace that carried it: the pointer named the last integration commit a gate had certified, and ADR 0022 point 3 forbids a plugin-shipped executable reading whether something passed. What replaces it is not a weaker pointer but the gate you were going to run anyway — *Gating the base* below runs it before anything changes, so a red base is caught at the same moment, by direct evidence rather than by a record of somebody else's run. What is genuinely lost is the *saving*: you now spend a gate run to learn what a ref lookup used to answer. That cost was weighed and accepted — one gate run per worktree against a namespace, a publisher, a pruner and a fallback chain.
 
 ## Linking heavy local artifacts
 
@@ -54,7 +43,7 @@ Run the repo's verify command (`harness.yaml` → `commands.verify`) in the deta
 
 It runs at this point in the sequence because a gate needs two things a bare commit id cannot give it: a working tree, and the gitignored local state the previous section links in. The detached worktree standing at the base is both, at no extra cost — nothing is committed to it and no branch names it, so a red result costs only a directory.
 
-**A green pointer does not excuse the run.** The record behind the pointer was written on whichever host produced it, and a gate is not host-portable: one observed failure was a suite green in CI and red on the developer's machine, on a temp path one character over a 200-character cap. The record does not travel between hosts; the run does.
+**Somebody else's green does not excuse the run.** A gate is not host-portable: one observed failure was a suite green in CI and red on the developer's machine, on a temp path one character over a 200-character cap. A record of a passing run does not travel between hosts; the run does. This is the same reason #621 could retire the green pointer without replacing it — a pointer is a record, and the run is the evidence.
 
 - **Green.** Cut the branch now and start work — `git checkout -b <task-id>` inside the worktree, named after the task, its ticket id ideal. A red gate from here on is yours, which is what the minute buys.
 - **Red.** An andon pull (P4). File the failure as a bug against the integration branch, remove the worktree, hold the task, and stop. No branch was cut, so the retry after somebody clears the red starts clean. Never build on a red base: every later gate run answers a question you already know the answer to.
