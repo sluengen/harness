@@ -70,6 +70,9 @@ Configuration: `harness.yaml`. Path-scoped rules under `.claude/rules/` carry wh
 ### Repo principles
 
 - Commits are atomic and leave the gate green; format `type(scope): description` (feat / fix / chore / docs / refactor / test / spec).
+- **Stay in our lane.** This repo decides what the plugin delivers; a consuming repo's CI, branch protection, billing and branch topology are its own. *Refuses:* a ticket that changes a consumer's workflow; an assurance gap closed here that the consumer already closes for itself; a proposal item that reaches outside this repo to make something here work.
+- **Reduce fan-out: a producer names no consumer.** Where two skills share state, a third mediates it and neither depends on the other — a skill holds a ticket through `tracker`'s `hold`, the drain selects it through `tracker`'s `held`, and neither names the other. Consumers know producers; never the reverse. *Refuses:* a skill that names the command which will consume its output; a sentence warning a producer about a consumer's selector, which documents a coupling instead of removing it.
+- **Calibrate to the stage the repo is at, not the one a mechanism was built for.** When a mechanism's own rationale cites a condition that no longer holds, that is a retirement trigger rather than a reason to keep it. The gate marker was built for a zero-defect-to-integration posture the *Principles* explicitly decline; the elaborate DEFER preservation was built for a backlog past a hundred tickets, not for a dozen with session notifications. *Refuses:* an assurance whose stated justification is a condition nobody has re-checked.
 - The plugin's semver moves once per release cycle, in both plugin manifests and all three `spine:generated` markers (`AGENTS.md`, the `CLAUDE.md` derived from it, and `templates/spine.md`). #588 retired the cycle-start obligation and the 713-line guard that enforced it; #589 gave the move an owner that is neither a builder nor the promotion, which cannot perform it with the credential it has — a commit created with `GITHUB_TOKEN` raises no workflow run, so the bumped head would carry no required check and the nightly would wedge. **`/build` step 1 raises it, in the worktree, before the first edit**, so it lands inside the ticket's own certified tree. **Minor is the floor**, raisable to major under the compatibility grammar in `specs/architecture-principles.md`, never lowered; #590 retired patch from that grammar, so minor and major are the whole of it. Still no builder owes a bump and no guard checks for one — the mechanism does the job rather than detecting that nobody did it. A cycle whose changes all ship through the fix lane runs no command and so raises nothing.
 - Never `eval`/`exec`/`pickle` untrusted data, string-formatted SQL, `shell=True` with user input, or unvalidated paths. Secrets come from the environment and are never logged or committed.
 - Long gate output: capture to a file and read the tail.
@@ -83,7 +86,6 @@ Configuration: `harness.yaml`. Path-scoped rules under `.claude/rules/` carry wh
 - Proving a guard can fail: `scripts/mutate.py`; usage is documented in `CONTRIBUTING.md`.
 - What every component assumes the model cannot do, and the test that would retire it: `specs/harness-assumptions.md`. Read at every model or host release.
 - Unconfirmed ideas: `specs/proposals/`. In-flight work: the GitHub repo and Projects board.
-
 <!-- spine:copy:end -->
 
 # Claude Code deltas
@@ -104,6 +106,11 @@ this host alone.
   `settings/harness.json`.
 - **Sub-agents.** `agents/` defines the five roles Claude Code dispatches. Codex
   reads its own equivalents from `.codex/agents/`.
+  **Skills and agents are addressed differently, and only one is namespaced:** a
+  plugin skill invokes as `/harness:<name>`, while an agent is dispatched by bare
+  name in a flat list beside the host's own and beside whatever a consuming repo
+  defines. So a skill needs no `harness-` prefix and an agent may earn one; the
+  awkward `/harness:harness-<name>` only arises from confusing the two.
 - **Proposal renderings.** `/propose` step 3 hands over a shareable rendering
   alongside the spec file, and here that rendering is an **Artifact**, so the
   operator reads and decides against it in the session instead of opening a path
