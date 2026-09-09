@@ -13,7 +13,15 @@ Any multi-commit task runs on its own branch in its own git worktree, so paralle
 
 ## Creating the worktree
 
-Branch off the integration branch, fetched first.
+**Reclaim what earlier runs left, before cutting a new one.** *Cleanup* below belongs to a task that ships, so a task that never ships never reaches it: a ticket held at DEFER and never resumed, a run whose context ended mid-flight, a base that gated red. Each leaves a directory nobody returns to, and a sweep during #582 found six of seven worktrees on disk belonged to tickets already closed. Cutting a worktree is the moment every run passes through, so the reclaim happens here rather than in a scheduler the plugin does not own.
+
+Run `git worktree list` and match each entry to its ticket, which the naming convention below puts in the directory name. Remove the ones whose ticket is closed, under three bounds:
+
+- **Look for unsaved work first.** Removing a worktree destroys anything uncommitted in it, and a branch that was never pushed exists nowhere else. A closed ticket does not prove its tree was landed.
+- **Stay on the git side**: the directory and git's own records, using *Cleanup*'s commands. Leave containers, simulators, volumes and services standing, because a sweeping run cannot prove it owns them, which is what *Cleanup* refuses. Report what you left behind.
+- **Leave every worktree whose ticket is open**, and every one you cannot match to a ticket. Another run may be working in it right now.
+
+Then branch off the integration branch, fetched first.
 
 ```bash
 git fetch --quiet <remote>
@@ -55,7 +63,7 @@ Each concurrent agent gets its own worktree because two agents editing one worki
 
 ## Cleanup
 
-Cleanup is part of shipping a merged task; skip it and short-lived task artifacts accumulate on the host. Stop every temporary resource the task started before removing the files it runs from, then remove the worktree, prune git's administrative records, and delete the merged branch.
+Cleanup is part of shipping a merged task; skip it and short-lived task artifacts accumulate on the host. It runs only on a task that ships, which is why *Creating the worktree* reclaims the ones that did not. Stop every temporary resource the task started before removing the files it runs from, then remove the worktree, prune git's administrative records, and delete the merged branch.
 
 ```bash
 # Stop task-owned services before removing their files.

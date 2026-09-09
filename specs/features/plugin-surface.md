@@ -553,6 +553,16 @@ sweep of `skills/*/evals/*.json` found no residue this ticket owns beyond the
 #636 hits named above and the eval framework's own output-filename and
 fixture-diff tokens, neither a claim about the tree.
 
+**#635 is now resolved too.** `skills/assess/references/process-economy.md:62`'s
+Gate wall-clock row dropped the marker-median clause; it now states what the row
+measures — the per-run half of *Ground 3*'s own `cost per run × runs per week`
+ranking (`:53`) — and carries no derivation, so `skills/assess/SKILL.md:49`
+stays the row's one surviving derivation, untouched. `skills/build/references/run-state.md`
+lost `marker` from the cache-key sentence at `:6` and from the always-re-derived
+list at `:76-77`; the Fields table it already pointed at (`:15-27`) carried no
+such field, so nothing else in the file moved. #636's evals residue is a
+different file and stays open.
+
 **Two findings reported, not fixed, agreed at review cycle 1 and again at cycle
 2.** `tests/unit/test_mutate.py:713`'s function name,
 `..._and_one_read_only_query`, outlived the query it named — a name is not a
@@ -1394,6 +1404,45 @@ the hero regex or adding a card for the gate would restructure the hero, which t
 scope excluded; the residual stands until a change that touches the hero's shape for some
 other reason picks it up.
 
+### Creating a worktree reclaims closed-ticket ones first (#610)
+
+`skills/worktree-isolation/SKILL.md` → *Creating the worktree* now runs a reclaim
+before every branch cut: list `git worktree list`'s entries, match each to a
+ticket by the `<repo>-<task-id>` naming convention, and remove the ones whose
+ticket is closed — checking first for unsaved or unpushed work, since removal
+destroys both, and leaving standing every worktree whose ticket is open or
+whose name matches none, since another run may be working in it. This is
+part (b) of #610; part (a), the DEFER-resume rule, was already `/build`'s own
+*Resuming a held or deferred ticket* bullet, landed at #623 and recorded
+above.
+
+**Why an instruction at cut time, and not a sweeper.** ADR 0022 point 1
+forecloses a plugin-owned executable persisting in a consumer, and a periodic
+sweep needs a scheduler the plugin does not own; the worktree-cut moment is
+the one every run already passes through with a fetched remote and the
+tracker in hand. The #582 sweep this ticket cites found six of seven
+`work-<n>` worktrees on disk belonged to already-closed tickets — the
+built-but-never-torn-down case *Cleanup* does not reach, because *Cleanup*
+runs only on a task that ships.
+
+**The reclaim stays on the git side, so it does not repeat *Cleanup*'s
+refusal.** *Cleanup*, below in the same file, forbids selecting a *resource*
+— a container, simulator, volume or service — by a host-wide sweep or
+another worktree's name, because nothing records this run as that resource's
+owner. The new text removes only the worktree directory and git's own
+administrative records, using *Cleanup*'s own commands, and leaves every
+resource standing, reported rather than torn down: ownership there rests on
+the tracker's own ticket state, not a name guess, so the two rules govern
+different objects rather than contradicting each other.
+
+**No test**: prose reviewed and used directly, law 2's subject is code. The
+brief behind this ticket's build cited three stale worktrees observed live
+on this host; none reproduce here — `git worktree list` carries only the
+main checkout, `harness-610`, and one unmatchable agent worktree, all
+correctly left standing by a walk of the new instruction against them — so
+the change rests on the #582 finding the ticket already records rather than
+on a reproduction this session could not repeat.
+
 ### What #636 repointed, as built
 
 All three evals in `skills/engineering/evals/evals.json` graded machinery #621 had
@@ -1422,7 +1471,7 @@ below reduces it without closing it.
 | Eval | Was | Now | Verified against the tree |
 |---|---|---|---|
 | 1 `fail-open-guard-build-plan` | `hooks/push-target-guard.js` refusing a push without a marker | `hooks/test-lock-guard.js` refusing a locked-test edit outside the `fix` lane | `:241` the refusal, `:246` the fix lane's base-tree allowance, both read in full |
-| 2 `retired-claim-sweep-before-handoff` | `--legacy-path` on the deleted `scripts/gate-marker.js` | `--repo` on `scripts/plugin-version.js` | Homes at `scripts/plugin-version.js:70,78-79`, `skills/build/SKILL.md:25`, `specs/features/plugin-surface.md:21,1457`, `tests/unit/test_plugin_version_script.py:734` — code, a shipped skill instruction, a spec record and a test, each read |
+| 2 `retired-claim-sweep-before-handoff` | `--legacy-path` on the deleted `scripts/gate-marker.js` | `--repo` on `scripts/plugin-version.js` | Homes at `scripts/plugin-version.js:70,78-79`, `skills/build/SKILL.md:25`, `specs/features/plugin-surface.md:21,1506`, `tests/unit/test_plugin_version_script.py:734` — code, a shipped skill instruction, a spec record and a test, each read |
 | 3 `quantitative-criterion-needs-measuring-test` | `scripts/land.js`, deleted at #621 | `scripts/harness-config.js` | 406 lines; scalar, fence and flow-mapping parsing at `:63-302`; the substitute keeps both numbers expectation 4 pins, `300` and `214`, arithmetically honest rather than asserted |
 
 **The read fence is not uniform, by amendment.** Evals 1 and 3 widen the excluded
@@ -1499,6 +1548,7 @@ each.
 - **The improvement ledger and the tracker behaviours leave almost no footprint in this tree.** D7's sweep, holds and board writes are tracker-side; what is in the tree is `skills/tracker/` and the two transport references beneath it, and the ledger's own contents live on one standing issue found by its `improvement-ledger` label.
 - **Three exercises #547's criteria name cannot run from this environment, and each has a named owner rather than a fix.** The agent proxy in front of this container refuses every GraphQL query before GitHub sees it, and Projects v2 is GraphQL-only, so the board's Todo placement and Priority writes in `skills/tracker/references/github.md` ship carried; no Linear transport or workspace is reachable, so `references/linear.md` ships carried too; and `/assess` step 5 forbids an unattended run from draining, so the drain's three-outcome marking is reviewed by reading. `specs/harness-assumptions.md` → *Carried, with an owner* names who produces each piece of evidence and when. The recipes moved into `tracker` verbatim from the two provider skills, where they were exercised, which is why a re-exercise buys less here than the criterion assumed.
 - **`create`'s postcondition now reads back the board Status as well as the issue label, and honestly reports what it cannot read (#607).** The bullet above names the recipe's own board-write limitation; #607 is the fix to the read-back that sat beside it unapplied. Filed from a 2026-09-08 ledger drain against ticket #594, spawned complete and never reaching the board, then confirmed at scale in the 2026-09-09 amendment: nine tickets (#620–#628) filed that day carried no board Status, and #607's own board move failed the identical way while this ticket was itself being built — recorded on the issue with the identifier, the URL and the unavailable operation, `item-edit` (Status), rather than claimed. `skills/tracker/references/github.md`'s `create` step 4 now runs `gh project item-list` beside the existing `gh issue view --json labels` and states two branches. Where the read succeeds, the ticket is reported placed only once the Status it returns agrees with the option step 3 set; a mismatch is left unresolved rather than read as a failure diagnosis, because `item-list`'s `status` field is separately recorded unreliable under `transition` in the same file. Where `gh project item-list` fails — the GraphQL-refused host *What is reachable when GraphQL is refused* above already documents — step 4 says which case it is in and the run reports the filing incomplete: identifier, URL, the board operation that could not run, under the rule the file already carried at line 49 for every `gh project` call. No change to `skills/tracker/SKILL.md`: its `create` contract already named explicit placement among the five things a filing owes, and its general postcondition rule already required reporting anything unverifiable as an incomplete filing — the recipe was the one place not yet applying either. The change carries no test: law 2's subject is code, and ADR 0017 D5 refuses a guard over what this prose means. The evidence is the gate plus this ticket's own build session, which exercised the refused-transport branch live — the probe pair at *Two failures that look the same from the call site* above, transport case two, this ticket's own board Status left unset rather than claimed — and could not exercise the working-transport branch from this host, the same limitation the bullet above already names for this file's board writes generally.
+- **`linear.md`'s `create` recipe now reads the created issue's state back alongside its labels, closing the twin of #607's defect in the GitHub reference (#632).** The recipe's postcondition previously re-read only the labels; placement is a second write, the `issueUpdate` at *Move an issue's status*, and a silent failure there reported a created-but-unplaced ticket as filed while a Todo-scoped queue read never saw it. The read-back now queries `state { id name type }` beside `labels { nodes { id name } }`, and the filing is complete only when the labels carry exactly one `assurance:<level>` and the returned `state.id` equals the id the placement `issueUpdate` set — compared by id rather than name, because the state was resolved by `type` and a workspace may rename its columns. Where the read cannot run, the run reports the filing incomplete: identifier, URL, and the operation that could not run. #607 needed two branches because GitHub's issue and its board are separate transports, reachable independently; here both writes and the read-back share Linear's one GraphQL endpoint, so a transport that answers answers for both halves and one branch covers it. The ticket's own premise that `issueCreate` "takes ... no `stateId`" holds only of the recipe's example input, not demonstrably of `IssueCreateInput` generally, which this environment cannot reach to confirm; the shipped text says what the recipe passes rather than what the API accepts. Not executed against Linear: `harness.yaml` declares `tracker: github`, and `specs/harness-assumptions.md` → *Carried, with an owner* already records every recipe in this file as carried to the first consumer update with a reachable workspace. The evidence is a read-through against the recipe's own text and parity with the `github.md` twin; the change carries no test, since law 2's subject is code and ADR 0017 D5 refuses a guard over what this prose means.
 - **~~A `<<` shift inside a multi-line `$(( ... ))` still refuses.~~** Moot since #621 deleted the lexer: nothing parses a Bash command for a push any more, so no shell construct is refused by shape.
 - **~~One arm of the heredoc harvest has no test that can fail for it.~~** Moot since #621 deleted `harvestSubstitutions` with the lexer. It is kept as the clearest recorded instance of a guard arm with no failing evidence: `harvestSubstitutions` recognised `$(...)` and backticks; only the first was measured. Deleting the backtick arm leaves the whole suite green while `cat <<EOF` / `` `git push --force ...` `` / `EOF`, which bash runs, turns from deny to allow. Measured at review: the mutation survived `scripts/mutate.py` against the four push-guard suites, and running both hook copies against that command confirmed the mutation was live rather than a no-op. The behaviour in this tree is correct; the missing piece is the evidence that keeps it correct, and it is carried in the improvement ledger rather than filed.
 - **~~`sh <<EOF ... EOF` no longer reaches `push-target-guard.js`.~~** Moot since #621: both the lexer and the refusal it fed are deleted, `test_push_target_guard_composition.py` went with them, and #562 is closed by deletion rather than by a fix. The original entry read: It reached that guard only because the body leaked back into the command stream as commands. `git-push-guard.js` still denies every such form through `isBareShellFedExternally`, which reads the redirect operator off the command line rather than the body, and both hooks run on the same `Bash` event, so the composite verdict is unchanged; a 44-shape differential re-run at review found no shape where neither guard denies. The gap is #562 — `push-target-guard.js` never calls `isBareShellFedExternally` at all, so a bare shell fed a pipe, a here-string or a process substitution passes it. Reclassified, not fixed: the composed control has no hole, because `git-push-guard.js`'s unconditional refusal (above) already covers this class on the same `Bash` call, so a copy of the check in `pushesIn` could never fire (P2) and none was added; the dependency is pinned instead, by a comment in `pushesIn` and `tests/unit/test_push_target_guard_composition.py`, which goes red if that sibling refusal is ever narrowed or unregistered. `assurance:simple`, unassigned.
