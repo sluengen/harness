@@ -90,11 +90,19 @@ gh project item-add <number> --owner <owner> --url <issue-url> --format json
 gh project item-edit --id <item-id> --field-id <status-field-id> \
   --project-id <project-id> --single-select-option-id <status-option-id>
 
-# 4. verify the postcondition by re-reading the issue, not by exit status
+# 4. verify the postcondition by re-reading both properties, not by exit
+#    status: the label on the issue, and the Status on the board item
 gh issue view <number> --repo <owner>/<name> --json labels
+gh project item-list <number> --owner <owner> --format json
 ```
 
-`<level>` is the lane the filer chose per `authoring` → *Choosing assurance* — this recipe maps a value, it never selects one. `gh issue create` **errors when the label does not exist in the repo**, which is the correct fail-closed behaviour and is exactly the incomplete filing the spine's filing contract names: report the identifier and URL, say the filing is incomplete, and stop. Step 4 is what turns "the command exited zero" into evidence that exactly one assurance label is on the issue.
+`<level>` is the lane the filer chose per `authoring` → *Choosing assurance* — this recipe maps a value, it never selects one. `gh issue create` **errors when the label does not exist in the repo**, which is the correct fail-closed behaviour and is exactly the incomplete filing the spine's filing contract names: report the identifier and URL, say the filing is incomplete, and stop.
+
+**Step 4 reads back two properties, because a filing has two halves.** `gh issue view --json labels` turns "the command exited zero" into evidence that exactly one assurance label is on the issue, and it says nothing about the board: a silent step-3 failure passes it unseen, which is the item-add-no-status trap surviving its own verification. The placement `create` owes is established when the item's Status comes back as the option step 3 set.
+
+**Where `gh project item-list` runs,** compare the Status it reports for this item against that option. Agreement confirms the write landed; a mismatch is unresolved rather than a diagnosis, because this is the field recorded unreliable under `transition` below. Either way, report the ticket as placed only once the two agree.
+
+**Where it does not run, say which case you are in.** On the GraphQL-refused host of *What is reachable when GraphQL is refused* above, every `gh project` call fails and Projects v2 offers no REST read to substitute, so step 4 cannot confirm placement at all. The filing is incomplete under the rule stated in that section: report the identifier, the URL, and the board operation that could not run, and stop. The issue existing and its label reading back is evidence about the issue, never about the board.
 
 **Quote titles; pass bodies as `--body-file`.** Issue text is frequently lifted from a report, a review finding, or a design section, and may carry backticks, `$(…)`, or newlines. A heredoc of tracker-derived text interpolated into a shell command is a command-injection boundary — the same rule as never using `shell=True` with untrusted input.
 
