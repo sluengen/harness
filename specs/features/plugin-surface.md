@@ -551,6 +551,16 @@ longer is, with its six `expectations` untouched. #631's own repo-wide sweep of
 named above and the eval framework's own output-filename and fixture-diff
 tokens, neither a claim about the tree.
 
+**#635 is now resolved too.** `skills/assess/references/process-economy.md:62`'s
+Gate wall-clock row dropped the marker-median clause; it now states what the row
+measures — the per-run half of *Ground 3*'s own `cost per run × runs per week`
+ranking (`:53`) — and carries no derivation, so `skills/assess/SKILL.md:49`
+stays the row's one surviving derivation, untouched. `skills/build/references/run-state.md`
+lost `marker` from the cache-key sentence at `:6` and from the always-re-derived
+list at `:76-77`; the Fields table it already pointed at (`:15-27`) carried no
+such field, so nothing else in the file moved. #636's evals residue is a
+different file and stays open.
+
 **Two findings reported, not fixed, agreed at review cycle 1 and again at cycle
 2.** `tests/unit/test_mutate.py:713`'s function name,
 `..._and_one_read_only_query`, outlived the query it named — a name is not a
@@ -1391,6 +1401,45 @@ one file since ADR 0015, and nothing in this tree derives that fact from the tre
 the hero regex or adding a card for the gate would restructure the hero, which this ticket's
 scope excluded; the residual stands until a change that touches the hero's shape for some
 other reason picks it up.
+
+### Creating a worktree reclaims closed-ticket ones first (#610)
+
+`skills/worktree-isolation/SKILL.md` → *Creating the worktree* now runs a reclaim
+before every branch cut: list `git worktree list`'s entries, match each to a
+ticket by the `<repo>-<task-id>` naming convention, and remove the ones whose
+ticket is closed — checking first for unsaved or unpushed work, since removal
+destroys both, and leaving standing every worktree whose ticket is open or
+whose name matches none, since another run may be working in it. This is
+part (b) of #610; part (a), the DEFER-resume rule, was already `/build`'s own
+*Resuming a held or deferred ticket* bullet, landed at #623 and recorded
+above.
+
+**Why an instruction at cut time, and not a sweeper.** ADR 0022 point 1
+forecloses a plugin-owned executable persisting in a consumer, and a periodic
+sweep needs a scheduler the plugin does not own; the worktree-cut moment is
+the one every run already passes through with a fetched remote and the
+tracker in hand. The #582 sweep this ticket cites found six of seven
+`work-<n>` worktrees on disk belonged to already-closed tickets — the
+built-but-never-torn-down case *Cleanup* does not reach, because *Cleanup*
+runs only on a task that ships.
+
+**The reclaim stays on the git side, so it does not repeat *Cleanup*'s
+refusal.** *Cleanup*, below in the same file, forbids selecting a *resource*
+— a container, simulator, volume or service — by a host-wide sweep or
+another worktree's name, because nothing records this run as that resource's
+owner. The new text removes only the worktree directory and git's own
+administrative records, using *Cleanup*'s own commands, and leaves every
+resource standing, reported rather than torn down: ownership there rests on
+the tracker's own ticket state, not a name guess, so the two rules govern
+different objects rather than contradicting each other.
+
+**No test**: prose reviewed and used directly, law 2's subject is code. The
+brief behind this ticket's build cited three stale worktrees observed live
+on this host; none reproduce here — `git worktree list` carries only the
+main checkout, `harness-610`, and one unmatchable agent worktree, all
+correctly left standing by a walk of the new instruction against them — so
+the change rests on the #582 finding the ticket already records rather than
+on a reproduction this session could not repeat.
 
 ## Data model
 
