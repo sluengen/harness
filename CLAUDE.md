@@ -107,7 +107,7 @@ this host alone.
 - **Hooks.** `hooks/hooks.json` registers the four guards at install; no per-repo
   wiring. Permissions and the unattended authorisations live in
   `settings/harness.json`.
-- **Sub-agents.** `agents/` defines the five roles Claude Code dispatches. Codex
+- **Sub-agents.** `agents/` defines the six roles Claude Code dispatches. Codex
   reads its own equivalents from `.codex/agents/`.
   **Skills and agents are addressed differently, and only one is namespaced:** a
   plugin skill invokes as `/harness:<name>`, while an agent is dispatched by bare
