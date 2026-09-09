@@ -8,7 +8,7 @@ key that must be re-derived from git and compared before use, and on a mismatch
 the file's copy is discarded — never git's.
 
 It is gitignored (`/harness:hydrate` seeds `.harness/` into the gate-ignore block),
-so it never reaches the tree the verdict binds to.
+so it never reaches the tree the reviewer reads or the gate runs over.
 
 ## Fields
 

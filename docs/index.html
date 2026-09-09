@@ -203,9 +203,9 @@
       <article class="card card--build">
         <h3>One verification gate</h3>
         <p>
-          The repo's verify command decides green and writes a marker named after the exact git tree it
-          verified. Green over those exact bytes is the only evidence a completion claim may cite; one
-          more edit invalidates it.
+          The repo's verify command decides green, and the builder who ran it and read its output is
+          what carries the claim. Green over those exact bytes is the only evidence a completion claim
+          may cite; one more edit invalidates it.
         </p>
       </article>
       <article class="card card--product">
@@ -259,10 +259,11 @@ Codex: ask to hydrate Harness</pre>
           Interviews for the repo's values and writes the files that must be repo-owned:
           <code>harness.yaml</code>, the spine (<code>AGENTS.md</code>) and the
           <code>CLAUDE.md</code> derived from it, the path-scoped rules, Codex role adapters, the specs
-          scaffold, the infrastructure record, and — where there is no gate yet — a
-          <code>scripts/verify.sh</code> skeleton with the marker write. After a plugin update,
-          refresh migrates the configuration into <code>harness.yaml</code> as a verbatim move and
-          regenerates the marked spine block, without replacing repo-owned prose.
+          scaffold and the infrastructure record. It writes no gate: where there is none yet it says
+          what the gate must do and leaves the bytes to the repo, because a gate is what every later
+          claim of green is read off. After a plugin update, refresh migrates the configuration into
+          <code>harness.yaml</code> as a verbatim move and regenerates the marked spine block, without
+          replacing repo-owned prose.
         </p>
       </div>
     </div>
@@ -316,26 +317,26 @@ Codex: ask to hydrate Harness</pre>
         <h3>Green is a claim about bytes, not about a session</h3>
         <p>
           Every repo names its own verify command; here it is <code>bash scripts/verify.sh</code>, and it
-          runs the same way in a checkout, in CI, and in the nightly promotion. The last thing it does on
-          green is write a marker named after the git <b>tree object</b> it just verified.
+          runs the same way in a checkout, in CI, and in the nightly promotion. It runs its stages and
+          exits: it writes no evidence of its own.
         </p>
         <p>
-          That is what makes the evidence checkable by something other than the agent's memory. A review
-          verdict binds to a tree oid; the gate marker names a tree oid; the push guard reads the tree
-          being pushed. An amend that rewrites no bytes voids nothing, and one more edit voids everything.
+          What makes the claim checkable is that it is narrow enough to re-run. A green is green over the
+          exact bytes it ran on — nothing else — so an amend that rewrites no bytes changes nothing, and
+          one more edit invalidates the run. The builder who ran it and read the output is who holds that
+          claim, which is why the gate runs again over whatever the branch has become at landing.
         </p>
         <ul class="stages">
           <li>ruff</li><li>mypy</li><li>pytest + coverage floor</li><li>design-token drift</li>
-          <li>marker write</li>
         </ul>
       </div>
       <div class="marker">
-        <h4>The marker</h4>
-        <code>&lt;git-common-dir&gt;/harness/gate/&lt;tree-oid&gt;.json</code>
+        <h4>What a green licenses</h4>
+        <code>green over these exact bytes — and no others</code>
         <p>
-          Written last, so a failing stage means no marker. The claim it licenses is narrow and exact:
-          <b>green over these exact bytes</b>. Hooks are evidence plumbing, not authority — the controls
-          of record stay server-side, in branch protection and gate output in CI.
+          Any stage failing means no claim at all. The assurance is this gate, run and read by the
+          builder, plus the independent review — one hook refuses and three advise, and none of them is
+          the assurance. Whatever server-side controls a repository runs are its own.
         </p>
       </div>
     </div>

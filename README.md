@@ -14,15 +14,15 @@ fixes, the answer to a review finding. The harness owns the parts that must not
 depend on an agent remembering them:
 
 - **One verification gate.** The repo's verify command (here,
-  `bash scripts/verify.sh`) decides green and writes a marker named after the
-  exact git tree it verified. Green over those exact bytes is the only evidence
-  a completion claim may cite; one more edit invalidates it.
+  `bash scripts/verify.sh`) decides green, and the builder who ran it and read
+  its output is what carries the claim. Green over those exact bytes is the only
+  evidence a completion claim may cite; one more edit invalidates it.
 - **The spine.** A repo-owned `AGENTS.md` carries the five principles, the laws
   derived from them, and the lifecycle contract — always loaded, never optional.
   `CLAUDE.md` carries `AGENTS.md` verbatim, then a `<!-- spine:copy:end -->`
   line, then the deltas that apply on that host alone — derived from the spine,
-  not a pointer to it, and re-derived by `/harness:hydrate` from that marker whatever
-  has drifted above it — and the repo's configuration is `harness.yaml`. Skills carry the
+  not a pointer to it, and re-derived by `/harness:hydrate` from that boundary line
+  whatever has drifted above it — and the repo's configuration is `harness.yaml`. Skills carry the
   depth and load by task; path-scoped rules under `.claude/rules/` load with the
   files they scope.
 - **Builder / recorder separation.** The agent that promises delivery is not the

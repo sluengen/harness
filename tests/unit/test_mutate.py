@@ -731,15 +731,16 @@ def test_the_module_spawns_only_this_interpreter_and_one_read_only_query() -> No
     ``importlib`` — which is where following the name stops being a question a
     predicate over text can answer.
 
-    #500 widened the permission by exactly one shape, and the widening is stated as a
-    shape rather than as a name. The gate lock has to reach the gate-marker
-    convention, which ADR 0018 moved into Node; the alternative was a fourth
-    Python parser of ``HARNESS_GATE_MARKER_MAX_AGE_SECONDS``. Naming ``node``
-    would not protect the property this guard exists for — ``node -e`` runs
-    anything. Naming the exact three-element argv does, because ``status`` is
-    read-only by construction and every drift toward power fails the shape. The
-    only widening direction left is a deliberate edit to this predicate, which is
-    the loud one.
+    #500 widened the permission by exactly one shape so the gate lock could run a
+    read-only ``node`` query, and #621 retired that lock with the evidence it
+    read, so the permission is gone again: the predicate admits ``sys.executable``
+    and nothing else. The reason the widening was stated as a *shape* rather than
+    as a name is what outlived it, because it is the rule any future widening is
+    judged by — naming ``node`` would not have protected the property this guard
+    exists for, since ``node -e`` runs anything, while naming an exact argv does,
+    read-only by construction, with every drift toward power failing the shape.
+    The only widening direction left is a deliberate edit to this predicate, which
+    is the loud one.
 
     Reads the **working file** on purpose: that keeps this guard inside
     ``scripts/mutate.py``'s own mutation instrument, which edits working files.

@@ -38,7 +38,7 @@ the subject cannot (#467's one real win).
 
 **Why the tracked tree.** Both operands are read through
 :func:`tests._gitutil.indexed_text` — the bytes git has staged, which is what
-``git write-tree`` certifies and what the gate marker is named after. A guard
+``git write-tree`` resolves and what a commit would carry. A guard
 reading ``Path.read_text`` certifies bytes that may never be committed (#482),
 and a settings file that was edited but never added is precisely the shape a
 working-tree reader cannot see.
