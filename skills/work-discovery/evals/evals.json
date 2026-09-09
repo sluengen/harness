@@ -4,7 +4,7 @@
     {
       "id": 1,
       "name": "held-p1-bug-still-stops-the-line",
-      "prompt": "Unattended tick against /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there). Here's the open queue I read:\n\n  #91  bug          P1  In Progress  assigned: sluengen   label: input    \"gate marker minted for a tree the gate never ran\"\n  #94  enhancement  P2  Todo         unassigned                            \"digest: ledger count includes closed entries\"\n  #95  bug          P3  Todo         unassigned                            \"promote step prints the wrong branch name\"\n  #96  enhancement  P2  Todo         unassigned          blocked-by: #94   \"digest: add a held-pile summary\"\n\nWhich ticket do I start, and what do I do this tick? Save your answer as pick.md in the output directory.",
+      "prompt": "Unattended tick against /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there). Here's the open queue I read:\n\n  #91  bug          P1  In Progress  assigned: sluengen   label: input    \"gate marker minted for a tree the gate never ran\"\n  #94  enhancement  P2  Todo         unassigned                            \"drain: ledger count includes closed entries\"\n  #95  bug          P3  Todo         unassigned                            \"promote step prints the wrong branch name\"\n  #96  enhancement  P2  Todo         unassigned          blocked-by: #94   \"drain: add a held-pile summary\"\n\nWhich ticket do I start, and what do I do this tick? Save your answer as pick.md in the output directory.",
       "expected_output": "A written artefact demonstrating work-discovery judgment on a recorded failure mode.",
       "files": [],
       "expectations": [

@@ -1,19 +1,20 @@
 ---
 paths:
-  - "design/**"
+  - "skills/design-system/assets/**"
   - "docs/**"
 description: What binds while building or changing a user-facing surface in this repo.
 ---
 
 # Building a user-facing surface here
 
-Loaded whenever a file under `design/` or `docs/` is opened — this repo's design
-directory and the landing page built from it. Seeded from
+Loaded whenever a file under `skills/design-system/assets/` or `docs/` is opened — this repo's design
+directory and the landing page built from it. #626 moved that directory into the
+skill that ships it; `harness.yaml`'s `paths.design_system` is the one place it is named. Seeded from
 `templates/rules/design-system.md` when the design layer went on, and repo-owned
-since: `--refresh` never overwrites it. `.claude/rules/design.md` sits on the same
+since: a later hydration never overwrites it. `.claude/rules/design.md` sits on the same
 paths and carries the token-source relationship; this file carries the craft.
-`design/AGENTS.md` is the Codex host form of this rule, seeded with it by
-`/harness:init` step 4 and never overwritten by `--refresh`.
+`skills/design-system/assets/AGENTS.md` is the Codex host form of this rule, seeded with it by
+`/harness:hydrate` step 5 and never overwritten by a later hydration.
 Everything from the first `##` heading down is identical in both, and that is the
 region to keep in step; the preamble above it differs because it names a host
 mechanism, and the Claude form carries `paths:` frontmatter the Codex form has no
@@ -35,8 +36,11 @@ at #547 for that reason.*
 If you are about to write a visual value by hand, stop and do this lookup first.
 
 **No system yet is a gap to fill, not a licence to hardcode.** Where
-`paths.design_system` is unset or names a location with nothing at it, stand one up
-from the plugin's `templates/design-system.md` scaffold and set the path. An
+`paths.design_system` is unset or names a location with nothing at it, set the path and
+run `/harness:hydrate`, which copies the `design-system` skill's assets there — the
+eight tiers, the token source and the token builder — and they are yours from that
+moment. `templates/design-system.md` is the contract that tree implements, and the
+reference for standing one up by hand where hydration is not available. An
 external package you have yet to install is not a missing system.
 
 ## Tokens and primitives
@@ -93,6 +97,19 @@ surface answers all of these:
 
 Not a judgment call about size or risk: any diff touching a screen, route, view,
 template, or the styles behind one renders evidence before handoff.
+
+**One carve-out, read off the diff rather than predicted.** A **text-only** diff
+renders no evidence: every changed line alters only the characters inside a string
+or text node, and nothing else moves — no element added, removed or reordered, no
+attribute, class, style, token or layout value touched, no conditional introduced.
+The diff answers that on its own, and it is never an assessment of how much the
+change matters.
+
+**Anything else in the diff closes it, and so does one thing beside it:** a string
+whose element constrains its length, such as a capped width, a single-line or
+truncating rule, or a control sized to its label. That string reflows, so it
+captures. An unclear case captures too: the carve-out is the narrow case you can
+point at in the diff, never the benefit of the doubt.
 
 **Render** the changed surface with realistic **seeded** state — synthetic
 throughout, never production data — at the repo's reference widths, at least one

@@ -4,21 +4,21 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>harness — a spec-driven development process, shipped as native plugins for Claude Code and Codex</title>
-<meta name="description" content="harness: a spec-driven development process for agent-driven repos, shipped as native plugins for Claude Code and Codex. Nine lifecycle workflows, sixteen skill packages, five agent roles, and hooks that make a green gate the only path to a shared branch." />
+<meta name="description" content="harness: a spec-driven development process for agent-driven repos, shipped as native plugins for Claude Code and Codex. Nine lifecycle workflows, sixteen skill packages, six agent roles, and the guards that keep a build honest." />
 <link rel="icon" type="image/png" sizes="32x32" href="favicon.png" />
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <meta property="og:type" content="website" />
 <meta property="og:url" content="https://sluengen.github.io/harness/" />
 <meta property="og:title" content="harness — native plugins for Claude Code and Codex" />
-<meta property="og:description" content="Let the agent do the judgement work; make the repo own the evidence. Nine lifecycle workflows, portable skills, five agent roles, and hooks that refuse." />
+<meta property="og:description" content="Let the agent do the judgement work; make the repo own the evidence. Nine lifecycle workflows, portable skills, six agent roles, and hooks that refuse." />
 <meta property="og:image" content="https://sluengen.github.io/harness/og-card.png" />
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="harness — native plugins for Claude Code and Codex" />
-<meta name="twitter:description" content="Let the agent do the judgement work; make the repo own the evidence. Nine lifecycle workflows, portable skills, five agent roles, and hooks that refuse." />
+<meta name="twitter:description" content="Let the agent do the judgement work; make the repo own the evidence. Nine lifecycle workflows, portable skills, six agent roles, and hooks that refuse." />
 <meta name="twitter:image" content="https://sluengen.github.io/harness/og-card.png" />
 <style>
   :root{
-  /* design-tokens:begin — generated from design/03-tokens/tokens.json; do not edit */
+  /* design-tokens:begin — generated from 03-tokens/tokens.json; do not edit */
     --ink:#0e1430; --ink-2:#3c4467; --muted:#656d8c;
     --line:#e6e8f2; --card:#ffffff; --bg:#f5f6fb;
     --build:#0f9d6e; --build-soft:#e6f6f0; --build-ink:#0a5e44;
@@ -178,16 +178,16 @@
     <h1>A spec-driven development process<br /><span class="accent">for agent-driven repos.</span></h1>
     <p class="thesis">
       <b>harness</b> is a development process shipped as native plugins for Claude Code and Codex:
-      nine lifecycle workflows, portable skills, five agent roles, and enforcement hooks that make a
+      nine lifecycle workflows, portable skills, six agent roles, and enforcement hooks that make a
       green gate the only path to a shared branch. Install it, initialize the repo, and the repo owns
       its own contract from then on.
     </p>
     <p class="creed">Let the agent do the judgement work; make the repo own the evidence.</p>
     <ul class="counts">
       <li><b>9</b> workflows</li>
-      <li><b>16</b> skills</li>
-      <li><b>5</b> agents</li>
-      <li><b>6</b> hooks</li>
+      <li><b>17</b> skills</li>
+      <li><b>6</b> agents</li>
+      <li><b>4</b> hooks</li>
       <li><b>1</b> gate</li>
     </ul>
   </header>
@@ -214,7 +214,7 @@
           A repo-owned <code>AGENTS.md</code> carries the five principles, the laws derived from
           them, and the lifecycle contract — always loaded, never optional. <code>CLAUDE.md</code>
           carries it verbatim plus that host's deltas — derived, not a pointer, and re-derived by
-          <code>--refresh</code> — and the repo's configuration is
+          <code>/harness:hydrate</code> — and the repo's configuration is
           <code>harness.yaml</code>. Skills carry the depth and load by task.
         </p>
       </article>
@@ -253,8 +253,8 @@ Codex: codex plugin add harness@harness</pre>
       <div class="step">
         <span class="step__n">3</span>
         <h3>Hydrate the repo</h3>
-        <pre>Claude: /harness:init
-Codex: ask to initialize Harness</pre>
+        <pre>Claude: /harness:hydrate
+Codex: ask to hydrate Harness</pre>
         <p>
           Interviews for the repo's values and writes the files that must be repo-owned:
           <code>harness.yaml</code>, the spine (<code>AGENTS.md</code>) and the
@@ -290,9 +290,9 @@ Codex: ask to initialize Harness</pre>
         <h3>A ticket</h3>
         <p class="role">The unit of tracked work</p>
         <p>
-          A change spec lives on the tracker issue and is built end to end by one command. The reviewer
-          is a separate agent in a fresh context, and its verdict binds to the exact git tree it read —
-          what ships is that tree, or a merge git alone made from it.
+          A change spec lives on the tracker issue. One command takes it to a reviewed branch and a
+          second lands it. The reviewer is a separate agent in a fresh context; its verdict covers the
+          tree it read, and a second gate over the tree that lands is what licenses the push.
         </p>
         <ol class="steps"><li><span>spec</span></li><li><span>build</span></li><li><span>gate</span></li><li><span>review</span></li><li><span>ship</span></li></ol>
       </article>
@@ -353,40 +353,39 @@ Codex: ask to initialize Harness</pre>
     <div class="grid2">
       <article class="card inv inv--commands">
         <h3>Workflows <span class="n">9</span></h3>
-        <p>The entry points, on both hosts. Each ships once, as a skill; four are operator-triggered only, and <code>/routine</code>, <code>/build</code>, <code>/review</code>, <code>/digest</code> and <code>/assess</code> stay model-invocable because each answers to a caller that is not a human at a prompt.</p>
+        <p>The entry points, on both hosts. Each ships once, as a skill; three are operator-triggered only, and <code>/routine</code>, <code>/build</code>, <code>/review</code>, <code>/drain</code>, <code>/assess</code> and <code>/promote</code> stay model-invocable because each answers to a caller that is not a human at a prompt.</p>
         <ul class="units">
-          <li class="unit" data-unit="skill:build"><code>/build</code><span>Implement, verify, review, and ship a ticket — the one lifecycle driver.</span></li>
+          <li class="unit" data-unit="skill:build"><code>/build</code><span>Implement, verify and review a ticket, ending at PASS.</span></li>
           <li class="unit" data-unit="skill:capture"><code>/capture</code><span>File an already-decided change straight to Todo.</span></li>
           <li class="unit" data-unit="skill:propose"><code>/propose</code><span>Work an idea before it becomes work; accepted proposals spawn tickets.</span></li>
           <li class="unit" data-unit="skill:review"><code>/review</code><span>Review the current branch, when a branch needs only that.</span></li>
           <li class="unit" data-unit="skill:routine"><code>/routine</code><span>One unattended cycle: discover the next ticket, build it, ship it.</span></li>
-          <li class="unit" data-unit="skill:promote"><code>/promote</code><span>Move completed work toward release along the repo's role branches.</span></li>
-          <li class="unit" data-unit="skill:digest"><code>/digest</code><span>The operator's console: report, then drain held decisions.</span></li>
+          <li class="unit" data-unit="skill:promote"><code>/promote</code><span>Land a reviewed branch, or move completed work toward release along the repo's role branches.</span></li>
+          <li class="unit" data-unit="skill:drain"><code>/drain</code><span>Clear what has accumulated for the operator: held tickets, then the improvement ledger.</span></li>
           <li class="unit" data-unit="skill:assess"><code>/assess</code><span>Run a periodic whole-system health assessment.</span></li>
-          <li class="unit" data-unit="skill:init"><code>/harness:init</code><span>Hydrate a repo — the one command that needs its prefix.</span></li>
+          <li class="unit" data-unit="skill:hydrate"><code>/harness:hydrate</code><span>Hydrate a repo — first time or after a plugin update.</span></li>
         </ul>
       </article>
 
       <article class="card inv inv--agents">
-        <h3>Agents <span class="n">5</span></h3>
-        <p>Claude's roles. Codex dispatches the same five through its native adapters in <code>.codex/agents/</code>.</p>
+        <h3>Agents <span class="n">6</span></h3>
+        <p>Claude's roles. Codex dispatches the same six through its native adapters in <code>.codex/agents/</code>.</p>
         <ul class="units">
           <li class="unit" data-unit="agent:dev"><code>dev</code><span>Implementation — test-first, strictly in scope, verified before handoff.</span></li>
           <li class="unit" data-unit="agent:reviewer"><code>reviewer</code><span>The final gate before merge; records what actually shipped on PASS.</span></li>
         <li class="unit" data-unit="agent:reviewer-feature"><code>reviewer-feature</code><span>The same reviewer at feature-lane depth: the lane picks the definition, the frontmatter sets the cost.</span></li>
           <li class="unit" data-unit="agent:architect"><code>architect</code><span>Data models, contracts, decisions — design artifacts, never code.</span></li>
           <li class="unit" data-unit="agent:steward"><code>steward</code><span>Periodic health assessment: the cross-file patterns no per-change review sees.</span></li>
+          <li class="unit" data-unit="agent:harness-audit"><code>harness-audit</code><span>Hydration's close-out: reads a hydrated repo and reports drift against the current plugin.</span></li>
         </ul>
 
-        <h3 style="margin-top:22px">Hooks <span class="n">6</span></h3>
-        <p>Four refuse, two advise. What a refusal rests on is evidence — a gate marker over the
-          worked or pushed tree, or the shape of the command itself — never a branch name granting an
-          exemption.</p>
+        <h3 style="margin-top:22px">Hooks <span class="n">4</span></h3>
+        <p>One refuses, three advise. The refusal is the test lock, and it rests on what the run
+          declared about itself — never on a branch name granting an exemption. The assurance is not
+          the hooks: it is the gate the repo declares, run and read, plus the independent review.</p>
         <ul class="units">
           <li class="unit" data-unit="hook:test-lock-guard"><code>test-lock-guard</code><span>Refuses an edit to a test file while a run has declared its tests locked.<span class="verdict verdict--refuses">refuses</span></span></li>
-          <li class="unit" data-unit="hook:gate-evidence-guard"><code>gate-evidence-guard</code><span>Refuses ending a turn that claims completion with no fresh marker over the worked tree.<span class="verdict verdict--refuses">refuses</span></span></li>
-          <li class="unit" data-unit="hook:push-target-guard"><code>push-target-guard</code><span>Refuses a push to a protected branch unless a fresh marker covers the pushed tree, or git alone made it from one that is covered.<span class="verdict verdict--refuses">refuses</span></span></li>
-          <li class="unit" data-unit="hook:git-push-guard"><code>git-push-guard</code><span>Refuses a history rewrite — <code>--force</code> in any spelling.<span class="verdict verdict--refuses">refuses</span></span></li>
+          <li class="unit" data-unit="hook:push-target-guard"><code>push-target-guard</code><span>Flags a push aimed at a branch the repo declares under <code>branches:</code>.<span class="verdict verdict--advises">advises</span></span></li>
           <li class="unit" data-unit="hook:prompt-guard"><code>prompt-guard</code><span>Flags injection-shaped content on write.<span class="verdict verdict--advises">advises</span></span></li>
           <li class="unit" data-unit="hook:workflow-guard"><code>workflow-guard</code><span>Flags a source edit made on the default branch or outside a worktree.<span class="verdict verdict--advises">advises</span></span></li>
         </ul>
@@ -394,8 +393,8 @@ Codex: ask to initialize Harness</pre>
     </div>
 
     <article class="card inv inv--skills" style="margin-top:20px">
-      <h3>Craft skills <span class="n">7</span></h3>
-      <p>Loaded by task, not all at once — 7 of them, alongside the nine workflows above. Both hosts read the same files.</p>
+      <h3>Craft skills <span class="n">8</span></h3>
+      <p>Loaded by task, not all at once — 8 of them, alongside the nine workflows above. Both hosts read the same files.</p>
       <ul class="units units--two">
         <li class="unit" data-unit="skill:engineering"><code>engineering</code><span>The build half of how and what: durable principles, test-first method, scope, the gate.</span></li>
         <li class="unit" data-unit="skill:architecture"><code>architecture</code><span>The design leg: cross-cutting decisions, recorded in the spec they govern.</span></li>
@@ -404,6 +403,7 @@ Codex: ask to initialize Harness</pre>
         <li class="unit" data-unit="skill:worktree-isolation"><code>worktree-isolation</code><span>Every multi-commit task on its own branch in its own worktree.</span></li>
         <li class="unit" data-unit="skill:work-discovery"><code>work-discovery</code><span>How an unattended routine picks its own next ticket, and what it must skip.</span></li>
         <li class="unit" data-unit="skill:tracker"><code>tracker</code><span>One set of ticket semantics — lanes, holds, dependencies, priority, the ledger — over whichever backend the repo declares.</span></li>
+        <li class="unit" data-unit="skill:design-system"><code>design-system</code><span>The eight-tier design system itself — structure, token model and token builder — carried as assets hydration copies into the repo that turns the layer on.</span></li>
       </ul>
     </article>
   </section>

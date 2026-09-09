@@ -21,7 +21,7 @@ commands:
   bootstrap: "bash scripts/setup-cloud-env.sh"   # provisions uv/python/node/gh, then install
   install: "uv sync --extra dev"
   lint: "uv run --extra dev ruff check ."
-  typecheck: "uv run --extra dev mypy scripts"
+  typecheck: "uv run --extra dev mypy scripts skills/design-system/assets"
   test: "uv run --extra dev pytest"
   test_one: "uv run --extra dev pytest <path/to/test_file.py::test_name>"
   verify: "bash scripts/verify.sh"
@@ -37,13 +37,13 @@ queue:
   # default. The per-project mechanics are for the product repos.
   project_field: none
 layers:
-  design_system: true    # design/ is the source for docs/index.html
+  design_system: true    # the skill's assets are the source for docs/index.html
   feature_specs: true    # reviewer-owned as-built records live in specs/features/
 paths:
   tests: tests/
   proposals: specs/proposals/
   features: specs/features/
   decisions: specs/decisions/
-  design_system: design/
+  design_system: skills/design-system/assets/
 env:
   file: .env

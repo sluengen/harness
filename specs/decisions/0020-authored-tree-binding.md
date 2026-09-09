@@ -1,6 +1,9 @@
 # ADR 0020 — The verdict binds to the authored tree, proven by recomputing the merge
 
-- **Status:** Accepted
+> **Superseded 2026-09-09 by [ADR 0022](0022-plugin-only-shape.md).** The tree binding is retired with the gate marker complex: the harness's assurance is now the gate the repo declares, run and read by the builder, plus the independent review. The landing posture this record established — the three cases, `refs/harness/*`, and the merge recomputation proof — goes with it. The measurement it recorded stands as evidence for the retirement: 23% of `calibrate`'s integration-branch commits were reconciliation merges under this binding.
+
+
+- **Status:** Superseded 2026-09-09 by ADR 0022
 - **Date:** 2026-09-05
 - **Source:** accepted proposal [`lifecycle-reset`](../proposals/lifecycle-reset.md) → *The landing posture* (D2–D5), built as #539
 

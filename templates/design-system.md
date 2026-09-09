@@ -3,8 +3,13 @@
 The contract for **standing up** a layered design system, not a copy of one.
 Its counterpart is the repo-owned `.claude/rules/design-system.md` — the discipline for *using*
 a system once it exists, routing to `harness.yaml` `paths.design_system` for
-where the result lives. This doc is what goes at that path when nothing does
-yet.
+where the result lives.
+
+**What lands at that path is the `design-system` skill's assets** (#626): a real
+eight-tier tree, a `tokens.json` and the token builder, copied out by
+`/harness:hydrate`. This document is the contract that tree implements — read it
+to judge a tree, to extend one, or to stand one up by hand where hydration is not
+available. It is no longer the thing that goes at the path.
 
 **Precondition.** This file installs into every consuming repo regardless of
 layer setting — install-time layer gating is not built. It is inert unless your

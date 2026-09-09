@@ -3,30 +3,42 @@ paths:
   - "scripts/**"
   - "hooks/**"
   - "tests/**"
+  - "skills/design-system/assets/build_design_tokens.py"
 description: The rules that only bind while editing this repo's executable code.
 ---
 
 # Executable code in this repo
 
-Loaded when a file under `scripts/`, `hooks/`, or `tests/` is opened. The always-loaded
+Loaded when a file under `scripts/`, `hooks/`, or `tests/` is opened, and for
+`skills/design-system/assets/build_design_tokens.py` — Python this repo owns and
+gates, which #626 moved out of `scripts/` so it could travel with the design
+system it resolves. The always-loaded
 obligations are in `AGENTS.md`; these are narrower and would be dead weight on every
 other task.
 
 ## Language and dependencies
 
-- Python under `scripts/` is **standard library only**, and `mypy --strict` passes with
+- Python under `scripts/` — and the design-system token builder, wherever the
+  design directory sits — is **standard library only**, and `mypy --strict` passes with
   no ignores.
-- The shipped JavaScript — the six hooks, `scripts/gate-marker.js`,
-  `scripts/harness-config.js`, `scripts/harness-refs.js`, `scripts/land.js` and
+- The shipped JavaScript — the four hooks, `scripts/harness-config.js` and
   `scripts/plugin-version.js` — has **no dependencies at all**, not even dev ones. It runs from a plugin cache with no install
   step, so a `require` of anything but a Node builtin or a sibling in the same shipped set
   is a runtime failure in a consumer's repo, not a build error here.
-- `scripts/gate-marker.js` and `scripts/harness-config.js` are **materialized into consumer
-  repos** by `/harness:init`, as a pair, because `verify.sh` invokes the marker helper
-  locally. A change to either that assumes this repo's layout ships broken; a change that
-  adds a third file to that set is a change to `init`. `harness-refs.js`, `land.js` and
-  `plugin-version.js` are deliberately **not** in it: they run from the plugin root, like
-  the hooks, and take `--repo <dir>` where they need to name a checkout.
+- **Nothing here is materialized into a consumer repo *and kept refreshed*.** ADR 0022
+  point 1 draws its line at ownership, not execution: the plugin ships no executable it
+  owns and rewrites inside somebody else's tree. Every file above runs from the plugin
+  root and takes `--repo <dir>` where it needs to name a checkout. The token builder is
+  the one that does land in a consumer, and lands under the other half of that rule —
+  `/harness:hydrate` copies it out **once**, only where the destination is absent, and it
+  is the consumer's from that moment. It is a reference implementation they edit, which
+  is why it carries no `--repo` flag and why `skills/design-system/SKILL.md` says plainly
+  which two constants they must rewrite.
+  #621 retired the one *plugin-owned* exception — the marker helper and
+  `harness-config.js` were copied in as a pair so a consumer's `verify.sh` could invoke
+  the helper locally, and both the helper and the reason are gone. A change that proposes
+  writing an executable the plugin then keeps rewriting is a new decision record, not a
+  change to `hydrate`.
 
 ## Hooks
 
@@ -35,7 +47,7 @@ other task.
   silent fail-open is the #302 defect: indistinguishable from a deliberate pass-through.
 - Failing open never means failing to an **empty** protected set. When the shared reader
   cannot be **loaded**, degrade to the conservative fallback — the state an unadopted repo
-  is in — because an empty set approves a push to the integration branch. A throw from
+  is in — because an empty set is a guard that has quietly stopped answering. A throw from
   inside a read takes the hook's ordinary outer catch instead; the guarantee is scoped to
   the load, and saying otherwise would be a claim no test holds.
 - Configuration is read through `scripts/harness-config.js` and nowhere else. Three
@@ -57,4 +69,6 @@ other task.
 - Prove a guard can fail before trusting it: `scripts/mutate.py`, or a staged probe where
   the guard reads the index and is out of its reach. A guard that has never gone red is a
   claim, not a control.
-- Coverage measures `scripts/`; the floor is a ratchet, not a target.
+- Coverage measures `scripts/` and the token builder; the floor is a ratchet, not a
+  target. The builder is 133 statements at 98%, so dropping it from the scope
+  rather than following it costs about four points of the total.

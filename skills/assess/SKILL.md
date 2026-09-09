@@ -46,10 +46,10 @@ They are the rows of the Baseline table in `templates/assessment.md`, under thos
 | Row | Derivation |
 |---|---|
 | Assurance lines per product line | `git ls-files '<paths.tests>*.py' \| xargs wc -l \| tail -1` over the same command on the repo's product globs; state both globs, and put the module count (`git ls-files '<paths.tests>*.py' \| wc -l`) beside the ratio. **Two denominators, both reported** — see `references/process-economy.md` → *The baseline*, item 1 |
-| Gate wall-clock | `node <plugin-root>/scripts/gate-marker.js durations` — the median with its `count` — plus the slowest stage and the stage count from this pass's own gate run |
+| Gate wall-clock | the wall-clock and the slowest stage from this pass's own gate run. #621 retired the marker that recorded a run's duration, so there is no history to take a median over: one run is one observation, and the report says so rather than implying a distribution |
 | Checks with no nameable failure-reason | the ground-1 and burden-of-proof count from this pass's own sweep; state the subject set counted over, and hold it constant |
 
-The `count` travels with the median: three runs is a different claim from three hundred. A `count` of zero means this clone has run no gate since the field existed, not that the gate is instant.
+**One observation is not a distribution.** Report the number this pass measured and label it as one run. If gate wall-clock becomes a question worth a trend, the answer is to record it somewhere a run can append to — not to rebuild a marker whose duration field was a by-product of certifying trees (ADR 0022 point 3).
 
 Take the previous column from the last `process` report's Baseline table or its `assessments/LOG.md` fold line; where neither exists, write `first recorded baseline`. No starting value lives in this file: a measurement is true of one tree on one day, and this guidance installs into repos whose product globs it cannot know.
 
@@ -71,20 +71,6 @@ Run the repo's verify gate (`harness.yaml` `commands.verify`) on the committed t
 After committing the report, prune `assessments/` per the retention rule (`templates/assessment.md`): the latest report per scope and any with an open finding stay, and every superseded report folds into a one-line entry in the rolling `assessments/LOG.md`. Commit the compaction with the report. Running it every pass keeps the directory a live index, not a growing pile.
 
 ### 5. Drain the improvement ledger
-The ledger accumulates every improvement the loop proposed and nothing in it expires, so this pass is the only thing that clears it. Read the accumulation (`tracker` → *`ledger`*), then work it in two passes.
+The ledger accumulates every improvement the loop proposed and nothing in it expires, so a drain is the only thing that clears it. With the operator present, invoke `drain` for the ledger and report the outcomes it recorded. It owns the pass; this step owns the call and its place in the sequence — after the steward has reported, never inside it, because the agent that wrote an entry is the wrong one to decide it (law 4). A pass deciding its own proposals is the grant this split exists to close.
 
-**Re-validate each entry against the tree before deciding it.** Entries are written the day something is noticed and not revisited until now, so much of an accumulation arrives already satisfied or overstated: re-read the file an entry names, and re-run any count it quotes rather than carrying the number forward. Entries turn out `done` before anyone argues them, and one claiming many defects routinely describes one. An entry decided on its own text is decided on stale evidence.
-
-Then make the survivors answerable: group entries whose suggested home is the same file, abstract several small ones into the pattern-level candidate they are evidence for, prioritise what is left by the cost of leaving it, and present a short slate the operator can decide in one sitting — each with its case, not the raw list.
-
-**Drop is the default.** An entry is promoted only when it names what a user or a consuming repo gets from it; an entry that names only a tidier tree, a more consistent wording, or a risk nobody has met is dropped, and the drop is written down. Every entry leaves the drain marked in exactly one of three ways — otherwise this is a review of a list that keeps growing, not a drain.
-
-| Outcome | Means | What happens |
-|---|---|---|
-| **done** | already satisfied — the tree changed, another ticket carried it, or re-validation found the condition gone | record what satisfied it |
-| **folded** | it becomes work, and it named the user or consumer outcome that earns a slot | create the ticket through `tracker` in the **Backlog** state, its project attached, exactly one `assurance:` label; record the id. Never straight into Todo — Backlog is where confirmed work waits, and a close is what pulls it |
-| **dropped** | it will not be done | record the reason. A drop is a decision written down; an entry that quietly stops being mentioned is the inventory this drain exists to clear |
-
-Record the outcomes back on the ledger thread as a comment, so the next drain does not re-present an answered entry. An entry not promoted here is dropped, not carried: carrying it forward unmarked is how a ledger becomes a backlog nobody drains. A fold never lands in a queue that is already at its limit, because it lands in Backlog and waits there like everything else.
-
-The slate needs somebody to answer it, so an unattended run does not drain: note the ledger's size in the report and stop there. A pass deciding its own proposals is the grant this split exists to close.
+Unattended, do not drain: read the ledger's size (`tracker` → *`ledger`*), state it in the report, and stop there. The slate needs somebody to answer it.

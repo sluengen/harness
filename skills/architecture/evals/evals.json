@@ -4,12 +4,12 @@
     {
       "id": 1,
       "name": "predicate-defined-by-absence",
-      "prompt": "Design question on /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there).\n\nThe init workflow needs to decide whether a consuming repo's gate is \"safe to rewire automatically\". The proposal on the table: it's safe when the repo has no first-party JavaScript under `scripts/` and no custom `verify` command in `harness.yaml`. If both hold, init writes the standard `scripts/verify.sh` wiring.\n\nIs this the right contract? Write me your assessment and, if it isn't, what it should be instead. Save it as design.md in the output directory.",
+      "prompt": "Design question on /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there).\n\nThe hydration workflow needs to decide whether a consuming repo's gate is \"safe to rewire automatically\". The proposal on the table: it's safe when the repo has no first-party JavaScript under `scripts/` and no custom `verify` command in `harness.yaml`. If both hold, hydration writes the standard `scripts/verify.sh` wiring.\n\nIs this the right contract? Write me your assessment and, if it isn't, what it should be instead. Save it as design.md in the output directory.",
       "expected_output": "A written artefact demonstrating architecture judgment on a recorded failure mode.",
       "files": [],
       "expectations": [
         "The assessment identifies that the predicate is defined by absence, so a repo that has no JavaScript because its own policy forbids JavaScript satisfies the condition trivially",
-        "It names the consequence: init would then write exactly the file that repo rejects",
+        "It names the consequence: hydration would then write exactly the file that repo rejects",
         "It states that the contract assumes the consumer is shaped like this repo",
         "It proposes a contract based on a positive declaration by the consumer (an opt-in, a declared value) rather than on what the consumer lacks",
         "It says whether this rises to a recorded decision and where that decision is recorded",

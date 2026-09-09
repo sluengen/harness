@@ -1,10 +1,10 @@
 """The token build step (#242): generate docs/index.html's :root block from
-design/03-tokens/tokens.json rather than hand-authoring two copies of the same
+its tokens.json rather than hand-authoring two copies of the same
 palette.
 
-``scripts/build_design_tokens.py`` writes only the marker-delimited generated
+``skills/design-system/assets/build_design_tokens.py`` writes only the marker-delimited generated
 region inside ``docs/index.html``'s ``<style>`` block — see
-``design/03-tokens/_naming.md`` for the token-path -> CSS-variable derivation
+``03-tokens/_naming.md`` (beside it) for the token-path -> CSS-variable derivation
 this settles (the page's existing hand-authored variable names, e.g.
 ``--build``, are kept; a page-wide rename to the new namespaced scheme
 (``--color-loop-build-accent``) is out of scope for this ticket).
@@ -30,10 +30,13 @@ import pytest
 
 from tests.unit._prose import REPO_ROOT
 
-SCRIPT = REPO_ROOT / "scripts" / "build_design_tokens.py"
+#: #626 relocated the design system into the skill that ships it; the builder
+#: travels with the tiers it resolves, so both operands moved together.
+ASSETS = REPO_ROOT / "skills" / "design-system" / "assets"
+SCRIPT = ASSETS / "build_design_tokens.py"
 VERIFY = REPO_ROOT / "scripts" / "verify.sh"
 PAGE = REPO_ROOT / "docs" / "index.html"
-TOKENS = REPO_ROOT / "design" / "03-tokens" / "tokens.json"
+TOKENS = ASSETS / "03-tokens" / "tokens.json"
 
 # size: one script's acceptance suite — case enumeration over the four surfaces
 # of build_design_tokens.py (the token resolver, the region write, the region
@@ -59,7 +62,7 @@ bdt = _module()
 
 
 def _tokens() -> dict:
-    return json.loads((REPO_ROOT / "design" / "03-tokens" / "tokens.json").read_text())
+    return json.loads(TOKENS.read_text())
 
 
 def _relative_luminance(color: str) -> float:
@@ -915,3 +918,80 @@ def test_check_cli_exits_nonzero_on_a_hand_copied_token_value(tmp_path: Path) ->
         f"{result.returncode}:\n{result.stdout}\n{result.stderr}"
     )
     assert "var(--product-ink)" in result.stdout + result.stderr
+
+
+# #626 — the repo-root walk, the only new logic the relocation introduced
+#
+# The builder moved out of `scripts/` to travel with the design system it
+# resolves, and its token source became a sibling lookup. Its *page* default
+# still needs a repo root, and the design directory's depth is configuration
+# (`paths.design_system`), so a fixed number of `parent` hops is right in
+# exactly one repo. The walk is what the skill's portability claim rests on:
+# one copy serving a design directory nested under `skills/` here and a
+# repo-root `design/` in a consumer. These drive the resolution against real
+# directory layouts rather than the module-level constant, which is fixed at
+# import and cannot be re-pointed.
+
+
+def test_the_repo_root_is_the_nearest_ancestor_carrying_harness_yaml(
+    tmp_path: Path,
+) -> None:
+    """A design directory nested several levels down still finds the root."""
+    root = tmp_path / "repo"
+    (root / "skills" / "design-system" / "assets").mkdir(parents=True)
+    (root / "harness.yaml").write_text("repo:\n  name: nested\n", encoding="utf-8")
+
+    found = bdt._repo_root(root / "skills" / "design-system" / "assets")
+
+    assert found == root, (
+        f"expected the walk to stop at {root}, the nearest ancestor carrying "
+        f"harness.yaml; it returned {found}"
+    )
+
+
+def test_a_repo_root_design_directory_resolves_the_same_way(tmp_path: Path) -> None:
+    """The consumer layout: one hop up, not three. Same code, no configuration."""
+    root = tmp_path / "consumer"
+    (root / "design").mkdir(parents=True)
+    (root / "harness.yaml").write_text("repo:\n  name: consumer\n", encoding="utf-8")
+
+    found = bdt._repo_root(root / "design")
+
+    assert found == root, (
+        f"expected {root} for a repo-root design/ layout; got {found}. A fixed "
+        f"parent count would serve one of these two layouts and not the other."
+    )
+
+
+def test_no_harness_yaml_anywhere_falls_back_to_the_design_directorys_parent(
+    tmp_path: Path,
+) -> None:
+    """The fallback keeps the module importable in a tree that declares nothing.
+
+    Reached whenever the walk runs out of ancestors — an unhydrated repo, or the
+    design tree copied somewhere on its own.
+    """
+    loose = tmp_path / "somewhere" / "design"
+    loose.mkdir(parents=True)
+
+    found = bdt._repo_root(loose)
+
+    assert found == loose.parent, (
+        f"expected the fallback {loose.parent} when no ancestor carries "
+        f"harness.yaml; got {found}"
+    )
+
+
+def test_the_nearest_harness_yaml_wins_over_a_higher_one(tmp_path: Path) -> None:
+    """Nearest, not outermost — a worktree inside a checkout is the live case."""
+    outer = tmp_path / "outer"
+    inner = outer / "inner"
+    (inner / "design").mkdir(parents=True)
+    (outer / "harness.yaml").write_text("repo:\n  name: outer\n", encoding="utf-8")
+    (inner / "harness.yaml").write_text("repo:\n  name: inner\n", encoding="utf-8")
+
+    found = bdt._repo_root(inner / "design")
+
+    assert found == inner, (
+        f"expected the nearest root {inner}, not the outer {outer}; got {found}"
+    )

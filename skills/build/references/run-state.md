@@ -7,7 +7,7 @@ Load this when writing or resuming a run.
 key that must be re-derived from git and compared before use, and on a mismatch
 the file's copy is discarded — never git's.
 
-It is gitignored (`/harness:init` seeds `.harness/` into the gate-ignore block),
+It is gitignored (`/harness:hydrate` seeds `.harness/` into the gate-ignore block),
 so it never reaches the tree the verdict binds to.
 
 ## Fields
@@ -20,8 +20,7 @@ so it never reaches the tree the verdict binds to.
 | `stage` | string | one of the names below |
 | `tests_locked` | boolean | strictly boolean. `false` at set-up, `true` in the same write that sets `stage: "implement"` |
 | `base_commit` | string | the commit the worktree branched from. The test lock asks this tree whether a test file is new |
-| `reviewed_tree` | string \| null | tree oid |
-| `gate_marker_tree` | string \| null | the tree the last read marker named. The marker itself is the gate's, at the path the spine's *binding* contract gives; this field caches which tree it named and never stands in for reading it |
+| `reviewed_tree` | string \| null | tree oid the verdict was issued over. `/promote`'s rebase moves the tree past it by design |
 | `verdict` | string \| null | `PASS` \| `FAIL` \| `DEFER` — transcribed from the reviewer's report, never authored |
 | `review_cycles` | integer | cycles **spent**, against `loop.max_review_cycles` |
 | `engine` | string | `claude` \| `codex` |
@@ -37,15 +36,26 @@ recognise**, so a later ticket can add fields without this writer stripping them
 
 ```
 setup · ground · spec · design · tests · implement ·
-in_review · substantive_review · reconcile · delta_review · full_gate ·
-pass · tree_compare · push · tracker_done · reflect · cleanup
+in_review · rebase · substantive_review · pass ·
+full_gate · tree_compare · push · tracker_done · reflect · cleanup
 ```
 
-One vocabulary, spelled once. The nine from `in_review` to `tracker_done` are
-the normative block in `skills/build/SKILL.md` — that block owns their order
-and their authorities and is not restated here; the rest are the stages a
-resume needs and the block does not have. A second vocabulary for the same word
-is the defect this shape avoids.
+One vocabulary, spelled once, across a lifecycle that runs in two commands.
+`skills/build/SKILL.md` owns the normative order and authorities for the four
+from `in_review` to `pass`; `skills/promote/SKILL.md` owns them for the six that
+land, from `rebase` to `tracker_done`. Neither order is restated here. The rest
+are the stages a resume needs and no block has. A second vocabulary for the same
+word is the defect this shape avoids.
+
+**Two stages appear in both blocks, and neither is two stages.** `rebase` runs
+once before the review and once before the landing gate — same operation, same
+rules, one reference. `pass` means *the run holds green certification over the
+tree in hand and may proceed*, which is why the `authority` field carries the
+difference: at `/build` the **reviewer** certifies it as a verdict, at `/promote`
+the **gate** certifies it over the rebased tree against the verdict already on
+record. #623 retired `reconcile` — renamed to `rebase` and moved ahead of the
+review — and `delta_review` outright, which existed only to re-read bytes the
+post-review reconcile admitted.
 
 **`tests` and `implement` are separate stages, and that is the whole mechanism.**
 Law 7 forbids editing a test *while implementing against it*, so locking at the
@@ -70,23 +80,37 @@ is fresh, the integration tip, and the ticket's real tracker state.
 Always trusted, because they are history rather than tree facts: `ticket`,
 `lane`, `engine`, `review_cycles`, and `base_commit` once it still resolves.
 
-**The gate on the three tree-bound fields.** `reviewed_tree`,
-`gate_marker_tree` and `verdict` are trusted **only** while the freshly derived
-tree oid equals `reviewed_tree`. One byte of difference sets all three to null
+**The gate on the two tree-bound fields.** `reviewed_tree`
+and `verdict` are trusted **only** while the freshly derived
+tree oid equals `reviewed_tree`. One byte of difference sets both to null
 and returns the run to `substantive_review`. This is the rule reconciliation
-already states — no tree identity, marker, readiness report or verdict is
+already states — no tree identity, readiness report or verdict is
 inherited across a change — and the resume path inherits it rather than
 inventing a second one.
+
+**`/promote`'s own rebase is the one exception, and it is an exception by
+decision rather than by oversight.** It moves the tree past `reviewed_tree` on
+purpose, so the fields do not survive it and the run does not return to review:
+what licenses the push from there is the gate `/promote` runs over the merged
+tree, plus the verdict on record for the ticket. `skills/promote/SKILL.md` names
+the residual that trades for — a fix made after the review that no longer covers
+it — rather than leaving it to be discovered here.
+
+**A resume cuts a fresh worktree** off the current integration branch and checks
+the run's pushed branch out in it, rather than reusing the directory the run was
+abandoned in; `skills/build/SKILL.md` → *Resuming a held or deferred ticket* owns
+that rule and what becomes of the old worktree. This table governs the stage, not
+the directory.
 
 | Resuming at | Do |
 |---|---|
 | `setup` `ground` `spec` `design` | re-run the stage from the ticket |
 | `tests` | run the tests; a remembered RED is not evidence |
 | `implement` | rewrite `tests_locked: true` before the first edit — a resume re-arms, never assumes |
-| `in_review` `substantive_review` `delta_review` | on a tree match, launch the next cycle's fresh reviewer; on a mismatch, discard and restart substantive review |
-| `reconcile` | never resume mid-merge: `git merge --abort`, redo from the current tip, and the redo spends one of the two attempts |
-| `full_gate` | reachable only when the tree still equals `reviewed_tree` — a mismatch has already sent the run back to `substantive_review` by the rule above. From there, re-run the gate unless a fresh marker names the current tree |
-| `pass` | trust the verdict only on a tree match |
+| `in_review` `substantive_review` | on a tree match, launch the next cycle's fresh reviewer; on a mismatch, discard and restart substantive review |
+| `rebase` | never resume mid-merge: `git merge --abort`, redo from the current tip, and the redo spends one of the two attempts |
+| `pass` | trust the verdict only on a tree match. A resume landing here at `/promote` re-reads the ticket's live state first — the verdict says the tree was reviewed, never that the ticket still wants it |
+| `full_gate` | re-run the gate over the tree in hand and read all of it. A remembered green is not evidence, and nothing records one |
 | `tree_compare` `push` | check whether the push already landed (`git ls-remote`) before pushing again — the crash may have been *after* it succeeded |
 | `tracker_done` `reflect` `cleanup` | every step is idempotent by re-reading, never by assuming |
 

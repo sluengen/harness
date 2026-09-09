@@ -31,8 +31,8 @@ looks at this. Read `harness.yaml` for the repo's stack and gate command.
   verdicts, and the report you owe (→ *Reviewer obligations*). Not restated here.
 - `skills/review-discipline/references/certifying.md` — load it the moment no
   blocking finding stands and **before** you touch the candidate; it owns the
-  as-built-record gate, the twin sweep, and the ordering that keeps the gate
-  over the tree that ships.
+  as-built-record gate, the twin sweep, and the ordering that keeps your
+  gate over the tree your verdict covers.
 - `skills/review-discipline/references/fail-stop-rule.md` — on a FAIL.
 - `skills/authoring/references/prose.md` — immediately before a substantial report.
 - the repo's `.claude/rules/design-system.md`, when that layer is on, for a

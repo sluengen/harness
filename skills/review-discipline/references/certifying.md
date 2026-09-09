@@ -83,11 +83,11 @@ attempts, then FAIL carrying the gate output — never the implementation, which
 would make you the builder. And a deferral is ordering-neutral: it lands in the
 report and on the ticket, not in the tree.
 
-**The verdict binds to a tree, not a commit.** Report the `reviewed_tree` —
+**The verdict covers a tree, not a commit.** Report the `reviewed_tree` —
 git's tree object for the certified candidate, which `git write-tree` prints
-over a staged tree. The flow that ships integrates only while the tree at HEAD
-still equals it, or carries a merge git alone made from it; the spine's
-*binding* states both acceptance paths. Because the gate's own evidence is
-named after that tree object, an amend rewriting no bytes voids nothing. A
-report may also name the commit sha for a human reader, but the shipping
-equality is tree to tree.
+over a staged tree. It is what a resumed run compares against before trusting
+the verdict, and an amend rewriting no bytes voids nothing. It is **not** what
+licenses the push: the flow that ships rebases again and re-runs the complete
+gate, because the integration branch moves, and the spine's *two gates* states
+which of them stands behind the push. A report may also name the commit sha for
+a human reader, but the identity a resume checks is tree to tree.

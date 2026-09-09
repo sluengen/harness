@@ -1,0 +1,22 @@
+{
+  "skill_name": "drain",
+  "evals": [
+    {
+      "id": 1,
+      "name": "drain-the-ledger",
+      "prompt": "End of a `/assess code` pass on /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there), run by me at the keyboard, and it has just called you for the ledger. The improvement ledger has 34 entries built up since the last drain. Several of them are clearly about the same file.\n\nWhat do I do with them? Save your answer as drain.md in the output directory.",
+      "expected_output": "A written artefact demonstrating drain judgment on a recorded failure mode.",
+      "files": [],
+      "expectations": [
+        "Entries are grouped by their suggested home, abstracted into pattern-level candidates where several are evidence of one thing, and prioritised — presented as a short slate rather than the raw list of 34",
+        "Every entry leaves the drain marked as exactly one of three outcomes: done, folded, or dropped",
+        "A folded entry becomes a ticket in Backlog with exactly one assurance level, and its ticket id is recorded",
+        "A dropped entry has its reason written down",
+        "An entry not promoted at this drain is dropped rather than carried forward unmarked",
+        "The outcomes are recorded back on the ledger thread so the next drain does not re-present an answered entry",
+        "The answer re-validates each ledger entry against the tree before deciding it, and says why — entries are written when noticed and much of an accumulation arrives already satisfied or overstated",
+        "Before folding an entry into a ticket, the open queue is searched for an unstarted ticket on the same surface and that one is extended rather than a twin created — the fold is the filing most likely to hit one, because the pattern-level candidate was just abstracted from several entries"
+      ]
+    }
+  ]
+}

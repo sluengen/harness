@@ -19,7 +19,7 @@ whose name happens to match, with `git add -A` reporting success either way.
 files the tree carries, not what any of them says.
 
 **Why these directories.** They are the ones whose contents are *named elsewhere*
-— by the spine, by `hooks.json`, by `/harness:init` — so an absent file is a
+— by the spine, by `hooks.json`, by `/harness:hydrate` — so an absent file is a
 document describing behaviour the tree does not have. A general "nothing is
 untracked" sweep would fail on every scratch file and would be deleted within a
 week; this one is scoped to the sets where absence is a defect.
@@ -50,11 +50,27 @@ def _tracked() -> set[Path]:
     return {REPO_ROOT / name for name in out.split("\0") if name}
 
 
+#: Compiled bytecode is never a shipped asset, in this repo or any other, and it
+#: appears under a swept directory only as a side effect of running the code.
+#: #626 put Python under ``skills/`` for the first time (the design-system token
+#: builder), so the sweep began meeting ``__pycache__`` — and any test session
+#: that imports the builder recreates it, which would make this guard flaky
+#: rather than strict. Excluding it narrows nothing this guard is for: its
+#: subject is a *source* file swallowed by a broad ignore pattern.
+_NEVER_SHIPPED = ("__pycache__",)
+
+
 def _on_disk() -> set[Path]:
     found: set[Path] = set()
     for relative in SHIPPED:
         root = REPO_ROOT / relative
-        found |= {p for p in root.rglob("*") if p.is_file() and ".git" not in p.parts}
+        found |= {
+            p
+            for p in root.rglob("*")
+            if p.is_file()
+            and ".git" not in p.parts
+            and not any(part in _NEVER_SHIPPED for part in p.parts)
+        }
     return found
 
 
@@ -75,7 +91,7 @@ def test_every_shipped_file_is_in_the_index(directory: str) -> None:
     # Not a skip. `test_the_suite_reaches_the_host_only_where_it_declares_the
     # _dependency` is right that a skip is how a suite silently runs less than it
     # claims — and here there is nothing to be conditional *on*: every directory
-    # in SHIPPED is named by the spine, `hooks.json`, or `/harness:init`, so one
+    # in SHIPPED is named by the spine, `hooks.json`, or `/harness:hydrate`, so one
     # that is missing is the defect this module exists to find.
     assert root.is_dir(), (
         f"{directory}/ is named elsewhere in the tree but does not exist here"

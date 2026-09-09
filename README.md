@@ -3,7 +3,7 @@
 📖 **[Read the one-page guide →](https://sluengen.github.io/harness/)** — the operating model at a glance. (This README stays the canonical text; the page is its visual companion.)
 
 **A spec-driven development process for agent-driven repos, shipped natively for
-Claude Code and Codex**: nine lifecycle workflows, the craft skills behind them, five agent
+Claude Code and Codex**: nine lifecycle workflows, the craft skills behind them, six agent
 roles, and enforcement hooks that make a green gate the only path to a shared
 branch.
 
@@ -21,16 +21,18 @@ depend on an agent remembering them:
   derived from them, and the lifecycle contract — always loaded, never optional.
   `CLAUDE.md` carries `AGENTS.md` verbatim, then a `<!-- spine:copy:end -->`
   line, then the deltas that apply on that host alone — derived from the spine,
-  not a pointer to it, and re-derived by `--refresh` from that marker whatever
+  not a pointer to it, and re-derived by `/harness:hydrate` from that marker whatever
   has drifted above it — and the repo's configuration is `harness.yaml`. Skills carry the
   depth and load by task; path-scoped rules under `.claude/rules/` load with the
   files they scope.
 - **Builder / recorder separation.** The agent that promises delivery is not the
   one that records it, which keeps the as-built record honest.
-- **Hooks that refuse.** A completion claim without fresh gate evidence, a push
-  to a protected branch without a marker over the pushed tree, and any history
-  rewrite are refused at the agent host. The controls of record stay
-  server-side: branch protection and gate output in CI.
+- **One hook that refuses, three that advise.** An edit to a test file while a
+  run has declared its tests locked is refused at the agent host; injection-shaped
+  content, a source edit outside a worktree, and a push aimed at a declared branch
+  are flagged and let through. The assurance is not the hooks — it is the gate the
+  repo declares in `commands.verify`, run and read by the builder, plus the
+  independent review. Server-side controls are the repository's own.
 
 It is **dogfooded on its own development**: every change here ships through the
 process the plugin publishes, against the same gate.
@@ -49,7 +51,7 @@ Claude Code:
 Then, in the repo you want to run the process in:
 
 ```
-/harness:init
+/harness:hydrate
 ```
 
 Codex:
@@ -59,24 +61,24 @@ codex plugin marketplace add sluengen/harness
 codex plugin add harness@harness
 ```
 
-Then ask Codex to initialize Harness in the repository. Both hosts read the same
-`init` workflow from `skills/init/`.
+Then ask Codex to hydrate Harness in the repository. Both hosts read the same
+`hydrate` workflow from `skills/hydrate/`.
 
-`init` interviews for the repo's values and writes the files that must be
+`hydrate` interviews for the repo's values and writes the files that must be
 repo-owned: `harness.yaml`, the spine (`AGENTS.md`) and the `CLAUDE.md` derived from it,
-the path-scoped rules, Codex role adapters,
-the specs scaffold, the infrastructure record, and — where the repo has no gate yet — a
-`scripts/verify.sh` skeleton that delegates to `node scripts/gate-marker.js run`.
-After a plugin update, `/harness:init --refresh` regenerates the marked blocks,
-generated Codex role adapters, and recognized Harness-owned gate assets. It leaves
-custom gate wiring and unsafe JavaScript module contexts untouched, with a
-path-specific report for the operator.
+the path-scoped rules and the sub-directory instruction files that carry them to Codex,
+Codex role adapters, the specs scaffold, and the infrastructure record. **It writes no
+gate and nothing under `scripts/`:** the gate is the repository's own, at whatever path
+`commands.verify` names, and hydration reports that it wrote none.
+Run it again after a plugin update — one invocation, no flag. It re-derives the marked
+blocks and the plugin-marked Codex role adapters, leaves every repo-owned file alone,
+and reports each path with the reason it was written, rewritten, retained or blocked.
 
 Codex installs a native `.codex-plugin/plugin.json` package. Its `skills/`
 directory contains every skill both hosts read, the nine lifecycle workflows
 among them — each ships once, not as a mirror of a command file. The
 repository-owned `.codex/agents/*.toml` files are Codex role adapters for
-named-agent workflows; `/harness:init` hydrates them into a consumer repository,
+named-agent workflows; `/harness:hydrate` writes them into a consumer repository,
 and `tests/unit/test_codex_agent_adapters.py` holds each one in correspondence
 with its `agents/*.md` counterpart. Codex also runs the plugin hooks; the scripts
 accept both hosts' payload and output contracts.
@@ -85,15 +87,15 @@ accept both hosts' payload and output contracts.
 
 | Workflow | Does |
 |---|---|
-| `/build <ticket>` | Implement, verify, review, and ship a ticket — the one lifecycle driver |
+| `/build <ticket>` | Implement, verify and review a ticket, ending at PASS |
 | `/capture` | File an already-decided change straight to Todo |
 | `/propose` | Work an idea before it becomes work; accepted proposals spawn tickets |
 | `/review` | Review the current branch when it needs only that |
 | `/routine` | One unattended discover→build→ship cycle |
-| `/promote` | Move completed work toward release along the repo's role branches |
-| `/digest` | The operator's console: report, then drain held decisions |
+| `/promote` | Land a reviewed branch, or move completed work toward release along the repo's role branches |
+| `/drain` | Clear what has accumulated for the operator: held tickets, then the improvement ledger |
 | `/assess` | Periodic whole-system health assessment |
-| `/harness:init` | Hydrate a repo (the one command that needs its prefix spoken) |
+| `/harness:hydrate` | Hydrate a repo, first time or after a plugin update |
 
 Small fixes need no command and no ticket: the fix lane is the same isolation
 and the same gate, invoked by asking.
@@ -102,7 +104,7 @@ and the same gate, invoked by asking.
 
 Two skills split *how* from *what*: `engineering` (build) and `architecture`
 (design and decide). Each is a generic skill body, a plugin asset where the
-argued rationale accretes, and a repo asset seeded by `init` — the repo's own
+argued rationale accretes, and a repo asset seeded by `hydrate` — the repo's own
 stack and decisions. Promotion is the third of that job and is `/promote`'s: it
 transcribes the whole loop, so a separate skill restating it was a second copy
 and #547 retired it; the repo's own topology stays in its infrastructure spec.
@@ -113,7 +115,7 @@ both sides.
 
 The plugin's source, dogfooding itself. Three parts: the guidance surface
 (`skills/`, `agents/`, `hooks/`), the gate (`scripts/verify.sh`:
-ruff, mypy, pytest under a coverage floor, drift guards, marker write), and the
+ruff, mypy, pytest under a coverage floor, drift guards), and the
 guards (`tests/unit/`, admitted by ADR 0017's rule — behaviour of executable
 code, properties of the spine, integrity of shipped assets, frontmatter). There
 is no runtime and nothing to install beyond the plugin: ADR 0015 retired the

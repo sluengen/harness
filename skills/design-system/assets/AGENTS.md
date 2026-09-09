@@ -1,0 +1,129 @@
+# Building a user-facing surface here
+
+Codex reads the nearest instruction file, so this one binds while you work anywhere
+under this repo's design directory — and, by the same rule on the Claude side,
+`.claude/rules/design-system.md` binds there and under `docs/` alike. `/harness:hydrate`
+step 5 seeds the two together and no later hydration overwrites either.
+Everything from the first `##` heading down is identical in both, and that is the
+region to keep in step; the preamble above it differs because it names a host
+mechanism, and the Claude form carries `paths:` frontmatter the Codex form has no
+use for. Nothing holds the shared region byte-equal today — edit both or neither.
+
+`.claude/rules/design.md` carries the token-source relationship on the same paths; this
+file carries the craft.
+
+*Why a rule and not a skill: guidance that has to be triggered by a description
+fires when something remembers to trigger it; a rule attached to a path is simply
+present every time a matching file is opened. Measured at 53% against 100%
+(research 01 §10). This file replaced the `design-system` and `ux-design` skills
+at #547 for that reason.*
+
+## The two-stage lookup, before any visual change
+
+1. **Find the principle.** What does this repo's design system say should be true
+   here — its brand and UX principles, at the path `harness.yaml` names?
+2. **Find the materialization.** Where is that principle expressed in code: the
+   token definitions, the primitive components? Use those.
+
+If you are about to write a visual value by hand, stop and do this lookup first.
+
+**No system yet is a gap to fill, not a licence to hardcode.** Where
+`paths.design_system` is unset or names a location with nothing at it, set the path and
+run `/harness:hydrate`, which copies the `design-system` skill's assets there — the
+eight tiers, the token source and the token builder — and they are yours from that
+moment. `templates/design-system.md` is the contract that tree implements, and the
+reference for standing one up by hand where hydration is not available. An
+external package you have yet to install is not a missing system.
+
+## Tokens and primitives
+
+- **Named tokens, never raw values,** wherever a token exists — colour, type,
+  spacing, radii. A hardcoded hex or a one-off pixel value where a token is defined
+  drifts the moment the token changes.
+- **Use the primitive if one exists** (button, card, field, badge, empty state).
+  Reimplementing its markup inline forks the design, and the bespoke copy decays.
+  Build a new primitive only when a pattern appears three or more times without one.
+- **Composition chrome a value scan cannot see.** A sheet header, a card shell, a
+  list row is a composition of several token rules: every value in it is already a
+  token, so a raw-value scan sees nothing wrong even when the same composition is
+  reimplemented across many files. Before adding chrome composed of three or more
+  token rules, grep for a primitive; if that composition already appears in three or
+  more files, extract one.
+- **Extract, then finish adopting.** Extracting a primitive is not done at the first
+  callsite: enumerate every inline copy in the ticket's acceptance criteria and
+  migrate them, or file a follow-up listing the un-migrated ones by `file:line`.
+- **Materialise a primitive only when a consumer adopts it in the same change.** A
+  primitive with zero callsites is dead code the value scan cannot see.
+- **Adoption and conformance are different questions.** Adoption — does this screen
+  use the right primitive and tokens — is your job on every change here.
+  Conformance — does the primitive itself render to spec — is a question for changes
+  to the primitive.
+- **Changing a token or a primitive ripples.** Check the principle it serves,
+  consider every consumer, and make a relaxation of a stated principle an explicit
+  principle update with a rationale rather than a silent edit.
+
+## Every state, not just the happy one
+
+A screen designed only in its success state hides the work. Before handoff, the
+surface answers all of these:
+
+- [ ] **Empty** — useful, not "no data found"; it is often the first thing a new
+      user sees.
+- [ ] **Loading** — a skeleton for content, inline feedback for an action, never a
+      blocking spinner over work the user is mid-way through.
+- [ ] **Error** — specific, helpful, and with a clear path back to success.
+- [ ] **Edge** — 0 items, 1 item, many items, long names, missing data.
+
+## Accessibility
+
+- [ ] Works with the keyboard alone, and focus is always visible.
+- [ ] Interactive elements are obviously interactive, and every action gives visible
+      feedback.
+- [ ] Hover is never the only way to reveal critical functionality.
+- [ ] Contrast meets the repo's stated standard; colour is never the only carrier of
+      meaning.
+- [ ] It works one-handed on mobile rather than merely fitting.
+- [ ] Copy is clear, specific, and actionable (`authoring` → *Prose*).
+
+## Visual evidence, when the diff touches a user-facing surface
+
+Not a judgment call about size or risk: any diff touching a screen, route, view,
+template, or the styles behind one renders evidence before handoff.
+
+**One carve-out, read off the diff rather than predicted.** A **text-only** diff
+renders no evidence: every changed line alters only the characters inside a string
+or text node, and nothing else moves — no element added, removed or reordered, no
+attribute, class, style, token or layout value touched, no conditional introduced.
+The diff answers that on its own, and it is never an assessment of how much the
+change matters.
+
+**Anything else in the diff closes it, and so does one thing beside it:** a string
+whose element constrains its length, such as a capped width, a single-line or
+truncating rule, or a control sized to its label. That string reflows, so it
+captures. An unclear case captures too: the carve-out is the narrow case you can
+point at in the diff, never the benefit of the doubt.
+
+**Render** the changed surface with realistic **seeded** state — synthetic
+throughout, never production data — at the repo's reference widths, at least one
+mid-width, and both sides of every breakpoint the change touches.
+
+**Capture** at a fixed viewport, in **viewport-height slices** scrolled one viewport
+at a time and numbered in scroll order. Never a full-page capture at any width, and
+never a capture over 2000 px tall: a taller one reaches the reviewer downscaled past
+legibility (measured — 16 px body text arrived at 7 of 8 characters from a 5726 px
+capture).
+
+**Store** captures and their manifest in `.evidence/<TICKET-ID>/` at the worktree
+root. That path is git-ignored, so evidence never reaches the committed tree through
+`git add -A`; if this repo's `.gitignore` does not ignore `.evidence/`, add the line
+before capturing. Name captures `<page>-<state>-<width>w-<slice>.png` and the
+manifest `manifest.md`.
+
+**Bound it:** at most 12 captures per review. Narrow the set to the states carrying
+the change, and never shrink an image to fit — that reintroduces the failure the
+slice rule prevents.
+
+**Judge** each capture against the reference or the applicable archetype, and inspect
+the implementation too: screenshots do not replace code review. Fix, re-render, and
+retain only the final evidence. Revert seeded data and capture-only code before
+verification.

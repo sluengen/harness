@@ -8,12 +8,12 @@ description: What binds while building or changing a user-facing surface in this
 # Building a user-facing surface here
 
 Loaded whenever a file under this repo's design directory or its UI source paths is
-opened. `/harness:init` seeded it from the plugin when `layers.design_system` was
+opened. `/harness:hydrate` seeded it from the plugin when `layers.design_system` was
 turned on, filling the globs above from `harness.yaml`. **It is yours now** —
-`--refresh` never overwrites it, so edit it to match how this repo actually works,
+no later hydration overwrites it, so edit it to match how this repo actually works,
 and delete anything below that does not.
 
-Where Codex is also in use, `init` seeded the same rule as `AGENTS.md` inside the
+Where Codex is also in use, `hydrate` seeded the same rule as `AGENTS.md` inside the
 design directory, since Codex reads the nearest instruction file rather than a
 path-scoped one. Everything from the first `##` heading down is identical in both,
 and that is the region to keep in step; only this preamble and the `paths:`
@@ -35,8 +35,11 @@ at #547 for that reason.*
 If you are about to write a visual value by hand, stop and do this lookup first.
 
 **No system yet is a gap to fill, not a licence to hardcode.** Where
-`paths.design_system` is unset or names a location with nothing at it, stand one up
-from the plugin's `templates/design-system.md` scaffold and set the path. An
+`paths.design_system` is unset or names a location with nothing at it, set the path and
+run `/harness:hydrate`, which copies the `design-system` skill's assets there — the
+eight tiers, the token source and the token builder — and they are yours from that
+moment. `templates/design-system.md` is the contract that tree implements, and the
+reference for standing one up by hand where hydration is not available. An
 external package you have yet to install is not a missing system.
 
 ## Tokens and primitives
@@ -93,6 +96,19 @@ surface answers all of these:
 
 Not a judgment call about size or risk: any diff touching a screen, route, view,
 template, or the styles behind one renders evidence before handoff.
+
+**One carve-out, read off the diff rather than predicted.** A **text-only** diff
+renders no evidence: every changed line alters only the characters inside a string
+or text node, and nothing else moves — no element added, removed or reordered, no
+attribute, class, style, token or layout value touched, no conditional introduced.
+The diff answers that on its own, and it is never an assessment of how much the
+change matters.
+
+**Anything else in the diff closes it, and so does one thing beside it:** a string
+whose element constrains its length, such as a capped width, a single-line or
+truncating rule, or a control sized to its label. That string reflows, so it
+captures. An unclear case captures too: the carve-out is the narrow case you can
+point at in the diff, never the benefit of the doubt.
 
 **Render** the changed surface with realistic **seeded** state — synthetic
 throughout, never production data — at the repo's reference widths, at least one
