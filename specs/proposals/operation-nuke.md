@@ -119,7 +119,7 @@ What the repository contains when items 1–9 have landed, and what each thing d
 | `routine` | reduce | One unattended tick. Gains the `/promote` call; loses the green-pointer and re-bind logic. |
 | `capture` | keep | File one ticket onto the queue. |
 | `propose` | keep | Work an idea to a decision before build time is spent. |
-| `drain` | **new** (replaces `digest`) | One skill, two piles, operator-present only: **held tickets** (answer the question, release the hold — the DEFER return path) and the **improvement ledger** (decide each entry done / folded / dropped). `/assess` calls it as its close-out. |
+| `drain` | **new** (replaces `digest`) | Operator-present only, two piles with **different procedures**. *Held tickets:* per item — read the thread, answer, write it into the change spec, release the hold. The DEFER return path. *Improvement ledger:* a corpus pass — re-validate each entry against the tree, consolidate entries sharing a home and abstract small ones into the pattern they evidence, check the open queue for a twin, drop what names no user or consumer outcome, then bring the surviving slate back for one sitting. `/assess` calls it as its close-out. |
 | `assess` | reduce | Periodic health pass: dispatch the steward, write the dated report, file findings, apply retention. **Step 5 moves out to `drain`**, which it calls. |
 | `hydrate` | **new** (replaces `init`) | Greenfield setup or brownfield reconciliation. Writes `AGENTS.md`/`CLAUDE.md` at the root and per sub-directory for progressive discovery, seeds path-scoped rules, copies out attached assets. **Vendors no gate code**, so it carries no migration paths and no fixture corpus. **Ends by dispatching `harness-audit`** and carrying its findings into the report. |
 | `design-system` | **new** (D4) | The 8-tier structure (`00-brand` … `07-flows`) as skill-attached assets, copied out at hydration. |
@@ -214,7 +214,7 @@ Item 1 sets the shape — *the plugin is the whole product, a consumer's own CI 
 5. **`init` → `hydrate`** *(feature)* — one workflow that recognises greenfield vs brownfield and reconciles rather than refreshing; no vendored gate assets, so no migration paths, no fixture manifest. Writes `AGENTS.md`/`CLAUDE.md` at the root and in sub-directories for progressive discovery. Retires `references/refresh.md` and the refresh fixture corpus. **Depends on 2, 3.**
 6. **`harness-audit` agent** *(change)* — one agent definition, no paired skill: `hydrate` dispatches it as its close-out, and it is dispatchable by name for a check without a re-hydration. Pinned to `sonnet` per ADR 0005's tiering. **Depends on 5.**
 7. **Design system as a skill with attached assets** *(feature)* — the 8-tier structure and assets live in the skill folder and are copied out at hydration. Answers D4. **Depends on 5.**
-8. **`digest` → `drain`** *(feature)* — retire the console; keep the two drains and put them in one operator-present skill. `/assess` step 5 moves out and `/assess` calls `drain` instead. **Repoints the DEFER return path** in `build`, `review`, `work-discovery`, `tracker` and its two transport references, `review-discipline/references/improvement-ledger.md`, the spine and `templates/spine.md` — 19 mentions across 10 files. Answers D9. **Depends on 1 only**, so it runs in parallel with everything else.
+8. **`digest` → `drain`** *(feature)* — retire the console; keep the two drains and put them in one operator-present skill with **two distinct procedures**, the ledger's being a corpus pass (re-validate, consolidate, twin-check, drop, return the slate) rather than per-item Q&A. Carries `/assess` step 5 across intact and **makes the twin check explicit at the fold step** rather than inherited from the spine's *Filing* contract. `/assess` calls `drain`; the steward never does. **Repoints the DEFER return path** in `build`, `review`, `work-discovery`, `tracker` and its two transport references, `review-discipline/references/improvement-ledger.md`, the spine and `templates/spine.md` — 19 mentions across 10 files. Answers D9. **Depends on 1 only**, so it runs in parallel with everything else.
 9. **Decide `mutate.py` and `plugin-version.js`** *(change)* — execute D1 and D3. ~5,000 lines if both go. **Depends on 2.**
 10. **Re-baseline the ratio** *(change)* — one `/assess` process pass measuring assurance-per-product-line against the 6.86 baseline, so the change is evidenced rather than asserted. **Depends on 2–9.**
 
@@ -224,7 +224,22 @@ Items 2, 4 and 9 are independent of 5–7 once 1 lands, so the deletion track an
 
 **There are two drains in the current design, and they are in different skills.** `/digest --drain` clears **held tickets** — the `input`-labelled, operator-assigned pile a DEFER leaves behind. `/assess` step 5 drains the **improvement ledger** — deciding each entry done, folded or dropped. They share a name, a shape and an operator, and nothing else connects them to the skills they sit in. That split is why "the drain" is ambiguous in conversation and why one of them is buried inside a periodic assessment.
 
-Both are the same operation: *present an accumulated pile to the operator, capture one decision each, record it, clear it.* One skill, two piles.
+What they share is the posture — operator present, an accumulation cleared, every outcome recorded — not the procedure. **The two procedures are genuinely different, and the ledger's is the substantial one.**
+
+The held pile is per item: read the thread (`/digest` already says to check whether it was answered rather than re-asking), capture the operator's call, write it into the change spec, release the hold. Items do not interact.
+
+The ledger pile is a **corpus pass**, and its steps are already in `/assess` step 5:
+
+| Step | Step 5's own words |
+|---|---|
+| Re-validate for staleness | *"Re-validate each entry against the tree before deciding it… re-read the file an entry names, and re-run any count it quotes rather than carrying the number forward."* |
+| Consolidate and abstract | *"group entries whose suggested home is the same file, abstract several small ones into the pattern-level candidate they are evidence for."* |
+| Drop against criteria | *"Drop is the default. An entry is promoted only when it names what a user or a consuming repo gets from it."* |
+| Return the delta | *"prioritise what is left by the cost of leaving it, and present a short slate the operator can decide in one sitting — each with its case, not the raw list."* |
+
+**One step is missing from step 5 and belongs in `drain` explicitly: the twin check.** The spine's *Filing* contract governs it — *"before filing a ticket, search the open queue and extend an unstarted ticket on the same surface instead of creating a twin"* — and step 5's **fold** outcome inherits it silently by creating a ticket. That is the wrong place to leave it implicit, because a fold is the one filing that happens *immediately after a corpus-level consolidation*: the pattern-level candidate just abstracted from several entries is precisely the thing most likely to already exist on the queue. `drain` states it at the fold step rather than relying on inheritance.
+
+None of this is new material to write. Re-validation, consolidation and the twin check are craft the repo already carries in `authoring`, `work-discovery` and the spine's *Filing* contract, so `drain` stays thin control flow that pulls them — the same shape as `/build`, which is "a thin one" deferring to `engineering` and `review-discipline` rather than restating them. One skill, two piles.
 
 **What is left of `digest` once the drain leaves is a console nobody opens.** Its five sections report input-held tickets (the drain's own input), run outcomes, parked work, new ledger entries (read-only, deciding nothing), and hands-on errands. At one operator, one queue and a tracker that is already the source of truth, that is a daily report of what the tracker shows — over-production (P2), and the evidence is that it has gone unused. The report half is the part with no consumer; the drain half is the part that is reached for.
 
