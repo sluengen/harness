@@ -290,9 +290,9 @@ Codex: ask to initialize Harness</pre>
         <h3>A ticket</h3>
         <p class="role">The unit of tracked work</p>
         <p>
-          A change spec lives on the tracker issue and is built end to end by one command. The reviewer
-          is a separate agent in a fresh context, and its verdict binds to the exact git tree it read —
-          what ships is that tree, or a merge git alone made from it.
+          A change spec lives on the tracker issue. One command takes it to a reviewed branch and a
+          second lands it. The reviewer is a separate agent in a fresh context; its verdict covers the
+          tree it read, and a second gate over the tree that lands is what licenses the push.
         </p>
         <ol class="steps"><li><span>spec</span></li><li><span>build</span></li><li><span>gate</span></li><li><span>review</span></li><li><span>ship</span></li></ol>
       </article>
@@ -353,14 +353,14 @@ Codex: ask to initialize Harness</pre>
     <div class="grid2">
       <article class="card inv inv--commands">
         <h3>Workflows <span class="n">9</span></h3>
-        <p>The entry points, on both hosts. Each ships once, as a skill; four are operator-triggered only, and <code>/routine</code>, <code>/build</code>, <code>/review</code>, <code>/drain</code> and <code>/assess</code> stay model-invocable because each answers to a caller that is not a human at a prompt.</p>
+        <p>The entry points, on both hosts. Each ships once, as a skill; three are operator-triggered only, and <code>/routine</code>, <code>/build</code>, <code>/review</code>, <code>/drain</code>, <code>/assess</code> and <code>/promote</code> stay model-invocable because each answers to a caller that is not a human at a prompt.</p>
         <ul class="units">
-          <li class="unit" data-unit="skill:build"><code>/build</code><span>Implement, verify, review, and ship a ticket — the one lifecycle driver.</span></li>
+          <li class="unit" data-unit="skill:build"><code>/build</code><span>Implement, verify and review a ticket, ending at PASS.</span></li>
           <li class="unit" data-unit="skill:capture"><code>/capture</code><span>File an already-decided change straight to Todo.</span></li>
           <li class="unit" data-unit="skill:propose"><code>/propose</code><span>Work an idea before it becomes work; accepted proposals spawn tickets.</span></li>
           <li class="unit" data-unit="skill:review"><code>/review</code><span>Review the current branch, when a branch needs only that.</span></li>
           <li class="unit" data-unit="skill:routine"><code>/routine</code><span>One unattended cycle: discover the next ticket, build it, ship it.</span></li>
-          <li class="unit" data-unit="skill:promote"><code>/promote</code><span>Move completed work toward release along the repo's role branches.</span></li>
+          <li class="unit" data-unit="skill:promote"><code>/promote</code><span>Land a reviewed branch, or move completed work toward release along the repo's role branches.</span></li>
           <li class="unit" data-unit="skill:drain"><code>/drain</code><span>Clear what has accumulated for the operator: held tickets, then the improvement ledger.</span></li>
           <li class="unit" data-unit="skill:assess"><code>/assess</code><span>Run a periodic whole-system health assessment.</span></li>
           <li class="unit" data-unit="skill:init"><code>/harness:init</code><span>Hydrate a repo — the one command that needs its prefix.</span></li>
