@@ -145,7 +145,7 @@ The RED the extraction was built on is security-relevant and was live in both ho
 
 [ADR 0022](../decisions/0022-plugin-only-shape.md), built as #620 from the accepted `operation-nuke` proposal. It states four binding points — no plugin-owned file persists in a consumer; a consumer's CI and branch protection are out of lane; a plugin-shipped executable reads what *is*, never what *passed*; and guards escalate from no guard, refusing only what is unrecoverable or silent-and-consequential, with point 3 taking precedence over point 4 — plus the accepted residual risk that a red tree can reach the integration branch and sit there until something surfaces it, the builder who meets it fixing it then. The reasoning is that record's and is not restated here.
 
-**#620 deleted no code; #621 did.** #620 recorded the decision and moved which record a reader honours: ADR 0020's tree binding and ADR 0018's choice of language for the marker helper each carry a dated supersession banner and a `Status: Superseded 2026-09-09 by ADR 0022` line, and the decisions index in `specs/architecture-principles.md` carries the same marker against both, so neither is met as a standing instruction to build. #621 then performed the deletion, and the section below records it as built. What remains outstanding from the programme is #622 (`promotion-step.sh` plus whatever guidance sweep survives; `land.js` and `harness-refs.js` came forward into #621) and #623 (the lifecycle split at PASS). Every section below marked **retired at #621** describes machinery that is gone and is kept only so a reader meeting the name in history finds its shape.
+**#620 deleted no code; #621 did.** #620 recorded the decision and moved which record a reader honours: ADR 0020's tree binding and ADR 0018's choice of language for the marker helper each carry a dated supersession banner and a `Status: Superseded 2026-09-09 by ADR 0022` line, and the decisions index in `specs/architecture-principles.md` carries the same marker against both, so neither is met as a standing instruction to build. #621 then performed the deletion, and the section below records it as built. #622 then took the guidance half, recorded below; what remains outstanding is #623, the lifecycle split at PASS. Every section below marked **retired at #621** describes machinery that is gone and is kept only so a reader meeting the name in history finds its shape.
 
 **Point 3 holds over this tree with no grandfathering clause, and that was measured rather than assumed.** Verified at review over tree `403368d4`: `prompt-guard.js` reads the intercepted tool call alone; `workflow-guard.js` reads the tool call and `process.cwd()`; `test-lock-guard.js` reads `version`, `tests_locked`, `lane` and `base_commit` out of `.harness/run.json` and touches none of `verdict`, `reviewed_tree`, `gate_marker_tree` or `review_cycles` — the four verdict-shaped fields among the twelve `skills/build/references/run-state.md` declares; and `scripts/plugin-version.js` reads the declared release branch through `declaredBranches` plus manifest bytes at a ref. The three executables that do read a verdict are `gate-evidence-guard.js`, `git-push-guard.js` and `push-target-guard.js`, 3,110 of the 3,645 lines under `hooks/` at that tree, and they are exactly what #621 deletes or reduces.
 
@@ -167,8 +167,8 @@ force-push refusal and the shared POSIX lexer), `scripts/land.js`,
 `land.js` and `harness-refs.js` were #622's in the ticket body: `land.js` required the
 deleted marker helper directly and its `certifies()` is a marker read point 3 forbids
 outright, so shipping #621 without them would have left two non-functional executables
-on the tree. The operator folded their deletion in mid-build, and #622 reduces to
-`promotion-step.sh` and the guidance sweep.
+on the tree. The operator folded their deletion in mid-build, so #622 reduced to the
+guidance those two executables were named in.
 
 **Reduced, not deleted.** `hooks/push-target-guard.js` went from 1,143 lines to 203,
 and from a refusal to an **advisory**: it warns when a `git push` names a branch the
@@ -235,9 +235,10 @@ than a token an earlier run left behind; *Enforcement* now reads "one hook refus
 three advise" and states that the harness's assurance is the declared gate plus the
 independent review, with server-side controls the repository's own.
 `skills/worktree-isolation` branches from the fetched integration branch and gates it,
-where it used to read the green pointer; `skills/build/references/re-bind.md` carries
+where it used to read the green pointer; `skills/build/references/re-bind.md` carried
 the three landing cases as prose that ADR 0022 names as the instruction most worth
-measuring for effectiveness; `skills/init` writes no gate asset.
+measuring for effectiveness, until #622 deleted it and moved the instruction into
+`/build`'s own ship step; `skills/init` writes no gate asset.
 `skills/init/references/refresh.md`'s steps 3 and 4 are **fenced** with a
 do-not-execute banner rather than rewritten. That is a deliberate trade, recorded here
 rather than hidden: the file's own normative opening paragraph was rewritten to say
@@ -264,6 +265,76 @@ refusals — a push to a declared branch, a force push at the hook layer, and a
 completion claim over an ungated tree each used to be refused and now are not — which
 is a major change under `specs/architecture-principles.md`'s compatibility grammar.
 The standing `11.0.0` covers it and no further raise is owed inside this diff.
+
+### What #622 retired, as built
+
+#622 is the guidance half of the landing retirement: 7 files, +16 / −84, net 68
+lines out. The executables the ticket was filed against — `scripts/land.js` and
+`scripts/harness-refs.js` with their tests — went forward into #621, so what was
+left here was the prose instructing a builder to use them.
+
+**Deleted.** `skills/build/references/re-bind.md`, 64 lines, the three-case landing
+decision. It answered a question only the tree binding asked — which of three
+things happened to the reviewed tree while the gate ran — and #621 deleted the
+marker that let a machine answer it. `/build`'s ship step now carries the landing in
+its own body: fetch once more, merge the integration branch if it moved, re-gate over
+the resolved bytes, return them to the reviewer, and never push from a shape you
+cannot describe. **The re-gate is unconditional on a move**, where `re-bind.md`
+exempted a clean auto-merge from it. That is stricter than the spine's *binding*
+entry, which still admits a git-authored merge without a re-gate; a builder following
+the ship step never violates the spine, and #623 owns reconciling the two when it
+splits the lifecycle at PASS.
+
+**Kept, and this was the ticket's own risk.** `skills/build/references/reconcile.md`
+lost its opening binding-placement rationale and its closing delta-return paragraph.
+Its five rules survive **byte-identical**: base movement as normal concurrency rather
+than a stop, resolving a textual conflict over the conflicted paths alone, the
+two-attempt bound, the monotonic-field trap with its same-fixed-point exception, and
+functional conflict as the only escalation. Verified at this review by diffing the
+file against its parent blob — the five bullet lines hash the same before and after.
+The delta-return obligation did not go with the paragraph: `skills/build/SKILL.md`'s
+reconcile bullet carries it, reworded against the certifying gate rather than against
+final binding.
+
+**Trimmed.** `skills/worktree-isolation/SKILL.md` dropped two passages of green-pointer
+archaeology — what #621 removed, and what the removal cost — and states the standing
+rule instead: nothing records whether the integration tip is certified, so the base gate
+is the evidence. Its eval #1 now expects what that skill says, the three
+pointer-specific expectations replaced by the detached worktree, the base gate run, and
+the andon pull a red base is; one trigger query that named a deleted script names a live
+one.
+
+**Retained by operator decision**, against the ticket as filed. `scripts/promotion-step.sh`
+and `tests/unit/test_promotion_step_script.py` stay. The filed premise — that the three
+scripts existed only to serve the binding — does not hold for this one: it reads no
+marker, its only gate call is the declared `bash scripts/verify.sh`, and it exists for
+GH006, since `main` requires a pull request and `github-actions[bot]` cannot update the
+ref directly. It is this repository's own CI, invoked by
+`.github/workflows/nightly-promotion.yml`, which ADR 0022 point 2 keeps by this repo's own
+choice rather than by exemption. Deleting it would have left a kept workflow calling a
+missing file, failing every nightly. `/promote` could not absorb the hop: it is
+operator-invoked and does not run in a 14:00 UTC runner.
+`specs/proposals/operation-nuke.md` item 3 carries the correction and is retitled
+*Retire the landing machinery*.
+
+**Left to #623.** `/promote` stands as a working promotion command, the `delta_review`
+stage stands, and the spine's *The binding* entry stands, because #623 rewrites
+`/promote` and splits the lifecycle at PASS; sequencing them adjacently avoids rewriting
+one skill twice.
+
+**Outstanding, and it belongs to neither #622 nor #623.** The retired marker survives in
+guidance as a live *rationale*: every action those passages prescribe is still correct
+and the reason each gives is not. #622's ticket carries the finding #621's certifying
+review raised and declined to repair, and this change did not reach it. No enumeration
+is written here on purpose — ADR 0022 point 2 requires such a sweep to search the tree
+and decide each hit, on the ground that a list inside a record is stale before the sweep
+runs, and two attempts to enumerate the last retired claim both undercounted.
+
+**The version class.** `dev` stands at `11.0.0` and the release branch at `10.0.0`, so
+the cycle already carries a major raise. This diff deletes one reference file and
+rewords guidance; it renames no command or skill, changes no argument, and moves no
+refusal reason, so it stays at the minor floor and owes no further raise inside the
+standing major.
 
 ### The enforcement loop
 
@@ -387,9 +458,9 @@ over-warns, and the surviving refusal degrades to an inactive lock. Neither degr
 silence pretending to be a pass. **The harness claims no server-side control here**
 (ADR 0022 point 2): what a repository runs in CI or on its branches is its own.
 
-`/build` separates substantive review from final binding for the change and feature lanes. It enters In Review before the independent reviewer starts; the reviewer checks the whole candidate and writes the as-built record, then reports the non-verdict state **Ready for final binding**. Reconciliation follows immediately. A changed tree receives reviewer examination of the reconciliation delta and its whole-change implications, plus any required record correction. The complete gate then certifies the final staged tree and the reviewer issues PASS only for that tree. Commit/tree comparison and push run without a tracker write between PASS and the push; tracker comments, Done, and closure follow a successful push. Since #621 a PASS-bound push that loses a race is decided by the builder reading git, not by a script: `skills/build/references/re-bind.md` carries the three cases as prose — the tip had not moved, git merged it cleanly, or it conflicted and the resolution is re-gated and returned to the reviewer as a delta. ADR 0022 names that instruction as the single one in the new shape most worth measuring for effectiveness. Reconciliation keeps its two-attempt bound; a third attempt holds the ticket. The fix lane has no reviewer at all — the gate is its whole assurance — and therefore no reviewer-owned record; a diff that outgrows the lane is upgraded rather than shipped under it.
+`/build` separates substantive review from final binding for the change and feature lanes. It enters In Review before the independent reviewer starts; the reviewer checks the whole candidate and writes the as-built record, then reports the non-verdict state **Ready for final binding**. Reconciliation follows immediately. A changed tree receives reviewer examination of the reconciliation delta and its whole-change implications, plus any required record correction. The complete gate then certifies the final staged tree and the reviewer issues PASS only for that tree. Commit/tree comparison and push run without a tracker write between PASS and the push; tracker comments, Done, and closure follow a successful push. Since #621 a PASS-bound push that loses a race is decided by the builder reading git, not by a script, and since #622 `/build`'s ship step states that landing itself rather than delegating it to a reference: fetch once more, merge the integration branch if it moved, re-gate over the resolved bytes, and return them to the reviewer before pushing. ADR 0022 names that instruction as the single one in the new shape most worth measuring for effectiveness. Reconciliation keeps its two-attempt bound; a third attempt holds the ticket. The fix lane has no reviewer at all — the gate is its whole assurance — and therefore no reviewer-owned record; a diff that outgrows the lane is upgraded rather than shipped under it.
 
-Since #538 the workflow itself is a short one — 68 lines at #547's tree, against the 70 #538's criterion set — with four stage-loaded references: `run-state.md`, `reconcile.md`, `re-bind.md`, `codex-review.md`. It names no procedure one of those owns. The fifth was `visual-evidence.md`, and #547 deleted it: its rules moved into the seeded `.claude/rules/design-system.md`, which loads on its own whenever a UI file is opened, so `/build` names the obligation and owns none of its rules. #547 also made the review dispatch lane-dependent — `reviewer` in the change lane, `reviewer-feature` in the feature lane — so the lane buys depth through the runtime rather than through prose an agent may not honour. Four behaviours arrived at #538. It **refuses a change spec still carrying `[NEEDS CLARIFICATION: …]`**, names the line, and returns the ticket to the clarification loop rather than building past an unanswered question: attended, ask; unattended, hold it (`input`, assigned) and put it back in Todo, because a ticket left In Progress on a spec nobody can build is invisible to both the queue and the operator. It **checks the andon cord before any tracker write**. **The orchestrator is the builder by default** — a `dev` sub-agent is dispatched on exactly two conditions, a diff that would flood this context or a feature lane wanting a fresh design context — because a hand-off buys isolation and never independence, and the reviewer's context is fresh whoever built. And after the push, before close, it **reflects**: at most three lines or `none`, naming the wastes the run met by the spine's P2 categories and what should change, each line appended to the improvement ledger, or to the harness's own where it concerns the shipped guidance. `reflect` sits after `tracker_done` deliberately — a ledger append is a tracker write, and putting one between the push and the ticket's own state change would leave shipped work sitting In Review on a failed append. The `dev` role gains the matching sentence in both its files: if the criteria contradict each other or cannot be met honestly, stop and say so, returning it as DEFER, and never edit a test while implementing against it.
+Since #538 the workflow itself is a short one — 68 lines at #547's tree, against the 70 #538's criterion set — with three stage-loaded references at this tree: `run-state.md`, `reconcile.md`, `codex-review.md`. It names no procedure one of those owns. `re-bind.md` was a fourth until #622 deleted it, and `visual-evidence.md` a fifth until #547 did: its rules moved into the seeded `.claude/rules/design-system.md`, which loads on its own whenever a UI file is opened, so `/build` names the obligation and owns none of its rules. #547 also made the review dispatch lane-dependent — `reviewer` in the change lane, `reviewer-feature` in the feature lane — so the lane buys depth through the runtime rather than through prose an agent may not honour. Four behaviours arrived at #538. It **refuses a change spec still carrying `[NEEDS CLARIFICATION: …]`**, names the line, and returns the ticket to the clarification loop rather than building past an unanswered question: attended, ask; unattended, hold it (`input`, assigned) and put it back in Todo, because a ticket left In Progress on a spec nobody can build is invisible to both the queue and the operator. It **checks the andon cord before any tracker write**. **The orchestrator is the builder by default** — a `dev` sub-agent is dispatched on exactly two conditions, a diff that would flood this context or a feature lane wanting a fresh design context — because a hand-off buys isolation and never independence, and the reviewer's context is fresh whoever built. And after the push, before close, it **reflects**: at most three lines or `none`, naming the wastes the run met by the spine's P2 categories and what should change, each line appended to the improvement ledger, or to the harness's own where it concerns the shipped guidance. `reflect` sits after `tracker_done` deliberately — a ledger append is a tracker write, and putting one between the push and the ticket's own state change would leave shipped work sitting In Review on a failed append. The `dev` role gains the matching sentence in both its files: if the criteria contradict each other or cannot be met honestly, stop and say so, returning it as DEFER, and never edit a test while implementing against it.
 
 #567 fixed the one outlier in that hold-label contract. `build/SKILL.md`'s DEFER-or-spent-budget bullet had applied a single `operator` label to both outcomes, where three other sources already declared `input` authoritative for a DEFER — `review/SKILL.md`'s DEFER bullet, `digest/SKILL.md`'s drain selection, and `tracker/SKILL.md`'s `Holds` section on what the return path selects — and `/digest --drain` selects `input` and nothing else. A DEFER held under `operator` therefore never reached the console built to return it, the andon cord's own failure mode. The bullet is now two, at `build/SKILL.md:69-70`: *DEFER* applies the `input` label and states outright that `input` is DEFER's whole return path; *a spent cycle budget* applies `operator` instead, still assigns the operator, and names `/digest`'s *At the keyboard* section as its own path, incorporating the DEFER bullet's preserve-and-route obligations (integrate nothing, commit and push, comment the reason and carried findings, route findings by class, leave the worktree) by reference rather than restating them. No guard pins the wording — a regex over prose is the #511 failure ADR 0017 D5 forbids — so AC-3 was verified by use instead: three rounds of fresh contexts given only the shipped bullets and the spine's hold contract, the pair in each round differing only in the case put to it, all six answering `input` and `operator` correctly; rounds 1 and 2 each surfaced and fixed a defect in prose written minutes earlier (a `so`-clause that read as a warning against the very label it names, and a `preserve and route` phrase that did not import `Integrate nothing` or the assignment), round 3 introduced nothing and found none of this change's making. The file is otherwise untouched and now sits at 70 lines — the #538 criterion's own ceiling, two over the 68 the sentence above measured at #547's tree — with no live guard enforcing it in either direction. The version this cycle raised (`8.0.0` → `8.1.0`) stayed at the minor floor: the fix restores `build/SKILL.md` to a label contract three other sources already declared, so nothing new surfaces to a consuming repo as a decision.
 
@@ -426,7 +497,8 @@ no longer decides anything: the marker it read, the `merge-tree --write-tree`
 recomputation, the five-fact second acceptance path, the `scope` field and the scoped
 re-gate, `scripts/harness-refs.js`'s `refs/harness/*` namespace with its gate records,
 claims and green pointer, and `scripts/land.js`'s `plan` / `finish` / `done` are all
-deleted. `skills/build/references/re-bind.md` carries the three cases as prose and
+deleted. #622 then deleted `skills/build/references/re-bind.md`, which had carried the
+three cases as prose, and folded the landing into `/build`'s ship step;
 `skills/worktree-isolation` branches from the fetched integration branch and gates it,
 where it used to read the green pointer and fall back.
 
@@ -980,7 +1052,7 @@ Three-role topologies remain available to repos that deploy to staging — the r
 - **No test holds the assessment guidance recorded above.** The scope wiring, report shapes, retention field, and scope-admission rule are prose in the plugin surface. The native packaging added in this range has separate manifest, generated-artifact, installed-layout, hook-contract, and landing-page guards; none of those measures the assessment prose. That is D5 working as written, not an oversight.
 - **The test lock sees three tools, not every write.** `hooks/test-lock-guard.js` matches `Write`, `Edit` and Codex's `apply_patch`; a test rewritten through `Bash` — `sed -i`, a heredoc, `git checkout -- tests/` — is not seen, and the lock is released by one edit to a gitignored file. Both are deliberate (the alternative is parsing arbitrary shell, and a refusal with no escape wedges a session), and both mean the hook raises the cost of the cheapest cheat rather than closing it. The backstops are the reviewer's explicit item per test-file diff and the declared gate; whatever a repository runs server-side is its own (ADR 0022 point 2).
 - **The test lock's Codex half is unprobed.** `.codex/config.toml` registers no hooks at all, so on Codex none of the four guards runs from this repo's configuration. Its `apply_patch` handling and `turn_id` pass-through match `push-target-guard.js`'s shipped shape, and `tests/unit/test_test_lock_hook.py` exercises both over synthetic Codex payloads; what is recorded nowhere in this tree is whether Codex honours `permissionDecision: "deny"`. Stated as a limitation rather than measured.
-- **Nothing states when the lock is released, and one stage plausibly needs it to be.** `tests_locked` is set `true` in the write that enters `implement`, and the only documented way back is a test that turns out wrong returning the run to `stage: "tests"`. Reconciliation happens later in the same run, so a merge conflict *inside* a test file is resolved under an armed lock: the hook refuses the `Edit`, and the escape its message names mislabels where the run actually is. No shipped guidance covers the case. T3 (#539) built the reconcile-and-land loop this would land in and did **not** resolve it, and #621 did not either: `skills/build/references/re-bind.md` now instructs the builder to resolve a conflicted merge by hand, which is precisely an edit to a test file under a lock nothing releases. Neither the run file's stage vocabulary nor `hooks/test-lock-guard.js` changed at #621, so the case is still reachable by the shipped landing procedure and still unowned.
+- **Nothing states when the lock is released, and one stage plausibly needs it to be.** `tests_locked` is set `true` in the write that enters `implement`, and the only documented way back is a test that turns out wrong returning the run to `stage: "tests"`. Reconciliation happens later in the same run, so a merge conflict *inside* a test file is resolved under an armed lock: the hook refuses the `Edit`, and the escape its message names mislabels where the run actually is. No shipped guidance covers the case. T3 (#539) built the reconcile-and-land loop this would land in and did **not** resolve it, and neither #621 nor #622 did: the instruction to resolve a conflicted merge by hand moved from `skills/build/references/re-bind.md` into `skills/build/SKILL.md`'s ship step and `references/reconcile.md`, which is still precisely an edit to a test file under a lock nothing releases. Neither the run file's stage vocabulary nor `hooks/test-lock-guard.js` changed at either ticket, so the case is still reachable by the shipped landing procedure and still unowned.
 - **The build workflow's length is a read, not a guard.** #538's criterion set a 70-line bound on `skills/build/SKILL.md`, which measured 68 at #547's tree; the measurement is `wc -l` and direct review, and no test asserts it — law 2's subject is code, and P2 refuses a guard over prose, so a wording or length predicate over a skill file would be the thing the spine was amended to stop (#511, #520). What *is* mechanical is the structural half: `tests/unit/test_build_lifecycle_order.py` reads the `harness:build-lifecycle` block out of the index, so a rewrite that drops it goes red. `tests/unit/test_teardown_guidance.py` once held this skill's delegation to `worktree-isolation`'s cleanup contract the same way; #615 retired it, mutation-confirmed vacuous — a fully reversed cleanup obligation kept all seven pinned tokens and both tests still passed — so that delegation now rests on review alone, the same standing the bound itself has: a reviewer's read at a named tree.
 - **Workflow invocation control is asserted from a host reference, not measured here.** Four of the nine workflow skills carry `disable-model-invocation: true` — `capture`, `init`, `promote`, `propose` — and `build`, `review`, `routine`, `drain`, and `assess` deliberately do not, because each answers to a caller that is not a human at a prompt: `/routine` drives `/build`, `/build` drives the review stage, `routine` itself is fired by an unattended scheduled run, `/assess` drives `/drain` for the improvement ledger, and a work-pull run falls back to `/assess code`. The probe behind that split read the host's own frontmatter and skills references; nothing in this tree executes a host dispatch, so what the flag does at runtime is the host's contract, recorded here rather than tested. #537's criterion said "six"; the shipped set was seven, because `routine` had been swept into the operator-only bucket by category rather than by intent. #564 (2026-09-06) is the first correction: a scheduled run was observed refused on `Skill(routine)`, silently shipping nothing, and removing the flag returned the count to six. #565 is the second: `digest` and `assess` carried the identical contradiction — a scheduled run refused on `Skill(digest)`, and `lab-book-work-pull`'s `/assess code` fallback refused the same way — and removing both flags returned the count to four. `tests/unit/test_workflow_skill_invocability.py` now holds the composed set (`routine`, `build`, `review`, `drain`, `assess`) against the flag, with the remaining four as its control, both read from the index. #627 is a rename inside that set rather than a third correction: `drain` took `digest`'s place with its own caller — `/assess` step 5 — recorded in the module's header, and no observed refusal drove it. The flag never enforced operator presence for `digest`'s drain half either; the rule in the skill's body does, and the rename left that rule where it was.
 - **The improvement ledger and the tracker behaviours leave almost no footprint in this tree.** D7's sweep, holds and board writes are tracker-side; what is in the tree is `skills/tracker/` and the two transport references beneath it, and the ledger's own contents live on one standing issue found by its `improvement-ledger` label.
