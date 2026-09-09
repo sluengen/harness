@@ -12,7 +12,7 @@
 {"query":"can you explain what a detached HEAD actually means and why git keeps warning me about it","should_trigger":false},
 {"query":"the push guard refused my push saying no gate marker covers the tree. what does that mean and how do i get past it","should_trigger":false},
 {"query":"write me the acceptance criteria for a ticket that makes the retention rule configurable","should_trigger":false},
-{"query":"review this diff for me, it changes how the claim TTL is computed in harness-refs.js","should_trigger":false},
+{"query":"review this diff for me, it changes how the declared paths are resolved in harness-config.js","should_trigger":false},
 {"query":"our CI runs out of disk because docker images pile up on the runners. what's the standard way to handle that","should_trigger":false},
 {"query":"i need to isolate the database between test runs so they stop interfering with each other","should_trigger":false},
 {"query":"which ticket should the unattended loop pick next given there's an open P1 bug that's already assigned","should_trigger":false},
