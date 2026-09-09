@@ -37,8 +37,8 @@ never see this machine. A guard reading `Path.glob` passes on the checkout that
 wrote the page even when the file was never added, which answers a question
 nobody asked. Both operands here read the index — the tree side through
 :func:`tests._gitutil.tracked_files_under`, the page side through
-:func:`indexed_text` — which is the same thing `git write-tree` certifies and
-the gate marker is named after.
+:func:`indexed_text` — which is the same thing `git write-tree` resolves to the
+tree a commit would carry.
 
 **How this guard is proved, and the one thing that cannot use the usual
 instrument.** The predicate half is mutation-proved by ``scripts/mutate.py``:

@@ -19,9 +19,9 @@ hand-rolling dotfile / ``__pycache__`` skips.
 
 :func:`indexed_text` is the same choice made about the *other* operand of a
 comparison: the bytes git has staged for a path, never ``Path.read_text``.
-``git write-tree`` certifies the index and the gate marker is named after the
-tree it produces, so a guard reading the working file certifies bytes that may
-never be committed (#482). It moved here from
+``git write-tree`` resolves the index to the tree a commit would carry, so a
+guard reading the working file certifies bytes that may never be committed
+(#482). It moved here from
 ``tests/unit/test_landing_page_inventory.py`` at #490, when the shipped Stop
 hook's source became a second subject needing it.
 
@@ -125,10 +125,9 @@ def indexed_bytes(path: str, *, repo_root: Path = _DEFAULT_REPO_ROOT) -> bytes:
 def indexed_text(path: str, *, repo_root: Path = _DEFAULT_REPO_ROOT) -> str:
     """The bytes git has **staged** for ``path``.
 
-    Not ``Path.read_text``. ``git write-tree`` certifies the index, the gate
-    marker is named after the tree that write-tree produces, and a review
-    verdict binds to that same oid — so the index is the only operand that
-    answers "what will ship". Reading the working file instead certifies bytes
+    Not ``Path.read_text``. ``git write-tree`` resolves the index to the tree a
+    commit would carry — so the index is the only operand that answers "what
+    will ship". Reading the working file instead certifies bytes
     that may never be committed: measured at the #482 review, a tree staging a
     page with a skill deleted, with the correct page restored on disk unstaged,
     passed that module 12/12 while ``git write-tree`` reported an oid whose page
