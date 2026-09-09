@@ -85,6 +85,101 @@ Per-file `guidance:` pins are gone. The plugin has one version; a repo that
 needs to diverge from a skill forks that skill locally (a repo-local skill
 shadows nothing — it is simply also present) rather than pinning a file.
 
+## Retiring the vendored gate assets (2026-09-09, plugin v11)
+
+**Delete this section once `calibrate` and `nano-erp` have both adopted.** It
+describes a one-off transition between two plugin versions, not a standing
+procedure; left standing after its subject is gone it becomes a note that
+instructs a repo to remove files it never had.
+
+ADR 0022 point 1 stops the plugin writing executables into a consumer:
+`gate-marker.js`, `harness-config.js`, `scripts/package.json` and the
+`verify.sh` skeleton. The rule is **ownership, not execution** — `verify.sh` is
+disowned rather than removed, and remains the gate you run at landing.
+
+**Nothing breaks on the update, and nothing is urgent.** A repo that does
+nothing keeps a working gate: `verify.sh`'s public branch execs the local
+`gate-marker.js`, which resolves `commands.verify`, spawns the internal branch
+and runs the stages, writing a marker no surviving hook reads. The cost is a
+redundant hop and some dead files, not a red gate. Simplify on your own
+schedule.
+
+The transition itself is the consumer's to perform. Paste the prompt below into
+a session in the repo being adapted.
+
+`````markdown
+The harness plugin no longer writes or refreshes the gate helpers in this
+repository (ADR 0022 point 1). Adapt this repo to own its gate outright.
+
+Nothing here is urgent: the vendored chain still works, so stopping halfway
+costs a redundant hop rather than a red gate. The one state to avoid is a
+`verify.sh` that calls a file which has been deleted.
+
+### 1. Find what is actually here, before changing anything
+
+Placements differ between repos, and this one may have moved since this
+prompt was written. Do not assume a path.
+
+```bash
+grep -rn "gate-marker\|harness-config\|HARNESS_GATE_MARKER_RUNNER" \
+  --exclude-dir=.git --exclude-dir=node_modules .
+```
+
+Read every hit. Two things this turns up that a quick reading misses:
+
+- **The helpers sit flat under `scripts/` in some repos and under a prefix
+  such as `scripts/gate/` in others.** Take the paths from the grep.
+- **There is usually more than one caller.** As well as the branch in
+  `verify.sh` that execs `gate-marker.js run`, repos have carried a second
+  `gate-marker.js preflight` call — either further down `verify.sh` on its
+  internal branch, or as an npm script in `package.json` (`"gate:preflight"`)
+  wired into the stage list. A changed-path classifier or file-type map may
+  name the helpers as well, and the repo's own tests may pin them. Every one
+  of those is a caller, and every one must go before the helper does.
+
+### 2. What happens to each artefact
+
+The verbs differ. Getting one wrong is the only real risk in this transition.
+
+| Artefact | What happens | Why |
+|---|---|---|
+| `verify.sh` | **Stays. It is yours now.** Collapse the two branches into one: delete the public branch and the `HARNESS_GATE_MARKER_RUNNER` test, and run the stages directly. | It is still the gate you run at landing. It was never the marker's; it was only wired through it. |
+| `gate-marker.js` | **Delete**, once nothing calls it. | Nothing reads its output. The hooks that did are gone. |
+| `harness-config.js` | **Delete**, once nothing calls it. | Its only caller here was `gate-marker.js`. The plugin's own hooks resolve their copy from the plugin root, never from this repo, so deleting yours cannot affect them. Confirm with the grep first: you may have wired your own callers. |
+| `package.json` beside the helpers | **Judge it.** Delete it if it exists only to pin `"type": "commonjs"` for the vendored pair — its own `"//"` comment usually says so. Keep it if it is the repo's own. | Some repos have one of each: a project `package.json` at the root, and a module-type pin next to the helper. The purpose decides, not the path. |
+| `.git/harness/gate/` | **Remove at leisure.** Already gitignored. | Dead evidence files. |
+
+### 3. The order, which is the part that can break a gate
+
+**Edit first, gate, then delete.** A repo that deletes `gate-marker.js` while
+something still calls it has a broken gate, and that is the one way this
+transition breaks anything.
+
+1. Rewrite `verify.sh` so it runs its stages directly, and remove every other
+   caller the grep found — the trailing `preflight` block, the npm script, the
+   classifier arm.
+2. **Run the gate and read it.** Use whatever this repo declares at
+   `commands.verify` in `harness.yaml`, which may not be `verify.sh` directly.
+   Capture the exit code; never pipe it, because a pipe reports the exit status
+   of the last command in the pipeline and will mask a red gate:
+
+   ```bash
+   <commands.verify> > /tmp/gate.log 2>&1; echo "EXIT=$?"
+   ```
+
+   Green means nothing calls the helpers any more.
+3. Delete the helpers, and the module-type pin if step 2 judged it deletable.
+   Re-run the grep to confirm no reference survives.
+4. **Gate again** and read it. This is the run that licenses the change.
+
+If the repo has tests pinning the vendored chain, they go red at step 3 and
+are deleted with their subject in the same change, not before it.
+`````
+
+This repository ships the prompt and nothing else. It does not enter a
+consumer, run the adaptation, or change any consumer's CI, branch protection
+or billing.
+
 ## Edges from performed migrations
 
 ### From the first migration (nano-erp, 2026-08-18)
