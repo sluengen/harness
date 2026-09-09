@@ -70,10 +70,10 @@ silently at any of them, so each level owes both a sample that it is walked
 empty (``test_a_manifest_that_wires_nothing_fails_loudly``, three refusals
 mutated one at a time). Splitting those across two modules would put the walk's
 samples in a different file from the walk. It is not an outlier here either —
-``test_promotion_step_script.py``, ``test_push_target_guard_hook.py`` and
-``test_gate_evidence_hook.py`` are each longer still, the first by more than
-double. Members rather than a tally, because a tally of files longer than this
-one is falsified by an edit to this one (#484).
+``test_promotion_step_script.py`` and ``test_spine_template_parity.py`` are both
+longer still, the first by more than double. Members rather than a tally, because
+a tally of files longer than this one is falsified by an edit to this one (#484);
+the two members #621 deleted came off this list for that same reason.
 """
 
 # size: the manifest nests four levels — event, matcher group, entry, command —
@@ -265,13 +265,15 @@ def test_the_wired_set_is_live() -> None:
 
     ``craft.md`` → *Floor both measured operands* (#486: ``assert big <= base``
     held at ``0 <= 21`` because the unfloored operand had been emptied). The
-    anchor is a hook wired under ``Stop``, not under ``PreToolUse``, so a walk
-    that read only the first event fails here rather than in the sweep.
+    anchor is a hook wired in the manifest's **second** matcher group, so a walk
+    that stopped after the first fails here rather than in the sweep. It used to
+    anchor on the ``Stop`` event for the same reason; #621 deleted that event, so
+    the deepest nesting the live manifest still exercises is the group.
     """
     wired = manifest_hook_names(_manifest())
-    assert "test-lock-guard" in wired, (
-        f"the manifest walk no longer reaches the Stop event — it yielded "
-        f"{sorted(wired)}"
+    assert "push-target-guard" in wired, (
+        f"the manifest walk no longer reaches the second matcher group — it "
+        f"yielded {sorted(wired)}"
     )
 
 

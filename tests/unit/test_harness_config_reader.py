@@ -1,4 +1,4 @@
-"""#537 AC-2 — one reader serves both hooks and the marker helper.
+"""#537 AC-2 — one reader serves the hooks that read a declaration.
 
 Until this ticket the repo carried **three** hand-rolled readers of the same
 subject: ``declaredBranches`` in ``hooks/push-target-guard.js`` and again in
@@ -11,9 +11,11 @@ holds both of them rather than overturning them silently:
 
 * ``test_hooks_fail_open_is_loud`` and ``test_hooks_module_type`` scan
   ``hooks/*.js`` **non-recursively**, so a subdirectory would be a hole in those
-  guards. The shared reader is therefore at ``scripts/harness-config.js``, beside
-  the marker helper that must also reach it, and those two scans keep their
-  meaning unchanged.
+  guards. The shared reader is therefore at ``scripts/harness-config.js`` rather
+  than under ``hooks/``, and those two scans keep their meaning unchanged. Until
+  #621 the second half of that reason was the marker helper beside it, which had
+  to reach the reader too; the helper is gone and the placement stands on the
+  ``hooks/`` scans alone, as the module's own docblock now records.
 * *"A shared module's own load failure would disarm both enforcement hooks
   together."* That is the risk :func:`test_an_unloadable_reader_leaves_both_hooks_protecting`
   measures directly, by making the module unloadable and asserting each hook

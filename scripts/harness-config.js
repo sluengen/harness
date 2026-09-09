@@ -51,14 +51,13 @@ const path = require("node:path");
 //: consuming repos have not migrated and their hooks must keep working on the
 //: day this lands.
 //:
-//: **The two readers walk this list differently, deliberately.**
-//: :func:`gateCommand` takes the first source that *exists* and refuses if it
-//: does not declare a usable command, because the value decides what may mint
-//: evidence and must fail closed. :func:`readMap` searches on until a source
-//: *declares* the key, because a missing ``branches:`` block falls back to a
-//: conservative set and a repo mid-migration has its declaration in a later
-//: file. Each function's own docstring states its rule; this list is only the
-//: order.
+//: **One reader walks this list, and its rule is its own.** :func:`readMap`
+//: searches on until a source *declares* the key, because a missing ``branches:``
+//: block falls back to a conservative set and a repo mid-migration has its
+//: declaration in a later file. Until #621 a second reader took the first source
+//: that merely *existed* and refused there — that was ``gateCommand``, whose
+//: value decided what could mint evidence, and it left with the marker. Nothing
+//: here fails closed on the first source any more.
 const SOURCES = ["harness.yaml", "AGENTS.md", "CLAUDE.md", "CONTEXT.md"];
 
 //: The two quote characters, written as escapes rather than as themselves. The
@@ -332,12 +331,11 @@ function configSources(top) {
  * **The sources are searched, and the first that declares ``name`` answers.** A
  * source that is readable and simply carries no such block is not an answer of
  * "nothing" — a repo mid-migration has its spine and its ``CONTEXT.md`` side by
- * side, and the block is in one of them. This is deliberately *not* the rule
- * :func:`gateCommand` follows, and the difference is the failure economics, not
+ * side, and the block is in one of them. The rule is the failure economics, not
  * an oversight: a missing ``branches:`` block falls back to a conservative set
- * that over-protects, while an ambiguous gate command decides what may mint
- * evidence and so must fail closed on the first source rather than shop for a
- * second opinion.
+ * that over-protects, which is cheap. The retired ``gateCommand`` stopped at the
+ * first source that existed for the opposite reason — its value decided what
+ * could mint evidence — and that reason left with it at #621.
  *
  * A source that exists but cannot be read, or that declares ``name`` in a
  * spelling this reader cannot parse, is **reported and stepped over** — the

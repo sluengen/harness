@@ -61,7 +61,7 @@ One hook refuses; three advise. The refusal is a PreToolUse hook over an edit to
 
 ## This repo
 
-The **source of the harness plugin**: a spec-driven development process shipped as skills, agents, and hooks, dogfooding itself. Three parts — the guidance surface (the plugin source), the gate (`scripts/verify.sh`: ruff, mypy, pytest with coverage, drift guards, marker write), and the guards (`tests/unit/`, code-behaviour tests under ADR 0017's admission rule). There is no runtime; ADR 0015 retired it, ADR 0017 retired the per-file versioning that followed it.
+The **source of the harness plugin**: a spec-driven development process shipped as skills, agents, and hooks, dogfooding itself. Three parts — the guidance surface (the plugin source), the gate (`scripts/verify.sh`: ruff, mypy, pytest with coverage, drift guards), and the guards (`tests/unit/`, code-behaviour tests under ADR 0017's admission rule). There is no runtime; ADR 0015 retired it, ADR 0017 retired the per-file versioning that followed it.
 
 **Stage: pre-user, pre-revenue. Posture: speed and simplicity; a wrong change costs a revert. Protected: user data, credentials, money.** Rewrite this line the day the product gains a user: the operating context above is read against it.
 

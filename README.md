@@ -115,7 +115,7 @@ both sides.
 
 The plugin's source, dogfooding itself. Three parts: the guidance surface
 (`skills/`, `agents/`, `hooks/`), the gate (`scripts/verify.sh`:
-ruff, mypy, pytest under a coverage floor, drift guards, marker write), and the
+ruff, mypy, pytest under a coverage floor, drift guards), and the
 guards (`tests/unit/`, admitted by ADR 0017's rule — behaviour of executable
 code, properties of the spine, integrity of shipped assets, frontmatter). There
 is no runtime and nothing to install beyond the plugin: ADR 0015 retired the

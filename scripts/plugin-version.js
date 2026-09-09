@@ -21,8 +21,8 @@
  *   - The raise lands inside the tree the gate certifies and the reviewer reads,
  *     so law 3 covers it and no second commit follows the verdict. That is why
  *     it is not in the landing step, which mutates no content file and must not
- *     start: a content edit after the certifying gate voids the marker the
- *     verdict binds to.
+ *     start: a content edit after the certifying gate voids the tree the verdict
+ *     binds to.
  *   - It happens without anyone remembering, which is why it is not a sentence
  *     in a spine.
  *   - It *does the job* rather than detecting that nobody did it, which is why

@@ -39,8 +39,6 @@ script exists where an agent re-deriving the answer each time would drift.
 |---|---|---|
 | `scripts/verify.sh` | Nothing about the model. It is the repo's gate — the thing every other row's evidence comes from, and since #621 the whole of the harness's mechanical assurance. | Never retired while the repo ships code. |
 | `scripts/harness-config.js` | Hand-rolled configuration readers disagree with each other: three of them produced #487, #488 and #510. Narrowed to two exports at #621, both still serving a guard. | One reader is not an assumption about the model; retire only if configuration itself goes. |
-| `scripts/harness-refs.js` | Agents cannot discover another clone's gate result without an object transfer, so a flat ref is the cheap channel. | A host or forge feature publishing per-tree build evidence readable in one call. |
-| `scripts/land.js` | An agent asked to decide the unchanged / clean-merge / conflict landing case from prose will take the wrong branch under pressure, and the wrong branch pushes unreviewed bytes. | A recorded release in which the three cases are taken correctly from prose alone. Bounded: this is the one place where being wrong lands unreviewed code on the integration branch. |
 | `scripts/mutate.py` | A guard test that cannot fail is indistinguishable from one that passes, and nothing else in this repo proves the difference. | The evals in T5 cover guard quality. Harness-local: it is not shipped, and a consuming repo uses its language's ecosystem tool (mutmut, Stryker). |
 | `scripts/_mutate_outcomes.py` | Rides with `mutate.py`. | Same row. |
 | `scripts/build_design_tokens.py` | A hand-copied token value stops tracking its source (ADR 0004). | The design layer goes, or the page stops embedding token values. |
