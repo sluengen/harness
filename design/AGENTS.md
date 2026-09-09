@@ -87,6 +87,19 @@ surface answers all of these:
 Not a judgment call about size or risk: any diff touching a screen, route, view,
 template, or the styles behind one renders evidence before handoff.
 
+**One carve-out, read off the diff rather than predicted.** A **text-only** diff
+renders no evidence: every changed line alters only the characters inside a string
+or text node, and nothing else moves — no element added, removed or reordered, no
+attribute, class, style, token or layout value touched, no conditional introduced.
+The diff answers that on its own, and it is never an assessment of how much the
+change matters.
+
+**Anything else in the diff closes it, and so does one thing beside it:** a string
+whose element constrains its length, such as a capped width, a single-line or
+truncating rule, or a control sized to its label. That string reflows, so it
+captures. An unclear case captures too: the carve-out is the narrow case you can
+point at in the diff, never the benefit of the doubt.
+
 **Render** the changed surface with realistic **seeded** state — synthetic
 throughout, never production data — at the repo's reference widths, at least one
 mid-width, and both sides of every breakpoint the change touches.
