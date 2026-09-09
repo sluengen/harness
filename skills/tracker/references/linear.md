@@ -52,7 +52,7 @@ LINEAR 'query { issue(id:\"<issue-id>\") { identifier title description url stat
 LINEAR 'query { issues(filter: { team: { key: { eq: \"<team-key>\" } }, state: { name: { eq: \"Todo\" } } }) { nodes { identifier title } } }'
 ```
 
-**Pull the held pile** — the set `/digest --drain` clears. Both conditions, and the fields a triage read needs; add a `project` clause to the same filter, matching on the name `repo.project` gives, when that scope is set:
+**Pull the held pile.** Both conditions — the hold label and the operator's own assignment — and the fields a triage read needs; add a `project` clause to the same filter, matching on the name `repo.project` gives, when that scope is set:
 ```bash
 LINEAR 'query { issues(filter: { team: { key: { eq: \"<team-key>\" } }, labels: { name: { eq: \"input\" } }, assignee: { isMe: { eq: true } } }) { nodes { identifier title url description updatedAt } } }'
 ```
@@ -116,6 +116,18 @@ LINEAR 'query { viewer { id name } }'
 **Comment** (PR links, blocker notes):
 ```bash
 LINEAR 'mutation { commentCreate(input: { issueId: \"<issue-id>\", body: \"...\" }) { success } }'
+```
+
+**Hold** — comment, label, assign; three writes, per `tracker` → *`hold`*. Use `issueAddLabel`, which adds one label without touching the rest: a bare `labelIds` on `issueUpdate` **replaces** the whole set and drops the `assurance:` label with it.
+```bash
+LINEAR 'mutation { commentCreate(input: { issueId: \"<issue-id>\", body: \"...\" }) { success } }'
+LINEAR 'mutation { issueAddLabel(id: \"<issue-id>\", labelId: \"<hold-label-uuid>\") { success } }'
+LINEAR 'mutation { issueUpdate(id: \"<issue-id>\", input: { assigneeId: \"<user-uuid>\" }) { success } }'
+```
+
+Read all three back before reporting the hold; `success` says only that the call ran:
+```bash
+LINEAR 'query { issue(id: \"<issue-id>\") { assignee { id } labels { nodes { name } } comments { nodes { id } } } }'
 ```
 
 State, team, and label IDs are **resolved at runtime** from the queries above — the same call for every Linear workspace, no per-repo setup. `harness.yaml` carries an ID as an *override* in exactly two cases, each named where it applies above: a custom or renamed state the `type` enum cannot disambiguate, and a team key for the ambiguous-workspace case (`tracker_address.team`, [Resolving the team](#resolving-the-team)); it is not where the standard states or the unambiguous team live.

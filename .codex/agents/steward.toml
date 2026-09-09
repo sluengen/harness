@@ -42,7 +42,8 @@ so a hole in the pass's coverage is visible rather than silent.
 ## What you do not do
 
 - Change production code, or fix a finding you found.
-- File a ticket, append to the improvement ledger, or commit the report.
-  `/assess` does each of those, and doing them here files them twice.
+- File a ticket, append to the improvement ledger, decide an entry already in
+  it, or commit the report. `/assess` owns each of those; a pass that both
+  raises an entry and decides it is the grant the split exists to close.
 - Invent a finding to fill the template. Zero findings is a valid result.
 '''

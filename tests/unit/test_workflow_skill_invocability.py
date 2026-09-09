@@ -18,6 +18,14 @@ callers refused on the operator's host at the time — two scheduled tasks firin
 ``/harness:digest``, and a work-pull task falling back to ``/assess code`` — so
 the outage #564 fixed for ``routine`` had already happened twice more.
 
+#627 retired ``digest`` into ``drain`` and it inherits the membership rather
+than the reasoning: ``digest``'s caller was a scheduled run firing the report
+half, and ``drain`` has no report half to schedule. Its caller is ``/assess``,
+which invokes it to clear the improvement ledger — a composing caller of the
+same kind as ``/build`` firing ``review``. The flag never enforced operator
+presence for ``digest``'s drain either; the rule in the skill's body does, and
+that is unchanged by the rename.
+
 Frontmatter is admissible guard subject matter under ADR 0017 D5. The flag is
 a *declaration*, and this asserts the declaration — the refusal it causes lives
 in the host, not in this tree.
@@ -46,7 +54,7 @@ _FLAG = re.compile(r"^disable-model-invocation:\s*(\S+)\s*$", re.MULTILINE)
 
 # Named individually because the membership *is* the contract, not a proxy for
 # one: each is driven by a non-human caller, and the reason differs per member.
-_COMPOSED = {"routine", "build", "review", "digest", "assess"}
+_COMPOSED = {"routine", "build", "review", "drain", "assess"}
 
 
 def _frontmatter(name: str) -> str:
@@ -66,7 +74,7 @@ def _workflow_skills() -> set[str]:
 
 
 def test_composed_workflow_skills_do_not_disable_model_invocation() -> None:
-    """#564 AC-1, #565 AC-1 — a scheduled or composing caller can fire each."""
+    """#564 AC-1, #565 AC-1, #627 AC-4 — a scheduled or composing caller can fire each."""
     workflows = _workflow_skills()
     assert workflows >= _COMPOSED, (
         f"composed set names a skill that is not a workflow: {_COMPOSED - workflows}"
