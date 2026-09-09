@@ -13,18 +13,33 @@ design system, this skill is the system itself.
 ## The assets, and where they go
 
 **Destination: `paths.design_system`, as `harness.yaml` declares it.**
-`/harness:hydrate` step 11 copies the contents of this skill's `assets/`
-directory there, and **only where that destination is absent** — a repo that
-already has a design directory keeps it untouched, whole. Copied bytes are the
-repo's from that moment: no later hydration rewrites one, which is what keeps
-this inside ADR 0022 point 1, whose permitted pattern is exactly a generator
-copied out once and owned thereafter by the consumer.
+`/harness:hydrate` step 11 copies this skill's `assets/` there **file by file,
+each one only where its own destination path is absent.** That is the
+workflow's root rule rather than an exception to it — a file that does not exist
+has no repo-owned bytes to lose, and one that does is never rewritten. Copied
+bytes are the repo's from that moment: no later hydration rewrites one, which is
+what keeps this inside ADR 0022 point 1, whose permitted pattern is exactly a
+generator copied out once and owned thereafter by the consumer.
 
-**One file under `assets/` is not part of the copy: `AGENTS.md`.** It is the
-Codex twin of the path-scoped rule, and **step 5 already seeds it** into the
-same directory from `templates/rules/design-system.md`, with the preamble that
-host needs. Two steps writing one path is a collision, not a redundancy; step 5
-owns it.
+**Per file, not per directory, and the distinction is load-bearing.** Step 5
+runs earlier in the same layer-on run and seeds `AGENTS.md` — the Codex twin of
+the path-scoped rule — *into this very directory*. A copy that asked whether the
+destination **directory** was absent would therefore find it present in every
+ordinary run, copy nothing, and leave the consumer an `AGENTS.md` and no tiers
+while the run reported success. Asking per file is what makes the two steps
+compose.
+
+**`AGENTS.md` needs no special case, and is still step 5's.** Step 5 writes it
+first, so the per-file rule finds it present and skips it. Nothing here may copy
+it ahead of step 5: this skill's copy of that file is the harness's own, carrying
+this repo's preamble, while step 5 writes the consumer's from
+`templates/rules/design-system.md`.
+
+**A repo that already owns a design system keeps every file of it** and receives
+only the ones it lacks. Where its layout differs from these eight tiers, that
+means it receives tiers it has no use for beside its own — visible in the run's
+report, owned by the repo, and removable. The alternative, skipping the whole
+copy on any pre-existing directory, is the failure two paragraphs up.
 
 | Asset | What it is |
 |---|---|

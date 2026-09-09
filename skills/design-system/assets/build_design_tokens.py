@@ -55,18 +55,23 @@ DESIGN_ROOT = Path(__file__).resolve().parent
 TOKENS_DEFAULT = DESIGN_ROOT / "03-tokens" / "tokens.json"
 
 
-def _repo_root() -> Path:
-    """The nearest ancestor carrying ``harness.yaml``, else the design root's parent.
+def _repo_root(design_root: Path = DESIGN_ROOT) -> Path:
+    """The nearest ancestor of ``design_root`` carrying ``harness.yaml``.
 
     The design directory's depth is configuration (``paths.design_system``), so a
     fixed number of ``parent`` hops is wrong in every repo but the one it was
-    written for. The fallback keeps this importable in a tree that has no
-    ``harness.yaml`` at all.
+    written for. *Nearest*, not outermost: a worktree checked out inside another
+    checkout must resolve to its own root. Falls back to the design directory's
+    parent where no ancestor declares one, which keeps this importable in a tree
+    that has been hydrated by nothing.
+
+    Takes its start path so it can be driven against a real directory layout;
+    the module constant below is fixed at import and cannot be re-pointed.
     """
-    for candidate in DESIGN_ROOT.parents:
+    for candidate in design_root.parents:
         if (candidate / "harness.yaml").is_file():
             return candidate
-    return DESIGN_ROOT.parent
+    return design_root.parent
 
 
 REPO_ROOT = _repo_root()

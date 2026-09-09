@@ -182,7 +182,9 @@ def test_gate_typechecks_every_python_tree_the_repo_owns() -> None:
     the token builder into ``skills/design-system/assets/``, where the design
     system it resolves now lives. A lingering target with no Python files would
     make mypy fail outright; a dropped one would leave a tree this repo runs and
-    ships untyped.
+    ships untyped. The spine's ``commands.typecheck`` promises the same targets,
+    and #626 moved it in step with this stage: an agent running the declared
+    command must not get a clean result over a tree the gate would redden.
     """
     stages = [
         line.strip()

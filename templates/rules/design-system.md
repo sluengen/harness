@@ -35,8 +35,11 @@ at #547 for that reason.*
 If you are about to write a visual value by hand, stop and do this lookup first.
 
 **No system yet is a gap to fill, not a licence to hardcode.** Where
-`paths.design_system` is unset or names a location with nothing at it, stand one up
-from the plugin's `templates/design-system.md` scaffold and set the path. An
+`paths.design_system` is unset or names a location with nothing at it, set the path and
+run `/harness:hydrate`, which copies the `design-system` skill's assets there — the
+eight tiers, the token source and the token builder — and they are yours from that
+moment. `templates/design-system.md` is the contract that tree implements, and the
+reference for standing one up by hand where hydration is not available. An
 external package you have yet to install is not a missing system.
 
 ## Tokens and primitives

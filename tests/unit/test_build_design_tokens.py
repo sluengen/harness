@@ -918,3 +918,80 @@ def test_check_cli_exits_nonzero_on_a_hand_copied_token_value(tmp_path: Path) ->
         f"{result.returncode}:\n{result.stdout}\n{result.stderr}"
     )
     assert "var(--product-ink)" in result.stdout + result.stderr
+
+
+# #626 — the repo-root walk, the only new logic the relocation introduced
+#
+# The builder moved out of `scripts/` to travel with the design system it
+# resolves, and its token source became a sibling lookup. Its *page* default
+# still needs a repo root, and the design directory's depth is configuration
+# (`paths.design_system`), so a fixed number of `parent` hops is right in
+# exactly one repo. The walk is what the skill's portability claim rests on:
+# one copy serving a design directory nested under `skills/` here and a
+# repo-root `design/` in a consumer. These drive the resolution against real
+# directory layouts rather than the module-level constant, which is fixed at
+# import and cannot be re-pointed.
+
+
+def test_the_repo_root_is_the_nearest_ancestor_carrying_harness_yaml(
+    tmp_path: Path,
+) -> None:
+    """A design directory nested several levels down still finds the root."""
+    root = tmp_path / "repo"
+    (root / "skills" / "design-system" / "assets").mkdir(parents=True)
+    (root / "harness.yaml").write_text("repo:\n  name: nested\n", encoding="utf-8")
+
+    found = bdt._repo_root(root / "skills" / "design-system" / "assets")
+
+    assert found == root, (
+        f"expected the walk to stop at {root}, the nearest ancestor carrying "
+        f"harness.yaml; it returned {found}"
+    )
+
+
+def test_a_repo_root_design_directory_resolves_the_same_way(tmp_path: Path) -> None:
+    """The consumer layout: one hop up, not three. Same code, no configuration."""
+    root = tmp_path / "consumer"
+    (root / "design").mkdir(parents=True)
+    (root / "harness.yaml").write_text("repo:\n  name: consumer\n", encoding="utf-8")
+
+    found = bdt._repo_root(root / "design")
+
+    assert found == root, (
+        f"expected {root} for a repo-root design/ layout; got {found}. A fixed "
+        f"parent count would serve one of these two layouts and not the other."
+    )
+
+
+def test_no_harness_yaml_anywhere_falls_back_to_the_design_directorys_parent(
+    tmp_path: Path,
+) -> None:
+    """The fallback keeps the module importable in a tree that declares nothing.
+
+    Reached whenever the walk runs out of ancestors — an unhydrated repo, or the
+    design tree copied somewhere on its own.
+    """
+    loose = tmp_path / "somewhere" / "design"
+    loose.mkdir(parents=True)
+
+    found = bdt._repo_root(loose)
+
+    assert found == loose.parent, (
+        f"expected the fallback {loose.parent} when no ancestor carries "
+        f"harness.yaml; got {found}"
+    )
+
+
+def test_the_nearest_harness_yaml_wins_over_a_higher_one(tmp_path: Path) -> None:
+    """Nearest, not outermost — a worktree inside a checkout is the live case."""
+    outer = tmp_path / "outer"
+    inner = outer / "inner"
+    (inner / "design").mkdir(parents=True)
+    (outer / "harness.yaml").write_text("repo:\n  name: outer\n", encoding="utf-8")
+    (inner / "harness.yaml").write_text("repo:\n  name: inner\n", encoding="utf-8")
+
+    found = bdt._repo_root(inner / "design")
+
+    assert found == inner, (
+        f"expected the nearest root {inner}, not the outer {outer}; got {found}"
+    )

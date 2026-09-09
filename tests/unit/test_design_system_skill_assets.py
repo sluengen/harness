@@ -23,6 +23,8 @@ all*. A tier deleted from both disk and index passes that guard and fails this o
 
 from __future__ import annotations
 
+import re
+
 from tests._gitutil import tracked_files_under
 from tests.unit._prose import REPO_ROOT
 
@@ -43,6 +45,22 @@ TIERS = (
     "05-patterns",
     "06-archetypes",
     "07-flows",
+)
+
+
+#: ``paths:`` block, then its ``design_system:`` member. Anchored to the nesting
+#: rather than to a bare ``design_system:``, because ``layers:`` carries a member
+#: of that exact name — a scan that keeps the last match reads whichever block
+#: `harness.yaml` happens to list second, so reordering the file would have it
+#: comparing the boolean ``true`` against a directory.
+#: ``tests/unit/test_marketplace_provenance.py``'s ``_SPINE_GITHUB_REPO`` documents
+#: the same failure on the same file and is the shape copied here, including its
+#: tolerance for a quoted value and a trailing ``#`` comment: both spellings occur
+#: on sibling lines of this yaml, and a bare ``\S+`` against an end anchor matches
+#: neither.
+_PATHS_DESIGN_SYSTEM = re.compile(
+    r"^paths:\s*$\n(?:^[ \t]+.*$\n)*?^[ \t]+design_system:[ \t]*(?P<path>[^#\n]+?)[ \t]*(?:#.*)?$",
+    re.MULTILINE,
 )
 
 
@@ -101,12 +119,11 @@ def test_this_repo_consumes_the_assets_where_it_declares_them() -> None:
     than a second copy of it — two copies is the drift this system exists to
     remove.
     """
-    declared = ""
-    for line in (REPO_ROOT / "harness.yaml").read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if stripped.startswith("design_system:") and "paths" not in stripped:
-            declared = stripped.split(":", 1)[1].split("#")[0].strip()
-    assert declared, "harness.yaml declares no paths.design_system"
+    match = _PATHS_DESIGN_SYSTEM.search(
+        (REPO_ROOT / "harness.yaml").read_text(encoding="utf-8")
+    )
+    assert match, "harness.yaml declares no paths.design_system"
+    declared = match.group("path").strip("\"'")
 
     resolved = (REPO_ROOT / declared).resolve()
     assert resolved == (REPO_ROOT / ASSETS).resolve(), (

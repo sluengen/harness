@@ -41,7 +41,7 @@ script exists where an agent re-deriving the answer each time would drift.
 | `scripts/harness-config.js` | Hand-rolled configuration readers disagree with each other: three of them produced #487, #488 and #510. Narrowed to two exports at #621, both still serving a guard. | One reader is not an assumption about the model; retire only if configuration itself goes. |
 | `scripts/mutate.py` | A guard test that cannot fail is indistinguishable from one that passes, and nothing else in this repo proves the difference. | The evals in T5 cover guard quality. Harness-local: it is not shipped, and a consuming repo uses its language's ecosystem tool (mutmut, Stryker). |
 | `scripts/_mutate_outcomes.py` | Rides with `mutate.py`. | Same row. |
-| `scripts/build_design_tokens.py` | A hand-copied token value stops tracking its source (ADR 0004). | The design layer goes, or the page stops embedding token values. |
+| `skills/design-system/assets/build_design_tokens.py` | A hand-copied token value stops tracking its source (ADR 0004). | The design layer goes, or the page stops embedding token values. |
 | `scripts/promotion-step.sh` | CI logic inside a workflow `run:` block cannot be executed by a test. | The forge runs a workflow step locally under test. |
 | `scripts/setup-cloud-env.sh`, `scripts/session-start-bootstrap.sh` | A fresh container does not carry the toolchain, and a run that discovers that mid-gate reports a red tree for an infrastructure reason. | The execution environment ships the toolchain. |
 | `scripts/package.json` | Node's module resolution needs the declaration. | Not a model assumption. |

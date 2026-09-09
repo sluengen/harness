@@ -21,7 +21,7 @@ commands:
   bootstrap: "bash scripts/setup-cloud-env.sh"   # provisions uv/python/node/gh, then install
   install: "uv sync --extra dev"
   lint: "uv run --extra dev ruff check ."
-  typecheck: "uv run --extra dev mypy scripts"
+  typecheck: "uv run --extra dev mypy scripts skills/design-system/assets"
   test: "uv run --extra dev pytest"
   test_one: "uv run --extra dev pytest <path/to/test_file.py::test_name>"
   verify: "bash scripts/verify.sh"
