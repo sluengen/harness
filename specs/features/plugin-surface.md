@@ -1392,6 +1392,45 @@ the hero regex or adding a card for the gate would restructure the hero, which t
 scope excluded; the residual stands until a change that touches the hero's shape for some
 other reason picks it up.
 
+### Creating a worktree reclaims closed-ticket ones first (#610)
+
+`skills/worktree-isolation/SKILL.md` → *Creating the worktree* now runs a reclaim
+before every branch cut: list `git worktree list`'s entries, match each to a
+ticket by the `<repo>-<task-id>` naming convention, and remove the ones whose
+ticket is closed — checking first for unsaved or unpushed work, since removal
+destroys both, and leaving standing every worktree whose ticket is open or
+whose name matches none, since another run may be working in it. This is
+part (b) of #610; part (a), the DEFER-resume rule, was already `/build`'s own
+*Resuming a held or deferred ticket* bullet, landed at #623 and recorded
+above.
+
+**Why an instruction at cut time, and not a sweeper.** ADR 0022 point 1
+forecloses a plugin-owned executable persisting in a consumer, and a periodic
+sweep needs a scheduler the plugin does not own; the worktree-cut moment is
+the one every run already passes through with a fetched remote and the
+tracker in hand. The #582 sweep this ticket cites found six of seven
+`work-<n>` worktrees on disk belonged to already-closed tickets — the
+built-but-never-torn-down case *Cleanup* does not reach, because *Cleanup*
+runs only on a task that ships.
+
+**The reclaim stays on the git side, so it does not repeat *Cleanup*'s
+refusal.** *Cleanup*, below in the same file, forbids selecting a *resource*
+— a container, simulator, volume or service — by a host-wide sweep or
+another worktree's name, because nothing records this run as that resource's
+owner. The new text removes only the worktree directory and git's own
+administrative records, using *Cleanup*'s own commands, and leaves every
+resource standing, reported rather than torn down: ownership there rests on
+the tracker's own ticket state, not a name guess, so the two rules govern
+different objects rather than contradicting each other.
+
+**No test**: prose reviewed and used directly, law 2's subject is code. The
+brief behind this ticket's build cited three stale worktrees observed live
+on this host; none reproduce here — `git worktree list` carries only the
+main checkout, `harness-610`, and one unmatchable agent worktree, all
+correctly left standing by a walk of the new instruction against them — so
+the change rests on the #582 finding the ticket already records rather than
+on a reproduction this session could not repeat.
+
 ## Data model
 
 **No persistent state beyond the tree itself, since #621.** The gate marker under `<git-common-dir>/harness/gate/` and the `refs/harness/*` namespace #539 added — gate records, claims and the green pointer — are both deleted, and nothing writes either. The one file that survives is `.harness/run.json`, which is gitignored, records where a run is rather than what is true of the tree, and is read by exactly one hook. This was never a run ledger (ADR 0015) and it is less of one now.
