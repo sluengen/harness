@@ -26,7 +26,7 @@ Keep the taxonomy flat and small. The hold labels and what they mean are the spi
 
 ## A merged PR auto-transitions every ticket it names
 
-Linear's GitHub integration links an issue to a PR when the ticket id appears in the PR **branch**, **title**, **body**, or a **commit** message, and moves it to **Done** automatically on merge. This is integration behaviour, not a lifecycle step: `/build`'s ship step transitions state on purpose; the integration does it on sight of an id. The deliberate-linking rule is in *Shared rules* below.
+Linear's GitHub integration links an issue to a PR when the ticket id appears in the PR **branch**, **title**, **body**, or a **commit** message, and moves it to **Done** automatically on merge. This is integration behaviour, not a lifecycle step: the landing stage transitions state on purpose; the integration does it on sight of an id. The deliberate-linking rule is in *Shared rules* below.
 
 ## Accessing Linear (GraphQL via curl)
 

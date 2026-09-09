@@ -1,7 +1,7 @@
 """#564, #565 — the composed workflow skills stay reachable by a model caller.
 
 ``disable-model-invocation: true`` makes a skill answer only to a human typing
-its slash command; the ``Skill`` tool refuses it. Five workflow skills are
+its slash command; the ``Skill`` tool refuses it. Six workflow skills are
 driven by a caller that is *not* a human at a prompt, so the flag breaks them:
 
 ``routine`` is fired by an unattended scheduled run — the standing prompt its
@@ -25,6 +25,15 @@ which invokes it to clear the improvement ledger — a composing caller of the
 same kind as ``/build`` firing ``review``. The flag never enforced operator
 presence for ``digest``'s drain either; the rule in the skill's body does, and
 that is unchanged by the rename.
+
+``promote`` joined at #623, which split the lifecycle at PASS and gave it the
+landing half. Its caller is ``/routine``: an unattended tick that cannot land is
+a tick that builds and never ships, which is the same outage #564 recorded for
+``routine`` itself. The flag was defensible while ``/promote`` did nothing but
+the release hop an operator asks for by name; it refuses the loop the moment the
+skill owns landing. The release hop stays operator-shaped by the rule in the
+skill's body — the no-no-arg form and the human who merges the release PR — not
+by the frontmatter.
 
 Frontmatter is admissible guard subject matter under ADR 0017 D5. The flag is
 a *declaration*, and this asserts the declaration — the refusal it causes lives
@@ -54,7 +63,7 @@ _FLAG = re.compile(r"^disable-model-invocation:\s*(\S+)\s*$", re.MULTILINE)
 
 # Named individually because the membership *is* the contract, not a proxy for
 # one: each is driven by a non-human caller, and the reason differs per member.
-_COMPOSED = {"routine", "build", "review", "drain", "assess"}
+_COMPOSED = {"routine", "build", "review", "drain", "assess", "promote"}
 
 
 def _frontmatter(name: str) -> str:
@@ -74,7 +83,7 @@ def _workflow_skills() -> set[str]:
 
 
 def test_composed_workflow_skills_do_not_disable_model_invocation() -> None:
-    """#564 AC-1, #565 AC-1, #627 AC-4 — a scheduled or composing caller can fire each."""
+    """#564 AC-1, #565 AC-1, #627 AC-4, #623 AC-2 — a non-human caller can fire each."""
     workflows = _workflow_skills()
     assert workflows >= _COMPOSED, (
         f"composed set names a skill that is not a workflow: {_COMPOSED - workflows}"
@@ -83,7 +92,8 @@ def test_composed_workflow_skills_do_not_disable_model_invocation() -> None:
         declared = _FLAG.search(_frontmatter(name))
         assert declared is None, (
             f"skills/{name}/SKILL.md declares disable-model-invocation="
-            f"{declared.group(1)}, which refuses its non-human caller (#564, #565)"
+            f"{declared.group(1)}, which refuses its non-human caller "
+            f"(#564, #565, #623)"
         )
 
 

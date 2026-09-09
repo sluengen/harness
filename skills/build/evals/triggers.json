@@ -12,11 +12,12 @@
 {"query":"HAR-190's branch is finished and sitting there. tell me whether it can merge","should_trigger":false},
 {"query":"there's a bug where the marker survives a rebase. don't build it now, just get it written down properly so someone can","should_trigger":false},
 {"query":"dev's been green for two days, move it up to the release branch","should_trigger":false},
+{"query":"the reviewer passed HAR-208. rebase it, gate it and push it to dev","should_trigger":false},
 {"query":"typo in the error string in scripts/verify.sh, it says covrage. just fix it","should_trigger":false},
 {"query":"nothing was handed to me this morning. work out what's worth starting","should_trigger":false},
 {"query":"close HAR-311 and leave a note on it saying what actually shipped","should_trigger":false},
 {"query":"i'm partway through the implementation and it's grown to touch a hook file. do i keep going or cut it back","should_trigger":false},
 {"query":"pytest is collecting the same test twice since i added a conftest under tests/unit. why","should_trigger":false},
-{"query":"how do i get git to list only the filenames changed between two branches without the diff body","should_trigger":false},
+{"query":"#623 passed review yesterday and the branch is pushed. land it and close it out","should_trigger":false},
 {"query":"this is going to be six or seven commits. set me up somewhere that can't touch the default branch","should_trigger":false}
 ]

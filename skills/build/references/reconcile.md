@@ -1,13 +1,16 @@
-# Reconcile with the integration branch
+# Reconcile with the integration branch — the `rebase` stage
 
-Load this on entering the `reconcile` stage — after the reviewer reports
-readiness, immediately before the certifying gate. That placement is the point:
-reconciling last means the gate you spend is spent over the bytes that will
-actually land, rather than over a tree the base has already moved out from
-under.
+Load this on entering the `rebase` stage. There are **two** of them and this is
+their one home: `/build` rebases *before* the review, so the reviewer reads the
+branch as it will land; `/promote` rebases again *before* the gate it pushes on,
+so that gate is spent over the bytes that will actually land rather than over a
+tree the base has already moved out from under. The stage was called `reconcile`
+and sat between two review stages until #623; the delta review that placement
+required is gone, and the rules below did not depend on it.
 
-Fetch the integration branch and merge it into the candidate. The rules, and
-this is their only home:
+**The stage is named `rebase` and the operation is a merge.** Fetch the
+integration branch and merge it into the candidate — never `git rebase`, which
+rewrites commits anything else may already have fetched. The rules:
 
 - **Base movement is normal concurrency** — never a stop, never a question for the operator.
 - Resolve textual conflicts on their plain meaning. A fresh conflict-resolution sub-agent may be dispatched.
@@ -16,4 +19,5 @@ this is their only home:
 - **The only escalation is a genuine functional conflict** — both changes individually correct but wanting incompatible behaviour, a design call. Hold the ticket (`input`, assigned) with a comment naming the two behaviours in tension. A textual overlap with an evident resolution is not that case.
 
 A resolution is bytes you authored, and no gate run before it covers them:
-re-gate after reconciling, never before.
+re-gate after reconciling, never before. At `/build`'s rebase that gate is the
+reviewer's own; at `/promote`'s it is the one that licenses the push.

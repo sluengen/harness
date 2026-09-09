@@ -1,32 +1,133 @@
 ---
 name: promote
-description: "/promote — move completed work toward release. Use when the operator invokes `/promote` or asks to run that workflow. Operator-triggered only; the model does not fire it."
-disable-model-invocation: true
+description: "/promote — land a reviewed branch, or move completed work toward release. Two altitudes: `/promote <TICKET>` takes the branch `/build` left at PASS and rebases, gates, pushes, closes and cleans up; `/promote <src> to <dst>` runs a release hop along the repo's role branches. Use when the operator says `/promote`, \"land it\", \"ship the reviewed branch\", or \"promote dev to main\". Reachable by the model: `/routine` invokes the landing altitude to finish its tick, so `disable-model-invocation` is deliberately not set here — it would leave the unattended loop building work it can never ship (#623)."
 model: inherit
 effort: medium
 ---
 
 The portable plugin root is two directories above this SKILL.md. Resolve embedded paths beginning `skills/`, `agents/`, `templates/`, `hooks/`, or `.codex/` from that root; resolve repository artifacts from the workspace root.
 
-# /promote — move completed work toward release
+# /promote — land a reviewed branch, or move completed work toward release
+
+One skill, two altitudes, because both are the same act at different scales: take
+work that has already earned its verdict and move it onto the branch that comes
+next, gating over the bytes that will actually land.
+
+| Invocation | What it does |
+|---|---|
+| `/promote <TICKET>` | Lands the reviewed branch `/build` left at PASS: rebase, gate, push, close, reflect, clean up. |
+| `/promote <src> to <dst>` | The release hop along the repo's role branches. |
+
+**There is no no-arg form.** Neither altitude is inferred: the landing altitude
+needs its ticket, and a release hop needs both `<src>` and `<dst>`.
+
+The mechanism at both altitudes is plain git plus the repo's own verify gate.
+ADR 0015 retired the audited `harness promote` verb loop; ADR 0022 retired the
+tree binding and the landing machinery built on it. There is no promotion id, no
+ledger row, and no marker: the gate a run reads itself is the assurance, and the
+audit trail is ordinary git history, the ticket, and the PR.
+
+# Altitude 1 — landing a reviewed ticket
+
+Usage: `/promote <TICKET-ID>`
+
+`/build` ends at PASS with the ticket In Review and its own branch pushed. This
+half takes it from there. It is also the **re-entry point for a run that already
+earned its verdict**: one whose context ran out after PASS resumes here rather
+than rebuilding. A run that ended any other way does not — a FAIL, a DEFER, or a
+spent budget resumes at `/build`, because what it is missing is the verdict this
+altitude requires on record before it does anything.
+
+Stage order is normative. The `authority` field names the system allowed to act
+at that stage; never insert a tracker action into a Git-only interval.
+
+<!-- harness:promote-lifecycle:begin -->
+- stage: rebase
+  authority: git
+- stage: full_gate
+  authority: gate
+- stage: pass
+  authority: gate
+- stage: tree_compare
+  authority: git
+- stage: push
+  authority: git
+- stage: tracker_done
+  authority: tracker
+<!-- harness:promote-lifecycle:end -->
+
+## Before the first stage: read the ticket as it is now
+
+**Re-read the ticket's live state, and stop rather than shipping against one that
+moved.** Splitting the lifecycle widened the interval between reading a spec and
+pushing a tree, so a ticket closed, held, or materially amended in between is
+likelier than it was — and none of those is visible in the branch. Confirm three
+things from the tracker, not from memory or from `run.json`:
+
+- It is **In Review**, and not Done, Canceled, or back in Todo. A ticket already
+  Done means somebody landed this work; verify before adding a second copy.
+- It carries **no hold**. A hold applied after the verdict is a human asking for
+  something, and landing past it answers them by ignoring them.
+- Its change spec still describes what the branch does. A materially amended
+  spec means the verdict covered a different question; return it to review.
+
+Any of the three is a stop, reported to the operator with what moved — not a
+hold, because the ticket is already carrying whatever state moved it.
+
+Then confirm a **PASS is on record for this ticket** and the branch it names is
+the branch in hand. There is no machine half to this: the ticket's state and the
+review report are the record, and a branch that reached here without a verdict is
+a run that skipped the review, which this command does not launder.
+
+## The stages
+
+1. *Rebase.* Fetch, and bring the integration branch into the candidate.
+   [`skills/build/references/reconcile.md`](../build/references/reconcile.md)
+   owns every rule — base movement as normal concurrency, the two-attempt bound,
+   the monotonic-field trap, functional conflict as the only escalation — and
+   this is the second of the two places that load it. **The stage is named
+   `rebase` and the operation is a merge**, exactly as that reference describes:
+   never `git rebase` on a branch anything else may have fetched.
+2. *Gate.* Run the repo's `harness.yaml` `commands.verify` gate over the merged
+   tree — read the command fresh from `harness.yaml` every run and never
+   hardcode one here. Capture the output and read all of it.
+3. *Pass.* Green over the tree in hand is what licenses the push. **A red gate
+   here is this builder's to fix, whatever caused it.** That is the resolved
+   posture and it is deliberate: stop the line, not stop the tick. The bytes
+   that arrived in step 1 are other tickets' reviewed work, so the ordinary
+   repair is a merge repair rather than a design change — and where it is a
+   design change, the red is the signal to return the ticket to review rather
+   than to push through it. **Name the residual rather than discovering it:** a
+   fix made here is made after the review that no longer covers it. That is the
+   trade the split accepts, and a fix large enough to want a reviewer is a fix
+   large enough to go back to one.
+4. *Tree compare.* `git rev-parse HEAD^{tree}` must equal the tree the gate just
+   ran over. Nothing may be edited between the gate and the push — the check is
+   cheap and it is the whole of what the retired binding still buys.
+5. *Push.* Integrate exactly as `harness.yaml`'s `branches:` block declares:
+   a direct push where the model allows one, a PR where it requires one, and
+   where a human must merge that PR, that is a hold rather than a failure. Never
+   force. Never a release branch from this altitude — that is altitude 2's hop,
+   and it has its own rules. **Never push from a shape you cannot describe:** a
+   dirty worktree, a detached HEAD, or a branch the repository declares no role
+   for is a state to report, not a landing. One uninterrupted sequence from stage
+   4 to here, with no tracker write inside it.
+6. *Close.* Post the merge link and transition the ticket to Done.
+
+## After the push
+
+- **Reflect.** At most three lines, or `none` — the wastes this run met by P2's
+  categories and what should change, each line appended to an improvement ledger,
+  this repo's or the guidance source's, resolved as `review-discipline` →
+  `references/improvement-ledger.md` says and never hardcoded.
+- **Close the ticket and clean up.** Run `worktree-isolation`'s cleanup
+  procedure, reporting any resource it could not release rather than substituting
+  a broad host cleanup.
+- `tracker: none` skips the tracker steps and reports them skipped.
+
+# Altitude 2 — the release hop
 
 Usage: `/promote <src> to <dst>`
-
-Promotion moves completed work toward release along the role branches the
-repo's `harness.yaml` `branches:` block declares — topology is per-repo
-configuration (ADR 0003 as amended): `integration → release`, with a `staging`
-role between them only where something deploys to a staging environment. This
-command transcribes the loop once, so an agent runs `/promote` instead of
-re-deriving it from prose each time.
-
-There is **no no-arg form** — a release hop is deliberate, not inferred. Both
-`<src>` and `<dst>` are required.
-
-The mechanism is plain git plus the repo's own verify gate. ADR 0015 retired the
-audited `harness promote` verb loop that used to drive this; the topology and its
-nightly automation are kept, and this reduced path is now the only one. It has no
-promotion id, no ledger row, and no resumable state: a conflict or a red gate
-stops the hop cold. The audit trail is ordinary git history and the PR.
 
 ## Argument resolution
 
@@ -117,7 +218,7 @@ resolver is what changes, not the command.
    distinguish, so a consumer updating between the hop and the bump is told
    it is already current over bytes that changed.
 
-## What this command must never do
+## What the release hop must never do
 
 - **Push the release branch directly.** This command never direct-pushes the
   `release` role's branch. The release hop opens a PR into it — from `<src>`
@@ -130,10 +231,17 @@ resolver is what changes, not the command.
   and never this command's.
 - **Auto-merge the release PR.** Opening it is this command's job; merging it
   is a human/CI act.
-- **Repair a conflict or a red gate.** Both are stop conditions. A promotion
-  that needs a code decision is a ticket, not a retry.
+- **Repair a conflict or a red gate.** Both are stop conditions **at this
+  altitude, and only at this one.** Altitude 1's posture is the opposite by
+  decision: a builder landing its own ticket fixes the red it meets, because the
+  work is its own and stopping stalls the tick. A release hop carries many
+  tickets and owns none of them, so a red candidate is a finding against the
+  source branch — fix it there and re-promote. A promotion that needs a code
+  decision is a ticket, not a retry.
 - **Push anything on a gate it did not read.** A hop that could not run the
-  gate is a stop, not a pass — never treat an unrunnable gate as green.
+  gate is a stop, not a pass — never treat an unrunnable gate as green. This one
+  binds both altitudes: it is ADR 0022 point 2 restated, and nothing else stands
+  behind a push.
 
 ## Escalating a stop
 

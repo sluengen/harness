@@ -87,12 +87,12 @@ accept both hosts' payload and output contracts.
 
 | Workflow | Does |
 |---|---|
-| `/build <ticket>` | Implement, verify, review, and ship a ticket — the one lifecycle driver |
+| `/build <ticket>` | Implement, verify and review a ticket, ending at PASS |
 | `/capture` | File an already-decided change straight to Todo |
 | `/propose` | Work an idea before it becomes work; accepted proposals spawn tickets |
 | `/review` | Review the current branch when it needs only that |
 | `/routine` | One unattended discover→build→ship cycle |
-| `/promote` | Move completed work toward release along the repo's role branches |
+| `/promote` | Land a reviewed branch, or move completed work toward release along the repo's role branches |
 | `/drain` | Clear what has accumulated for the operator: held tickets, then the improvement ledger |
 | `/assess` | Periodic whole-system health assessment |
 | `/harness:init` | Hydrate a repo (the one command that needs its prefix spoken) |

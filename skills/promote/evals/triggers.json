@@ -1,0 +1,22 @@
+[
+{"query":"#623 passed review yesterday and the branch is pushed. land it and close it out","should_trigger":true},
+{"query":"the reviewer gave it a PASS. take it from there","should_trigger":true},
+{"query":"HAR-311 is sitting in review with a green branch. get it onto dev","should_trigger":true},
+{"query":"dev's been green for two days, move it up to the release branch","should_trigger":true},
+{"query":"promote dev to main, the release hop","should_trigger":true},
+{"query":"my context ran out right after the verdict on ENG-51. pick it up from wherever it got to and finish shipping it","should_trigger":true},
+{"query":"we're cutting a release. walk develop up to production through staging","should_trigger":true},
+{"query":"the build's done and reviewed. rebase it, run the gate again, and push if it's clean","should_trigger":true},
+{"query":"there's a reviewed branch for the config reader ticket that never got merged. sort that out","should_trigger":true},
+{"query":"open the release PR into main off dev and put the gate output in the body","should_trigger":true},
+{"query":"HAR-311 is sitting in todo with a spec on it and nobody's touched it. take it all the way","should_trigger":false},
+{"query":"implement the one we just filed for the drift guard and get it in","should_trigger":false},
+{"query":"the branch is built and green already. it just needs the independent pass before it lands","should_trigger":false},
+{"query":"HAR-190's branch is finished and sitting there. tell me whether it can merge","should_trigger":false},
+{"query":"nothing's assigned to me. pick the next thing off the board and run it end to end","should_trigger":false},
+{"query":"typo in the error string in scripts/verify.sh, it says covrage. just fix it","should_trigger":false},
+{"query":"file this as a ticket, it's a defect i just hit in the config reader","should_trigger":false},
+{"query":"there are two held items assigned to me. walk me through clearing them","should_trigger":false},
+{"query":"the nightly dev-to-main job failed again. why is the runner not picking up the check","should_trigger":false},
+{"query":"which branch does harness.yaml call the integration one here","should_trigger":false}
+]
