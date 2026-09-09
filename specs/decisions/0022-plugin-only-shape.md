@@ -7,7 +7,7 @@
 
 ## Context
 
-At the 2026-09-08 process assessment this repository measured **assurance per product line at 6.86** — 27,841 lines under `tests/unit/*.py` against 4,056 lines of guidance in `skills/` and `agents/` — up from 5.36 six weeks earlier: the suite had grown 31.5% in that window while guidance grew 2.7%. A separate inventory at `dev` gives 9,384 lines of executables under `scripts/` and `hooks/`. The globs differ and the assessment warns against mixing them, so they are reported apart rather than summed.
+At the 2026-09-08 process assessment this repository measured **assurance per product line at 6.86** — 27,841 lines under `tests/unit/*.py` against 4,056 lines of guidance in `skills/` and `agents/` — up from 5.36 at the 31 August pass **eight days earlier**: the suite had grown 31.5% in that window while guidance grew 2.7%. A separate inventory at `dev` gives 9,384 lines of executables under `scripts/` and `hooks/`. The globs differ and the assessment warns against mixing them, so they are reported apart rather than summed.
 
 The growth was an accretion chain, and each link named the one that caused it. `gate-marker.js` binds a verdict to a git tree oid. `land.js` (585 lines) exists because that binding "modelled at 7.4 attempts to land at eight pushes an hour". `harness-refs.js` (483) exists to share gate outcomes between sessions without a service — a coordination problem the binding created. `harness-config.js` (598) exists because three hand-rolled readers of one YAML file produced four recorded parser bugs (#487, #488, #510), two of those readers being marker hooks. `plugin-version.js` is the third attempt at one version bump. Not one of them answers a problem a user has.
 
@@ -29,13 +29,13 @@ The plugin stops writing `gate-marker.js`, `harness-config.js`, `scripts/package
 
 **Nothing breaks on the plugin update.** A consumer's vendored `gate-marker.js` keeps working — `verify.sh`'s public branch execs it, it resolves `commands.verify`, spawns the internal branch and runs the stages, writing a marker no surviving hook reads. The cost is a redundant hop and dead files, not a red gate, so each repository simplifies on its own schedule against the one-off transition prompt (#629).
 
-**This forecloses shipping executable code that runs inside a consumer repository** — no codemod, no generator, no lint rule, no migration script. A future capability needing that is a new decision.
+**This forecloses shipping executable code the plugin owns and keeps refreshing inside a consumer repository** — no codemod, no generator, no lint rule, no migration script the plugin rewrites. The rule is ownership, not execution: a generator copied out once and owned thereafter by the consumer is the design-system builder above, and is permitted. A future capability needing that is a new decision.
 
 ### 2. A consumer's CI and branch protection are out of lane
 
 The harness requires a repository to **declare** its branch roles in `harness.yaml`; it requires nothing about how those branches are protected. Skills act on the declared roles — `/routine` pushes only the integration branch, `/promote` moves between them — and nothing may require CI, branch protection, or a billing plan.
 
-**The harness's assurance is the gate the repo declares in `commands.verify`, run and read by the builder, plus the independent review.** Server-side controls are the repository's own: neither required nor assumed. No shipped file may claim one as the harness's own — including the spine's former sentence that "the controls of record are server-side branch protection and gate output in CI", which names a control the plugin cannot require and a consumer may not have. **That claim has two homes, and the sweep owes both:** the spine sentence (three copies — `templates/spine.md:58`, `AGENTS.md:58`, `CLAUDE.md:58`) and a differently-worded one in a file point 3 keeps, at `hooks/test-lock-guard.js:17`. A retired claim carries no identifier to grep and a docblock is a home, so the count is recorded here rather than rediscovered; #621 owns clearing both.
+**The harness's assurance is the gate the repo declares in `commands.verify`, run and read by the builder, plus the independent review.** Server-side controls are the repository's own: neither required nor assumed. No shipped file may claim one as the harness's own — including the spine's former sentence that "the controls of record are server-side branch protection and gate output in CI", which names a control the plugin cannot require and a consumer may not have. **The claim is spread wider than any enumeration here would stay true to** — the spine sentence in three copies, a differently-worded one in a hook docblock that point 3 keeps, the repository's own README, the assumptions register, and the plugin-surface record. #621 owns the sweep, and **it sweeps by searching the tree for the phrase and deciding every hit explicitly** — never against a list in this record. A retired claim has no identifier to grep for except its own words, and a fixed inventory written here would be stale before the sweep runs; two attempts to enumerate it during this ticket's own review both undercounted.
 
 This repository keeps CI and branch protection **by its own choice under the same rule** — dogfooding its posture, not claiming an exemption from it.
 
@@ -74,7 +74,7 @@ The asymmetry that makes this the cost-driver: **an advisory tolerates false neg
 
 - *Keep the marker, buy branch protection for private consumers* — closes the enforcement gap on repos that lack it. Lost on two counts: consumer protection is out of lane by point 2, and it addresses none of the maintenance burden, which was the actual complaint. Spends money to keep the thing that costs time.
 - *Retain a thin advisory that reads gate state* — a warning rather than a refusal on an ungated tree. Lost because it keeps one vendored reader, so the lockstep survives in miniature, and because it is the exact shape the accretion takes next: a plugin-resident advisory reading the marker satisfies points 1 and 4 and is refused only by point 3, which is why point 3 exists.
-- *Continue incremental retirement* — assess, and delete what mutation proves dead. Lost on its own evidence: 39 lines per assessment against 37,449, with the ratio moving the wrong way for six weeks.
+- *Continue incremental retirement* — assess, and delete what mutation proves dead. Lost on its own evidence: 39 lines per assessment against 37,449, with the ratio moving the wrong way across the eight days between the last two passes.
 
 ## Consequences
 

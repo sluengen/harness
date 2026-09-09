@@ -24,7 +24,7 @@ related:
 | Executables — `scripts/`, `hooks/` | 9,384 | machinery |
 | Tests | 28,065 | machinery guarding machinery |
 
-Assurance per product line is **6.86 and rising** — 5.36 six weeks ago, per the 2026-09-08 process assessment. The suite grew 31.5% in that window; guidance grew 2.7%. We are not building the product. We are maintaining its scaffolding.
+Assurance per product line is **6.86 and rising** — 5.36 at the 31 August pass eight days earlier, per the 2026-09-08 process assessment. The suite grew 31.5% in that window; guidance grew 2.7%. We are not building the product. We are maintaining its scaffolding.
 
 **The growth is an accretion spiral, and each layer names the layer that caused it.** Read the file headers:
 
@@ -52,7 +52,7 @@ Not one of those solves a problem a user has. Every one solves a problem the pre
 
 **Option B — Nuke the marker, keep a thin advisory push guard.** As A, but retain a warn-only guard that tells a session it is pushing an ungated tree. · *Trade-off:* keeps roughly 300–400 lines and one vendored reader, so the lockstep coupling survives in miniature and the guard is the first place the accretion restarts. Buys a warning nothing acts on.
 
-**Option C — Continue incremental retirement.** Keep assessing, delete what mutation proves dead. · *Trade-off:* the measured rate is 39 lines per assessment against 37,449; the ratio has moved the wrong way for six weeks. This option's own evidence is that it does not converge.
+**Option C — Continue incremental retirement.** Keep assessing, delete what mutation proves dead. · *Trade-off:* the measured rate is 39 lines per assessment against 37,449; the ratio moved the wrong way across the eight days between the last two passes. This option's own evidence is that it does not converge.
 
 **Option D — Keep the machinery, buy GitHub Pro.** Closes the #618 gap so server-side protection exists everywhere, keeping the marker as the in-session control. · *Trade-off:* addresses the enforcement gap and none of the maintenance burden, which is the actual complaint. Spends money to keep the thing that costs time.
 
