@@ -77,7 +77,7 @@ def test_workflow_guard_reads_apply_patch_paths_and_returns_codex_context(
     assert "continue" not in output
 
 
-@pytest.mark.parametrize("hook", ["git-push-guard.js", "push-target-guard.js"])
+@pytest.mark.parametrize("hook", ["push-target-guard.js"])
 def test_benign_codex_bash_has_a_clean_empty_pass_through(hook: str, tmp_path) -> None:
     payload = {
         "turn_id": "turn-3",
@@ -97,7 +97,6 @@ def test_benign_codex_bash_has_a_clean_empty_pass_through(hook: str, tmp_path) -
     [
         ("prompt-guard.js", "  const input = readStdin();"),
         ("workflow-guard.js", "  const input = readStdin();"),
-        ("git-push-guard.js", "  const input = readStdin();"),
         ("push-target-guard.js", "  const input = readStdin();"),
     ],
 )

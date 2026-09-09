@@ -130,21 +130,6 @@ def _probe_prompt_guard(fixture: Path, tmp_path: Path) -> bool:
     return "[PROMPT-GUARD]" in _advisory_context(out)
 
 
-def _probe_git_push_guard(fixture: Path, tmp_path: Path) -> bool:
-    """Designed behaviour: deny a force push."""
-    _, out, _ = _run(
-        "git-push-guard.js",
-        {"tool_name": "Bash", "tool_input": {"command": "git push --force origin dev"}},
-        fixture,
-        tmp_path,
-    )
-    try:
-        decision = json.loads(out).get("hookSpecificOutput", {}).get("permissionDecision")
-    except (json.JSONDecodeError, AttributeError):
-        return False
-    return decision == "deny"
-
-
 def _probe_workflow_guard(fixture: Path, tmp_path: Path) -> bool:
     """Designed behaviour: warn on a source write while on the default branch."""
     for cmd in (
@@ -184,12 +169,15 @@ def _init_repo(fixture: Path, branch: str) -> None:
 
 
 def _probe_push_target_guard(fixture: Path, tmp_path: Path) -> bool:
-    """Designed behaviour: deny a push to a protected branch with no gate marker.
+    """Designed behaviour since #621: *warn* on a push to a declared branch.
 
-    Deliberately *not* the same observable as ``git-push-guard.js``: this hook
-    must refuse a push that is perfectly well-formed and not a force-push at all,
-    which is the whole distinction between the two guards. No marker is written,
-    so the deny is the evidence check firing rather than any parse quirk.
+    The observable moved with the hook. It used to be a ``deny`` on an ungated
+    tree; ADR 0022 point 3 retired the gate read and point 4 retired the refusal,
+    so what this asserts now is the advisory firing — ``continue`` with the branch
+    named in ``additionalContext``. Still an observable of the *work*, not of the
+    exit status: an ESM root that silently disarmed the hook would leave the
+    pass-through object with no context on it, which is the #302 shape this
+    module exists for.
     """
     _init_repo(fixture, "main")
     _, out, _ = _run(
@@ -203,48 +191,7 @@ def _probe_push_target_guard(fixture: Path, tmp_path: Path) -> bool:
         tmp_path,
     )
     try:
-        decision = json.loads(out).get("hookSpecificOutput", {}).get("permissionDecision")
-    except (json.JSONDecodeError, AttributeError):
-        return False
-    return decision == "deny"
-
-
-def _probe_gate_evidence_guard(fixture: Path, tmp_path: Path) -> bool:
-    """Designed behaviour: block a stop that claims completion over an ungated tree.
-
-    Needs the three conditions the hook requires before it has anything to say —
-    a task branch, work to claim, and a completion claim in the last assistant
-    message — so a probe that merely ran the hook would not reach the decision.
-    """
-    _init_repo(fixture, "main")
-    subprocess.run(["git", "checkout", "-q", "-b", "task/x"], cwd=fixture, check=True)
-    (fixture / "wip.txt").write_text("uncommitted work\n")
-    transcript = tmp_path / "esm-transcript.jsonl"
-    transcript.write_text(
-        json.dumps(
-            {
-                "type": "assistant",
-                "message": {
-                    "role": "assistant",
-                    "content": [{"type": "text", "text": "This is done; all the tests pass."}],
-                },
-            }
-        )
-        + "\n"
-    )
-    _, out, _ = _run(
-        "gate-evidence-guard.js",
-        {
-            "hook_event_name": "Stop",
-            "stop_hook_active": False,
-            "cwd": str(fixture),
-            "transcript_path": str(transcript),
-        },
-        fixture,
-        tmp_path,
-    )
-    try:
-        return json.loads(out).get("decision") == "block"
+        return "main" in json.loads(out).get("additionalContext", "")
     except (json.JSONDecodeError, AttributeError):
         return False
 
@@ -301,10 +248,8 @@ def _probe_test_lock_guard(fixture: Path, tmp_path: Path) -> bool:
 #: rather than "it exited 0" — the distinction AC-1 turns on.
 _PROBES = {
     "prompt-guard.js": _probe_prompt_guard,
-    "git-push-guard.js": _probe_git_push_guard,
     "workflow-guard.js": _probe_workflow_guard,
     "push-target-guard.js": _probe_push_target_guard,
-    "gate-evidence-guard.js": _probe_gate_evidence_guard,
     "test-lock-guard.js": _probe_test_lock_guard,
 }
 
@@ -314,7 +259,7 @@ def _behaves_as_designed(hook: str, fixture: Path, tmp_path: Path) -> bool:
 
 
 def test_every_shipped_hook_has_a_probe() -> None:
-    """The probe set is derived from disk, so a sixth hook cannot land untested."""
+    """The probe set is derived from disk, so a fifth hook cannot land untested."""
     shipped = {p.name for p in _HOOKS_DIR.glob("*.js")}
     assert shipped == set(_PROBES), (
         "hooks/ and the probe table disagree; every shipped hook needs a probe "

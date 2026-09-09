@@ -2,7 +2,7 @@
 
 An improvement is proposed, never filed (`review-discipline` → *bugs are filed; improvements are proposed*). The **improvement ledger** is where an improvement lands so it outlives the work that raised it: one standing issue per repo, holding every entry as a comment. `tracker` → *`ledger`* owns how it is found, opened and migrated from the pre-#547 `proposals-ledger` label; this file owns what goes in it and which ledger receives it.
 
-**Entries accumulate as memory, not as promises.** Nothing in the ledger expires, nothing auto-drops, and no entry is owed a build; an entry is what the loop noticed, kept where the operator can find it. `/digest` reads it and surfaces what is new; `/assess` drains it, which is the only thing that clears an entry, and the drain marks every entry **done**, **folded** into a ticket, or **dropped** — dropped in writing, with its reason.
+**Entries accumulate as memory, not as promises.** Nothing in the ledger expires, nothing auto-drops, and no entry is owed a build; an entry is what the loop noticed, kept where the operator can find it. An entry leaves only at a drain, marked **done**, **folded** into a ticket, or **dropped** — dropped in writing, with its reason.
 
 **An entry carries three things.** The one-line **case**; a **provenance** link to the ticket or session that raised it; and the **suggested home** — the file or surface a fix would land in.
 

@@ -137,11 +137,12 @@ _CLASS_A_TRY = re.compile(r"readFileSync\s*\(\s*0\b|\bmain\s*\(\s*\)|\brequire\s
 #: while a classifier degraded to "nothing is Class A" fails every entry.
 _EXPECTED_CLASS_A = {
     "prompt-guard.js": 2,          # readStdin + the main() wrapper it gained in #303
-    "git-push-guard.js": 2,        # readStdin + the main() wrapper
     "workflow-guard.js": 1,        # the main() wrapper (stdin is read inside main)
-    # readStdin + the main() wrapper (#436) + the shared reader's load (#537)
+    # readStdin + the main() wrapper (#436) + the shared reader's load (#537).
+    # Unchanged by #621: the guard shrank from 1,143 lines to an advisory, but
+    # its three sites are the same three, and the repository probe it kept is
+    # Class B by the shape of its `try` — a decision input, silent by design.
     "push-target-guard.js": 3,
-    "gate-evidence-guard.js": 3,
     # readStdin + the main() wrapper + the shared reader's load (#538)
     "test-lock-guard.js": 3,
 }
@@ -149,19 +150,22 @@ _EXPECTED_CLASS_A = {
 #: Which hooks carry Class B sites at all, so the silence half of AC-4 is
 #: measured against something rather than trivially satisfied.
 #:
-#: The two #436 enforcement hooks carry several: a git probe that could not run,
-#: a marker that is not there, a CONTEXT.md a repo never wrote, a transcript line
-#: still being flushed. Each is a **decision input** rather than a failure — "no
-#: marker" is precisely the answer those guards exist to act on — so each is
-#: legitimately swallowed, and each must stay silent or every tool call in a
-#: repo without a CONTEXT.md would chatter.
+#: Each carries a git probe that could not run, a run state a repo never wrote,
+#: a CONTEXT.md that is not there. Each is a **decision input** rather than a
+#: failure — "no repo" is precisely the answer these hooks exist to act on — so
+#: each is legitimately swallowed, and each must stay silent or every tool call
+#: in a repository without one would chatter.
+#:
+#: #621 removed two members with the hooks themselves. The marker reads that used
+#: to be the richest source of Class B sites here ("no marker" as an answer) went
+#: with them: ADR 0022 point 3 forbids a shipped executable reading a verdict at
+#: all, so that whole category of decision input no longer exists.
 _HOOKS_WITH_CLASS_B = {
     # The git probes and the run-state read are decision inputs: "no repo",
     # "no run", "not in the base tree" are the answers it exists to act on.
     "test-lock-guard.js",
     "workflow-guard.js",
     "push-target-guard.js",
-    "gate-evidence-guard.js",
 }
 
 

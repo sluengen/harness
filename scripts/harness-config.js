@@ -4,31 +4,38 @@
 //
 // Until this module the repo carried three hand-rolled readers of the same
 // subject: ``declaredBranches`` in ``hooks/push-target-guard.js`` and again in
-// ``hooks/gate-evidence-guard.js``, and the ``commands.verify`` reader in
-// ``scripts/gate-marker.js``. Every parser bug the tree has recorded lived in
-// one of the three — a flow mapping read as nothing (#487), a comma inside a
-// quoted value cutting the value in half and a comment after a key skipping the
-// block beneath it (#488), a quote-tracking stripper turning an unpaired quote
-// into an executable fragment (#510). #457 held the two hook copies *equivalent*
-// to each other, which is why #488 was invisible: both were wrong identically.
-// One reader is what removes the class; equivalence cannot.
+// the Stop hook, and a ``commands.verify`` reader in the gate marker helper.
+// Every parser bug the tree has recorded lived in one of the three — a flow
+// mapping read as nothing (#487), a comma inside a quoted value cutting the
+// value in half and a comment after a key skipping the block beneath it (#488),
+// a quote-tracking stripper turning an unpaired quote into an executable
+// fragment (#510). #457 held the two hook copies *equivalent* to each other,
+// which is why #488 was invisible: both were wrong identically. One reader is
+// what removes the class; equivalence cannot.
 //
-// **Why it lives in ``scripts/`` and not ``hooks/lib/``.** #436 declined a shared
-// hooks library for two reasons, and both are answered rather than overturned.
+// **Why it lives in ``scripts/`` and not ``hooks/lib/``.** The reason this
+// comment gave until #621 was that the marker helper beside it was materialized
+// *into a consumer repo* while the hooks ran from the plugin root, making
+// ``scripts/`` the one directory both could reach. ADR 0022 point 1 abolishes
+// that: the plugin no longer writes any executable it owns into a consumer, and
+// that helper is deleted. The placement survives on a different reason.
+//
+// That reason is ``hooks/``. #436 declined a shared hooks library because
 // ``test_hooks_fail_open_is_loud`` and ``test_hooks_module_type`` scan
-// ``hooks/*.js`` non-recursively, so a subdirectory would be a hole in those
-// guards — this module is not in that directory, so their meaning is unchanged.
-// And ``scripts/gate-marker.js`` is materialized *into a consumer repo* by
-// ``/harness:init`` while the hooks run from the plugin root, so ``scripts/`` is
-// the one directory both consumers can reach: the hooks as
-// ``../scripts/harness-config.js`` (the plugin root ships ``scripts/``), the
-// marker helper as ``./harness-config.js``.
+// ``hooks/*.js`` non-recursively **as hooks** — a library sitting there is
+// either read as a hook and fails those guards, or forces an exemption into
+// both. This module is not in that directory, so their meaning is unchanged and
+// #436's decision stands. Its consumers now span two directories either way —
+// ``scripts/`` siblings require it as ``./harness-config.js`` and the hooks as
+// ``../scripts/harness-config.js`` — so wherever it sits one side reaches
+// across. ``scripts/`` is where that costs nothing.
 //
 // #436's second reason — "a shared module's own load failure would disarm both
-// enforcement hooks together" — is a real risk and is held by a test rather than
-// by this comment: each hook requires this module inside a ``try``, and a load
-// failure degrades it to its conservative fallback set, which is the state an
-// unadopted repo is in every day. It never degrades to an *empty* protected set.
+// enforcement hooks together" — is narrower since #621, because only one
+// enforcement hook is left. ``test-lock-guard.js`` requires this module inside a
+// ``try`` and a load failure degrades it to an inactive lock; the push guard is
+// advisory now and degrades to its conservative fallback set, which over-warns.
+// Neither degrades to silence pretending to be a pass.
 //
 // No dependencies, by constraint: hooks run from a plugin cache with no install
 // step. This is a small reader of a small, declared configuration map, not a
@@ -44,14 +51,13 @@ const path = require("node:path");
 //: consuming repos have not migrated and their hooks must keep working on the
 //: day this lands.
 //:
-//: **The two readers walk this list differently, deliberately.**
-//: :func:`gateCommand` takes the first source that *exists* and refuses if it
-//: does not declare a usable command, because the value decides what may mint
-//: evidence and must fail closed. :func:`readMap` searches on until a source
-//: *declares* the key, because a missing ``branches:`` block falls back to a
-//: conservative set and a repo mid-migration has its declaration in a later
-//: file. Each function's own docstring states its rule; this list is only the
-//: order.
+//: **One reader walks this list, and its rule is its own.** :func:`readMap`
+//: searches on until a source *declares* the key, because a missing ``branches:``
+//: block falls back to a conservative set and a repo mid-migration has its
+//: declaration in a later file. Until #621 a second reader took the first source
+//: that merely *existed* and refused there — that was ``gateCommand``, whose
+//: value decided what could mint evidence, and it left with the marker. Nothing
+//: here fails closed on the first source any more.
 const SOURCES = ["harness.yaml", "AGENTS.md", "CLAUDE.md", "CONTEXT.md"];
 
 //: The two quote characters, written as escapes rather than as themselves. The
@@ -320,23 +326,16 @@ function configSources(top) {
   return present;
 }
 
-/** The first configuration source present under ``top``, or ``null``. */
-function configSource(top) {
-  const present = configSources(top);
-  return present.length ? present[0] : null;
-}
-
 /** Read one top-level mapping out of the repo at ``top``.
  *
  * **The sources are searched, and the first that declares ``name`` answers.** A
  * source that is readable and simply carries no such block is not an answer of
  * "nothing" — a repo mid-migration has its spine and its ``CONTEXT.md`` side by
- * side, and the block is in one of them. This is deliberately *not* the rule
- * :func:`gateCommand` follows, and the difference is the failure economics, not
+ * side, and the block is in one of them. The rule is the failure economics, not
  * an oversight: a missing ``branches:`` block falls back to a conservative set
- * that over-protects, while an ambiguous gate command decides what may mint
- * evidence and so must fail closed on the first source rather than shop for a
- * second opinion.
+ * that over-protects, which is cheap. The retired ``gateCommand`` stopped at the
+ * first source that existed for the opposite reason — its value decided what
+ * could mint evidence — and that reason left with it at #621.
  *
  * A source that exists but cannot be read, or that declares ``name`` in a
  * spelling this reader cannot parse, is **reported and stepped over** — the
@@ -378,24 +377,6 @@ function declaredBranches(top, onUnreadable) {
   return readMap(top, "branches", onUnreadable);
 }
 
-/** The ``loop:`` map the repo at ``top`` declares — review cycle settings.
- *
- * AC-2 names roles, commands **and** loop settings as what one reader must serve.
- * No hook consumes this yet: the loop numbers are read by the review workflow,
- * which T2 rewrites. It ships now rather than later because the alternative is a
- * fourth reader written under time pressure by whoever needs it first, which is
- * the exact history this module ends. ``test_harness_config_reader.py`` exercises
- * it, so it is not unverified code waiting for a caller.
- */
-function declaredLoop(top, onUnreadable) {
-  return readMap(top, "loop", onUnreadable);
-}
-
-/** The ``commands:`` map the repo at ``top`` declares. */
-function declaredCommands(top, onUnreadable) {
-  return readMap(top, "commands", onUnreadable);
-}
-
 /** The ``paths:`` map the repo at ``top`` declares — the tree's named directories.
  *
  * Read by ``hooks/test-lock-guard.js`` for ``paths.tests``, which is the only
@@ -407,192 +388,19 @@ function declaredPaths(top, onUnreadable) {
   return readMap(top, "paths", onUnreadable);
 }
 
-//: The queue's bounds where the repo declares none (#588). Six is two concurrent
-//: builders, their reviews and one andon slot; three is the initiatives that may
-//: run at once. ``project_field`` defaults to ``none`` — the repo is its own
-//: single queue — because a reader that guessed ``milestone`` would send every
-//: filing to consult a field the repo never declared.
-const QUEUE_DEFAULTS = { wip_limit: 6, active_projects: 3, project_field: "none" };
-
-//: One flat key spelling a per-project override's path. The block reader is flat
-//: by design, so ``queue.projects.<name>.wip_limit`` is declared as this one key
-//: rather than as a nested mapping, which :func:`blockMap` refuses whole.
-const PROJECT_OVERRIDE = /^projects\.(.+)\.wip_limit$/;
-
-/** ``raw`` as a positive integer, or ``null``. */
-function positiveCount(raw) {
-  if (!/^[0-9]+$/.test(raw)) return null;
-  const value = Number(raw);
-  return value > 0 ? value : null;
-}
-
-/** The ``queue:`` bounds the repo at ``top`` declares, defaults filled in.
- *
- * Returns ``{wip_limit, active_projects, project_field, projects}``, where
- * ``projects`` maps a project name to its ``{wip_limit}`` override. The two
- * counts come back as **numbers**: every caller compares them against a count,
- * and returning the raw strings would compare them lexically, where ``"10"``
- * sorts below ``"6"``.
- *
- * A value this reader cannot read as a positive integer falls back to its
- * default rather than being handed on. The alternative is putting an unusable
- * bound in front of every caller, and each would have to re-decide what to do
- * with it; the template declares both counts explicitly so a typo is visible in
- * the diff that introduces it.
- *
- * A nested ``projects:`` block makes :func:`blockMap` return ``null``, which
- * :func:`readMap` reports through ``onUnreadable`` and steps over — so this
- * returns the defaults, never a half-read map that silently dropped an override
- * the repo did declare.
- */
-function queueSettings(top, onUnreadable) {
-  const declared = readMap(top, "queue", onUnreadable);
-  const settings = { ...QUEUE_DEFAULTS, projects: {} };
-  for (const [key, raw] of Object.entries(declared)) {
-    const override = PROJECT_OVERRIDE.exec(key);
-    if (override !== null) {
-      const limit = positiveCount(raw);
-      if (limit !== null) settings.projects[override[1]] = { wip_limit: limit };
-      continue;
-    }
-    if (key === "project_field") {
-      settings.project_field = raw;
-      continue;
-    }
-    if (key === "wip_limit" || key === "active_projects") {
-      const count = positiveCount(raw);
-      if (count !== null) settings[key] = count;
-    }
-  }
-  return settings;
-}
-
-/** A source declares no usable field. */
-class ConfigDeclarationError extends Error {}
-
-/** The one ``commands.<name>`` scalar ``text`` declares.
- *
- * Deliberately stricter than :func:`blockMap`, and deliberately not sharing its
- * first-declaration-wins rule. The value chosen here decides which command may
- * mint gate evidence, so it fails **closed** on ambiguity: the scan reads the
- * whole text, collects every top-level ``commands:`` block, and insists on
- * exactly one ``verify`` across all of them. Two consequences, both deliberate.
- * A ``commands: <scalar>`` line — prose, an example, a flow mapping — no longer
- * aborts the scan, so a mention above the real declaration cannot make the gate
- * permanently unrunnable. And two declarations are an *ambiguity* rather than a
- * race the first one wins.
- *
- * ``optional`` splits *absent* from *ambiguous* for a key a repo need not
- * declare at all (#539's ``commands.test_scoped``). Absent returns ``null`` and
- * the caller falls back to the full gate; ambiguous or malformed still refuses,
- * because a command that mints a **scoped** marker authorises landing bytes no
- * reviewer saw, and may not be chosen by which declaration came first.
- */
-function declaredCommand(text, source, name, optional) {
-  const COMMANDS_KEY = topLevelKey("commands");
-  const values = [];
-  let inBlock = false;
-  let entryIndent = -1;
-  let sawScalarCommandsKey = false;
-  let sawMalformedQuoting = false;
-  for (const raw of text.split("\n")) {
-    const line = raw.replace(/\r$/, "");
-    const trimmed = line.trim();
-    const tabsExpanded = line.replace(/\t/g, "  ");
-    const lead = tabsExpanded.length - tabsExpanded.trimStart().length;
-    if (inBlock && trimmed !== "" && lead === 0) {
-      inBlock = false;
-      entryIndent = -1;
-    }
-    if (!inBlock) {
-      const key = COMMANDS_KEY.exec(line);
-      if (key === null) continue;
-      if (withoutComment(key[1]).value !== "") {
-        sawScalarCommandsKey = true;
-        continue;
-      }
-      inBlock = true;
-      continue;
-    }
-    if (trimmed === "" || trimmed.startsWith("#")) continue;
-    if (entryIndent === -1) entryIndent = lead;
-    if (lead !== entryIndent) continue;
-    const pair = PAIR.exec(line);
-    if (pair === null || pair[1] !== name) continue;
-    const scalar = withoutComment(pair[2]);
-    if (scalar.malformed) {
-      sawMalformedQuoting = true;
-      values.push(null);
-      continue;
-    }
-    values.push(plainScalar(pair[2]));
-  }
-  if (optional && values.length === 0 && !sawMalformedQuoting) return null;
-  if (values.length !== 1 || values[0] === null) {
-    let hint = "";
-    if (values.length === 0 && sawScalarCommandsKey) {
-      hint = "; a one-line `commands: {…}` mapping is deliberately not read";
-    } else if (sawMalformedQuoting) {
-      hint = "; a quoted value must be one whole enclosing quoted scalar";
-    }
-    throw new ConfigDeclarationError(
-      `${source}: commands.${name} must be one non-empty scalar${hint}`
-    );
-  }
-  return values[0];
-}
-
-/** The one ``commands.verify`` scalar ``text`` declares. */
-function declaredVerify(text, source) {
-  return declaredCommand(text, source, "verify", false);
-}
-
-/** The ``commands.test_scoped`` scalar ``text`` declares, or ``null``. */
-function declaredScopedTest(text, source) {
-  return declaredCommand(text, source, "test_scoped", true);
-}
-
-/** The gate command the repo at ``top`` declares, as ``{command, legacy}``.
- *
- * A missing, malformed, empty or duplicate declaration is an infrastructure
- * failure and is raised, never a reason to select another command: the whole
- * point of resolving the gate from the spine is that one declared command
- * decides green.
- */
-function gateCommand(top) {
-  const selected = configSource(top);
-  if (selected === null) return { command: "bash scripts/verify.sh", legacy: true };
-  if (selected.text === null) {
-    throw new ConfigDeclarationError(`${selected.source}: commands.verify could not be read`);
-  }
-  return { command: declaredVerify(selected.text, selected.source), legacy: false };
-}
-
-/** The scoped test command the repo at ``top`` declares, or ``null``.
- *
- * D3: one optional command, no strategy key. Declared, the conflict path runs
- * scoped; undeclared, it runs the full gate — so an absent source and an absent
- * key are the same answer, and neither is an error.
- */
-function scopedTestCommand(top) {
-  const selected = configSource(top);
-  if (selected === null || selected.text === null) return null;
-  return declaredScopedTest(selected.text, selected.source);
-}
-
-// The public surface: what a caller uses, plus what a test names. Nothing else
-// is exported — an export with neither is a maintenance obligation for a
-// contract nobody has.
+// The public surface, narrowed to two at #621. `declaredBranches` serves the
+// push-target advisory and `plugin-version.js`; `declaredPaths` serves the test
+// lock. The other nine went with their consumers — the marker helper, the Stop
+// hook and the refusing push guard — and `queueSettings`, `declaredLoop` and
+// `declaredCommands` went because they never had a runtime consumer at all, only
+// tests. An export with neither a caller nor a contract is a maintenance
+// obligation for nobody.
+//
+// **Narrower, not looser.** Both survivors are read by a guard deciding
+// something, so the scalar, flow-mapping and `onUnreadable` layers below are
+// untouched: every spelling this reader cannot parse is still reported whole
+// rather than half-read (#487, #488, #510).
 module.exports = {
-  SOURCES,
-  ConfigDeclarationError,
   declaredBranches,
-  declaredLoop,
-  declaredCommands,
   declaredPaths,
-  queueSettings,
-  declaredVerify,
-  declaredScopedTest,
-  gateCommand,
-  scopedTestCommand,
 };

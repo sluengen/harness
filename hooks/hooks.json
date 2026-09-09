@@ -4,23 +4,27 @@
       {
         "matcher": "Write|Edit",
         "hooks": [
-          { "type": "command", "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/test-lock-guard.js" },
-          { "type": "command", "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/prompt-guard.js" },
-          { "type": "command", "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/workflow-guard.js" }
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/test-lock-guard.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/prompt-guard.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/workflow-guard.js"
+          }
         ]
       },
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/git-push-guard.js" },
-          { "type": "command", "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/push-target-guard.js" }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          { "type": "command", "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/gate-evidence-guard.js", "timeout": 15 }
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/push-target-guard.js"
+          }
         ]
       }
     ]

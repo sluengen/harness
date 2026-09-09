@@ -1,4 +1,4 @@
-"""#537 AC-2 — one reader serves both hooks and the marker helper.
+"""#537 AC-2 — one reader serves the hooks that read a declaration.
 
 Until this ticket the repo carried **three** hand-rolled readers of the same
 subject: ``declaredBranches`` in ``hooks/push-target-guard.js`` and again in
@@ -11,9 +11,11 @@ holds both of them rather than overturning them silently:
 
 * ``test_hooks_fail_open_is_loud`` and ``test_hooks_module_type`` scan
   ``hooks/*.js`` **non-recursively**, so a subdirectory would be a hole in those
-  guards. The shared reader is therefore at ``scripts/harness-config.js``, beside
-  the marker helper that must also reach it, and those two scans keep their
-  meaning unchanged.
+  guards. The shared reader is therefore at ``scripts/harness-config.js`` rather
+  than under ``hooks/``, and those two scans keep their meaning unchanged. Until
+  #621 the second half of that reason was the marker helper beside it, which had
+  to reach the reader too; the helper is gone and the placement stands on the
+  ``hooks/`` scans alone, as the module's own docblock now records.
 * *"A shared module's own load failure would disarm both enforcement hooks
   together."* That is the risk :func:`test_an_unloadable_reader_leaves_both_hooks_protecting`
   measures directly, by making the module unloadable and asserting each hook
@@ -56,11 +58,13 @@ HOOKS = REPO_ROOT / "hooks"
 #: of :func:`test_an_unloadable_reader_leaves_both_hooks_protecting`. The two
 #: expressions differ because the hooks compose their own steps differently; what
 #: must agree is the set.
+#: #621 deleted the Stop hook and reduced the push guard to an advisory, so what
+#: was an equivalence between two hooks is now one hook's own degradation. The
+#: claim #436 raised is unchanged and still worth holding: a shared reader that
+#: cannot be **loaded** must leave the hook on its conservative fallback, never on
+#: an empty set — a guard that has quietly stopped answering.
 PROTECTED = {
-    "push-target-guard.js": "[...h.protectedBranches(process.cwd())].join('\\n')",
-    "gate-evidence-guard.js": (
-        "[...h.protectedBranches(h.declaredConfig(process.cwd()), process.cwd())].join('\\n')"
-    ),
+    "push-target-guard.js": "[...h.declaredBranches(process.cwd())].join('\\n')",
 }
 
 
@@ -189,9 +193,8 @@ def test_every_declared_source_is_read(tmp_path: Path, filename: str) -> None:
 @pytest.mark.parametrize(
     ("reader", "block", "expected"),
     [
-        ("declaredLoop", "loop:\n  max_review_cycles: 3\n", {"max_review_cycles": "3"}),
-        ("declaredCommands", 'commands:\n  verify: "bash x.sh"\n', {"verify": "bash x.sh"}),
         ("declaredPaths", "paths:\n  tests: tests/\n", {"tests": "tests/"}),
+        ("declaredBranches", "branches:\n  integration: dev\n", {"integration": "dev"}),
     ],
 )
 def test_every_map_the_criterion_names_is_readable(
@@ -276,7 +279,7 @@ def test_harness_yaml_wins_over_a_stale_fenced_block(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("hook", sorted(PROTECTED))
-def test_an_unloadable_reader_leaves_both_hooks_protecting(tmp_path: Path, hook: str) -> None:
+def test_an_unloadable_reader_leaves_the_hook_protecting(tmp_path: Path, hook: str) -> None:
     """#436's second reason for declining a shared module, measured.
 
     The module is made unloadable by pointing the hooks' resolution at a
@@ -408,176 +411,3 @@ def test_no_environment_variable_can_redirect_the_reader() -> None:
                 f"{name} resolves the shared reader through a per-invocation value: "
                 f"{expression.strip()}"
             )
-
-
-# --- #588: the `queue:` block, the one home for the WIP limit -----------------
-#
-# The limit is the amendment's only mechanical control (spine P0 / P3): a queue
-# with no cap converts every finding into a commitment. The numbers live in
-# `harness.yaml` and nowhere else, so the reader that already serves the hooks
-# and the marker helper serves them too rather than growing a fifth parser.
-
-QUEUE_DEFAULTS = {"wip_limit": 6, "active_projects": 3, "project_field": "none", "projects": {}}
-
-
-def _queue(tmp_path: Path, name: str, config: str) -> dict:
-    """`queueSettings` over a scratch repo declaring ``config``."""
-    repo = _repo(tmp_path, name, config)
-    proc = _run_node(
-        "const c = require(process.env.READER);"
-        "process.stdout.write(JSON.stringify(c.queueSettings(process.cwd())));",
-        repo,
-        {"READER": str(READER)},
-    )
-    assert proc.returncode == 0, proc.stderr
-    return json.loads(proc.stdout)
-
-
-def test_the_queue_keys_default_when_the_block_is_absent(tmp_path: Path) -> None:
-    """AC-2, first half. A repo that declares no `queue:` still has a limit.
-
-    The defaults are the amendment's starting values (six, three), and
-    ``project_field`` defaults to ``none`` — the repo is its own single queue —
-    because a reader that guessed ``milestone`` would have every filing consult a
-    field the repo never declared.
-    """
-    assert _queue(tmp_path, "queue-absent", "branches:\n  integration: dev\n") == QUEUE_DEFAULTS
-
-
-def test_declared_queue_values_are_returned_as_numbers(tmp_path: Path) -> None:
-    """A declared block wins over every default, and the two counts are integers.
-
-    Strings would compare lexically at every call site — ``"10" < "6"`` — which
-    is the whole failure mode of returning a raw map for a value that bounds a
-    count.
-    """
-    declared = _queue(
-        tmp_path,
-        "queue-declared",
-        "queue:\n  wip_limit: 10\n  active_projects: 1\n  project_field: milestone\n",
-    )
-    assert declared == {
-        "wip_limit": 10,
-        "active_projects": 1,
-        "project_field": "milestone",
-        "projects": {},
-    }
-
-
-def test_a_per_project_override_is_read(tmp_path: Path) -> None:
-    """AC-2, second half. Some initiatives carry their own loop and pace.
-
-    The override is one **flat** key spelling the path the spine names, because
-    :func:`blockMap` reads a flat mapping by design: a genuinely nested block is
-    refused whole rather than half-read, which is
-    :func:`test_a_nested_projects_block_is_refused_rather_than_half_read`.
-    """
-    declared = _queue(
-        tmp_path,
-        "queue-override",
-        "queue:\n  wip_limit: 6\n  projects.lifecycle-reset.wip_limit: 12\n",
-    )
-    assert declared["wip_limit"] == 6
-    assert declared["projects"] == {"lifecycle-reset": {"wip_limit": 12}}
-
-
-def test_a_nested_projects_block_is_refused_rather_than_half_read(tmp_path: Path) -> None:
-    """A nested spelling yields the defaults, never a partial map.
-
-    ``blockMap`` returns ``null`` for an indentation it cannot read, and the
-    surrounding source is reported through ``onUnreadable``. The danger this pins
-    is the other outcome: a half-read block that returned ``wip_limit`` and
-    silently dropped the override, which reads as a repo declining an override it
-    actually declared.
-    """
-    config = (
-        "queue:\n"
-        "  wip_limit: 6\n"
-        "  projects:\n"
-        "    lifecycle-reset:\n"
-        "      wip_limit: 12\n"
-    )
-    repo = _repo(tmp_path, "queue-nested", config)
-    proc = _run_node(
-        "const c = require(process.env.READER);"
-        "const seen = [];"
-        "const q = c.queueSettings(process.cwd(), (s) => seen.push(s));"
-        "process.stdout.write(JSON.stringify({q, seen}));",
-        repo,
-        {"READER": str(READER)},
-    )
-    assert proc.returncode == 0, proc.stderr
-    result = json.loads(proc.stdout)
-    assert result["q"] == QUEUE_DEFAULTS
-    assert [Path(s).name for s in result["seen"]] == ["harness.yaml"]
-
-
-def test_a_value_that_is_not_a_positive_count_falls_back_to_the_default(tmp_path: Path) -> None:
-    """A limit this reader cannot read as a positive integer is not a limit.
-
-    Returning ``"six"`` or ``0`` would put an unusable bound in front of every
-    caller; the default is the one value every caller already handles. The
-    template declares both counts explicitly so a typo is visible in the diff.
-    """
-    declared = _queue(
-        tmp_path, "queue-nonsense", "queue:\n  wip_limit: six\n  active_projects: 0\n"
-    )
-    assert declared["wip_limit"] == QUEUE_DEFAULTS["wip_limit"]
-    assert declared["active_projects"] == QUEUE_DEFAULTS["active_projects"]
-
-
-def _queue_with_notices(tmp_path: Path, name: str, config: str) -> tuple[dict, list[str]]:
-    """`queueSettings` over a scratch repo, with the sources it could not read."""
-    repo = _repo(tmp_path, name, config)
-    proc = _run_node(
-        "const c = require(process.env.READER);"
-        "const seen = [];"
-        "const q = c.queueSettings(process.cwd(), (s) => seen.push(s));"
-        "process.stdout.write(JSON.stringify({q, seen}));",
-        repo,
-        {"READER": str(READER)},
-    )
-    assert proc.returncode == 0, proc.stderr
-    result = json.loads(proc.stdout)
-    return result["q"], [Path(s).name for s in result["seen"]]
-
-
-def test_this_repo_declares_a_queue_block_the_one_reader_can_read(tmp_path: Path) -> None:
-    """The tracked `harness.yaml` declares one queue, in a spelling that parses.
-
-    Three assertions, and the third is what makes the first two mean anything.
-    ``project_field: none`` is also the reader's *default*, so asserting the
-    returned value alone would pass over a `harness.yaml` carrying no ``queue:``
-    block at all — the born-green trap (``craft.md``). So the block's presence is
-    asserted directly, its readability through the notice channel, and a
-    **control** replaces it with the nested spelling this flat reader refuses:
-    the control must report the source unreadable, or the empty notice list above
-    is evidence of nothing.
-
-    The per-project mechanics are for the product repos, whose initiatives file a
-    dozen tickets at once; this repo's work arrives from feedback one initiative
-    at a time, so it is its own single queue. Read from the **index**, so a
-    working-tree edit cannot make it pass on the machine that wrote it (#482).
-    """
-    config = indexed_text(Path("harness.yaml"))
-    assert config is not None, "harness.yaml is not tracked"
-    assert "\nqueue:\n" in config, (
-        "harness.yaml declares no top-level `queue:` block, so every bound this "
-        "repo runs under is the reader's default and nothing records the choice"
-    )
-
-    declared, unreadable = _queue_with_notices(tmp_path, "queue-this-repo", config)
-    assert declared["project_field"] == "none"
-    assert unreadable == [], (
-        f"the one reader could not read {unreadable} — this repo's own queue "
-        "declaration is in a spelling that silently falls back to the defaults"
-    )
-
-    nested = config.replace(
-        "\nqueue:\n", "\nqueue:\n  projects:\n    a:\n      wip_limit: 2\n", 1
-    )
-    _, control_unreadable = _queue_with_notices(tmp_path, "queue-control", nested)
-    assert control_unreadable == ["harness.yaml"], (
-        "the notice channel never fired on a block this reader cannot parse, so "
-        "the empty notice list above proves nothing about the real declaration"
-    )

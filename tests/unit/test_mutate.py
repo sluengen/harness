@@ -607,49 +607,6 @@ def test_the_work_dir_is_announced_before_the_first_write(
     assert (work_dir / "backup" / "pkg" / "calc.py").exists()
 
 
-#: The one non-interpreter argv this module may build, as its three literal
-#: elements: ``["node", <a name bound to the gate-marker helper>, "status"]``.
-#: Stated as constants so each one can be sampled by a synthetic case below —
-#: a predicate fed only production source is indistinguishable from a hardcoded
-#: pass (#458), so every constant here has a case whose answer differs from this
-#: tree's.
-HELPER_RUNTIME = "node"
-HELPER_QUERY = "status"
-
-#: What a name must be bound to before it can fill the middle slot. The exemption
-#: is **earned from the subject**, not granted to a name: the guard resolves the
-#: module's own top-level assignments and admits only a name whose value is built
-#: from this literal. Rename the constant and the guard follows it; re-point it at
-#: another file and the exemption evaporates. There is no list to go stale in
-#: either direction (#449 → #458, five findings).
-HELPER_FILENAME = "gate-marker.js"
-
-
-def _helper_names(tree: ast.Module) -> set[str]:
-    """Top-level names bound to something built from ``HELPER_FILENAME``.
-
-    Read off the assignment rather than matched by name, so
-    ``GATE_MARKER_JS = str(PLUGIN_DIR / "gate-marker.js")`` resolves and a name
-    that merely *looks* like a helper path does not. Top-level only: a local
-    rebinding inside a function is not the module's declared constant.
-    """
-    names: set[str] = set()
-    for node in tree.body:
-        if not isinstance(node, ast.Assign):
-            continue
-        literals = {
-            child.value
-            for child in ast.walk(node.value)
-            if isinstance(child, ast.Constant) and isinstance(child.value, str)
-        }
-        if HELPER_FILENAME not in literals:
-            continue
-        for target in node.targets:
-            if isinstance(target, ast.Name):
-                names.add(target.id)
-    return names
-
-
 #: The module whose calls this guard extracts. The canonical name is a member of
 #: the module set below rather than the whole of it: ``subprocess.run(...)`` needs
 #: no import to parse, and every synthetic case here is a fragment.
@@ -734,26 +691,6 @@ def _is_interpreter_argv(argv: ast.expr | None) -> bool:
     return isinstance(head, ast.Attribute) and head.attr == "executable"
 
 
-def _is_helper_query_argv(argv: ast.expr | None, helpers: set[str]) -> bool:
-    """Exactly ``["node", <helper name>, "status"]`` and nothing else.
-
-    Three elements, not "starts with": a fourth element is a different command,
-    and the length is what stops ``["node", HELPER, "status", "--write"]`` from
-    inheriting the exemption.
-    """
-    if not isinstance(argv, ast.List) or len(argv.elts) != 3:
-        return False
-    runtime, helper, verb = argv.elts
-    return (
-        isinstance(runtime, ast.Constant)
-        and runtime.value == HELPER_RUNTIME
-        and isinstance(helper, ast.Name)
-        and helper.id in helpers
-        and isinstance(verb, ast.Constant)
-        and verb.value == HELPER_QUERY
-    )
-
-
 def unpermitted_spawns(source: str, origin: str = "<source>") -> list[str]:
     """Every subprocess argv in ``source`` this module is not permitted to build.
 
@@ -763,11 +700,10 @@ def unpermitted_spawns(source: str, origin: str = "<source>") -> list[str]:
     not re-implement it*).
     """
     tree = ast.parse(source, filename=origin)
-    helpers = _helper_names(tree)
     offenders: list[str] = []
     for call in subprocess_calls(tree):
         argv = call.args[0] if call.args else None
-        if _is_interpreter_argv(argv) or _is_helper_query_argv(argv, helpers):
+        if _is_interpreter_argv(argv):
             continue
         spelling = "no argv" if argv is None else ast.unparse(argv)
         offenders.append(f"{origin}:{call.lineno}: {spelling}")
@@ -812,12 +748,6 @@ def test_the_module_spawns_only_this_interpreter_and_one_read_only_query() -> No
     tree = ast.parse(source)
 
     assert subprocess_calls(tree), "expected at least one subprocess call to constrain"
-    assert _helper_names(tree), (
-        "scripts/mutate.py declares no top-level name built from "
-        f"{HELPER_FILENAME!r}, so the middle slot of the permitted argv can never "
-        "match and this guard has degraded to 'only the interpreter' without "
-        "saying so"
-    )
     assert unpermitted_spawns(source, "scripts/mutate.py") == []
 
 
@@ -826,25 +756,9 @@ def test_the_module_spawns_only_this_interpreter_and_one_read_only_query() -> No
 #: only production source, a shape matcher and a hardcoded pass are
 #: indistinguishable (#458), and a corpus that spells a shape one way never shows
 #: an extractor the spellings it misses (#484/#487).
-_PREAMBLE = 'HELPER = str(PLUGIN_DIR / "gate-marker.js")\n'
-
 _SPAWN_CASES: list[tuple[str, str, bool]] = [
     ("interpreter", 'subprocess.run([sys.executable, "-c", "x"])', True),
-    ("helper-status", f'{_PREAMBLE}subprocess.run(["node", HELPER, "status"], cwd=t)', True),
-    ("helper-write", f'{_PREAMBLE}subprocess.run(["node", HELPER, "write"])', False),
-    ("helper-plus-flag", f'{_PREAMBLE}subprocess.run(["node", HELPER, "status", "-f"])', False),
     ("node-eval", 'subprocess.run(["node", "-e", "require(0)"])', False),
-    ("other-runtime", f'{_PREAMBLE}subprocess.run(["deno", HELPER, "status"])', False),
-    (
-        "other-file",
-        'HELPER = str(PLUGIN_DIR / "other.js")\nsubprocess.run(["node", HELPER, "status"])',
-        False,
-    ),
-    (
-        "locally-bound-helper",
-        'def go():\n    HELPER = "gate-marker.js"\n    subprocess.run(["node", HELPER, "status"])',
-        False,
-    ),
     ("git-checkout", 'subprocess.run(["git", "checkout", "--", "."])', False),
     ("non-literal-argv", "subprocess.run(argv)", False),
     (
@@ -866,11 +780,6 @@ _SPAWN_CASES: list[tuple[str, str, bool]] = [
         "star-import",
         'from subprocess import *\nrun(["git", "checkout", "--", "."])',
         False,
-    ),
-    (
-        "aliased-module-helper-status",
-        f'import subprocess as sp\n{_PREAMBLE}sp.run(["node", HELPER, "status"])',
-        True,
     ),
     (
         "same-name-from-another-module",

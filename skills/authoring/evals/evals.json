@@ -34,7 +34,7 @@
     {
       "id": 3,
       "name": "lane-choice-and-change-spec",
-      "prompt": "Something came in from actual use of /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there): the digest report prints the improvement-ledger count wrong \u2014 it counts closed entries as well as open ones. Looks like a one-line fix.\n\nPick the assurance level for this ticket and write the change spec. Save it as spec.md in the output directory.",
+      "prompt": "Something came in from actual use of /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there): the drain report prints the improvement-ledger count wrong \u2014 it counts closed entries as well as open ones. Looks like a one-line fix.\n\nPick the assurance level for this ticket and write the change spec. Save it as spec.md in the output directory.",
       "expected_output": "A written artefact demonstrating authoring judgment on a recorded failure mode.",
       "files": [],
       "expectations": [
