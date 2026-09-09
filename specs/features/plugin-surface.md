@@ -540,16 +540,18 @@ grade against deleted machinery (`push-target-guard.js` refusing without a marke
 different file. Both filed as `bug` + `assurance:simple`, unassigned and unheld —
 correctly, since neither is a protected area or needs operator judgment.
 
-**Both homes named above are now resolved, neither by this sweep.**
+**All three homes named above are now resolved, neither by this sweep.**
 `docs/index.html:7`'s meta description landed with #633 (*The landing page's
 prose numerals are gone*, above), which removed the stale count rather than
 waiting on this entry. `skills/architecture/evals/evals.json` is resolved by
 #631: eval 3's prompt now names `scripts/mutate.py`, the largest first-party
 module and the still-live gravity well `scripts/gate-marker.js` (#621) no
-longer is, with its six `expectations` untouched. #631's own repo-wide sweep of
-`skills/*/evals/*.json` found no residue this ticket owns beyond the #636 hits
-named above and the eval framework's own output-filename and fixture-diff
-tokens, neither a claim about the tree.
+longer is, with its six `expectations` untouched. `skills/engineering/evals/evals.json`
+is resolved by #636 (*What #636 repointed, as built*, below): all three prompts
+name live subjects and `expectations` is unchanged in each. #631's own repo-wide
+sweep of `skills/*/evals/*.json` found no residue this ticket owns beyond the
+#636 hits named above and the eval framework's own output-filename and
+fixture-diff tokens, neither a claim about the tree.
 
 **Two findings reported, not fixed, agreed at review cycle 1 and again at cycle
 2.** `tests/unit/test_mutate.py:713`'s function name,
@@ -1391,6 +1393,59 @@ one file since ADR 0015, and nothing in this tree derives that fact from the tre
 the hero regex or adding a card for the gate would restructure the hero, which this ticket's
 scope excluded; the residual stands until a change that touches the hero's shape for some
 other reason picks it up.
+
+### What #636 repointed, as built
+
+All three evals in `skills/engineering/evals/evals.json` graded machinery #621 had
+already deleted (`hooks/push-target-guard.js`'s marker-gated refusal,
+`scripts/gate-marker.js`, `scripts/land.js`) and every prompt pointed at
+`/home/user/harness-ref`, absent from this host. Fixed as three `prompt` edits;
+`git diff origin/dev...HEAD` touches one file, six lines, and `expectations` is
+byte-unchanged in all three (AC-3).
+
+**The fixture decision (AC-2).** `/home/user/harness-ref` is provisioned nowhere
+in this tree, in git history, or in the harness that runs these files — it is a
+build-container artefact of #548's measurement run, whose workspaces
+*Known limitations* above already says do not survive it. Documenting a
+provisioning procedure would mean inventing one, refused under P0. The prompts
+now name the repository under test instead: eval 2's own sixth expectation —
+the answer must actually run a search against the repo and report what it
+found — is satisfiable only against a real, populated checkout, and the repo
+under test is the one guaranteed present when the suite runs. Left open rather
+than argued away: #548's baseline arms already reconstruct skill content out of
+this repo's own artefacts, and pointing every prompt at the repo under test
+widens that confound for a future no-guidance arm; the narrowed read fence
+below reduces it without closing it.
+
+**The three substitutes**, each keeping the shape its `expectations` grade.
+
+| Eval | Was | Now | Verified against the tree |
+|---|---|---|---|
+| 1 `fail-open-guard-build-plan` | `hooks/push-target-guard.js` refusing a push without a marker | `hooks/test-lock-guard.js` refusing a locked-test edit outside the `fix` lane | `:241` the refusal, `:246` the fix lane's base-tree allowance, both read in full |
+| 2 `retired-claim-sweep-before-handoff` | `--legacy-path` on the deleted `scripts/gate-marker.js` | `--repo` on `scripts/plugin-version.js` | Homes at `scripts/plugin-version.js:70,78-79`, `skills/build/SKILL.md:25`, `specs/features/plugin-surface.md:21,1457`, `tests/unit/test_plugin_version_script.py:734` — code, a shipped skill instruction, a spec record and a test, each read |
+| 3 `quantitative-criterion-needs-measuring-test` | `scripts/land.js`, deleted at #621 | `scripts/harness-config.js` | 406 lines; scalar, fence and flow-mapping parsing at `:63-302`; the substitute keeps both numbers expectation 4 pins, `300` and `214`, arithmetically honest rather than asserted |
+
+**The read fence is not uniform, by amendment.** Evals 1 and 3 widen the excluded
+paths from `skills/`, `agents/` to add `specs/`, where an as-built record or an
+accepted proposal restates guidance nearly verbatim; neither eval needs to read
+any of it to answer. Eval 2 cannot take the same fence: its expectations require
+naming non-obvious homes and require a search actually run and reported, and two
+of the four richest `--repo` homes are `skills/build/SKILL.md` and
+`specs/features/plugin-surface.md` — fencing off `skills/` and `specs/` there
+would put the best answer out of reach. Eval 2's fence is `skills/engineering/`
+alone, the skill under test, with the rest of the tree — `specs/` included —
+open. The cost stands recorded: eval 2 gives up most of the contamination
+protection the wider fence buys, so it is the least trustworthy of the three for
+a future no-guidance baseline arm.
+
+**Residue, checked by search.** No reference to `/home/user/harness-ref`,
+`scripts/gate-marker.js`, `scripts/land.js`, or `--legacy-path` remains in
+`skills/engineering/evals/evals.json`. The other eight `evals.json` files still
+name `/home/user/harness-ref`, flagged on this ticket as a widening question and
+not adopted: this ticket's scope is the one file its own problem statement names,
+`skills/architecture/evals/evals.json` is #631's sibling repoint, and the
+remaining seven stay open, the same absent-fixture defect on a different file
+each.
 
 ## Data model
 
