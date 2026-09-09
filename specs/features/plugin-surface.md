@@ -536,13 +536,20 @@ and `skills/build/references/run-state.md:6,76-78` instructs a resume to re-deri
 marker field. **#636** — all three evals in `skills/engineering/evals/evals.json`
 grade against deleted machinery (`push-target-guard.js` refusing without a marker,
 `scripts/gate-marker.js`, `scripts/land.js`) and all three point at
-`/home/user/harness-ref`, absent from this host; a sibling of the open #631, a
+`/home/user/harness-ref`, absent from this host; a sibling of #631, a
 different file. Both filed as `bug` + `assurance:simple`, unassigned and unheld —
 correctly, since neither is a protected area or needs operator judgment.
 
-**Two homes left untouched by ownership, not by disposition:**
-`skills/architecture/evals/evals.json` (#631) and `docs/index.html:7`'s meta
-description (#633), both open and in flight.
+**Both homes named above are now resolved, neither by this sweep.**
+`docs/index.html:7`'s meta description landed with #633 (*The landing page's
+prose numerals are gone*, above), which removed the stale count rather than
+waiting on this entry. `skills/architecture/evals/evals.json` is resolved by
+#631: eval 3's prompt now names `scripts/mutate.py`, the largest first-party
+module and the still-live gravity well `scripts/gate-marker.js` (#621) no
+longer is, with its six `expectations` untouched. #631's own repo-wide sweep of
+`skills/*/evals/*.json` found no residue this ticket owns beyond the #636 hits
+named above and the eval framework's own output-filename and fixture-diff
+tokens, neither a claim about the tree.
 
 **Two findings reported, not fixed, agreed at review cycle 1 and again at cycle
 2.** `tests/unit/test_mutate.py:713`'s function name,
