@@ -34,12 +34,12 @@ The shipped inventory, counted at tree `8281ecf` — the tree #547's build produ
 
 | Surface | Count | Where |
 |---|---|---|
-| Skills | 16 directories | `skills/*/SKILL.md`, all authored: the 9 lifecycle workflows (`assess`, `build`, `capture`, `drain`, `init`, `promote`, `propose`, `review`, `routine`) and 7 craft skills (`architecture`, `authoring`, `engineering`, `review-discipline`, `tracker`, `work-discovery`, `worktree-isolation`). #547 took the craft set from 15 to 7; *The skill surface after #547* below records every merge and every deletion with its reason. A workflow is the subset whose `description` opens with the slash trigger it answers to — the shape `tests/unit/test_native_codex_plugin.py` derives rather than lists. `tests/unit/test_landing_page_inventory.py` derives the inventory and the page's printed counts from the tracked tree. |
+| Skills | 17 directories | `skills/*/SKILL.md`, all authored: the 9 lifecycle workflows (`assess`, `build`, `capture`, `drain`, `init`, `promote`, `propose`, `review`, `routine`) and 8 craft skills (`architecture`, `authoring`, `design-system`, `engineering`, `review-discipline`, `tracker`, `work-discovery`, `worktree-isolation`). #547 took the craft set from 15 to 7 and #626 added `design-system`, the first skill to carry copied-out assets; *The skill surface after #547* below records every merge and every deletion with its reason. A workflow is the subset whose `description` opens with the slash trigger it answers to — the shape `tests/unit/test_native_codex_plugin.py` derives rather than lists. `tests/unit/test_landing_page_inventory.py` derives the inventory and the page's printed counts from the tracked tree. |
 | Agents | 5 files | `agents/*.md` (`architect`, `dev`, `reviewer`, `reviewer-feature`, `steward`). `reviewer-feature` arrived at #547: a body that defers to `agents/reviewer.md` in full over two lines of frontmatter that buy the deeper model |
 | Configuration | 1 file | `harness.yaml` at the repo root, read by one shared reader, `scripts/harness-config.js` |
 | Hooks | 6 scripts | `hooks/*.js`, auto-discovered from `hooks/hooks.json` by both manifests via `${CLAUDE_PLUGIN_ROOT}`; `hooks/package.json` pins CommonJS |
 | Templates | 11 files | `templates/*.md`, `templates/harness.yaml`, and `templates/rules/design-system.md` (#547) — referenced from the skill bodies as their assets (e.g. `authoring` → `templates/change.md`, `init` → `templates/harness.yaml`); the physical directory is shared rather than per-skill |
-| Path-scoped rules | 3 files | `.claude/rules/*.md`, each with a `paths:` frontmatter of globs: `scripts.md` (scoped to `scripts/**`, `hooks/**`, `tests/**`), `design.md` (`design/**`, `docs/**`), and `design-system.md` (#547) on those same two globs |
+| Path-scoped rules | 3 files | `.claude/rules/*.md`, each with a `paths:` frontmatter of globs: `scripts.md` (scoped to `scripts/**`, `hooks/**`, `tests/**`), `design.md` (the design directory and `docs/**`), and `design-system.md` (#547) on those same two globs. Since #626 the design glob reads `skills/design-system/assets/**` in this repo, because that is where `harness.yaml`'s `paths.design_system` now points; `scripts.md` also names `skills/design-system/assets/build_design_tokens.py`, the one Python file this repo owns outside `scripts/` |
 
 How and what follows ADR 0017 D3's pattern: the skill body states the method, a plugin asset argues it (`skills/engineering/references/principles.md`; `skills/review-discipline/references/craft.md` is the running precedent), and a repo-owned asset records local reality (`specs/architecture-principles.md` for design, `specs/infrastructure.md` for operations, the spine's *Repo principles* section for build). Two skills carry it since #547, not three: `engineering` for build and `architecture` for design. The `infrastructure` skill was the operate leg and is deleted — `/promote` already transcribed the whole promotion loop and cited the skill exactly once, in a parenthetical, so the skill was a second copy of a procedure the workflow owned. The three obligations it alone held moved into `skills/promote/SKILL.md`: the back-merge after the release hop, *the tree that lands equals the tree the gate certified* where a protected target forces a pull request, and the reserved exit code separating an infrastructure failure from a red tree. The repo-owned *what* stays in `specs/infrastructure.md`, where it already was.
 
@@ -49,7 +49,7 @@ ADR 0019 is the one evidence contract. The spine carries its full subject matrix
 
 ### Landing-page muted text
 
-The source muted token is `#656d8c`; the generated `--muted` declaration in `docs/index.html` resolves from it through `color.semantic.text.muted`. Normal-size muted text meets WCAG 2.1 AA's 4.5:1 contrast floor on the page background, white cards, marker panel, and both body-gradient endpoints. `tests/unit/test_build_design_tokens.py` measures those five rendered surfaces, while `scripts/build_design_tokens.py --check` keeps the page's generated token region aligned with `tokens.json`.
+The source muted token is `#656d8c`; the generated `--muted` declaration in `docs/index.html` resolves from it through `color.semantic.text.muted`. Normal-size muted text meets WCAG 2.1 AA's 4.5:1 contrast floor on the page background, white cards, marker panel, and both body-gradient endpoints. `tests/unit/test_build_design_tokens.py` measures those five rendered surfaces, while `skills/design-system/assets/build_design_tokens.py --check` (relocated from `scripts/` at #626) keeps the page's generated token region aligned with `tokens.json`.
 
 ### Landing-page install layout
 
@@ -59,7 +59,7 @@ The self-contained public page keeps three install cards above its existing 780p
 
 There is **one** always-loaded spine, `AGENTS.md`, and both hosts read it; `CLAUDE.md` carries the whole of `AGENTS.md`, byte for byte, followed by the deltas that apply on that host alone and nothing else (#558, reversing #537's pointer). *The host copy* below records that contract, its guard, and what the copy costs. It is no longer a compiled artifact — nothing generates it, and this repo's copy is 85 lines at #588 against the 120-line ceiling the ticket set. The spine carries, in order, the **operating context** #588 put ahead of everything else — pre-user, pre-revenue; speed and simplicity as the route to quality rather than a trade against it; and a four-line risk appetite whose two refusals are the only protected areas there are, user data, credentials and money; then **P0 Do less**, which takes precedence over the five principles behind it in any conflict (build quality in · reduce waste · flow · stop the line · continuous improvement), each stating what it refuses; the **laws** derived from them, one obligation per line with the rationale in an HTML comment beside it; the lifecycle (a fix / a ticket / a proposal); the shared contract (ticket states, holds, the three lanes, the PASS/FAIL/DEFER verdict vocabulary, the tree-oid binding, configuration, tracker dispatch, the queue and its limit, filing rules); and an enforcement summary. Each repo restates its own stage in one repo-owned line under *This repo* — this one's reads *Stage: pre-user, pre-revenue. Posture: speed and simplicity; a wrong change costs a revert. Protected: user data, credentials, money.* — and that line is what the generated paragraph is read against on the day a product gains a user. It carries **no configuration** — that moved to `harness.yaml`, and the contract's *Configuration* bullet names the file rather than restating a value from it. Skills are conditional depth behind the spine and may assume it is loaded. The generated block sits between `<!-- spine:generated:begin … -->` / `<!-- spine:generated:end -->` markers and is byte-identical to `templates/spine.md`'s block — held since #489 by `tests/unit/test_spine_template_parity.py`, which extracts the delimited region of `AGENTS.md` and of the template from the git index and fails in either direction, anchoring on both the `## Principles` and the `## Laws` headings so an extraction reaching one of them is not mistaken for reaching the block. Everything after an end marker is repo-owned.
 
-Guidance that matters only in one part of the tree lives in `.claude/rules/<name>.md`, with a `paths:` frontmatter of globs, and loads only while a matching file is open — narrower than the spine, never a cheaper spine. This repo ships three: `scripts.md` for `scripts/`, `hooks/` and `tests/` (stdlib-only Python, the no-dependency rule for the shipped JavaScript, the hook fail-open posture, ADR 0018's no-per-invocation-source rule, and *a guard asserts a property of the tracked tree, never the working directory* with its one named carve-out), and two on `design/` and `docs/` that split by subject: `design.md` carries the token-source relationship, and `design-system.md` — seeded at #547 from `templates/rules/design-system.md`, repo-owned since — carries the craft, the states checklist, accessibility, and the visual-evidence capture rules that used to sit in `skills/build/references/visual-evidence.md`. Its visual-evidence rule carries one carve-out since #608: a text-only diff — every changed line altering only the characters inside a string or text node, with no element, attribute, class, style, token, layout value or conditional touched — renders no evidence, while an unclear case, or a string whose element already constrains its length (a capped width, a single-line or truncating rule, a control sized to its label), still does. The carve-out landed in all three homes at once — `.claude/rules/design-system.md`, `templates/rules/design-system.md`, and `design/AGENTS.md` — whose shared region from the first `##` heading stayed byte-identical. Codex has no path-scoped rules, so where the design layer is on `/harness:hydrate` seeds the equivalent nested instruction file inside the design directory, which Codex reads nearest-wins; this repo's is `design/AGENTS.md`.
+Guidance that matters only in one part of the tree lives in `.claude/rules/<name>.md`, with a `paths:` frontmatter of globs, and loads only while a matching file is open — narrower than the spine, never a cheaper spine. This repo ships three: `scripts.md` for `scripts/`, `hooks/` and `tests/` (stdlib-only Python, the no-dependency rule for the shipped JavaScript, the hook fail-open posture, ADR 0018's no-per-invocation-source rule, and *a guard asserts a property of the tracked tree, never the working directory* with its one named carve-out), and two on the design directory and `docs/` that split by subject: `design.md` carries the token-source relationship, and `design-system.md` — seeded at #547 from `templates/rules/design-system.md`, repo-owned since — carries the craft, the states checklist, accessibility, and the visual-evidence capture rules that used to sit in `skills/build/references/visual-evidence.md`. Its visual-evidence rule carries one carve-out since #608: a text-only diff — every changed line altering only the characters inside a string or text node, with no element, attribute, class, style, token, layout value or conditional touched — renders no evidence, while an unclear case, or a string whose element already constrains its length (a capped width, a single-line or truncating rule, a control sized to its label), still does. The carve-out landed in all three homes at once — `.claude/rules/design-system.md`, `templates/rules/design-system.md`, and `design/AGENTS.md` — whose shared region from the first `##` heading stayed byte-identical. Codex has no path-scoped rules, so where the design layer is on `/harness:hydrate` seeds the equivalent nested instruction file inside the design directory, which Codex reads nearest-wins; this repo's is `skills/design-system/assets/AGENTS.md` since #626 moved the design directory there.
 
 #### Scenario: the fix lane
 
@@ -535,8 +535,9 @@ The public `docs/index.html` companion states the same boundary in its Hooks led
 one refuses, three advise; the refusal is the test lock and it rests on what the run
 declared about itself, never on a branch name granting an exemption; and the assurance
 is the declared gate plus the independent review rather than the hooks.
-`design/01-voice/README.md` records that plain, mechanism-first copy discipline, and
-`design/03-tokens/how-it-works.md` records the separate token-generation seam. The
+`skills/design-system/assets/01-voice/README.md` records that plain, mechanism-first copy
+discipline, and `skills/design-system/assets/03-tokens/how-it-works.md` records the separate
+token-generation seam (both relocated at #626). The
 inventory guard holds names and counts to the tracked tree; reviewers, rather than a
 prose predicate, hold narrative accuracy — and at this review that lede was the one
 place where #621 moved the guarded count and left the sentence beside it standing.
@@ -1172,6 +1173,84 @@ Nothing is forced, repaired, or conflict-resolved. The night stops and reports w
 
 Three-role topologies remain available to repos that deploy to staging — the roles are per-repo configuration in `harness.yaml`'s `branches:` block. Fast-forward-only publishing is `/promote`'s default since #547 moved it there with the rest of the retired `infrastructure` skill; this repo is the recorded exception to it, not a rewrite of it, and `skills/promote/SKILL.md` states the substitute assertion a pull-request-only target gets instead.
 
+### The design system ships as skill assets (#626)
+
+The eight-tier design system was a source-only `design/` tree at the repo root: this
+repo had it and a consuming repo, however it set `layers.design_system`, got the rule
+and the template and none of the system. It is now `skills/design-system/assets/` —
+`00-brand` … `07-flows`, `03-tokens/tokens.json`, and the token builder — and
+`/harness:hydrate` step 11 copies it into whatever `paths.design_system` declares.
+`design-system` is the first skill in the tree to carry assets that step copies out,
+which is why step 11's wording changed with it rather than only the skill's.
+
+**The copy is per file, never per directory, and that is the whole mechanism.** Step 5
+runs earlier in the same layer-on run and seeds the Codex twin `AGENTS.md` *into the
+design directory*, so a copy gated on the destination **directory** being absent would
+find it present in every ordinary run, copy nothing, and report success over a consumer
+holding an `AGENTS.md` and no tiers. Asking per file is hydrate's own root rule — absence
+licenses creation — rather than an exception to it, and it makes `AGENTS.md` resolve
+itself: step 5 writes it first, so the per-file rule finds it present and skips it. A
+consumer that already owns a design system keeps every file of it and receives only the
+ones it lacks. The first cut of this change gated on the directory and was caught at
+review; the per-file rule is stated in both `skills/design-system/SKILL.md` and step 11,
+and generalises to any later asset-carrying skill.
+
+**The builder travels with the tiers it resolves.** `scripts/build_design_tokens.py`
+became `skills/design-system/assets/build_design_tokens.py`, and its token source became
+a sibling lookup (`Path(__file__).parent / "03-tokens" / "tokens.json"`) so one copy
+serves a design directory nested three deep under `skills/` here and a repo-root
+`design/` in a consumer. Its page default still needs a repo root, and the design
+directory's depth is configuration, so `_repo_root()` walks ancestors for the nearest
+`harness.yaml` — nearest rather than outermost, because a worktree checked out inside
+another checkout must resolve to its own root, which is the live case on every agent
+worktree in this repo. That walk is the only new executable logic the relocation
+introduced and carries four cases in `tests/unit/test_build_design_tokens.py`: the
+nested layout, the repo-root layout, no `harness.yaml` anywhere (the fallback), and a
+nearer root beating a farther one. The generated-region marker dropped its `design/`
+prefix in step, and `docs/index.html` moved with it.
+
+**It ships as a reference implementation, not a turnkey tool**, and the skill says so
+under its own heading: `SEMANTIC_TO_CSS_VAR` maps to *this repo's* `docs/index.html`
+variable names and `PAGE_DEFAULT` points at this repo's page. Run unedited against
+another repo's page it writes a `:root` region of variable names nothing there consumes,
+and the failure is quiet — which is why the warning is prose in the skill rather than a
+comment in the file.
+
+**What the surface boundary now says.** `specs/architecture-principles.md` records the
+design system as the first unit to cross from source-only into the surface, and
+`.claude/rules/scripts.md` restates ADR 0022 point 1 at its actual line: the plugin ships
+no executable it owns **and keeps refreshing** inside a consumer's tree. The builder does
+land in a consumer, under the other half of that rule — copied out once, only where
+absent, the consumer's from that moment, and never rewritten by a later hydration. No ADR
+was amended, because the permitted pattern was already point 1's.
+
+**The gate followed the code.** `scripts/verify.sh` typechecks and measures coverage over
+`scripts` and `skills/design-system/assets`, and `harness.yaml`'s `commands.typecheck`
+names the same two trees — an agent running the declared command must not get a clean
+result over a tree the gate would redden. `tests/unit/test_verify_coverage_gate.py` holds
+the mypy stage to exactly that set in both directions. `tests/unit/test_seeded_assets_are_tracked.py`
+gained a `__pycache__` exclusion: #626 put Python under `skills/` for the first time, and
+any session that imports the builder recreates bytecode the sweep would otherwise read as
+an untracked shipped file.
+
+**Seeded guidance stopped competing with the assets.** The rule that told a consumer with
+no system to stand one up from `templates/design-system.md` by hand now tells it to set
+the path and run hydration, with the template re-scoped to the contract that tree
+implements rather than the thing that lands at the path. The sentence changed in all
+three homes at once — `.claude/rules/design-system.md`, `templates/rules/design-system.md`
+and `skills/design-system/assets/AGENTS.md` — whose shared region from the first `##`
+heading was verified byte-identical at this review. `templates/design-system.md` was
+re-scoped rather than retired: the accepted proposal keeps `templates/` wholesale.
+
+**The landing page moved because a guard forced it.** `tests/unit/test_landing_page_inventory.py`
+derives the inventory and the hero counts from the tracked tree, so a seventeenth skill is
+a page edit in the same change: one `data-unit` entry, the Craft skills card 7 → 8, and the
+hero 16 → 17 skills. The branch's second merge with `dev` conflicted here — this change had
+taken skills to 17 while #625 had taken agents to 5 → 6 — and the resolution keeps both,
+which the inventory guard then re-derives from the tree. Nothing else of #625's page content
+was lost. The page's stale gate-marker prose, noticed while rendering evidence, was filed
+onto #630, which already owns that sweep, rather than fixed here or filed as a twin.
+
 ## Data model
 
 **No persistent state beyond the tree itself, since #621.** The gate marker under `<git-common-dir>/harness/gate/` and the `refs/harness/*` namespace #539 added — gate records, claims and the green pointer — are both deleted, and nothing writes either. The one file that survives is `.harness/run.json`, which is gitignored, records where a run is rather than what is true of the tree, and is read by exactly one hook. This was never a run ledger (ADR 0015) and it is less of one now.
@@ -1194,7 +1273,8 @@ Three-role topologies remain available to repos that deploy to staging — the r
 - **The measured rewrite is not quite the shipped rewrite.** The eval arms are byte-identical to `skills/<name>/` at `6e21f1a`, walked file by file at review, and four repair commits landed after them — `fda33e5`, `ddef7ba`, `4fe8933`, `a97873b`. So the text that produced the deltas above differs from what ships in six files, by `git diff --numstat 6e21f1a HEAD`: 14 lines in `review-discipline/SKILL.md`, 6 in `assess/references/process-economy.md`, 4 in `work-discovery/SKILL.md`, and 2 each in `authoring/SKILL.md`, `engineering/SKILL.md` and `engineering/references/specialized-verification.md`. The snapshot arms are byte-identical to `origin/dev`, walked file by file at review. Re-running 72 sub-agent runs for a 14-word trim is the over-processing P2 refuses, so the gap is recorded rather than closed.
 - **AC-3's bold-span cap is met at zero margin, under an instrument that undercounts.** The ticket's instrument is a line-based `grep`, which cannot see a bold span wrapping a line. `promote` reads **12** under it — exactly the cap — and 14 under a multiline-aware count; `tracker` reads 11 against 12. The criterion names its own instrument, so both are met, and AC-3 is a proxy the ticket already says is a proxy. The next edit to either file should know that its headroom is a property of the counter rather than of the file.
 - **The spine can go stale in a consumer** that never re-runs `/harness:hydrate`; the generated markers and a second hydration are the remedy, and since #624 that is the same invocation as the first with no flag to remember. Spine growth is a first-`/assess` metric.
-- **The landing page's inventory, counts, and dual-host positioning are guarded; its remaining prose is not.** `tests/unit/test_landing_page_inventory.py` holds `docs/index.html`'s four `data-unit` inventories to the tracked tree, compares every inventory count with its list, derives the hero counts from the same tree, and requires the native Claude Code and Codex description in metadata and visible copy. The card-count pairing is positional and `_COUNT_TAG` is unanchored: a new `<span class="n">…</span>` elsewhere could take ownership of later tags, and nothing tests that shape. `build_design_tokens.py --check` holds the page's `:root` block and hex literals to `design/`; other prose and the self-contained rule still rest on review.
+- **The landing page's inventory, counts, and dual-host positioning are guarded; its remaining prose is not.** `tests/unit/test_landing_page_inventory.py` holds `docs/index.html`'s four `data-unit` inventories to the tracked tree, compares every inventory count with its list, derives the hero counts from the same tree, and requires the native Claude Code and Codex description in metadata and visible copy. The card-count pairing is positional and `_COUNT_TAG` is unanchored: a new `<span class="n">…</span>` elsewhere could take ownership of later tags, and nothing tests that shape. `build_design_tokens.py --check` holds the page's `:root` block and hex literals to the tokens under `paths.design_system`; other prose and the self-contained rule still rest on review. The page's `<meta name="description">` is outside every one of those guards: at #626 it still reads *sixteen skill packages* against a hero the same guard holds at 17, because the guard reads the `<li>` counts and not the prose beside them.
+- **`.claude/rules/scripts.md` carries one bare figure for the token builder's coverage scope**, and it was measured before the review-cycle edits that grew the file: the rule reads *133 statements at 98%* where the gate at this record's tree reports 139 at 98%. The claim the figure stands for — that dropping the builder from the coverage scope rather than following it costs about four points of the total — still holds at 139, and no guard derives the number, which is why it can go stale silently.
 - **One lock-file consumer has performed the migration** — nano-erp, 2026-08-18. `MIGRATION.md` carries its edges in *Edges from performed migrations* and still states, in *Honest limits*, what remains untested: later migrations should expect repo-specific edges, and the interview, the `CLAUDE.md` merge and uninstall ordering are instruction rather than tested code.
 - **Nothing guards the provenance *instructions*.** `tests/unit/test_marketplace_provenance.py` asserts this repo's own declaration corresponds to its two manifests (class (e)); that `skills/hydrate/SKILL.md` and `MIGRATION.md` still tell a hydration to write one is prose, and ADR 0017 D5 admits no guard over it. The one instance in this tree is the whole mechanical check.
 - **The consumer-facing guidance no longer names the helper, and nothing holds it that way.** #621 rewrote `skills/init/SKILL.md`, `skills/init/references/refresh.md`, `CONTRIBUTING.md`, `README.md`, `docs/index.html` and `.claude/rules/scripts.md`, and the two index-reading assertions that were the mechanical half lived in `tests/unit/test_gate_marker_js.py`, which is deleted. What replaces them is narrower and is a different claim: `test_no_shipped_executable_reads_gate_state` sweeps `hooks/` and `scripts/` for the retired spellings, so an **executable** cannot name the marker; guidance and specs are excluded deliberately, because a record may describe the retired mechanism and ADR 0022 itself quotes the sentence it forbids. The guidance half rests on enumeration at build and at review, which is where this review found the surviving homes it repaired.
