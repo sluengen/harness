@@ -12,7 +12,7 @@ The portable plugin root is two directories above this SKILL.md. Resolve embedde
 
 Usage: `/harness:hydrate` — one invocation, no flag, whether the repo has never been hydrated or was hydrated against an older release.
 
-Turns a repository into one this process can run in, and keeps it that way. The plugin carries the skills, role procedures and hooks; this workflow writes the files that must be **repo-owned**, listed step by step below. In Claude Code, always invoke it with its plugin prefix, because bare `/init` is the host's own command. In Codex, ask to hydrate Harness; it reads this same workflow from `skills/`.
+Turns a repository into one this process can run in, and keeps it that way. The plugin carries the skills, role procedures and hooks; this workflow writes the files that must be **repo-owned**, listed step by step below. In Claude Code, invoke it with its plugin prefix, as every plugin skill is invoked: `/harness:hydrate`. In Codex, ask to hydrate Harness; it reads this same workflow from `skills/`.
 
 ## The one rule every step obeys
 

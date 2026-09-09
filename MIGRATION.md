@@ -75,8 +75,8 @@ source repo moves.
 6. **After future plugin updates:** run `/harness:hydrate` again, or ask Codex to
    hydrate — one invocation, no flag. It re-derives the spine's marked block, the
    `CLAUDE.md` copy and the plugin-marked Codex role adapters, and where a repo still
-   carries its configuration in the spine's prose it reports the fence, interviews for
-   the values and writes `harness.yaml`. There
+   carries its configuration in the spine's prose it interviews for the values and
+   writes `harness.yaml`, leaving the stale fence for you to delete. There
    is no `/update-guidance` any more; the plugin manager owns updates.
 
 ## Version pinning

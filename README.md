@@ -95,7 +95,7 @@ accept both hosts' payload and output contracts.
 | `/promote` | Land a reviewed branch, or move completed work toward release along the repo's role branches |
 | `/drain` | Clear what has accumulated for the operator: held tickets, then the improvement ledger |
 | `/assess` | Periodic whole-system health assessment |
-| `/harness:hydrate` | Hydrate a repo (the one command that needs its prefix spoken) |
+| `/harness:hydrate` | Hydrate a repo, first time or after a plugin update |
 
 Small fixes need no command and no ticket: the fix lane is the same isolation
 and the same gate, invoked by asking.

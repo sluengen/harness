@@ -10,7 +10,7 @@ description: What binds while building or changing a user-facing surface in this
 Loaded whenever a file under this repo's design directory or its UI source paths is
 opened. `/harness:hydrate` seeded it from the plugin when `layers.design_system` was
 turned on, filling the globs above from `harness.yaml`. **It is yours now** —
-No later hydration overwrites it, so edit it to match how this repo actually works,
+no later hydration overwrites it, so edit it to match how this repo actually works,
 and delete anything below that does not.
 
 Where Codex is also in use, `hydrate` seeded the same rule as `AGENTS.md` inside the
