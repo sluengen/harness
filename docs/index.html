@@ -4,17 +4,17 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>harness — a spec-driven development process, shipped as native plugins for Claude Code and Codex</title>
-<meta name="description" content="harness: a spec-driven development process for agent-driven repos, shipped as native plugins for Claude Code and Codex. Nine lifecycle workflows, sixteen skill packages, six agent roles, and the guards that keep a build honest." />
+<meta name="description" content="harness: a spec-driven development process for agent-driven repos, shipped as native plugins for Claude Code and Codex. Lifecycle workflows, skill packages, agent roles, and the guards that keep a build honest." />
 <link rel="icon" type="image/png" sizes="32x32" href="favicon.png" />
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <meta property="og:type" content="website" />
 <meta property="og:url" content="https://sluengen.github.io/harness/" />
 <meta property="og:title" content="harness — native plugins for Claude Code and Codex" />
-<meta property="og:description" content="Let the agent do the judgement work; make the repo own the evidence. Nine lifecycle workflows, portable skills, six agent roles, and hooks that refuse." />
+<meta property="og:description" content="Let the agent do the judgement work; make the repo own the evidence. Lifecycle workflows, portable skills, agent roles, and hooks that refuse." />
 <meta property="og:image" content="https://sluengen.github.io/harness/og-card.png" />
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="harness — native plugins for Claude Code and Codex" />
-<meta name="twitter:description" content="Let the agent do the judgement work; make the repo own the evidence. Nine lifecycle workflows, portable skills, six agent roles, and hooks that refuse." />
+<meta name="twitter:description" content="Let the agent do the judgement work; make the repo own the evidence. Lifecycle workflows, portable skills, agent roles, and hooks that refuse." />
 <meta name="twitter:image" content="https://sluengen.github.io/harness/og-card.png" />
 <style>
   :root{
@@ -178,7 +178,7 @@
     <h1>A spec-driven development process<br /><span class="accent">for agent-driven repos.</span></h1>
     <p class="thesis">
       <b>harness</b> is a development process shipped as native plugins for Claude Code and Codex:
-      nine lifecycle workflows, portable skills, six agent roles, and enforcement hooks that make a
+      lifecycle workflows, portable skills, agent roles, and enforcement hooks that make a
       green gate the only path to a shared branch. Install it, initialize the repo, and the repo owns
       its own contract from then on.
     </p>
@@ -347,7 +347,7 @@ Codex: ask to hydrate Harness</pre>
     <h2>What the plugin installs</h2>
     <p class="lede">
       The whole surface, as the repository carries it. Both hosts read the same
-      <code>skills/</code> — the nine lifecycle workflows and the craft skills behind them — and hooks
+      <code>skills/</code> — the lifecycle workflows and the craft skills behind them — and hooks
       enforce the gate.
     </p>
 
@@ -370,7 +370,7 @@ Codex: ask to hydrate Harness</pre>
 
       <article class="card inv inv--agents">
         <h3>Agents <span class="n">6</span></h3>
-        <p>Claude's roles. Codex dispatches the same six through its native adapters in <code>.codex/agents/</code>.</p>
+        <p>Claude's roles. Codex dispatches the same roles through its native adapters in <code>.codex/agents/</code>.</p>
         <ul class="units">
           <li class="unit" data-unit="agent:dev"><code>dev</code><span>Implementation — test-first, strictly in scope, verified before handoff.</span></li>
           <li class="unit" data-unit="agent:reviewer"><code>reviewer</code><span>The final gate before merge; records what actually shipped on PASS.</span></li>
@@ -395,7 +395,7 @@ Codex: ask to hydrate Harness</pre>
 
     <article class="card inv inv--skills" style="margin-top:20px">
       <h3>Craft skills <span class="n">8</span></h3>
-      <p>Loaded by task, not all at once — 8 of them, alongside the nine workflows above. Both hosts read the same files.</p>
+      <p>Loaded by task, not all at once, alongside the workflows above. Both hosts read the same files.</p>
       <ul class="units units--two">
         <li class="unit" data-unit="skill:engineering"><code>engineering</code><span>The build half of how and what: durable principles, test-first method, scope, the gate.</span></li>
         <li class="unit" data-unit="skill:architecture"><code>architecture</code><span>The design leg: cross-cutting decisions, recorded in the spec they govern.</span></li>
