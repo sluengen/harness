@@ -329,6 +329,8 @@ review raised and declined to repair, and this change did not reach it. No enume
 is written here on purpose — ADR 0022 point 2 requires such a sweep to search the tree
 and decide each hit, on the ground that a list inside a record is stale before the sweep
 runs, and two attempts to enumerate the last retired claim both undercounted.
+**Resolved by #630**, below — swept by search rather than by this paragraph or
+any other list.
 
 **The version class.** `dev` stands at `11.0.0` and the release branch at `10.0.0`, so
 the cycle already carries a major raise. This diff deletes one reference file and
@@ -474,6 +476,90 @@ changed refusal reason, which `specs/architecture-principles.md`'s compatibility
 makes major — and `/build`'s contract narrowed from "to Done" to "to a reviewed branch",
 which a consuming repo must decide about rather than pull. The standing `11.0.0` covers
 both and no further raise is owed inside this diff.
+
+### What #630 swept, as built
+
+#630 is the reasons-only sweep the paragraph above named: two commits, `6b8fb63`
+then `e01b572`, 21 files, +71/−70 at `e01b572`. Swept by search, not from a list —
+`grep -rInE` for `gate[- _]?marker|gateMarker`, `marker`, `certified tree`,
+`certifies`, `verdict binds`, `binds to`, `covers the (pushed|tree)`, `fresh
+evidence`, `tree oid`, `tree identity`, `tree binding`, `reviewed_tree`,
+`gate_marker_tree` — 111 / 491 / 105 raw hits across the three term groups, most of
+the bare-`marker` volume read and set aside as unrelated vocabulary (`spine:generated`
+and `spine:copy` markers, design-token region markers, git conflict markers, the
+`[NEEDS CLARIFICATION]` marker, pytest marks, the workflow-guard debounce marker,
+`prompt-guard`'s role markers, `size:` markers).
+
+**Fourteen homes carried a false reason for a correct action; every one is
+rewritten, no prescribed action changed.** `AGENTS.md`, `CLAUDE.md` and
+`templates/spine.md`'s *The two gates* bullet stopped crediting "the retired tree
+binding" for the no-change window between the landing gate and the push, and cites
+law 3 instead. `README.md` and `docs/index.html`'s *One verification gate* card
+stopped saying the verify command "writes a marker named after the exact git tree
+it verified"; the builder who ran it and read it now carries the claim, matching
+`scripts/verify.sh`'s own docstring. `docs/index.html`'s *Green is a claim about
+bytes* section and *The marker* card — the public landing page, caught mid-build by
+a reviewer rendering #626's visual evidence and logged as a comment on this ticket
+before the build started — dropped the `marker write` gate stage, the tree-oid
+binding claim, and the sentence ADR 0022 point 2 forbids any shipped file from
+carrying ("the controls of record stay server-side..."), and now states what a
+green licenses. `harness.yaml`, `scripts/harness-config.js`,
+`scripts/plugin-version.js`, `skills/assess/SKILL.md`,
+`skills/review-discipline/SKILL.md`, `skills/build/references/run-state.md:11`,
+`templates/change.md`'s example title, and six test modules
+(`tests/unit/test_settings_template_parity.py`, `tests/unit/test_mutate.py`, and
+`tests/_gitutil.py` twice, `tests/unit/_toolchain.py`,
+`tests/unit/test_landing_page_inventory.py`,
+`tests/unit/test_verify_toolchain_preflight.py`) each stopped citing the marker as
+the reason the index, not the working file, is the operand these guards read, or as
+the reason a widened `node` permission once existed.
+
+**The cycle-1 undercount, named rather than smoothed over.** The first commit
+rewrote the claim once, in `tests/unit/test_settings_template_parity.py:41`. Five
+near-identical restatements of the same sentence — "what `git write-tree` certifies
+and the gate marker is named after" — survived that pass, spread across four more
+test modules and doubled in one of them, and were caught at review cycle 1, then
+fixed in `e01b572`. This is the third time this programme's own retirement-sweep
+rule (`skills/engineering/SKILL.md` → *a retirement sweeps for every home of what
+it retired*) was missed in execution rather than in principle, after two rounds of
+undercounting #620's "controls of record" claim (one home, then two, then thirteen
+found by search). No rule, guard or checklist was added for the class — ADR 0022
+point 4's default stands, and AC-3 forbids one — so what changes is execution,
+carried as a ledger entry rather than a mechanism.
+
+**Two live instructions, filed rather than reworded**, per this ticket's own third
+disposition. **#635** — `skills/assess/references/process-economy.md:62` derives a
+"median over the gate runs the marker series has recorded" that contradicts
+`skills/assess/SKILL.md:49`'s own correct statement that no such history exists;
+and `skills/build/references/run-state.md:6,76-78` instructs a resume to re-derive
+"whether a marker exists and is fresh" though the file's own field table carries no
+marker field. **#636** — all three evals in `skills/engineering/evals/evals.json`
+grade against deleted machinery (`push-target-guard.js` refusing without a marker,
+`scripts/gate-marker.js`, `scripts/land.js`) and all three point at
+`/home/user/harness-ref`, absent from this host; a sibling of the open #631, a
+different file. Both filed as `bug` + `assurance:simple`, unassigned and unheld —
+correctly, since neither is a protected area or needs operator judgment.
+
+**Two homes left untouched by ownership, not by disposition:**
+`skills/architecture/evals/evals.json` (#631) and `docs/index.html:7`'s meta
+description (#633), both open and in flight.
+
+**Two findings reported, not fixed, agreed at review cycle 1 and again at cycle
+2.** `tests/unit/test_mutate.py:713`'s function name,
+`..._and_one_read_only_query`, outlived the query it named — a name is not a
+reason, and renaming it is the kind of action change a reasons-only sweep forbids.
+`docs/index.html`'s `<div class="marker">` keeps its CSS class because
+`tests/unit/test_build_design_tokens.py:164` names it as a token-drift case;
+renaming it reaches into the token set rather than the prose.
+
+**The version class.** `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json`
+raised `11.0.0` → `11.1.0`. Reasons changed; no command, skill, argument or refusal
+did, so the change stays at the minor floor.
+
+**Reviewed independently across two cycles.** Cycle 1 returned FAIL on the
+undercount above and nothing else. Cycle 2 re-ran the search from scratch — against
+neither the ticket's own list nor the builder's disposition table — and found no
+further home.
 
 ### The enforcement loop
 
