@@ -551,6 +551,16 @@ longer is, with its six `expectations` untouched. #631's own repo-wide sweep of
 named above and the eval framework's own output-filename and fixture-diff
 tokens, neither a claim about the tree.
 
+**#635 is now resolved too.** `skills/assess/references/process-economy.md:62`'s
+Gate wall-clock row dropped the marker-median clause; it now states what the row
+measures — the per-run half of *Ground 3*'s own `cost per run × runs per week`
+ranking (`:53`) — and carries no derivation, so `skills/assess/SKILL.md:49`
+stays the row's one surviving derivation, untouched. `skills/build/references/run-state.md`
+lost `marker` from the cache-key sentence at `:6` and from the always-re-derived
+list at `:76-77`; the Fields table it already pointed at (`:15-27`) carried no
+such field, so nothing else in the file moved. #636's evals residue is a
+different file and stays open.
+
 **Two findings reported, not fixed, agreed at review cycle 1 and again at cycle
 2.** `tests/unit/test_mutate.py:713`'s function name,
 `..._and_one_read_only_query`, outlived the query it named — a name is not a
