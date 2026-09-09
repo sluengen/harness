@@ -1,5 +1,8 @@
 # ADR 0018 — The gate-marker convention is implemented once, in Node
 
+> **Superseded 2026-09-09 by [ADR 0022](0022-plugin-only-shape.md).** Moot rather than overturned: the marker helper this record chose a language for is deleted, so the choice has no subject. Its reasoning — that a writer must be in the language its readers run, because the hooks cannot be anything but JavaScript — remains sound for any future artefact in that position.
+
+
 - **Status:** Accepted
 - **Date:** 2026-08-25
 - **Source:** tickets #500 and #507; consumer migration follow-up #501; amended by #537 and #559.
