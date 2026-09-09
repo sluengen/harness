@@ -7,7 +7,7 @@
 
 ## Context
 
-At the 2026-09-08 process assessment this repository measured 4,056 lines of guidance — the skills, agents and templates a consumer installs — against 9,384 lines of executables and 28,065 lines of tests. Assurance per product line stood at 6.86, up from 5.36 six weeks earlier: the suite had grown 31.5% in that window while guidance grew 2.7%.
+At the 2026-09-08 process assessment this repository measured **assurance per product line at 6.86** — 27,841 lines under `tests/unit/*.py` against 4,056 lines of guidance in `skills/` and `agents/` — up from 5.36 six weeks earlier: the suite had grown 31.5% in that window while guidance grew 2.7%. A separate inventory at `dev` gives 9,384 lines of executables under `scripts/` and `hooks/`. The globs differ and the assessment warns against mixing them, so they are reported apart rather than summed.
 
 The growth was an accretion chain, and each link named the one that caused it. `gate-marker.js` binds a verdict to a git tree oid. `land.js` (585 lines) exists because that binding "modelled at 7.4 attempts to land at eight pushes an hour". `harness-refs.js` (483) exists to share gate outcomes between sessions without a service — a coordination problem the binding created. `harness-config.js` (598) exists because three hand-rolled readers of one YAML file produced four recorded parser bugs (#487, #488, #510), two of those readers being marker hooks. `plugin-version.js` is the third attempt at one version bump. Not one of them answers a problem a user has.
 
@@ -15,7 +15,7 @@ The binding also has a measured consumer-side cost, recorded in the decision tha
 
 **What the machinery enforced was a posture this repo's Principles explicitly decline.** The spine's stated risk appetite accepts a defect reaching the integration branch, because the gate and the next builder catch it and a revert is cheap. P0 refuses "an assurance calibrated for a stage the product is not at". The marker complex was that assurance.
 
-Incremental retirement had not converged: the most recent process assessment ran a full mutation sweep and its single concrete deletion candidate was a 39-line wording guard, 0.1% of the machinery.
+Incremental retirement had not converged: the most recent process assessment ran a bounded mutation sweep and its single concrete deletion candidate was a 39-line wording guard, 0.1% of that assurance surface.
 
 ## Decision
 
@@ -23,7 +23,7 @@ The plugin is the whole deliverable. Four points, each binding on future work.
 
 ### 1. No plugin-owned file persists in a consumer
 
-The plugin stops writing `gate-marker.js`, `harness-config.js`, `scripts/package.json` and the `verify.sh` skeleton into consumer repositories. It ships **assets a consumer then owns** — the design-system tier and its token builder are the pattern — and it ships nothing it keeps rewriting. The distinction is who owns the file after it lands: a consumer-owned copy is fine, a plugin-owned copy the plugin refreshes is not.
+The plugin stops writing `gate-marker.js`, `harness-config.js`, `scripts/package.json` and the `verify.sh` skeleton into consumer repositories. It ships **assets a consumer then owns** — the design-system tier and its token builder are the pattern — and it ships nothing it keeps rewriting. The distinction is who owns the file after it lands: a consumer-owned copy is fine; a plugin-owned **executable** the plugin refreshes is not. Generated *guidance* regions are the named exception and are unaffected — the `spine:generated` block in a consumer's `AGENTS.md` is plugin-owned and re-derived by design, which ADR 0021 settles and this record does not disturb.
 
 **`verify.sh` is disowned, not removed.** It remains the gate a consumer runs at landing; it simply belongs to the repository and is no longer wired through the marker. `hydrate` neither writes it, classifies it, nor touches it.
 
@@ -35,7 +35,7 @@ The plugin stops writing `gate-marker.js`, `harness-config.js`, `scripts/package
 
 The harness requires a repository to **declare** its branch roles in `harness.yaml`; it requires nothing about how those branches are protected. Skills act on the declared roles — `/routine` pushes only the integration branch, `/promote` moves between them — and nothing may require CI, branch protection, or a billing plan.
 
-**The harness's assurance is the gate the repo declares in `commands.verify`, run and read by the builder, plus the independent review.** Server-side controls are the repository's own: neither required nor assumed. No shipped file may claim one as the harness's own — including the spine's former sentence that "the controls of record are server-side branch protection and gate output in CI", which names a control the plugin cannot require and a consumer may not have.
+**The harness's assurance is the gate the repo declares in `commands.verify`, run and read by the builder, plus the independent review.** Server-side controls are the repository's own: neither required nor assumed. No shipped file may claim one as the harness's own — including the spine's former sentence that "the controls of record are server-side branch protection and gate output in CI", which names a control the plugin cannot require and a consumer may not have. **That claim has two homes, and the sweep owes both:** the spine sentence (three copies — `templates/spine.md:58`, `AGENTS.md:58`, `CLAUDE.md:58`) and a differently-worded one in a file point 3 keeps, at `hooks/test-lock-guard.js:17`. A retired claim carries no identifier to grep and a docblock is a home, so the count is recorded here rather than rediscovered; #621 owns clearing both.
 
 This repository keeps CI and branch protection **by its own choice under the same rule** — dogfooding its posture, not claiming an exemption from it.
 
@@ -43,15 +43,17 @@ This repository keeps CI and branch protection **by its own choice under the sam
 
 Binding on any executable the plugin ships — a hook, or a packaged script.
 
-**It may read:** the operation in hand (the intercepted tool call, the working directory) · what the repository declared (`harness.yaml`) · what the run declared about its own phase · what git can answer about the tree in front of it.
+**It may read:** the operation in hand (the intercepted tool call, the working directory) · what the repository declared (`harness.yaml`) · what the run declared about itself — its lane, its lock state, the commit it branched from · what git can answer about the tree in front of it.
 
 **It may never read a verdict** — whether a gate passed, a review happened, a human approved, CI is green, or a tree was certified.
 
 The line falls there because a fact is answerable where the guard already stands, from inputs it already holds, while a verdict lives elsewhere and must be *found* — and finding it is step one of the chain that produced the marker, the tree resolution, three parsers and 3,110 lines of hooks. Every link was reasonable from the one before; this refuses the first.
 
-The distinction was already latent in the data model. `.harness/run.json` carries eleven fields; the test-lock guard reads `tests_locked`, `stage` and `base_commit` and never touches `verdict`, `reviewed_tree`, `gate_marker_tree` or `review_cycles`. Its own spec says of `gate_marker_tree` that the field "never stands in for reading it". One column is what is; the other is what passed.
+The distinction was already latent in the data model. `.harness/run.json` carries twelve fields; the test-lock guard reads `version`, `tests_locked`, `lane` and `base_commit`, and never touches `verdict`, `reviewed_tree`, `gate_marker_tree` or `review_cycles`. Its own spec says of `gate_marker_tree` that the field "never stands in for reading it". One column is what is; the other is what passed.
 
-Every surviving executable satisfies this without a grandfathering clause: `prompt-guard` reads the tool call, `workflow-guard` the working directory, `test-lock-guard` its declared test paths and the run's own phase, the reduced `push-target-guard` the push target and declared branches, and `plugin-version.js` the declared release branch and manifest contents at a ref.
+**That guard goes narrower than this clause requires, and the reason is worth imitating.** It also refuses `stage` — a fact column it is permitted to read — because, in its own words, *"the run's stage vocabulary grows … what this hook denies must not move when it does."* The clause sets the outer bound; a guard should still read the narrowest and most stable thing that answers its question. A guard that declines a permitted read on stability grounds is the practice, not an anomaly.
+
+Every surviving executable satisfies this without a grandfathering clause: `prompt-guard` reads the tool call, `workflow-guard` the working directory, `test-lock-guard` its declared test paths and the run's own lane, lock state and base commit, the reduced `push-target-guard` the push target and declared branches, and `plugin-version.js` the declared release branch and manifest contents at a ref.
 
 ### 4. Escalate from no guard, and refuse on two grounds only
 
@@ -80,6 +82,6 @@ The asymmetry that makes this the cost-driver: **an advisory tolerates false neg
 
 **Obligations this creates.** Reconciliation moves from `land.js` into `/build`'s prose, so "rebase from the integration branch before you gate" becomes an instruction rather than a mechanism — the single instruction in the new shape most worth measuring for effectiveness. The `/build` → `/promote` handoff becomes a second prose-enforced boundary, with the ticket's own state as its record.
 
-**What is retired.** ADR 0020's tree binding and the landing posture built on it. ADR 0018's choice of JavaScript for the marker helper, moot once the helper is gone. The vendoring that ADR 0021 reasons about, and with it the open question at #617.
+**What is retired.** ADR 0020's tree binding and the landing posture built on it. ADR 0018's choice of JavaScript for the marker helper, moot once the helper is gone. **ADR 0021 is untouched and carries no banner:** its subject is copy-versus-bridge for *guidance* — the spine byte copy and the design layer's import — and none of that depends on gate-asset vendoring. What does change is the pressure behind #617: the lockstep that made a bridge attractive was the vendored gate assets, and point 1 removes it.
 
 **What this does not touch.** The three assurance lanes, the review discipline, the tracker semantics, the improvement ledger, and `test-lock-guard.js` — which stays because it is the one guard with independent evidence behind it (over 79% of measured cheating is editing the test directly) and it satisfies both point 3 and point 4's second ground.

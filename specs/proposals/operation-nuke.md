@@ -196,6 +196,8 @@ What the repository contains when items 1–9 have landed, and what each thing d
 | **Total** | **41,505** | **~20,500–21,800** | **−47% to −51%** |
 | **Assurance per product line** | **6.86** | **~2.8–3.1** | the measure item 9 re-baselines |
 
+**Glob note, added 2026-09-09 at #620's review.** The 28,065 test figure counts every Python file under the tests tree — 58 files, helpers and the conftest included. The 2026-09-08 assessment's own ratio counts only the unit-test modules, giving **27,841**, and 6.86 is that over 4,056. The 4,056 denominator covers the skills and agents directories and does **not** include templates. The two counts are not interchangeable and the assessment warns against mixing them — the totals in this table use the wider one throughout, so they are internally consistent but are not the assessment's series.
+
 **These figures are worse than the banded ones this table carried before the decisions, and deliberately so.** Keeping `mutate.py`, `plugin-version.js` and `build_design_tokens.py` costs roughly 5,000 lines of executables and tests against the optimistic end of the old band — the difference between "−66%" and "−51%". Each earns it on a recorded failure the deletion would reinstate, and a headline number is not a reason to delete a tool that prevents one. The only band left is item 5's decision on the prose-wording guards (`spine_template_parity`, `build_lifecycle_order`, `seeded_assets`, ~1,340 lines), which ADR 0017's admission rule and the last assessment both question.
 
 ## Breakdown
