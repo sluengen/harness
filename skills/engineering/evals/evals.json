@@ -4,7 +4,7 @@
     {
       "id": 1,
       "name": "fail-open-guard-build-plan",
-      "prompt": "I'm the builder on ticket ENG-212 in /home/user/harness-ref (read it, it's a real repo \u2014 but do not read anything under skills/ or agents/ there).\n\n`hooks/push-target-guard.js` currently refuses a push to a branch named under `branches:` in harness.yaml unless a fresh gate marker covers the pushed tree. ENG-212 adds a second acceptance path: also allow the push when the pushed commit is a two-parent merge whose first parent's tree is already covered by a marker.\n\nGive me the build plan \u2014 what I write, in what order, and what evidence I need before I can call ENG-212 done. Don't write the implementation; write the plan a builder follows. Save it as plan.md in the output directory.",
+      "prompt": "I'm the builder on ticket ENG-212 in this repository (read it \u2014 but do not read anything under skills/, agents/ or specs/ there).\n\n`hooks/test-lock-guard.js` currently refuses a Write or Edit to any file under `paths.tests` while `.harness/run.json` declares `tests_locked: true`. The `fix` lane is the one exception: there, a file absent from the tree the run branched from may still be added. ENG-212 adds a second acceptance path: also allow the edit in the `change` lane when the edited file is absent from that base tree.\n\nGive me the build plan \u2014 what I write, in what order, and what evidence I need before I can call ENG-212 done. Don't write the implementation; write the plan a builder follows. Save it as plan.md in the output directory.",
       "expected_output": "A written artefact demonstrating engineering judgment on a recorded failure mode.",
       "files": [],
       "expectations": [
@@ -20,7 +20,7 @@
     {
       "id": 2,
       "name": "retired-claim-sweep-before-handoff",
-      "prompt": "I'm finishing ticket ENG-240 in /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there).\n\nI deleted the `--legacy-path` flag from `scripts/gate-marker.js`. It's gone \u2014 the flag, its parsing, and the branch behind it. My diff is three files, the gate is green, and I'm about to hand this to review.\n\nIs there anything else I owe before handoff? Answer concretely for this repo \u2014 if there's something to run, give me the exact command. Save your answer as handoff-check.md in the output directory.",
+      "prompt": "I'm finishing ticket ENG-240 in this repository (do not read anything under skills/engineering/ there \u2014 the rest of the tree is yours to search).\n\nI deleted the `--repo` flag from `scripts/plugin-version.js`. It's gone \u2014 the flag, its parsing, and the branch behind it; the script now always runs against the working tree it is invoked from. My diff is three files, the gate is green, and I'm about to hand this to review.\n\nIs there anything else I owe before handoff? Answer concretely for this repo \u2014 if there's something to run, give me the exact command. Save your answer as handoff-check.md in the output directory.",
       "expected_output": "A written artefact demonstrating engineering judgment on a recorded failure mode.",
       "files": [],
       "expectations": [
@@ -38,7 +38,7 @@
     {
       "id": 3,
       "name": "quantitative-criterion-needs-measuring-test",
-      "prompt": "Ticket ENG-263 in /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there) has this acceptance criterion:\n\n  AC-4: `scripts/land.js` drops below 300 lines.\n\nI did it by moving the merge logic into a new `scripts/land-merge.js`. `land.js` is now 214 lines. The full gate is green.\n\nCan I mark AC-4 met and hand this over? Save your answer as ac4.md in the output directory.",
+      "prompt": "Ticket ENG-263 in this repository (do not read anything under skills/, agents/ or specs/ there) has this acceptance criterion:\n\n  AC-4: `scripts/harness-config.js` drops below 300 lines.\n\nI did it by moving the scalar, fence and flow-mapping parsing into a new `scripts/harness-config-parse.js`. `harness-config.js` is now 214 lines. The full gate is green.\n\nCan I mark AC-4 met and hand this over? Save your answer as ac4.md in the output directory.",
       "expected_output": "A written artefact demonstrating engineering judgment on a recorded failure mode.",
       "files": [],
       "expectations": [
