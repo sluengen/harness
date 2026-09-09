@@ -22,7 +22,7 @@ git worktree add --detach ../<repo>-<task-id> <remote>/<integration-branch>
 
 **Fetch before you branch**, so the base is the commit other sessions have landed on rather than the one this checkout last saw.
 
-**The base may be red, and that is what the next section is for.** #621 retired the green pointer along with the `refs/harness/*` namespace that carried it: the pointer named the last integration commit a gate had certified, and ADR 0022 point 3 forbids a plugin-shipped executable reading whether something passed. What replaces it is not a weaker pointer but the gate you were going to run anyway — *Gating the base* below runs it before anything changes, so a red base is caught at the same moment, by direct evidence rather than by a record of somebody else's run. What is genuinely lost is the *saving*: you now spend a gate run to learn what a ref lookup used to answer. That cost was weighed and accepted — one gate run per worktree against a namespace, a publisher, a pruner and a fallback chain.
+**The base may be red, and that is what the next section is for.** Nothing records for you whether the integration tip is certified, and ADR 0022 point 3 forbids a plugin-shipped executable reading whether something passed. What stands in its place is the gate you were going to run anyway — *Gating the base* below runs it before anything in the worktree changes, so a red base is caught by direct evidence rather than by a record of somebody else's run. The cost is one gate run per worktree, weighed and accepted.
 
 ## Linking heavy local artifacts
 
@@ -43,7 +43,7 @@ Run the repo's verify command (`harness.yaml` → `commands.verify`) in the deta
 
 It runs at this point in the sequence because a gate needs two things a bare commit id cannot give it: a working tree, and the gitignored local state the previous section links in. The detached worktree standing at the base is both, at no extra cost — nothing is committed to it and no branch names it, so a red result costs only a directory.
 
-**Somebody else's green does not excuse the run.** A gate is not host-portable: one observed failure was a suite green in CI and red on the developer's machine, on a temp path one character over a 200-character cap. A record of a passing run does not travel between hosts; the run does. This is the same reason #621 could retire the green pointer without replacing it — a pointer is a record, and the run is the evidence.
+**Somebody else's green does not excuse the run.** A gate is not host-portable: one observed failure was a suite green in CI and red on the developer's machine, on a temp path one character over a 200-character cap. A record of a passing run does not travel between hosts; the run does.
 
 - **Green.** Cut the branch now and start work — `git checkout -b <task-id>` inside the worktree, named after the task, its ticket id ideal. A red gate from here on is yours, which is what the minute buys.
 - **Red.** An andon pull (P4). File the failure as a bug against the integration branch, remove the worktree, hold the task, and stop. No branch was cut, so the retry after somebody clears the red starts clean. Never build on a red base: every later gate run answers a question you already know the answer to.

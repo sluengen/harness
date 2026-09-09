@@ -9,13 +9,12 @@
       "files": [],
       "expectations": [
         "The setup creates a new branch in its own git worktree, not a branch in the shared checkout",
-        "It branches off the last integration commit known green, reading that pointer rather than assuming the tip",
-        "It states what to do when that pointer is empty \u2014 branch off the integration branch named in harness.yaml \u2014 and names the branch this repo actually declares",
-        "It requires reporting which commit the work started from and whether it came from the pointer",
+        "It fetches first and branches off the integration branch named in harness.yaml, naming the branch this repo actually declares, rather than off whatever the local checkout last saw",
+        "It creates the worktree detached and runs the repo's declared verify command in it before the branch is cut, rather than assuming the base is green",
+        "It states what a red base means \u2014 an andon pull: file the failure as a bug against the integration branch, remove the worktree, hold the task, and do not repair the base inside this ticket's tree",
         "It symlinks the gitignored local state from the shared root, anchoring the path to the shared root computed from git rather than to the current directory",
         "The branch name identifies the task",
-        "The answer distinguishes the two causes of empty output from the green pointer \u2014 no pointer published yet, versus the remote being unreachable \u2014 and reads the exit status to tell them apart rather than reporting only the first",
-        "The answer states that the base fallback is correct either way, so the run takes a safe base in both cases, but the reported reason would be wrong if the two are conflated"
+        "It requires reporting which commit the work started from and the result of the base gate run"
       ]
     },
     {
