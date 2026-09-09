@@ -1337,6 +1337,54 @@ which the inventory guard then re-derives from the tree. Nothing else of #625's 
 was lost. The page's stale gate-marker prose, noticed while rendering evidence, was filed
 onto #630, which already owns that sweep, rather than fixed here or filed as a twin.
 
+### The landing page's prose numerals are gone (#633)
+
+`docs/index.html:7`'s meta description said *sixteen skill packages* against a hero the
+inventory guard already held at 17 — #626 moved every tagged count and the prose beside
+the meta tag was not one of the guard's operands, so it shipped stale, green. The defect
+named at filing was the guard's subject set, not the word: `tests/unit/test_landing_page_inventory.py`
+reads three *tagged* shapes only — `data-unit` tags, `<span class="n">N</span>` counts, and
+the hero's `<li><b>N</b> kind</li>` items — and a number written into a sentence is in none
+of them.
+
+**The operator decided the guard question ahead of the build.** Three options were on the
+ticket: leave the six correct prose numerals as future drift, extend the guard to spelled-out
+numerals in prose, or remove the numerals so nothing duplicates the guarded number. The
+second is a predicate over what a sentence says, which ADR 0017 D5 refuses outright; the
+third deletes the operand instead of detecting its drift (P0). The operator took the third
+before the build started, recorded in the ticket's second comment and carried into the
+change spec's Decision block.
+
+**Seven prose numerals duplicated a guarded count; all seven are gone.** The meta
+description, the `og:` and `twitter:` description pairs, the hero thesis, the inventory
+lede, the agents-card caption, and the craft-skills-card caption each restated a number the
+`data-unit`, `<span class="n">`, or hero reader already derives. Sentence structure and
+every other word were left alone — no restyling, no restructuring — and the guard itself
+did not grow: `tests/unit/test_landing_page_inventory.py`'s diff is its module docstring
+only, corrected to name the three reader shapes above and state plainly that a number in
+prose is not among them. No test was added, on the same D5 grounds the Decision took:
+law 2 scopes a measuring test to a criterion about code, and both of this ticket's
+criteria are about what the page and the docstring say.
+
+**Two numerals were kept because they partition rather than duplicate.** "Three are
+operator-triggered only" (of the hero's nine workflows) and "One refuses, three advise"
+(of the hero's four hooks) each carry a fact the guarded total does not, so removing either
+would delete information instead of a copy. The eight-tier design-system caption at
+`docs/index.html:407` was left standing for the same reason from the other direction: its
+`8` counts the design system's own tiers, a different subject that happens to share a
+numeral with the guarded craft-skill count.
+
+**One residual survives, recorded rather than repaired.** The hero still prints
+`<b>9</b> workflows` and `<b>1</b> gate`, and the hero reader's regex alternation is closed
+to `(commands|skills|agents|hooks)`, so neither of those two `<li>` items is derived there.
+The `9` is not unguarded overall — its card's own `<span class="n">9</span>` is held to a
+nine-entry list by the card-count sweep — but the hero's copy of it is not cross-checked
+against that card. The `1` is unguarded everywhere: it counts a gate script that has been
+one file since ADR 0015, and nothing in this tree derives that fact from the tree. Widening
+the hero regex or adding a card for the gate would restructure the hero, which this ticket's
+scope excluded; the residual stands until a change that touches the hero's shape for some
+other reason picks it up.
+
 ## Data model
 
 **No persistent state beyond the tree itself, since #621.** The gate marker under `<git-common-dir>/harness/gate/` and the `refs/harness/*` namespace #539 added — gate records, claims and the green pointer — are both deleted, and nothing writes either. The one file that survives is `.harness/run.json`, which is gitignored, records where a run is rather than what is true of the tree, and is read by exactly one hook. This was never a run ledger (ADR 0015) and it is less of one now.
@@ -1359,7 +1407,7 @@ onto #630, which already owns that sweep, rather than fixed here or filed as a t
 - **The measured rewrite is not quite the shipped rewrite.** The eval arms are byte-identical to `skills/<name>/` at `6e21f1a`, walked file by file at review, and four repair commits landed after them — `fda33e5`, `ddef7ba`, `4fe8933`, `a97873b`. So the text that produced the deltas above differs from what ships in six files, by `git diff --numstat 6e21f1a HEAD`: 14 lines in `review-discipline/SKILL.md`, 6 in `assess/references/process-economy.md`, 4 in `work-discovery/SKILL.md`, and 2 each in `authoring/SKILL.md`, `engineering/SKILL.md` and `engineering/references/specialized-verification.md`. The snapshot arms are byte-identical to `origin/dev`, walked file by file at review. Re-running 72 sub-agent runs for a 14-word trim is the over-processing P2 refuses, so the gap is recorded rather than closed.
 - **AC-3's bold-span cap is met at zero margin, under an instrument that undercounts.** The ticket's instrument is a line-based `grep`, which cannot see a bold span wrapping a line. `promote` reads **12** under it — exactly the cap — and 14 under a multiline-aware count; `tracker` reads 11 against 12. The criterion names its own instrument, so both are met, and AC-3 is a proxy the ticket already says is a proxy. The next edit to either file should know that its headroom is a property of the counter rather than of the file.
 - **The spine can go stale in a consumer** that never re-runs `/harness:hydrate`; the generated markers and a second hydration are the remedy, and since #624 that is the same invocation as the first with no flag to remember. Spine growth is a first-`/assess` metric.
-- **The landing page's inventory, counts, and dual-host positioning are guarded; its remaining prose is not.** `tests/unit/test_landing_page_inventory.py` holds `docs/index.html`'s four `data-unit` inventories to the tracked tree, compares every inventory count with its list, derives the hero counts from the same tree, and requires the native Claude Code and Codex description in metadata and visible copy. The card-count pairing is positional and `_COUNT_TAG` is unanchored: a new `<span class="n">…</span>` elsewhere could take ownership of later tags, and nothing tests that shape. `build_design_tokens.py --check` holds the page's `:root` block and hex literals to the tokens under `paths.design_system`; other prose and the self-contained rule still rest on review. The page's `<meta name="description">` is outside every one of those guards: at #626 it still reads *sixteen skill packages* against a hero the same guard holds at 17, because the guard reads the `<li>` counts and not the prose beside them.
+- **The landing page's inventory, counts, and dual-host positioning are guarded; its remaining prose is not, and since #633 there is nothing left in the prose for that gap to bite.** `tests/unit/test_landing_page_inventory.py` holds `docs/index.html`'s `data-unit` inventories to the tracked tree, compares every inventory count with its list, derives the hero counts from the same tree, and requires the native Claude Code and Codex description in metadata and visible copy. The card-count pairing is positional and `_COUNT_TAG` is unanchored: a new `<span class="n">…</span>` elsewhere could take ownership of later tags, and nothing tests that shape. `build_design_tokens.py --check` holds the page's `:root` block and hex literals to the tokens under `paths.design_system`; other prose and the self-contained rule still rest on review. #633 removed the seven prose numerals that duplicated a guarded one — the meta description among them, which had gone stale at #626 while the hero it echoed had already moved to 17 — rather than widening any of these guards to reach prose, which ADR 0017 D5 refuses. Two hero items still escape every guard: `<b>9</b> workflows` and `<b>1</b> gate` are outside the hero reader's closed `(commands|skills|agents|hooks)` alternation, so neither is cross-checked there; the `9` is at least held at its own card, and the `1` — a gate script one file since ADR 0015 — is held nowhere. Recorded as a residual rather than repaired, because closing it means restructuring the hero, which #633 scoped out.
 - **`.claude/rules/scripts.md` carries one bare figure for the token builder's coverage scope**, and it was measured before the review-cycle edits that grew the file: the rule reads *133 statements at 98%* where the gate at this record's tree reports 139 at 98%. The claim the figure stands for — that dropping the builder from the coverage scope rather than following it costs about four points of the total — still holds at 139, and no guard derives the number, which is why it can go stale silently.
 - **One lock-file consumer has performed the migration** — nano-erp, 2026-08-18. `MIGRATION.md` carries its edges in *Edges from performed migrations* and still states, in *Honest limits*, what remains untested: later migrations should expect repo-specific edges, and the interview, the `CLAUDE.md` merge and uninstall ordering are instruction rather than tested code.
 - **Nothing guards the provenance *instructions*.** `tests/unit/test_marketplace_provenance.py` asserts this repo's own declaration corresponds to its two manifests (class (e)); that `skills/hydrate/SKILL.md` and `MIGRATION.md` still tell a hydration to write one is prose, and ADR 0017 D5 admits no guard over it. The one instance in this tree is the whole mechanical check.
