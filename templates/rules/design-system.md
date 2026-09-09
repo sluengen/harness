@@ -8,12 +8,12 @@ description: What binds while building or changing a user-facing surface in this
 # Building a user-facing surface here
 
 Loaded whenever a file under this repo's design directory or its UI source paths is
-opened. `/harness:init` seeded it from the plugin when `layers.design_system` was
+opened. `/harness:hydrate` seeded it from the plugin when `layers.design_system` was
 turned on, filling the globs above from `harness.yaml`. **It is yours now** —
-`--refresh` never overwrites it, so edit it to match how this repo actually works,
+No later hydration overwrites it, so edit it to match how this repo actually works,
 and delete anything below that does not.
 
-Where Codex is also in use, `init` seeded the same rule as `AGENTS.md` inside the
+Where Codex is also in use, `hydrate` seeded the same rule as `AGENTS.md` inside the
 design directory, since Codex reads the nearest instruction file rather than a
 path-scoped one. Everything from the first `##` heading down is identical in both,
 and that is the region to keep in step; only this preamble and the `paths:`

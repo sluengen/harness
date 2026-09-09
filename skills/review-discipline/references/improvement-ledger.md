@@ -15,7 +15,7 @@ Two ledgers, and the entry's subject decides which one receives it. Get this wro
 
 **Resolve the source repo; never write it down.** This guidance installs into every repo that adopts it, and a fork's feedback must reach *its* source rather than ours. The address is already declared where the plugin was installed from — read it, in this order, and take the first that resolves:
 
-1. `.claude/settings.json` → `extraKnownMarketplaces.<name>.source` for the marketplace this plugin came from (`/harness:init` writes it, next to the enablement).
+1. `.claude/settings.json` → `extraKnownMarketplaces.<name>.source` for the marketplace this plugin came from (`/harness:hydrate` writes it, next to the enablement).
 2. `.agents/plugins/marketplace.json` → the matching plugin's `source`, which is Codex's equivalent record.
 3. The plugin root's own `.claude-plugin/plugin.json` `repository`, which is only present when you are working *in* the source repo.
 

@@ -24,7 +24,7 @@ its evidence, or the role that carries it.
 - **Every section heading is a plain label** in the established small-caps
   eyebrow style, never a slogan.
 - **Command names and syntax are never paraphrased.** `/build`, `/propose`,
-  `--refresh` appear verbatim, in `<code>`, exactly as a user would type them.
+  `/harness:hydrate` appear verbatim, in `<code>`, exactly as a user would type them.
 - **Status describes the actual enforcement or advisory role.** Use the page's
   `refuses` and `advises` labels, then name the evidence or condition behind it.
 - **Bold marks the one word that carries the sentence's point**, not for

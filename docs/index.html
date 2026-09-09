@@ -214,7 +214,7 @@
           A repo-owned <code>AGENTS.md</code> carries the five principles, the laws derived from
           them, and the lifecycle contract — always loaded, never optional. <code>CLAUDE.md</code>
           carries it verbatim plus that host's deltas — derived, not a pointer, and re-derived by
-          <code>--refresh</code> — and the repo's configuration is
+          <code>/harness:hydrate</code> — and the repo's configuration is
           <code>harness.yaml</code>. Skills carry the depth and load by task.
         </p>
       </article>
@@ -253,8 +253,8 @@ Codex: codex plugin add harness@harness</pre>
       <div class="step">
         <span class="step__n">3</span>
         <h3>Hydrate the repo</h3>
-        <pre>Claude: /harness:init
-Codex: ask to initialize Harness</pre>
+        <pre>Claude: /harness:hydrate
+Codex: ask to hydrate Harness</pre>
         <p>
           Interviews for the repo's values and writes the files that must be repo-owned:
           <code>harness.yaml</code>, the spine (<code>AGENTS.md</code>) and the
@@ -363,7 +363,7 @@ Codex: ask to initialize Harness</pre>
           <li class="unit" data-unit="skill:promote"><code>/promote</code><span>Land a reviewed branch, or move completed work toward release along the repo's role branches.</span></li>
           <li class="unit" data-unit="skill:drain"><code>/drain</code><span>Clear what has accumulated for the operator: held tickets, then the improvement ledger.</span></li>
           <li class="unit" data-unit="skill:assess"><code>/assess</code><span>Run a periodic whole-system health assessment.</span></li>
-          <li class="unit" data-unit="skill:init"><code>/harness:init</code><span>Hydrate a repo — the one command that needs its prefix.</span></li>
+          <li class="unit" data-unit="skill:hydrate"><code>/harness:hydrate</code><span>Hydrate a repo — the one command that needs its prefix.</span></li>
         </ul>
       </article>
 

@@ -149,7 +149,7 @@ def _spine(
 
     ``prose`` adds the bare-word mention ``AGENTS.md:3`` carries. ``quoted`` adds a
     sentence quoting a **whole marker inline**, which is the shape
-    ``skills/init/references/refresh.md:33`` already carries and the one the
+    ``tests/unit/test_spine_template_parity.py:121`` already carries and the one the
     pattern's line anchors actually defend against — the bare mention has no
     ``<!--`` and no unanchored pattern would touch it.
     """
@@ -667,7 +667,7 @@ def test_a_marker_quoted_inside_a_sentence_is_not_a_second_site(
     guard (#490): the comment cited ``AGENTS.md:3``, which mentions
     ``spine:generated`` as a bare word with no ``<!--``, so no unanchored pattern
     would ever have touched it. The shape that *is* at risk is a whole marker
-    quoted mid-sentence — ``skills/init/references/refresh.md:33`` carries one
+    quoted mid-sentence — ``tests/unit/test_spine_template_parity.py:121`` carries one
     today, and a home is one sentence away from carrying one.
 
     Unanchored, the quoted marker is a second site, the home refuses as

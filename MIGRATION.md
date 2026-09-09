@@ -24,7 +24,7 @@ source repo moves.
    codex plugin add harness@harness
    ```
 
-2. **Hydrate:** run `/harness:init` in Claude Code or ask Codex to initialize
+2. **Hydrate:** run `/harness:hydrate` in Claude Code or ask Codex to hydrate
    Harness. It interviews for the repo's
    values (tracker, commands, branch roles, layers) — taking answers from the
    repo itself where it can, including your existing `CONTEXT.md` — and writes
@@ -42,7 +42,7 @@ source repo moves.
    `harness@harness` resolves through is registered per machine either way, so a
    colleague's fresh clone gets no commands and no enforcement hooks and is told
    nothing.
-   `/harness:init` writes the declaration for you — check it landed, and add it
+   `/harness:hydrate` writes the declaration for you — check it landed, and add it
    by hand in a repo hydrated before that step existed:
 
    ```json
@@ -67,15 +67,16 @@ source repo moves.
    `scripts/harness-config.js`, resolves the `branches:` block from the first
    source that declares it: `harness.yaml`, then `AGENTS.md`, `CLAUDE.md`, and
    legacy `CONTEXT.md` — so branch protection does not lapse mid-migration, and a
-   repo that never migrates keeps working unchanged. Once `/harness:init` has written a
+   repo that never migrates keeps working unchanged. Once `/harness:hydrate` has written a
    spine whose `branches:` block is right, `CONTEXT.md` is unread; fold
    anything repo-specific you still want into the spine's repo section and
    delete it.
 
-6. **After future plugin updates:** `/harness:init --refresh`, or the same init
-   skill in Codex, migrates the configuration into `harness.yaml` where a repo
-   still carries it in prose, then refreshes the spine's marked block and the
-   Codex role adapters. There
+6. **After future plugin updates:** run `/harness:hydrate` again, or ask Codex to
+   hydrate — one invocation, no flag. It re-derives the spine's marked block, the
+   `CLAUDE.md` copy and the plugin-marked Codex role adapters, and where a repo still
+   carries its configuration in the spine's prose it reports the fence, interviews for
+   the values and writes `harness.yaml`. There
    is no `/update-guidance` any more; the plugin manager owns updates.
 
 ## Version pinning
@@ -94,9 +95,9 @@ shadows nothing — it is simply also present) rather than pinning a file.
   install too: their inputs are leaving, so they can never regenerate, and a
   stale copy reads as live guidance to the tool that consumes it.
 - **Delete before you hydrate.** The old `CLAUDE.md` is a *mirror copy* of the
-  retired process doc, and `/harness:init`'s merge rule would faithfully
+  retired process doc, and `/harness:hydrate`'s merge rule would faithfully
   preserve it as "repo-owned" content. Deleting the lock-listed mirrors first
-  gives `init` a clean slate. This ordering is safe because `CONTEXT.md` is not
+  gives `hydrate` a clean slate. This ordering is safe because `CONTEXT.md` is not
   lock-listed — it survives to seed the interview.
 - **Check `.gitignore` for `.claude/hooks`.** An ignore rule carried for the
   old symlinked install will silently hide any real hook file the migration
@@ -176,8 +177,8 @@ shadows nothing — it is simply also present) rather than pinning a file.
   (`tests/unit/test_context_branch_parsing_contract.py`); the *interview*
   reading an existing `CONTEXT.md` for its answers is prose instruction to the
   agent, not tested code.
-- The `CLAUDE.md` merge in `/harness:init` preserves existing content by
-  instruction; review the diff before committing, as with anything `init`
+- The `CLAUDE.md` merge in `/harness:hydrate` preserves existing content by
+  instruction; review the diff before committing, as with anything `hydrate`
   writes.
 - Uninstall ordering is untested: the claim that stale copied trees are inert
   beside the plugin holds for skills/commands/agents (the plugin's are

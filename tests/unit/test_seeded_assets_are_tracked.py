@@ -19,7 +19,7 @@ whose name happens to match, with `git add -A` reporting success either way.
 files the tree carries, not what any of them says.
 
 **Why these directories.** They are the ones whose contents are *named elsewhere*
-— by the spine, by `hooks.json`, by `/harness:init` — so an absent file is a
+— by the spine, by `hooks.json`, by `/harness:hydrate` — so an absent file is a
 document describing behaviour the tree does not have. A general "nothing is
 untracked" sweep would fail on every scratch file and would be deleted within a
 week; this one is scoped to the sets where absence is a defect.
@@ -75,7 +75,7 @@ def test_every_shipped_file_is_in_the_index(directory: str) -> None:
     # Not a skip. `test_the_suite_reaches_the_host_only_where_it_declares_the
     # _dependency` is right that a skip is how a suite silently runs less than it
     # claims — and here there is nothing to be conditional *on*: every directory
-    # in SHIPPED is named by the spine, `hooks.json`, or `/harness:init`, so one
+    # in SHIPPED is named by the spine, `hooks.json`, or `/harness:hydrate`, so one
     # that is missing is the defect this module exists to find.
     assert root.is_dir(), (
         f"{directory}/ is named elsewhere in the tree but does not exist here"

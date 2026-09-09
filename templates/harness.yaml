@@ -1,5 +1,5 @@
-# The repo's Harness configuration. `/harness:init` writes it from the
-# interview; `--refresh` migrates an existing repo's fenced spine block into
+# The repo's Harness configuration. `/harness:hydrate` writes it from the
+# interview, where the repo does not already carry one; it is repo-owned from
 # it, unchanged. One reader parses it: `scripts/harness-config.js`.
 #
 # Replace every {placeholder}. Keys the repo invents are kept as written —

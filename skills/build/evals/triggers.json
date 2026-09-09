@@ -4,7 +4,7 @@
 {"query":"pick up the one about cleaning stale markers and don't come back until it's merged and closed","should_trigger":true},
 {"query":"issue 604 is ready. run the whole thing on it, i don't need to be in the loop unless something actually blocks","should_trigger":true},
 {"query":"the branch for HAR-208 is half done from last night and the tests are red. finish it and ship it","should_trigger":true},
-{"query":"take ENG-51 from todo through to done, it's the one adding the --refresh flag to init","should_trigger":true},
+{"query":"take ENG-51 from todo through to done, it's the one adding the retry budget to the uploader","should_trigger":true},
 {"query":"there's an item for making the ticket backend configurable. built and landed today please","should_trigger":true},
 {"query":"the proposal got accepted and spawned three items. start with the first and carry it the whole way","should_trigger":true},
 {"query":"implement the one we just filed for the drift guard and get it in","should_trigger":true},

@@ -10,10 +10,10 @@ description: What binds while building or changing a user-facing surface in this
 Loaded whenever a file under `design/` or `docs/` is opened — this repo's design
 directory and the landing page built from it. Seeded from
 `templates/rules/design-system.md` when the design layer went on, and repo-owned
-since: `--refresh` never overwrites it. `.claude/rules/design.md` sits on the same
+since: a later hydration never overwrites it. `.claude/rules/design.md` sits on the same
 paths and carries the token-source relationship; this file carries the craft.
 `design/AGENTS.md` is the Codex host form of this rule, seeded with it by
-`/harness:init` step 4 and never overwritten by `--refresh`.
+`/harness:hydrate` step 5 and never overwritten by a later hydration.
 Everything from the first `##` heading down is identical in both, and that is the
 region to keep in step; the preamble above it differs because it names a host
 mechanism, and the Claude form carries `paths:` frontmatter the Codex form has no

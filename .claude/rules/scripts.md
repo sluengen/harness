@@ -26,7 +26,7 @@ other task.
   #621 retired the one exception — the marker helper and `harness-config.js` were copied
   in as a pair so a consumer's `verify.sh` could invoke the helper locally, and both the
   helper and the reason are gone. A change that proposes writing an executable into a
-  consumer is a new decision record, not a change to `init`.
+  consumer is a new decision record, not a change to `hydrate`.
 
 ## Hooks
 

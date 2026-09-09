@@ -37,7 +37,7 @@ Extraction makes the logic ordinary shell that a test can execute against stubbe
 
 **One repo holds two things that must never bleed into each other: the *surface* the plugin installs into other repos' sessions, and the *source's own* machinery.** Since ADR 0017 the boundary is the plugin, not a copy-list: `registry.yaml` and the installer are gone.
 
-- **Surface** — what the plugin manifests carry into a consuming session: `agents/`, `skills/` (with their reference assets, and the nine lifecycle workflows among them, each shipping once), `hooks/`, `settings/`, and `templates/` (the output shapes the skills and `/harness:init` instantiate — skill assets, not standalone units).
+- **Surface** — what the plugin manifests carry into a consuming session: `agents/`, `skills/` (with their reference assets, and the nine lifecycle workflows among them, each shipping once), `hooks/`, `settings/`, and `templates/` (the output shapes the skills and `/harness:hydrate` instantiate — skill assets, not standalone units).
 - **Source-only** — the remainder: `scripts/` (the gate and its instruments), `tests/` (the guards), `specs/`, `docs/` and `design/` (the landing page and its token source), `assessments/`, and the Codex adapters under `.codex/` — authored since #537 retired the generator, and held in correspondence with `agents/*.md` by `tests/unit/test_codex_agent_adapters.py`. A consuming repo needs none of them; nothing in the surface reaches into them.
 - **Discriminator** — *does an installed plugin put it in front of a consuming repo's agent?* Yes → surface; no → source-only. **Default to source-only**: the surface grows only by deliberately shipping a unit.
 

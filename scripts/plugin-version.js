@@ -131,7 +131,7 @@ const MANIFEST_SITE = /("version"\s*:\s*")([^"]*)(")/g;
 //: writer (#484, #487: a parser must accept every legal spelling its subject
 //: already contains). Line anchoring is the counterfeited-delimiter remedy, and
 //: the shape it defends against is a **whole marker quoted mid-sentence** —
-//: `skills/init/references/refresh.md:33` carries one today, and a home is one
+//: `tests/unit/test_spine_template_parity.py:121` carries one today, and a home is one
 //: sentence away from carrying one. Unanchored, that quotation is a second site
 //: and the home refuses as `home-unwritable` rather than raising at all. The bare
 //: word `spine:generated` at `AGENTS.md:3` is *not* the threat: it carries no

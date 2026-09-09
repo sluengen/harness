@@ -12,7 +12,7 @@ the tree does not have (`code-quality`, `engineering-principles`,
 (`researcher`) and three deleted commands (`ship`, `start`,
 `update-guidance`), while omitting three skills (`engineering`,
 `github-issues`, `infrastructure`) and four commands (`capture`, `digest`,
-`init`, `promote`) that do exist. This guard is the replacement, re-established
+`hydrate`, `promote`) that do exist. This guard is the replacement, re-established
 on the source that survived — the tree itself.
 
 **Admitted under ADR 0017 D5 class (e), tree-consistency.** Both operands are in

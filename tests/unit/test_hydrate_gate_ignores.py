@@ -1,4 +1,16 @@
-"""#494 / ERP-349 — hydration preserves the gate's untracked-path boundary."""
+"""#494 / ERP-349 — hydration preserves the gate's untracked-path boundary.
+
+Repointed at #624, which replaced ``skills/init/`` with ``skills/hydrate/``. The
+guard is unchanged in substance and only its second operand's path moved.
+
+**Kept on mutation evidence, against the ticket's own retirement list.** #624
+proposed deleting this module as a wording guard, on the 2026-09-08 process
+assessment's reading. Three staged probes at that ticket say otherwise, and each
+killed this row and only this row: dropping ``.harness/`` from ``.gitignore``
+(the hardcoded-set half), dropping it from the hydration block, and adding
+``.cache/`` to the hydration block alone (the cross-file half, both directions).
+The rename moves the operand; it does not empty the subject.
+"""
 
 from __future__ import annotations
 
@@ -33,7 +45,7 @@ def test_hydration_and_source_gitignore_carry_the_same_complete_gate_ignore_set(
     shared omission from making that comparison vacuous.
     """
     source = _block(".gitignore", "#")
-    hydration = _block("skills/init/SKILL.md", "<!--")
+    hydration = _block("skills/hydrate/SKILL.md", "<!--")
 
     assert source == _EXPECTED
     assert hydration == source
