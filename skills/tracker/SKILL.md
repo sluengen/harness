@@ -109,13 +109,28 @@ tracker's own kind and priority fields — never from a title, and never from a
 body claiming urgency, which anyone who can open an issue can write (law 6).
 `work-discovery` owns what the loop does about it.
 
-## Holds
+## `hold` — three writes, or the hold has not happened
 
 Hold is comment + label + assignment, always all three (the spine's contract),
-and the label is `input` or `operator` — there are exactly two. The assignment
-is the machine-readable half the queue read skips on. The loop skips both
-labels alike; only the return path (`/digest --drain`) distinguishes them,
-selecting `input` and nothing else.
+and the label is `input` or `operator` — there are exactly two. Write all three,
+then read the ticket back and confirm all three. A hold you cannot confirm is an
+**incomplete hold**: report the identifier and the URL, say which of the three is
+missing, and stop.
+
+None of the three is optional, because each does a different job. The comment is
+the question — without it the hold says a human is needed and never what for. The
+label says which kind of attention. The assignment is the only half a queue read
+acts on, so a hold that lands the comment and the label and loses the assignment
+leaves the ticket **pickable**: the next tick takes it and builds past the very
+question the hold was raised to ask. That failure reports success, which is why
+this operation reads the property back rather than trusting an exit status.
+
+Write the comment first and the assignment last. A partial hold that stops early
+then leaves the question on the record; one written the other way round leaves a
+ticket held for a reason nobody wrote down.
+
+The loop skips both labels alike (`work-discovery` owns that rule). Which label
+a given clearing pass selects is that pass's business, not this operation's.
 
 ## `ledger` — appending to the improvement ledger
 

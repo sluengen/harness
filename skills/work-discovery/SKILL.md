@@ -69,7 +69,7 @@ A ticket is wholly actionable when an agent can start it cold and know what done
 
 If it is actionable, hand it to the routine's build surface.
 
-If it cannot be actioned yet — it needs a decision, a missing detail, or an unfinished dependency — do not guess the answer. Hold it through `tracker`'s `hold` operation, naming in the comment what the ticket needs, and move on to the next candidate. `tracker` owns the two hold kinds and which one fits what this ticket waits on; do not re-decide them here. Make the whole hold, never the label alone: the assignment is what the skip rule below actually reads, and the comment is what `/digest --drain` presents to the operator. The tracker issue is the audit trail, so a deferral recorded there and nowhere else is still fully recorded.
+If it cannot be actioned yet — it needs a decision, a missing detail, or an unfinished dependency — do not guess the answer. Hold it through `tracker`'s `hold` operation, naming in the comment what the ticket needs, and move on to the next candidate. `tracker` owns the two hold kinds and what a complete hold is; do not re-decide either here. The tracker issue is the audit trail, so a deferral recorded there and nowhere else is still fully recorded.
 
 ## When a tracker write is refused
 
@@ -87,7 +87,7 @@ The queue pull may filter held tickets out as an optimisation, so they never rea
 
 ## Return path — when a held ticket is clearable
 
-The two sections above are the outbound half: defer what cannot be actioned, skip what a human holds. This is the inverse. `/digest --drain` delegates this judgment here rather than restating it, and owns only its own control flow.
+The two sections above are the outbound half: defer what cannot be actioned, skip what a human holds. This is the inverse — what makes a held ticket clearable, wherever the clearing happens. The judgment is here; whatever performs it owns only its own control flow.
 
 A held ticket is clearable when the only thing still missing is what the operator has now supplied: the answer, judgment call, credential or fact that makes the acceptance criteria checkable, or the hands-on session the ticket was waiting on.
 

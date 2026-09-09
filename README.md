@@ -93,7 +93,7 @@ accept both hosts' payload and output contracts.
 | `/review` | Review the current branch when it needs only that |
 | `/routine` | One unattended discover→build→ship cycle |
 | `/promote` | Move completed work toward release along the repo's role branches |
-| `/digest` | The operator's console: report, then drain held decisions |
+| `/drain` | Clear what has accumulated for the operator: held tickets, then the improvement ledger |
 | `/assess` | Periodic whole-system health assessment |
 | `/harness:init` | Hydrate a repo (the one command that needs its prefix spoken) |
 

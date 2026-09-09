@@ -34,7 +34,7 @@ The shipped inventory, counted at tree `8281ecf` — the tree #547's build produ
 
 | Surface | Count | Where |
 |---|---|---|
-| Skills | 16 directories | `skills/*/SKILL.md`, all authored: the 9 lifecycle workflows (`assess`, `build`, `capture`, `digest`, `init`, `promote`, `propose`, `review`, `routine`) and 7 craft skills (`architecture`, `authoring`, `engineering`, `review-discipline`, `tracker`, `work-discovery`, `worktree-isolation`). #547 took the craft set from 15 to 7; *The skill surface after #547* below records every merge and every deletion with its reason. A workflow is the subset whose `description` opens with the slash trigger it answers to — the shape `tests/unit/test_native_codex_plugin.py` derives rather than lists. `tests/unit/test_landing_page_inventory.py` derives the inventory and the page's printed counts from the tracked tree. |
+| Skills | 16 directories | `skills/*/SKILL.md`, all authored: the 9 lifecycle workflows (`assess`, `build`, `capture`, `drain`, `init`, `promote`, `propose`, `review`, `routine`) and 7 craft skills (`architecture`, `authoring`, `engineering`, `review-discipline`, `tracker`, `work-discovery`, `worktree-isolation`). #547 took the craft set from 15 to 7; *The skill surface after #547* below records every merge and every deletion with its reason. A workflow is the subset whose `description` opens with the slash trigger it answers to — the shape `tests/unit/test_native_codex_plugin.py` derives rather than lists. `tests/unit/test_landing_page_inventory.py` derives the inventory and the page's printed counts from the tracked tree. |
 | Agents | 5 files | `agents/*.md` (`architect`, `dev`, `reviewer`, `reviewer-feature`, `steward`). `reviewer-feature` arrived at #547: a body that defers to `agents/reviewer.md` in full over two lines of frontmatter that buy the deeper model |
 | Configuration | 1 file | `harness.yaml` at the repo root, read by one shared reader, `scripts/harness-config.js` |
 | Hooks | 6 scripts | `hooks/*.js`, auto-discovered from `hooks/hooks.json` by both manifests via `${CLAUDE_PLUGIN_ROOT}`; `hooks/package.json` pins CommonJS |
@@ -109,7 +109,7 @@ Intake carries the upstream half. `/capture` gains a **clarification loop with a
 
 `work-discovery` gains **Andon**, checked ahead of ranking: an open ticket that the tracker's own fields say is a **bug** at **top priority** is the only pick until it is closed. The check reads the open queue in **every** state rather than Todo alone, because a P1 bug somebody is already fixing is still the line stopped, and both halves come from the tracker's fields — never from a ticket's prose claiming urgency, which is text anyone who can open an issue may write (law 6). Two consequences are stated where they would otherwise be dropped: a **held** P1 bug is still the cord, so the loop reports the stopped line and stops rather than reaching past it; and a cord that is not actionable stops the tick rather than falling through to the next candidate, which is how an andon rule quietly becomes a ranking tweak. `/routine` step 1 names the same rule, and an attended `/build` on any other ticket reports the open P1 bug before it starts — it does not refuse, because an operator who names a ticket has the authority to build it, but silence would waste the signal. #588 narrowed what earns the cord to a hook or script that **refuses correct work or lands wrong work**, and nothing else: a rough edge, a confusing message, or a hook merely wrong about something nobody is blocked by is a P2 bug on the queue, because a repo whose cord is pulled by every misbehaving script has no cord.
 
-**The queue is bounded, and one step performs the pull (#588).** `queue.wip_limit` (default 6) bounds a project's Todo, In Progress and In Review tickets with held ones excluded; `queue.active_projects` (default 3) bounds how many projects may have anything in flight; and `queue.project_field` names the tracker field a ticket's project is read from — `project` for Linear, `milestone` for GitHub — or declares that the repo is its own single queue, which is what this repo declares. **Backlog** stops meaning *existence uncertain*, which is what the improvement ledger holds, and becomes confirmed work waiting for a slot, ordered by dependencies then priority. What the bounds govern is what *enters*: `tracker`'s `create` grows from four mandatory elements to five — the fifth is the ticket's **project**, inherited from the parent where the filing comes from inside a build — and its existing placement step stops meaning *Todo* and starts meaning Todo where the project has a free slot and Backlog where it has none, a breakdown files its first `wip_limit` into Todo and the rest into Backlog, `/assess`'s drain folds only into Backlog and drops by default, and starting a ticket already in Todo is never blocked by a limit. `work-discovery` gains *The limit*, run after the andon check and before ranking, and it is the only step in the loop that moves a ticket out of Backlog: count, normalise a project over its limit by moving its lowest-ranked Todo tickets to Backlog, pull the highest-ranked eligible Backlog ticket while a slot is free, then rank. Without it the redefinition of Backlog would be one-way — filings and folds enter and nothing carries them back out — so the step is what makes the reservoir a queue rather than a second ledger. It does not run under a stopped line, because a stopped line moves no tickets, and the cord itself is filed into Todo whatever the count with nothing demoted to make room. `/digest` prints the numbers per project beside the R line. **None of this is enforced mechanically**: the limit is guidance a run performs, and the only code the change adds is the reader that returns the keys.
+**The queue is bounded, and one step performs the pull (#588).** `queue.wip_limit` (default 6) bounds a project's Todo, In Progress and In Review tickets with held ones excluded; `queue.active_projects` (default 3) bounds how many projects may have anything in flight; and `queue.project_field` names the tracker field a ticket's project is read from — `project` for Linear, `milestone` for GitHub — or declares that the repo is its own single queue, which is what this repo declares. **Backlog** stops meaning *existence uncertain*, which is what the improvement ledger holds, and becomes confirmed work waiting for a slot, ordered by dependencies then priority. What the bounds govern is what *enters*: `tracker`'s `create` grows from four mandatory elements to five — the fifth is the ticket's **project**, inherited from the parent where the filing comes from inside a build — and its existing placement step stops meaning *Todo* and starts meaning Todo where the project has a free slot and Backlog where it has none, a breakdown files its first `wip_limit` into Todo and the rest into Backlog, `/assess`'s drain folds only into Backlog and drops by default, and starting a ticket already in Todo is never blocked by a limit. `work-discovery` gains *The limit*, run after the andon check and before ranking, and it is the only step in the loop that moves a ticket out of Backlog: count, normalise a project over its limit by moving its lowest-ranked Todo tickets to Backlog, pull the highest-ranked eligible Backlog ticket while a slot is free, then rank. Without it the redefinition of Backlog would be one-way — filings and folds enter and nothing carries them back out — so the step is what makes the reservoir a queue rather than a second ledger. It does not run under a stopped line, because a stopped line moves no tickets, and the cord itself is filed into Todo whatever the count with nothing demoted to make room. `/digest` printed the numbers per project beside the R line, and #627 retired both with the console; nothing prints them now (*The console retires into a drain* below). **None of this is enforced mechanically**: the limit is guidance a run performs, and the only code the change adds is the reader that returns the keys.
 
 **One improvement channel (#588).** The reviewer's Proposals section is gone from `review-discipline`, its evals, `skills/review/SKILL.md` and both hosts' reviewer agents; the 2×2's non-blocking/large cell now reads *let it go — say nothing*, and the one thing that still leaves a review is a **blocking** finding that is not this ticket's. The builder's three-line reflection is the single channel out of a build. A bug also gains a second half: the tree contradicts its own contract **and** the contradiction breaks a user outcome or a consumer behaviour that can be named — a stale comment, a wording mismatch, or a test asserting the wrong thing is an improvement, not a bug. `templates/change.md`'s cost line gains a **guard-to-change** figure and `engineering` states the bound: above 3 : 1 a guard needs a recorded reason naming the user outcome it protects at this repo's stage, and a mutation table is not that reason, because it says the guard works and never that it was worth writing.
 
@@ -269,32 +269,39 @@ the nine, not a minority of it.
 
 **The listing, measured.** `disable-model-invocation: true` removes a skill from the
 listing, so the listing is the twelve model-invocable skills — the seven craft skills
-plus `build`, `review`, `routine`, `digest`, and `assess`, none of which carries the
+plus `build`, `review`, `routine`, `drain`, and `assess`, none of which carries the
 flag because each answers to a caller that is not a human at a prompt: `/routine`
 drives `/build`, `/build` drives the review stage, `routine` itself is the versioned
-home of the prompt an unattended scheduled run pastes, a scheduled run fires
-`/harness:digest` directly, and a work-pull run falls back to `/assess code` when its
-own queue is empty. `routine` carried the flag through #537 and #547 and lost it at
+home of the prompt an unattended scheduled run pastes, `/assess` drives `/drain` for
+the ledger, and a work-pull run falls back to `/assess code` when its own queue is
+empty. `drain` holds the slot `digest` held until #627 and inherits the membership
+rather than the reason: `digest`'s caller was a scheduled run firing its report half,
+and `drain` has no report half to schedule. `routine` carried the flag through
+#537 and #547 and lost it at
 #564, once a scheduled run was observed refused on `Skill(routine)` — swept into the
 operator-only bucket by category rather than by intent. `digest` and `assess` carried
 the flag through #564 — whose reviewer flagged the identical contradiction in both and
 recommended a follow-up rather than widening that branch — and lost it at #565, once
 both were found refused on the operator's own host: two scheduled tasks invoking
 `/harness:digest` and one `lab-book-work-pull` fallback invoking `/assess code`. Their
-`description:` fields sum to **7,294 characters, about 1,823 tokens** at this record's
-tree — up from 5,896 / 1,474 (74% of budget) at `21e1b2b` (`dev`, immediately before
+`description:` fields sum to **7,200 characters, about 1,800 tokens** at tree
+`b2c7f63` (#627) — 7,294 / 1,823 before that rename, up from 5,896 / 1,474 (74% of
+budget) at `21e1b2b` (`dev`, immediately before
 #565), 3,496 / 874 at `3952f3a` (#564), 3,131 / 783 at `8281ecf` (#537), and down from
 4,658 characters across 17 listed skills on `dev` at `c75c666`. Against a 1% listing
-budget on a 200k window that is **91%**, up from 74% before #565 and 44% at `3952f3a`.
-Two skills rejoining the listing cost the 17-point rise; 91% is close enough to the
-budget to state plainly rather than bury: the next skill to rejoin would exceed it.
-The longest are now `digest` (786), `routine` (716), and `review` (675) — `digest`
-overtaking `routine` is new at #565 — rather than `authoring` (537) and `tracker`
-(577) before #548, and none reaches the cap. `digest` (786) and `assess` (612) moved
-from the off-listing sum into this one; a skill's own length is unchanged by which
+budget on a 200k window that is **90%**, up from 74% before #565 and 44% at `3952f3a`.
+Two skills rejoining the listing cost the 17-point rise and #627's rename gave one
+point back; 90% is close enough to the budget to state plainly rather than bury: the
+next skill to rejoin would exceed it. The longest are now `routine` (716), `review`
+(675) and `work-discovery` (652), with `drain` (650) just behind — `digest` (786) had
+overtaken `routine` at #565 and its replacement hands the slot back — rather than
+`authoring` (537) and `tracker` (577) before #548, and none reaches the cap. `digest`
+(786) and `assess` (612) moved from the off-listing sum into this one at #565; a
+skill's own length is unchanged by which
 side of the flag it sits on, only which sum counts it. The four off-listing workflows
-— `capture` (570), `init` (683), `promote` (170), `propose` (579) — sum to **2,002
-characters**, down from 3,129 at #564's tree and 1,019 before #548. Nothing guards any
+— `capture` (568), `init` (691), `promote` (170), `propose` (577) — sum to **2,006
+characters** at the same tree, down from 3,129 at #564's tree and 1,019 before
+#548. Nothing guards any
 of these figures — a description is prose, and law 2's subject is code — so each is a
 reviewer's measurement at a named tree, re-derivable by summing the `description:`
 field of every `skills/*/SKILL.md` with and without the flag.
@@ -335,9 +342,10 @@ The destination is resolved, never written down: `.claude/settings.json`'s
 the plugin root's own `.claude-plugin/plugin.json` `repository`, and where none
 resolves the entry goes to the operator rather than to a guessed owner. A hardcoded
 `sluengen/harness` in shipped guidance is the defect the rule exists to prevent: it
-silently redirects every fork's feedback here. `/assess` step 5 now marks every entry
+silently redirects every fork's feedback here. The ledger drain marks every entry
 **done**, **folded** or **dropped**, and an entry not promoted at the drain is dropped
-rather than carried.
+rather than carried — `/assess` step 5's own text until #627 moved the procedure into
+`/drain`, which step 5 now invokes.
 
 **Sequencing, so flow and andon have something to read.** `tracker` → *`create`*
 requires a breakdown filing to carry its dependencies and its priority in the
@@ -500,9 +508,12 @@ session.** Held-out trigger sets — 20 queries each, 9 positive and 11 near-mis
 negatives drawn from the neighbouring skill each description fences off — ship at
 `skills/<name>/evals/triggers.json` for all ten model-invocable skills, `routine`
 included after #564 removed its flag. `digest` and `assess` joined the model-invocable
-set at #565 without either gaining one: `digest` ships no `evals/` directory at all,
+set at #565 without either gaining one: `digest` shipped no `evals/` directory at all,
 and `assess` ships `evals/evals.json` but no `triggers.json` — a gap #565 found
-already open, not one it made. The set is now twelve model-invocable skills, ten of
+already open, not one it made. #627 gave `digest`'s replacement half of it: `drain`
+ships `evals/evals.json`, carrying the `drain-the-ledger` case that moved with the
+procedure it scores, and still no `triggers.json`. The set is now twelve
+model-invocable skills, ten of
 which carry a held-out trigger file; generating one is #547's own multi-day, ~130-run
 job, #565's criteria named no such deliverable, and the gap is carried here rather
 than closed. The published loop could not rank the ten it has on this host: seven
@@ -577,6 +588,104 @@ header makes the operator the budget-holder for that tax (P0), and the residual 
 the improvement ledger alongside G2's, the choice to mutate the short-circuiting operand
 of a conjunction as distinct from detecting a mispredicted killer. And no rewrite of the
 three citing tests, which the entry makes correct where they stand.
+
+### The console retires into a drain (#627)
+
+`skills/digest/` is deleted and `skills/drain/` replaces it, built from the accepted
+`operation-nuke` proposal. The console's report half does not move: five sections
+restating, once a day, what one operator's tracker already shows, whose fourth section
+was explicitly forbidden from deciding anything it surfaced. What survives is the act
+the operator actually performed — clearing what has accumulated — and the improvement
+ledger's pass joins it from `/assess` step 5. The two piles keep deliberately different
+procedures because the material differs: **held tickets one at a time**, each one
+question whose answer changes nothing about the next, and **the ledger as one corpus**,
+because entries written weeks apart turn out to be one pattern and deciding them singly
+is how a ledger grows a backlog instead of shrinking. Step 5 now invokes `drain` and
+reports what it recorded; the steward is refused the call in both its homes
+(`agents/steward.md` and `.codex/agents/steward.toml`), on law 4 — the agent that wrote
+an entry is the wrong one to decide it — and an unattended `/assess` still states the
+ledger's size and stops. The ledger drain also names the spine's twin rule at the fold
+step, which it had been inheriting silently: a fold is the filing most likely to hit a
+twin, because the pattern-level candidate was abstracted from several entries moments
+earlier.
+
+**The consumer-naming mentions are deleted, not repointed, and that is the point of the
+ticket.** At `b2fc67a`, an anchored search for the string `/digest` over `skills/`,
+`agents/`, `templates/`, `AGENTS.md` and `CLAUDE.md` returns **19 occurrences in 11
+files**, six of them inside the retired skill's own body and thirteen in ten others.
+Those thirteen were producers naming their consumer: `tracker`'s `Holds` section, both
+transport references' held-pile recipes, `work-discovery`'s outbound half and *Return
+path*, `build`'s and `review`'s DEFER bullets, `improvement-ledger.md`, and the spine in
+three copies. `build`'s went furthest — *"`input` is the whole return path for a DEFER:
+`/digest --drain` selects `input` and nothing else"* — a producer warned about a
+consumer's selector, which documents a coupling rather than removing it. Rewriting each
+mention under the new command name would have preserved every one of them, so each is
+deleted against the interface that already mediates the relation: a producer calls
+`tracker`'s `hold`, a clearing pass calls `held`, and neither knows the other exists.
+`build`'s DEFER bullet now commits and pushes, holds through `hold`, routes findings by
+class, and says in the run's own final summary that the ticket is held and what it waits
+on. **This supersedes the second half of the #567 entry above**: that entry's
+spent-budget path named `/digest`'s *At the keyboard* section as its own return, and
+with the console gone a spent cycle budget differs from a DEFER by its label alone.
+
+**`hold` got stricter, and that is where the change's risk concentrates.** The spine has
+required comment + label + assignment since the hold contract was written, but the
+operation trusted each caller to remember all three. It now writes all three, reads the
+ticket back, and reports an **incomplete hold** naming the missing part rather than
+succeeding. The failure it closes is specific: a hold that lands the comment and the
+label and loses the assignment leaves the ticket **pickable**, so the next unattended
+tick takes it and builds past the very question the hold was raised to ask — and it
+reports success while doing so, which is why the operation reads the property back
+instead of trusting an exit status. `github.md` names the concrete cause (`gh issue
+edit` drops a login the repository cannot assign and still exits zero) and `linear.md`
+gains the mutation triple plus the read-back, with the warning that a bare `labelIds`
+on `issueUpdate` replaces the whole set and takes the `assurance:` label with it. The
+write order is fixed — comment first, assignment last — so a partial hold leaves the
+question on the record rather than a ticket held for a reason nobody wrote down.
+
+**AC-2's evidence is verification by use, and the position is #567's.** The criterion
+asked for RED then GREEN, and `hold` is prose in a skill body: a test asserting that a
+section names three writes is a wording predicate over prose, which ADR 0017 D5 admits
+under no class and law 2's own comment refuses (#511, #520); making `hold` executable
+instead would ship a plugin-owned executable into a consumer, which ADR 0022 point 1
+forecloses. So the evidence is two rounds of fresh contexts given only the shipped hold
+text and the spine's contract — an `input` hold on an ambiguous spec, and an `operator`
+hold with a colleague in the prompt urging a two-of-three shortcut — both performing all
+three writes, reading them back per property, and naming the pickable-ticket failure;
+the second refused the shortcut on the prose's own grounds, preferring a read-back to
+hearsay. Neither round found a defect in the prose. That is the standing *The DEFER
+return path* (#567) records on this same subject, and the reviewer's read is the other
+half of it. The executable evidence in this change sits elsewhere: AC-4 on
+`tests/unit/test_workflow_skill_invocability.py` (class (d)) and AC-1 on
+`tests/unit/test_landing_page_inventory.py` (class (e)), whose both-directions
+comparison is what forced `docs/index.html` to move with the directory rather than
+leaving the page naming a skill the tree no longer carries.
+
+**The version class is major, and the rename is why.** `10.1.0 → 11.0.0` across all
+five homes — both plugin manifests and the `spine:generated` marker in `AGENTS.md`,
+`CLAUDE.md` and `templates/spine.md` — raised at `/build` step 1 inside the worktree.
+A renamed command is the first case the compatibility grammar's major clause names, and
+the refusal moves with it: a call that `Skill(digest)` answered is now unanswerable and
+`/drain` answers instead. A major reaches a consuming repo as a decision rather than an
+auto-pull, which is the correct arrival for a workflow that no longer exists under the
+name a repo's own notes may cite.
+
+**What the drop costs, recorded rather than absorbed.** D9 of the proposal said the R
+line — tickets opened against closed, with the opened count split by source — must not
+fall out; the operator answered it by dropping the R line and the load line rather than
+rehoming them, and the proposal carries that as a dated amendment in place rather than a
+silent divergence. Nothing replaces the R line. `/assess process`'s baseline is three
+fixed rows (assurance lines per product line, gate wall-clock, checks with no nameable
+failure-reason) and none of them counts tickets opened against closed, so spine P3's
+obligation to keep the queue's growth rate visible now rests on the tracker's own
+opened-and-closed view. A second loss has no such fallback: `/digest`'s *At the
+keyboard* section was the only enumeration of `operator`-labelled tickets anywhere in
+the tree, and `/drain` deliberately does not surface them for an answer — they are
+hands-on errands cleared on the actual task — so what remains of them is the count the
+held pile closes with, one number that makes a pile nobody is clearing visible without
+giving it a section. Both are calibrated to the stage the spine's *This repo* line
+declares: one operator, a dozen open tickets. A repo that outgrows either adds the row
+to `/assess process`'s baseline rather than rebuilding the console.
 
 ### The assessment layer
 
@@ -663,7 +772,7 @@ No persistent state beyond the tree itself, the gate marker, and — since #539 
 - **The test lock's Codex half is unprobed.** `.codex/config.toml` registers no hooks at all, so on Codex none of the six guards runs from this repo's configuration — the new one is exactly as strong as the three refusing guards already there, and no weaker. Its `apply_patch` handling and `turn_id` pass-through match `push-target-guard.js`'s shipped shape, and `tests/unit/test_test_lock_hook.py` exercises both over synthetic Codex payloads; what is recorded nowhere in this tree is whether Codex honours `permissionDecision: "deny"`. Stated as a limitation rather than measured.
 - **Nothing states when the lock is released, and one stage plausibly needs it to be.** `tests_locked` is set `true` in the write that enters `implement`, and the only documented way back is a test that turns out wrong returning the run to `stage: "tests"`. Reconciliation happens later in the same run, so a merge conflict *inside* a test file is resolved under an armed lock: the hook refuses the `Edit`, and the escape its message names mislabels where the run actually is. No shipped guidance covers the case. T3 (#539) built the reconcile-and-land loop this would land in and did **not** resolve it: `scripts/land.js` leaves a conflicted worktree for the agent to resolve by hand, which is precisely an edit to a test file under a lock nothing releases, and neither the run file's stage vocabulary nor `hooks/test-lock-guard.js` changed. The case is now reachable by the shipped landing procedure rather than hypothetical.
 - **The build workflow's length is a read, not a guard.** #538's criterion set a 70-line bound on `skills/build/SKILL.md`, which measured 68 at #547's tree; the measurement is `wc -l` and direct review, and no test asserts it — law 2's subject is code, and P2 refuses a guard over prose, so a wording or length predicate over a skill file would be the thing the spine was amended to stop (#511, #520). What *is* mechanical is the structural half: `tests/unit/test_build_lifecycle_order.py` reads the `harness:build-lifecycle` block out of the index, so a rewrite that drops it goes red. `tests/unit/test_teardown_guidance.py` once held this skill's delegation to `worktree-isolation`'s cleanup contract the same way; #615 retired it, mutation-confirmed vacuous — a fully reversed cleanup obligation kept all seven pinned tokens and both tests still passed — so that delegation now rests on review alone, the same standing the bound itself has: a reviewer's read at a named tree.
-- **Workflow invocation control is asserted from a host reference, not measured here.** Four of the nine workflow skills carry `disable-model-invocation: true` — `capture`, `init`, `promote`, `propose` — and `build`, `review`, `routine`, `digest`, and `assess` deliberately do not, because each answers to a caller that is not a human at a prompt: `/routine` drives `/build`, `/build` drives the review stage, `routine` itself is fired by an unattended scheduled run, a scheduled run fires `/harness:digest` directly, and a work-pull run falls back to `/assess code`. The probe behind that split read the host's own frontmatter and skills references; nothing in this tree executes a host dispatch, so what the flag does at runtime is the host's contract, recorded here rather than tested. #537's criterion said "six"; the shipped set was seven, because `routine` had been swept into the operator-only bucket by category rather than by intent. #564 (2026-09-06) is the first correction: a scheduled run was observed refused on `Skill(routine)`, silently shipping nothing, and removing the flag returned the count to six. #565 is the second: `digest` and `assess` carried the identical contradiction — a scheduled run refused on `Skill(digest)`, and `lab-book-work-pull`'s `/assess code` fallback refused the same way — and removing both flags returned the count to four. `tests/unit/test_workflow_skill_invocability.py` now holds the composed set (`routine`, `build`, `review`, `digest`, `assess`) against the flag, with the remaining four as its control, both read from the index.
+- **Workflow invocation control is asserted from a host reference, not measured here.** Four of the nine workflow skills carry `disable-model-invocation: true` — `capture`, `init`, `promote`, `propose` — and `build`, `review`, `routine`, `drain`, and `assess` deliberately do not, because each answers to a caller that is not a human at a prompt: `/routine` drives `/build`, `/build` drives the review stage, `routine` itself is fired by an unattended scheduled run, `/assess` drives `/drain` for the improvement ledger, and a work-pull run falls back to `/assess code`. The probe behind that split read the host's own frontmatter and skills references; nothing in this tree executes a host dispatch, so what the flag does at runtime is the host's contract, recorded here rather than tested. #537's criterion said "six"; the shipped set was seven, because `routine` had been swept into the operator-only bucket by category rather than by intent. #564 (2026-09-06) is the first correction: a scheduled run was observed refused on `Skill(routine)`, silently shipping nothing, and removing the flag returned the count to six. #565 is the second: `digest` and `assess` carried the identical contradiction — a scheduled run refused on `Skill(digest)`, and `lab-book-work-pull`'s `/assess code` fallback refused the same way — and removing both flags returned the count to four. `tests/unit/test_workflow_skill_invocability.py` now holds the composed set (`routine`, `build`, `review`, `drain`, `assess`) against the flag, with the remaining four as its control, both read from the index. #627 is a rename inside that set rather than a third correction: `drain` took `digest`'s place with its own caller — `/assess` step 5 — recorded in the module's header, and no observed refusal drove it. The flag never enforced operator presence for `digest`'s drain half either; the rule in the skill's body does, and the rename left that rule where it was.
 - **The improvement ledger and the tracker behaviours leave almost no footprint in this tree.** D7's sweep, holds and board writes are tracker-side; what is in the tree is `skills/tracker/` and the two transport references beneath it, and the ledger's own contents live on one standing issue found by its `improvement-ledger` label.
 - **Three exercises #547's criteria name cannot run from this environment, and each has a named owner rather than a fix.** The agent proxy in front of this container refuses every GraphQL query before GitHub sees it, and Projects v2 is GraphQL-only, so the board's Todo placement and Priority writes in `skills/tracker/references/github.md` ship carried; no Linear transport or workspace is reachable, so `references/linear.md` ships carried too; and `/assess` step 5 forbids an unattended run from draining, so the drain's three-outcome marking is reviewed by reading. `specs/harness-assumptions.md` → *Carried, with an owner* names who produces each piece of evidence and when. The recipes moved into `tracker` verbatim from the two provider skills, where they were exercised, which is why a re-exercise buys less here than the criterion assumed.
 - **A `<<` shift inside a multi-line `$(( ... ))` still refuses.** That body does contain a newline, so the shift reaches the heredoc branch, opens a body, and waits for a delimiter that never arrives. The refusal is fail-closed and rewriting the expression on one line clears it. It is not fixed, because fixing it means telling arithmetic from a command list again, which is what two review cycles of #557 failed at.

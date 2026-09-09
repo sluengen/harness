@@ -39,7 +39,7 @@ gh api graphql -f query='query { viewer { login } }' # GraphQL
 | `open` | `gh api repos/<owner>/<name>/issues/<n>` |
 | `create` | `gh api -X POST repos/<owner>/<name>/issues -f title=... -F body=@<path> -f 'labels[]=assurance:<level>'` |
 | `comment` | `gh api -X POST repos/<owner>/<name>/issues/<n>/comments -F body=@<path>` |
-| `hold` | `gh api -X POST repos/<owner>/<name>/issues/<n>/labels -f 'labels[]=<input\|operator>'` plus `gh api -X POST repos/<owner>/<name>/issues/<n>/assignees -f 'assignees[]=<login>'` |
+| `hold` | the `comment` POST above, then `gh api -X POST repos/<owner>/<name>/issues/<n>/labels -f 'labels[]=<input\|operator>'`, then `gh api -X POST repos/<owner>/<name>/issues/<n>/assignees -f 'assignees[]=<login>'`, then a read-back |
 | `queue` / `held` | `gh api 'repos/<owner>/<name>/issues?state=open&labels=<label>&assignee=<login\|none>&per_page=100'` |
 | `close` | `gh api -X PATCH repos/<owner>/<name>/issues/<n> -f state=closed` |
 | dependencies | the `dependencies/blocked_by` and `dependencies/blocking` calls below — already REST |
@@ -114,13 +114,20 @@ gh project item-list <number> --owner <owner> --format json
 gh issue comment <number> --repo <owner>/<name> --body-file <path>
 ```
 
-### `hold` — label **and** assign
+### `hold` — comment, label, assign
 
-Both, per the spine's hold contract: the assignee is the machine-readable skip signal, the label explains why.
+Three writes, per `tracker` → *`hold`*. `gh issue edit` does the label and the assignment in one call and no comment, so the comment is its own call and goes first:
 
 ```bash
+gh issue comment <number> --repo <owner>/<name> --body-file <path>
 gh issue edit <number> --repo <owner>/<name> \
   --add-label <input|operator> --add-assignee <operator-login>
+```
+
+Then read all three back. A login the repository cannot assign — no push access — is dropped silently and the edit still reports success, which is the incomplete hold that leaves a ticket pickable:
+
+```bash
+gh issue view <number> --repo <owner>/<name> --json assignees,labels,comments
 ```
 
 ### `queue` — the Todo work
@@ -132,7 +139,7 @@ gh issue list --repo <owner>/<name> --state open --limit 100 \
 
 Skip anything with a non-empty `assignees` (a human holds it) or a hold label. Cross-reference the board for Status when the distinction between Todo and In Progress matters.
 
-**The held pile is the same operation with that filter inverted** — the set `/digest --drain` clears. Ask for the hold label *and* the operator's own assignment, both conditions, plus the fields a triage read needs (the queue read above returns neither `url` nor `body`):
+**The held pile is the same operation with that filter inverted.** Ask for the hold label *and* the operator's own assignment, both conditions, plus the fields a triage read needs (the queue read above returns neither `url` nor `body`):
 
 ```bash
 gh issue list --repo <owner>/<name> --state open \
