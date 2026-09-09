@@ -101,7 +101,7 @@ With D2 withdrawn and D5, D6, D7 resolved, **no open decision blocks item 1.** D
 
 What the repository contains when items 1–9 have landed, and what each thing does. **This is the sign-off surface.** Statuses: **keep** (unchanged) · **rewrite** (same job, new content) · **reduce** (survives smaller) · **new** · **decide** (an open decision owns it).
 
-### Skills — the deliverable (17)
+### Skills — the deliverable (16)
 
 | Skill | Status | What it does |
 |---|---|---|
@@ -120,8 +120,7 @@ What the repository contains when items 1–9 have landed, and what each thing d
 | `propose` | keep | Work an idea to a decision before build time is spent. |
 | `digest` | keep | The operator's console; `--drain` for held tickets. |
 | `assess` | keep | Periodic health pass; drains the improvement ledger. |
-| `hydrate` | **new** (replaces `init`) | Greenfield setup or brownfield reconciliation. Writes `AGENTS.md`/`CLAUDE.md` at the root and per sub-directory for progressive discovery, seeds path-scoped rules, copies out attached assets. **Vendors no gate code**, so it carries no migration paths and no fixture corpus. |
-| `audit` | **new** | Launched against a hydrated repo; reports where the implementation has drifted from the current plugin. The bounded-drift half of the contract. |
+| `hydrate` | **new** (replaces `init`) | Greenfield setup or brownfield reconciliation. Writes `AGENTS.md`/`CLAUDE.md` at the root and per sub-directory for progressive discovery, seeds path-scoped rules, copies out attached assets. **Vendors no gate code**, so it carries no migration paths and no fixture corpus. **Ends by dispatching `harness-audit`** and carrying its findings into the report. |
 | `design-system` | **new** (D4) | The 8-tier structure (`00-brand` … `07-flows`) as skill-attached assets, copied out at hydration. |
 
 ### Agents (6)
@@ -133,7 +132,7 @@ What the repository contains when items 1–9 have landed, and what each thing d
 | `reviewer` | keep | The change lane's reviewer. |
 | `reviewer-feature` | keep | Same mandate, deeper model and effort. The lane buys depth through the runtime (ADR 0005). |
 | `steward` | keep | Whole-system periodic assessment for `/assess`. |
-| `auditor` | **new** | The sub-agent `audit` dispatches. Mirrors how `steward` serves `/assess`. |
+| `harness-audit` | **new** · `model: sonnet` | Validates a hydrated repo against the current plugin and reports drift. **`hydrate`'s close-out**, and separately dispatchable by name when the operator wants a check without re-hydrating. No paired skill — see *Why the audit is an agent and not a skill*. |
 
 ### Hooks (4, from 6)
 
@@ -212,12 +211,25 @@ Item 1 sets the shape — *the plugin is the whole product, a consumer's own CI 
 
    **`delta_review` disappears, and that is the point.** It exists because reconcile runs *after* review, so new bytes arrive that no verdict covers. Rebase first and the reviewer reads the branch as it will actually land. Also carries the resolved D5 posture, since that is landing behaviour. **Depends on 3** — the seam is only clean once the binding is gone; see *The seam* below.
 5. **`init` → `hydrate`** *(feature)* — one workflow that recognises greenfield vs brownfield and reconciles rather than refreshing; no vendored gate assets, so no migration paths, no fixture manifest. Writes `AGENTS.md`/`CLAUDE.md` at the root and in sub-directories for progressive discovery. Retires `references/refresh.md` and the refresh fixture corpus. **Depends on 2, 3.**
-6. **`audit` sub-agent** *(change)* — launched against a hydrated repo, reports consistency findings against the current plugin; the bounded-drift half of the contract. **Depends on 5.**
+6. **`harness-audit` agent** *(change)* — one agent definition, no paired skill: `hydrate` dispatches it as its close-out, and it is dispatchable by name for a check without a re-hydration. Pinned to `sonnet` per ADR 0005's tiering. **Depends on 5.**
 7. **Design system as a skill with attached assets** *(feature)* — the 8-tier structure and assets live in the skill folder and are copied out at hydration. Answers D4. **Depends on 5.**
 8. **Decide `mutate.py` and `plugin-version.js`** *(change)* — execute D1 and D3. ~5,000 lines if both go. **Depends on 2.**
 9. **Re-baseline the ratio** *(change)* — one `/assess` process pass measuring assurance-per-product-line against the 6.86 baseline, so the change is evidenced rather than asserted. **Depends on 2–8.**
 
 Items 2, 4 and 8 are independent of 5–7 once 1 lands, so the deletion track and the hydrate track run in parallel (P3).
+
+### Why the audit is an agent and not a skill
+
+An earlier draft of this proposal gave the audit both a skill and an agent, on the model of `steward` + `/assess`. That was over-production, and the pairing it copied does not apply: `/assess` earns its skill because it does work the agent does not — it writes a dated report, files findings as tickets, and drains the improvement ledger. A skill wrapping `harness-audit` would only dispatch it, which is a file that exists to call another file.
+
+**The stronger reason for the agent is the fresh context.** The main agent that just performed a hydration is the worst possible auditor of it: it holds every assumption it acted on, and it checks the repo it believes it left rather than the repo that is there. That is law 4's problem exactly — the reviewer writes the record, never the builder — and a sub-agent is what buys the separation. So the agent is not a delivery-mechanism preference; it is the mechanism that makes the audit worth running.
+
+Two consequences worth stating so nobody re-derives them later:
+
+- **No skill does not mean "only reachable through `hydrate`."** An agent in `agents/` is dispatchable by name, so an operator who wants to check a repo without re-hydrating it just asks for `harness-audit`. Nobody needs to add a skill later to make it invocable.
+- **`hydrate` reports the audit's findings; it does not act on them.** Hydration is working-tree-only and the operator reviews the result, so the close-out's job is to put drift in the report, not to repair it silently.
+
+**The name carries `harness-` deliberately.** These agent definitions ship into a consumer's own `agents/` directory, where a bare `audit` would collide with whatever the consumer calls their own, and is generic enough that a host could dispatch it for unrelated work. *Observation, not an item:* the existing five (`dev`, `architect`, `reviewer`, `reviewer-feature`, `steward`) carry the same risk and the same argument would rename them. That is a separate change and out of scope here; noted so the inconsistency is a known one rather than an oversight.
 
 ### Why the advisory hook is cheap, and what would make it expensive
 
