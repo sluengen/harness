@@ -93,15 +93,16 @@ This traces to P0 (do less; the machinery is a guard larger than what it guards)
 | ~~D6~~ — **Resolved 2026-09-08 by the operator.** No new `/land`: the landing half folds into **`/promote`**, which already moves a branch to its next destination. One skill, two altitudes. **One consequence must ship with it — see D7.** | resolved | `skills/promote` |
 | ~~D7~~ — **Resolved 2026-09-08 by the operator.** Whatever it is called, unattended agents must be able to run the landing step in a routine. `disable-model-invocation` comes off `/promote`, `/routine` gains the call, and misuse is discouraged by an **advisory** target hook rather than by withholding the command. | resolved | `skills/promote`, `skills/routine` |
 | D8 — Does a force-push to a declared role branch stay a **refusal**, or become advisory? A ~1,400-line question (the hook plus its lexer tests), not a philosophical one. **Advisory does not mean nothing refuses:** `settings/harness.json` already carries force-push and `reset --hard` deny globs, and they survive either way. The lexer exists only because globs miss exotic spellings (`-fq`, trailing `--force`, `+HEAD:dev`). Recommendation is advisory — globs refuse the common spellings, the hook warns, the lexer goes. | user | ADR (item 1) |
+| D9 — `/digest`'s section 2 carries the **R line** (tickets opened vs closed, split by source) and the **load line** (open against `wip_limit`), and its own text says the R line "is the only place the queue's growth rate is visible". Retiring the console retires that measurement. Does it move into `drain`'s output, or is it dropped? **Recommendation: drop it here and let `/assess process` own the series** — the load line is multi-project machinery for a repo that declares `project_field: none`. | user | `skills/drain` |
 | ~~D5~~ — **Resolved 2026-09-08 by the operator.** Stop the line, don't stop: the builder who hits red at integration fixes it then, whether the cause is their diff or a clobber. No tick stalls. Residual risk is duplicated effort in the window before a fix is visible, bounded by rebasing from the integration branch before running the gate. Item 4 writes this into `/build`. | resolved | `skills/build`, `skills/routine` |
 
-With D2 withdrawn and D5, D6, D7 resolved, **no open decision blocks item 1.** D1, D3 and D4 are answered when their item comes up. **D8 is answered at item 2**, which is where the lexer either survives or does not.
+With D2 withdrawn and D5, D6, D7 resolved, **no open decision blocks item 1.** D1, D3 and D4 are answered when their item comes up; **D8 at item 2**, where the lexer either survives or does not; **D9 at item 8**.
 
 ## Target manifest
 
 What the repository contains when items 1–9 have landed, and what each thing does. **This is the sign-off surface.** Statuses: **keep** (unchanged) · **rewrite** (same job, new content) · **reduce** (survives smaller) · **new** · **decide** (an open decision owns it).
 
-### Skills — the deliverable (16)
+### Skills — the deliverable (17)
 
 | Skill | Status | What it does |
 |---|---|---|
@@ -118,8 +119,8 @@ What the repository contains when items 1–9 have landed, and what each thing d
 | `routine` | reduce | One unattended tick. Gains the `/promote` call; loses the green-pointer and re-bind logic. |
 | `capture` | keep | File one ticket onto the queue. |
 | `propose` | keep | Work an idea to a decision before build time is spent. |
-| `digest` | keep | The operator's console; `--drain` for held tickets. |
-| `assess` | keep | Periodic health pass; drains the improvement ledger. |
+| `drain` | **new** (replaces `digest`) | One skill, two piles, operator-present only: **held tickets** (answer the question, release the hold — the DEFER return path) and the **improvement ledger** (decide each entry done / folded / dropped). `/assess` calls it as its close-out. |
+| `assess` | reduce | Periodic health pass: dispatch the steward, write the dated report, file findings, apply retention. **Step 5 moves out to `drain`**, which it calls. |
 | `hydrate` | **new** (replaces `init`) | Greenfield setup or brownfield reconciliation. Writes `AGENTS.md`/`CLAUDE.md` at the root and per sub-directory for progressive discovery, seeds path-scoped rules, copies out attached assets. **Vendors no gate code**, so it carries no migration paths and no fixture corpus. **Ends by dispatching `harness-audit`** and carrying its findings into the report. |
 | `design-system` | **new** (D4) | The 8-tier structure (`00-brand` … `07-flows`) as skill-attached assets, copied out at hydration. |
 
@@ -213,10 +214,26 @@ Item 1 sets the shape — *the plugin is the whole product, a consumer's own CI 
 5. **`init` → `hydrate`** *(feature)* — one workflow that recognises greenfield vs brownfield and reconciles rather than refreshing; no vendored gate assets, so no migration paths, no fixture manifest. Writes `AGENTS.md`/`CLAUDE.md` at the root and in sub-directories for progressive discovery. Retires `references/refresh.md` and the refresh fixture corpus. **Depends on 2, 3.**
 6. **`harness-audit` agent** *(change)* — one agent definition, no paired skill: `hydrate` dispatches it as its close-out, and it is dispatchable by name for a check without a re-hydration. Pinned to `sonnet` per ADR 0005's tiering. **Depends on 5.**
 7. **Design system as a skill with attached assets** *(feature)* — the 8-tier structure and assets live in the skill folder and are copied out at hydration. Answers D4. **Depends on 5.**
-8. **Decide `mutate.py` and `plugin-version.js`** *(change)* — execute D1 and D3. ~5,000 lines if both go. **Depends on 2.**
-9. **Re-baseline the ratio** *(change)* — one `/assess` process pass measuring assurance-per-product-line against the 6.86 baseline, so the change is evidenced rather than asserted. **Depends on 2–8.**
+8. **`digest` → `drain`** *(feature)* — retire the console; keep the two drains and put them in one operator-present skill. `/assess` step 5 moves out and `/assess` calls `drain` instead. **Repoints the DEFER return path** in `build`, `review`, `work-discovery`, `tracker` and its two transport references, `review-discipline/references/improvement-ledger.md`, the spine and `templates/spine.md` — 19 mentions across 10 files. Answers D9. **Depends on 1 only**, so it runs in parallel with everything else.
+9. **Decide `mutate.py` and `plugin-version.js`** *(change)* — execute D1 and D3. ~5,000 lines if both go. **Depends on 2.**
+10. **Re-baseline the ratio** *(change)* — one `/assess` process pass measuring assurance-per-product-line against the 6.86 baseline, so the change is evidenced rather than asserted. **Depends on 2–9.**
 
-Items 2, 4 and 8 are independent of 5–7 once 1 lands, so the deletion track and the hydrate track run in parallel (P3).
+Items 2, 4 and 9 are independent of 5–7 once 1 lands, so the deletion track and the hydrate track run in parallel; item 8 touches guidance only and depends on nothing but the shape, so it can run alongside either (P3).
+
+### Why `digest` goes and `drain` is the skill that was actually wanted
+
+**There are two drains in the current design, and they are in different skills.** `/digest --drain` clears **held tickets** — the `input`-labelled, operator-assigned pile a DEFER leaves behind. `/assess` step 5 drains the **improvement ledger** — deciding each entry done, folded or dropped. They share a name, a shape and an operator, and nothing else connects them to the skills they sit in. That split is why "the drain" is ambiguous in conversation and why one of them is buried inside a periodic assessment.
+
+Both are the same operation: *present an accumulated pile to the operator, capture one decision each, record it, clear it.* One skill, two piles.
+
+**What is left of `digest` once the drain leaves is a console nobody opens.** Its five sections report input-held tickets (the drain's own input), run outcomes, parked work, new ledger entries (read-only, deciding nothing), and hands-on errands. At one operator, one queue and a tracker that is already the source of truth, that is a daily report of what the tracker shows — over-production (P2), and the evidence is that it has gone unused. The report half is the part with no consumer; the drain half is the part that is reached for.
+
+**Two things must not fall out with it.**
+
+- **The DEFER return path.** `/build` states that "`input` is the whole return path for a DEFER: `/digest --drain` selects `input` and nothing else", and `/review` sends deferrals the same way. Nineteen mentions across ten files — `build`, `review`, `work-discovery`, `tracker` and both transport references, `review-discipline/references/improvement-ledger.md`, the spine, and `templates/spine.md` — repoint at `drain`. A run that renames the skill and misses those leaves every DEFER with no way back.
+- **The R line.** `/digest`'s own text says it "is the only place the queue's growth rate is visible". That is D9.
+
+**One correction to the shape as proposed: `/assess` calls `drain`; the steward must not.** The steward is the sub-agent that *writes* ledger entries — systemic insights it raised in the same pass. `/assess` step 5 already refuses this explicitly: *"an unattended run does not drain… A pass deciding its own proposals is the grant this split exists to close."* Letting the steward drain reopens exactly that grant, and it is the same law-4 problem as the audit: the agent that wrote the finding is the wrong one to decide it. So the call sits in `/assess`, after the steward has reported and with the operator present — which also keeps `drain` operator-only, where an unattended `/assess` notes the ledger's size and stops.
 
 ### Why the audit is an agent and not a skill
 
@@ -229,7 +246,9 @@ Two consequences worth stating so nobody re-derives them later:
 - **No skill does not mean "only reachable through `hydrate`."** An agent in `agents/` is dispatchable by name, so an operator who wants to check a repo without re-hydrating it just asks for `harness-audit`. Nobody needs to add a skill later to make it invocable.
 - **`hydrate` reports the audit's findings; it does not act on them.** Hydration is working-tree-only and the operator reviews the result, so the close-out's job is to put drift in the report, not to repair it silently.
 
-**The name carries `harness-` deliberately.** These agent definitions ship into a consumer's own `agents/` directory, where a bare `audit` would collide with whatever the consumer calls their own, and is generic enough that a host could dispatch it for unrelated work. *Observation, not an item:* the existing five (`dev`, `architect`, `reviewer`, `reviewer-feature`, `steward`) carry the same risk and the same argument would rename them. That is a separate change and out of scope here; noted so the inconsistency is a known one rather than an oversight.
+**On the name — skills and agents are addressed differently, and only one of them is namespaced.** A plugin *skill* invokes as `/harness:<name>`, so the prefix is already there and `harness-audit` as a skill would give the doubled, awkward `/harness:harness-audit`. A plugin *agent* is dispatched by bare name through the host's Agent tool, in a flat list beside the host's own (`general-purpose`, `Explore`, `Plan`) and beside whatever the consuming repo defines. **Because this is an agent, `/harness:harness-audit` never occurs** — the awkward form only exists for the shape this is not.
+
+That leaves the flat namespace as the only naming consideration, and its cost is small either way: `harness-audit` is unambiguous and slightly verbose; `auditor` matches the role-noun convention the five siblings use (`dev`, `architect`, `reviewer`, `reviewer-feature`, `steward`) but says no more about what it audits than `audit` does. **Recommendation: `harness-audit`**, because these definitions land in a consumer's own `agents/` directory and a new one should not inherit a known collision risk. *Observation, not an item:* the existing five carry that risk and the same argument would rename them — a separate change, out of scope here, noted so the inconsistency is known rather than overlooked.
 
 ### Why the advisory hook is cheap, and what would make it expensive
 
