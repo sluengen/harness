@@ -71,10 +71,11 @@ LINEAR 'query { teams { nodes { id key name } } }'
 
 ### Resolving states by type (the default)
 
-Workflow-state IDs are **per-team UUIDs** — not portable across repos or trackers, and they change if a team renames a state. So resolve a state at runtime by its stable `type` enum; never hard-code the UUID. Every Linear workspace has the same four state types:
+Workflow-state IDs are **per-team UUIDs** — not portable across repos or trackers, and they change if a team renames a state. So resolve a state at runtime by its stable `type` enum; never hard-code the UUID. These are the types the recipes in this file resolve:
 
 | `type` | The state(s) |
 |---|---|
+| `backlog` | Backlog |
 | `unstarted` | Todo |
 | `started` | In Progress **or** In Review — two states share this `type` |
 | `completed` | Done |
@@ -86,7 +87,7 @@ Query the team's states *with* their `type`, then pick the one you need. For the
 LINEAR 'query { workflowStates(filter: { team: { key: { eq: \"<team-key>\" } } }) { nodes { id name type } } }'
 ```
 
-From that result: `unstarted` is the Todo column, `completed` is Done, `canceled` is the cancel state, and the two `started` states are In Progress and In Review — match the one you want by `name`. This is the same call for every workspace; nothing is cached. Resolve team and label IDs (for `issueCreate`) at runtime the same way:
+From that result: `backlog` is the Backlog column, `unstarted` is the Todo column, `completed` is Done, `canceled` is the cancel state, and the two `started` states are In Progress and In Review — match the one you want by `name`. This is the same call for every workspace; nothing is cached. Resolve team and label IDs (for `issueCreate`) at runtime the same way:
 
 ```bash
 LINEAR 'query { teams { nodes { id key name } } }'
