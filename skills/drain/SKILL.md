@@ -1,6 +1,6 @@
 ---
 name: drain
-description: "/drain — clear what has accumulated for the operator: the tickets a deferral left held, and the improvement ledger. Use when the operator says `/drain`, \"drain my held tickets\", \"clear the ledger\", or \"what is parked on me\". Two piles with different procedures — held tickets one at a time, the ledger as one corpus — and every entry leaves marked. Not for building, fixing, merging, or filing new work: it changes hold state and ledger state, nothing else."
+description: "/drain — clear what has accumulated for the operator: the tickets a deferral left held, and the improvement ledger. Use when the operator says `/drain`, \"drain my held tickets\", \"clear the ledger\", or \"what is parked on me\". Two piles with different procedures — held tickets one at a time, the ledger as one corpus — and every entry leaves marked. Not for building, fixing, merging, or filing new work: it changes hold state and ledger state, nothing else. Reachable by `/assess`, which invokes it to clear the ledger, so `disable-model-invocation` is deliberately not set here (#627); what keeps it at the keyboard is the rule in this skill's body."
 model: inherit
 effort: medium
 ---
