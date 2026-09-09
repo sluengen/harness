@@ -122,7 +122,7 @@ What the repository contains when items 1–9 have landed, and what each thing d
 | `propose` | keep | Work an idea to a decision before build time is spent. |
 | `drain` | **new** (replaces `digest`) | Operator-present only, two piles with **different procedures**. *Held tickets:* per item — read the thread, answer, write it into the change spec, release the hold. The DEFER return path. *Improvement ledger:* a corpus pass — re-validate each entry against the tree, consolidate entries sharing a home and abstract small ones into the pattern they evidence, check the open queue for a twin, drop what names no user or consumer outcome, then bring the surviving slate back for one sitting. `/assess` calls it as its close-out. |
 | `assess` | reduce | Periodic health pass: dispatch the steward, write the dated report, file findings, apply retention. **Step 5 moves out to `drain`**, which it calls. |
-| `hydrate` | **new** (replaces `init`) | Greenfield setup or brownfield reconciliation. Writes `AGENTS.md`/`CLAUDE.md` at the root and per sub-directory for progressive discovery, seeds path-scoped rules, copies out attached assets. **Vendors no gate code**, so it carries no migration paths and no fixture corpus. **Ends by dispatching `harness-audit`** and carrying its findings into the report. |
+| `hydrate` | **new** (replaces `init`) | Greenfield setup or brownfield reconciliation. Writes the root spine and per-sub-directory instruction files for progressive discovery (**the model is below — a sub-directory file is not a spine**), seeds path-scoped rules, copies out attached assets. **Vendors no gate code**, so it carries no migration paths and no fixture corpus. **Ends by dispatching `harness-audit`** and carrying its findings into the report. |
 | `design-system` | **new** (D4) | The 8-tier structure (`00-brand` … `07-flows`) as skill-attached assets, copied out at hydration. |
 
 ### Agents (6)
@@ -218,7 +218,7 @@ Item 1 sets the shape — *the plugin is the whole product, the declared gate is
    | `in_review` → `rebase` → `substantive_review` loop → `pass` | `rebase` → `full_gate` → `pass` → `tree_compare` → `push` |
 
    **`delta_review` disappears, and that is the point.** It exists because reconcile runs *after* review, so new bytes arrive that no verdict covers. Rebase first and the reviewer reads the branch as it will actually land. Also carries the resolved D5 posture, since that is landing behaviour. **Depends on 3** — the seam is only clean once the binding is gone; see *The seam* below.
-5. **`init` → `hydrate`** *(feature)* — one workflow that recognises greenfield vs brownfield and reconciles rather than refreshing; no vendored gate assets, so no migration paths, no fixture manifest, **and no transition logic at all**. Writes `AGENTS.md`/`CLAUDE.md` at the root and in sub-directories for progressive discovery. Retires `skills/init/references/refresh.md` and the refresh fixture corpus. **Depends on 2, 3.**
+5. **`init` → `hydrate`** *(feature)* — one workflow that recognises greenfield vs brownfield and reconciles rather than refreshing; no vendored gate assets, so no migration paths, no fixture manifest, **and no transition logic at all**. Writes the root spine and per-sub-directory instruction files for progressive discovery, per *The sub-directory instruction file* below. Retires `skills/init/references/refresh.md` and the refresh fixture corpus. **Depends on 2, 3.**
 5b. **The one-off consumer transition prompt** *(change, #629)* — a dated `MIGRATION.md` section holding a prompt an operator pastes into a session in a consuming repo. `verify.sh` is **disowned, not removed** — still the gate run at landing, just repo-owned and no longer wired through the marker; the two helpers are deleted and `scripts/package.json` is judged. Retires itself once both consumers adopt. **Depends on 5.**
 6. **`harness-audit` agent** *(change)* — one agent definition, no paired skill: `hydrate` dispatches it as its close-out, and it is dispatchable by name for a check without a re-hydration. Pinned to `sonnet` per ADR 0005's tiering. **Depends on 5.**
 7. **Design system as a skill with attached assets** *(feature)* — the 8-tier structure, `tokens.json` and `build_design_tokens.py` live in the skill folder and are copied out at hydration; the builder ships as a reference implementation a consumer adapts, since its token-to-variable map is this repo's own (D4). **Depends on 5.**
@@ -226,6 +226,25 @@ Item 1 sets the shape — *the plugin is the whole product, the declared gate is
 9. **Re-baseline the ratio** *(change)* — one `/assess` process pass measuring assurance-per-product-line against the 6.86 baseline, so the change is evidenced rather than asserted. **Depends on 2–8.**
 
 Items 2 and 4 are independent of 5–7 once 1 lands, so the deletion track and the hydrate track run in parallel; item 8 touches guidance only and depends on nothing but the shape, so it runs alongside either (P3). **Nine items, and with every decision resolved none is held for an answer** — only item 1 is held, and that is for the shape itself.
+
+### The sub-directory instruction file, and why it is not a spine
+
+**Added 2026-09-09.** The proposal said only "per sub-directory for progressive discovery" and specified no content. That gap led #624's first design to read a nested file as *a second copy of the root spine* and refuse it on those grounds. The refusal was right about a second spine and wrong about what the file is.
+
+**Two different artefacts, and only one is a copy of anything.**
+
+| | What it carries |
+|---|---|
+| **Root `CLAUDE.md`** | The whole of the root `AGENTS.md`, byte for byte, plus the host deltas after `<!-- spine:copy:end -->`. This is the spine copy contract, held by #558's prefix guard. |
+| **A sub-directory instruction file** | **Directory-local guidance** — what changes when you work *here*. Not a spine, not a copy, and it carries nothing the root spine already says. |
+
+**The repo already has the worked example.** `design/AGENTS.md` opens *"Building a user-facing surface here"* and runs 113 lines of its own content — longer than the root spine and sharing none of it.
+
+**Two carriers, one body — which `init` step 4 already prescribes and `hydrate` inherits unchanged.** Guidance scoped to part of the tree goes to `.claude/rules/<name>.md` with a `paths:` frontmatter of globs for Claude, and the same body as `<dir>/AGENTS.md` for Codex, which has no path-scoped rules and reads nearest-wins. **The region from the first `##` heading down is identical in both**; only the preamble differs, because it names a host mechanism — the Claude form carries the `paths:` frontmatter, the Codex form is scoped by its location. Both are repo-owned once seeded and reconciliation never overwrites either.
+
+**So there is no nested `CLAUDE.md`, and that is not a departure from anything.** It is one mechanism per host, which is what the repo does today. ADR 0021 does not bite: its subject is copy-versus-bridge for the *same* content, and one body with two host-specific preambles is not "copy everywhere".
+
+What belongs in such a file: the directory's purpose, its local conventions, the rules that apply only under it. What does not: anything already true everywhere, which is the spine's job. Progressive discovery means the design-system guidance loads when a design file opens and costs nothing on every other task.
 
 ### Why `digest` goes and `drain` is the skill that was actually wanted
 
