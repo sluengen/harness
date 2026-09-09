@@ -86,17 +86,17 @@ This traces to P0 (do less; the machinery is a guard larger than what it guards)
 
 | Decision | Who decides | Recorded in |
 |---|---|---|
-| D1 — Does `mutate.py` (1,503 lines + 2,314 lines of tests) go? Its primary consumer is proving *guards* can fail; with the guards gone, "change the line, run the test, revert" is a technique that belongs in `engineering` as prose. | user | ADR (new) |
+| ~~D1~~ — **Resolved 2026-09-09: `mutate.py` stays.** The framing was wrong. It is not machinery serving the guards — it is the tool that proves a deletion is safe, and `assess/references/process-economy.md` names it as the mechanism of the subtractive slate. Deleting it inside the largest deletion programme this repo has run is backwards. Its own header records three incidents where hand-rolled mutation **lied in the operator's favour** (#207 a false kill, #336 four no-op mutations reported SURVIVED, #209 a no-op used as evidence for a real finding), so this is a mechanism against an observed risk, not a hypothetical one. | resolved | ADR (item 1) |
 | ~~D2~~ — **Withdrawn 2026-09-08.** Consumer CI and branch protection are out of lane. `calibrate` gates through `staging` with `main` bumped from it, and `nano-erp` does similar; #618 remains theirs to close. | — | — |
-| D3 — Does `plugin-version.js` (522 lines) go? Without vendored assets there is no version-mismatch failure mode; `claude plugins update` still compares the manifest string, so a bump is still needed — but it may be a line in `/build` rather than a script. | user | ADR (new) |
-| D4 — The design system: skill-with-attached-assets, copied out at hydration. Does `build_design_tokens.py` (352 lines) travel with it as a skill asset, or is the 8-tier structure carried as assets alone? | user / architect | `specs/features/` |
+| ~~D3~~ — **Resolved 2026-09-09: `plugin-version.js` stays.** The earlier framing conflated two failure modes. *Vendored-asset lockstep* does die with the nuke. *Version-string staleness* does not, and is untouched by it: `claude plugins update` compares the manifest **version string and nothing else**, so a cycle shipping content at the released version delivers nothing and tells the consumer it is current — recorded as having happened on 2026-09-05 (`a609d5b`). A cloud session installing from the marketplace at start-up gets stale guidance **with no signal at all**, which is worse than a mismatch error. #580's 713-line detector was already tried and retired; this does the job instead of detecting that nobody did it (P0). | resolved | ADR (item 1) |
+| ~~D4~~ — **Resolved 2026-09-09: `build_design_tokens.py` travels with the skill.** It is exactly the mechanism described — it resolves the *semantic* tier of `tokens.json` to literal values and writes them into a marker-delimited `:root` region in the consuming page. Its `--check` also sweeps *outside* that region for hex literals that byte-equal a token value: hand copies a region-only check cannot see, and it found 21 copies of 12 distinct values. It ships as a **reference implementation to adapt**, not a turnkey tool — `SEMANTIC_TO_CSS_VAR` maps to this repo's own page. | resolved | `specs/features/` |
 | ~~D6~~ — **Resolved 2026-09-08 by the operator.** No new `/land`: the landing half folds into **`/promote`**, which already moves a branch to its next destination. One skill, two altitudes. **One consequence must ship with it — see D7.** | resolved | `skills/promote` |
 | ~~D7~~ — **Resolved 2026-09-08 by the operator.** Whatever it is called, unattended agents must be able to run the landing step in a routine. `disable-model-invocation` comes off `/promote`, `/routine` gains the call, and misuse is discouraged by an **advisory** target hook rather than by withholding the command. | resolved | `skills/promote`, `skills/routine` |
-| D8 — Does a force-push to a declared role branch stay a **refusal**, or become advisory? A ~1,400-line question (the hook plus its lexer tests), not a philosophical one. **Advisory does not mean nothing refuses:** `settings/harness.json` already carries force-push and `reset --hard` deny globs, and they survive either way. The lexer exists only because globs miss exotic spellings (`-fq`, trailing `--force`, `+HEAD:dev`). Recommendation is advisory — globs refuse the common spellings, the hook warns, the lexer goes. | user | ADR (item 1) |
-| D9 — `/digest`'s section 2 carries the **R line** (tickets opened vs closed, split by source) and the **load line** (open against `wip_limit`), and its own text says the R line "is the only place the queue's growth rate is visible". Retiring the console retires that measurement. Does it move into `drain`'s output, or is it dropped? **Recommendation: drop it here and let `/assess process` own the series** — the load line is multi-project machinery for a repo that declares `project_field: none`. | user | `skills/drain` |
+| ~~D8~~ — **Resolved 2026-09-09: advisory; `git-push-guard.js` goes.** Three layers stand behind a force-push and the hook is the third. See *The three layers* below for the full reasoning. | resolved | ADR (item 1) |
+| ~~D9~~ — **Resolved 2026-09-09: dropped.** The R line and load line retire with the console; `/assess process` owns the series, where a measurement whose value is the trend belongs. The load line was multi-project machinery for a repo that declares `project_field: none`. | resolved | `skills/drain` |
 | ~~D5~~ — **Resolved 2026-09-08 by the operator.** Stop the line, don't stop: the builder who hits red at integration fixes it then, whether the cause is their diff or a clobber. No tick stalls. Residual risk is duplicated effort in the window before a fix is visible, bounded by rebasing from the integration branch before running the gate. Item 4 writes this into `/build`. | resolved | `skills/build`, `skills/routine` |
 
-With D2 withdrawn and D5, D6, D7 resolved, **no open decision blocks item 1.** D1, D3 and D4 are answered when their item comes up; **D8 at item 2**, where the lexer either survives or does not; **D9 at item 8**.
+**Every decision is resolved.** D2 withdrawn; D1, D3, D4, D5, D6, D7, D8 and D9 answered. Nothing blocks item 1, and nothing is left open behind a later item — the target manifest's figures are now firm rather than banded.
 
 ## Target manifest
 
@@ -144,7 +144,7 @@ What the repository contains when items 1–9 have landed, and what each thing d
 | `workflow-guard.js` | keep · 139 | Advisory: flags source edits outside a worktree. |
 | `push-target-guard.js` | **reduce** · 1,143 → small | Advisory: warns on a push targeting a declared role branch. **May read the push target and the branch names in `harness.yaml`, and nothing else** — the boundary item 1's ADR records. Its marker half goes. |
 | ~~`gate-evidence-guard.js`~~ | delete · 996 | Stop-hook marker check. |
-| ~~`git-push-guard.js`~~ | delete · 971 (D8) | Force-push refusal and its POSIX lexer. The `settings/harness.json` deny globs stay regardless. |
+| ~~`git-push-guard.js`~~ | delete · 971 | D8: advisory. Branch protection and the 11 force-push deny globs stay; only the lexer that closes exotic spellings goes. |
 
 ### Scripts
 
@@ -154,9 +154,9 @@ What the repository contains when items 1–9 have landed, and what each thing d
 | `setup-cloud-env.sh` | keep · 206 | Cloud session bootstrap for this repo. |
 | `session-start-bootstrap.sh` | keep · 16 | SessionStart hook entry. |
 | `harness-config.js` | **reduce** · 598 → small | Reads `harness.yaml`. Was hardened across three readers and four parser bugs; now serves one advisory consumer, so advisory tolerance applies. |
-| `build_design_tokens.py` | decide · 352 (D4) | Builds `docs/index.html` from `design/03-tokens/tokens.json`. Travels with the design skill or is retired. |
-| `plugin-version.js` | decide · 522 (D3) | Raises the plugin version at `/build` step 1. Without vendored assets there is no mismatch failure mode, but `claude plugins update` still compares the manifest string. |
-| `mutate.py` + `_mutate_outcomes.py` | decide · 1,578 (D1) | Proves a guard can fail. Its main consumer is the guards being deleted. |
+| `build_design_tokens.py` | **keep** · 352 | Resolves `tokens.json`'s semantic tier to literals and writes them into a marker-delimited `:root` region; `--check` also sweeps outside it for hand-copied hex literals. Travels with the design skill as a **reference implementation to adapt** (D4). |
+| `plugin-version.js` | **keep** · 522 | Raises the plugin version at `/build` step 1. `claude plugins update` compares the manifest string and nothing else, so a cycle that does not raise it delivers nothing and reports "current" — a cloud session then installs stale guidance with no signal (D3). |
+| `mutate.py` + `_mutate_outcomes.py` | **keep** · 1,578 | Proves a check can fail, honestly. The mechanism of `/assess process`'s subtractive slate, and the tool this deletion programme's own ambiguous candidates need (D1). |
 | ~~`gate-marker.js`~~ | delete · 1,013 | Writes the tree-keyed marker. |
 | ~~`land.js`~~ | delete · 585 | The three-case landing decision. |
 | ~~`harness-refs.js`~~ | delete · 483 | The `refs/harness/*` cross-session namespace. |
@@ -174,35 +174,35 @@ What the repository contains when items 1–9 have landed, and what each thing d
 |---|---|---|
 | Marker, gate-evidence, push-target, gate-command, branch-parsing, merge-path | ~9,600 | delete with items 2–3 |
 | `promotion-step`, `land`, `harness-refs`, gate-lock | ~3,150 | delete with item 3 |
-| Force-push hook + heredoc lexer | ~960 | delete if D8 is advisory |
-| `mutate` suite | ~1,920 | delete if D1 retires it |
-| `plugin-version` | 743 | delete if D3 retires it |
+| Force-push hook + heredoc lexer | ~960 | delete — D8 resolved advisory |
+| `mutate` suite | ~1,920 | **keep** — D1 resolved |
+| `plugin-version` | 743 | **keep** — D3 resolved |
 | Refresh fixtures, manifest, gate-ignores, git-init fixtures | ~560 + corpus | delete with item 5 |
 | Hook manifest, fail-open, module-type, Codex compatibility, marketplace, settings parity, toolchain, coverage gate, proposal-path, reportable-path | ~3,400 | **keep** — they guard what survives |
 | `test-lock`, `prompt-guard`, `workflow-guard` hook suites | ~1,100 | **keep** |
 | `test_workflow_skill_invocability.py` | 91 | **keep, and item 4 updates it** — it is the guard that pins which skills carry `disable-model-invocation`, so D7's change lands here |
 | `spine_template_parity`, `build_lifecycle_order`, `seeded_assets` | ~1,340 | decide at item 5 — wording guards over prose, which ADR 0017's admission rule and the last assessment both question |
-| Design tokens + landing-page inventory | ~1,460 | decide with D4 |
+| Design tokens + landing-page inventory | ~1,460 | **keep** — D4 resolved |
 | Helpers (`_toolchain`, `_gitutil`, `conftest`, `_hooks`, `_prose`) | 625 | reduce with their consumers |
 
 ### The ratio this is signed off against
 
 | | Now | Target | Δ |
 |---|---|---|---|
-| Guidance — skills, agents, templates | 4,056 | ~4,400 | grows: two new skills, one new agent |
-| Executables — scripts, hooks | 9,384 | ~900–2,900 | depends on D1, D3, D4 |
-| Tests | 28,065 | ~9,000–11,000 | |
-| **Total** | **41,505** | **~14,300–18,300** | **−56% to −66%** |
-| **Assurance per product line** | **6.86** | **~2.0–2.5** | the measure item 9 re-baselines |
+| Guidance — skills, agents, templates | 4,056 | ~4,400 | grows: one new skill, one new agent |
+| Executables — scripts, hooks | 9,384 | ~3,600 | −5,788 |
+| Tests | 28,065 | ~12,500–13,800 | the remaining band is item 5's prose-wording guards |
+| **Total** | **41,505** | **~20,500–21,800** | **−47% to −51%** |
+| **Assurance per product line** | **6.86** | **~2.8–3.1** | the measure item 9 re-baselines |
 
-The wide bands are the open decisions, and they are wide on purpose: D1, D3 and D4 together move roughly 4,000 lines. Signing off the shape does not commit any of them.
+**These figures are worse than the banded ones this table carried before the decisions, and deliberately so.** Keeping `mutate.py`, `plugin-version.js` and `build_design_tokens.py` costs roughly 5,000 lines of executables and tests against the optimistic end of the old band — the difference between "−66%" and "−51%". Each earns it on a recorded failure the deletion would reinstate, and a headline number is not a reason to delete a tool that prevents one. The only band left is item 5's decision on the prose-wording guards (`spine_template_parity`, `build_lifecycle_order`, `seeded_assets`, ~1,340 lines), which ADR 0017's admission rule and the last assessment both question.
 
 ## Breakdown
 
 Item 1 sets the shape — *the plugin is the whole product, a consumer's own CI is its control, hydrate+audit is the consumer contract* — and is expensive to unpick once the deletions follow it. It is held for the operator, and every item below declares a dependency on it.
 
 1. **Record the shape** *(feature; held — `input`)* — an ADR stating that the plugin is the whole deliverable, that nothing is vendored into consumers, that a consumer's own CI and branch protection are out of lane, and what the accepted residual risk is. Supersedes ADR 0020 and, in effect, ADR 0018. Held because the shape is expensive to unpick, not because a decision is outstanding. **Depends on: nothing. Everything below depends on this.**
-2. **Retire the marker complex, and reduce the push guards to one advisory** *(feature)* — delete `gate-marker.js` and `gate-evidence-guard.js` outright. **`push-target-guard.js` is reduced, not deleted:** its branch-name recognition survives as a small advisory hook that warns on a push to a declared role branch; its marker half goes with the binding. `git-push-guard.js`'s fate is D8. Rewrite spine laws 3 and 5 and the *Enforcement* section around CI and the surviving hooks. ~13,600 lines, less whatever D8 keeps. **Depends on 1.**
+2. **Retire the marker complex, and reduce the push guards to one advisory** *(feature)* — delete `gate-marker.js` and `gate-evidence-guard.js` outright. **`push-target-guard.js` is reduced, not deleted:** its branch-name recognition survives as a small advisory hook that warns on a push to a declared role branch; its marker half goes with the binding. **`git-push-guard.js` is deleted** per D8 — branch protection and the 11 force-push deny globs in `settings/harness.json` remain as layers 1 and 2. Rewrite spine laws 3 and 5 and the *Enforcement* section around CI and the surviving hooks. ~15,500 lines. **Depends on 1.**
 3. **Retire the landing and promotion machinery** *(feature)* — delete `land.js`, `harness-refs.js`, `promotion-step.sh` and their tests; `/promote` and `/build`'s ship step become plain git against a green CI status. ~3,300 lines. **Depends on 2** — these exist only to serve the binding. Item 4 then gives `/promote` the landing half, so sequencing these two adjacently avoids rewriting the same skill twice.
 4. **Split the lifecycle at PASS, and rebase before review instead of after** *(feature)* — `/build` ends at a reviewed branch; `/promote` takes it from there. The stage order becomes:
 
@@ -213,12 +213,11 @@ Item 1 sets the shape — *the plugin is the whole product, a consumer's own CI 
    **`delta_review` disappears, and that is the point.** It exists because reconcile runs *after* review, so new bytes arrive that no verdict covers. Rebase first and the reviewer reads the branch as it will actually land. Also carries the resolved D5 posture, since that is landing behaviour. **Depends on 3** — the seam is only clean once the binding is gone; see *The seam* below.
 5. **`init` → `hydrate`** *(feature)* — one workflow that recognises greenfield vs brownfield and reconciles rather than refreshing; no vendored gate assets, so no migration paths, no fixture manifest. Writes `AGENTS.md`/`CLAUDE.md` at the root and in sub-directories for progressive discovery. Retires `references/refresh.md` and the refresh fixture corpus. **Depends on 2, 3.**
 6. **`harness-audit` agent** *(change)* — one agent definition, no paired skill: `hydrate` dispatches it as its close-out, and it is dispatchable by name for a check without a re-hydration. Pinned to `sonnet` per ADR 0005's tiering. **Depends on 5.**
-7. **Design system as a skill with attached assets** *(feature)* — the 8-tier structure and assets live in the skill folder and are copied out at hydration. Answers D4. **Depends on 5.**
+7. **Design system as a skill with attached assets** *(feature)* — the 8-tier structure, `tokens.json` and `build_design_tokens.py` live in the skill folder and are copied out at hydration; the builder ships as a reference implementation a consumer adapts, since its token-to-variable map is this repo's own (D4). **Depends on 5.**
 8. **`digest` → `drain`, and decouple the producers from it** *(feature)* — two halves, one file set. **The skill:** retire the console; keep both drains in one operator-present skill with two distinct procedures, the ledger's being a corpus pass (re-validate, consolidate, twin-check, drop, return the slate) rather than per-item Q&A. Carries `/assess` step 5 across intact and **makes the twin check explicit at the fold step** rather than inherited from the spine's *Filing* contract. `/assess` calls `drain`; the steward never does. **The decoupling:** delete all 19 consumer-naming mentions across `build`, `review`, `work-discovery`, `tracker` and its two transport references, `review-discipline/references/improvement-ledger.md`, the spine and `templates/spine.md` — a producer holds through `tracker` and notifies, and knows nothing about what drains it. Simplify the DEFER posture to commit, push, comment, hold, notify. Answers D9. **Depends on 1 only**, so it runs in parallel with everything else.
-9. **Decide `mutate.py` and `plugin-version.js`** *(change)* — execute D1 and D3. ~5,000 lines if both go. **Depends on 2.**
-10. **Re-baseline the ratio** *(change)* — one `/assess` process pass measuring assurance-per-product-line against the 6.86 baseline, so the change is evidenced rather than asserted. **Depends on 2–9.**
+9. **Re-baseline the ratio** *(change)* — one `/assess` process pass measuring assurance-per-product-line against the 6.86 baseline, so the change is evidenced rather than asserted. **Depends on 2–8.**
 
-Items 2, 4 and 9 are independent of 5–7 once 1 lands, so the deletion track and the hydrate track run in parallel; item 8 touches guidance only and depends on nothing but the shape, so it can run alongside either (P3).
+Items 2 and 4 are independent of 5–7 once 1 lands, so the deletion track and the hydrate track run in parallel; item 8 touches guidance only and depends on nothing but the shape, so it runs alongside either (P3). **Nine items, and with every decision resolved none is held for an answer** — only item 1 is held, and that is for the shape itself.
 
 ### Why `digest` goes and `drain` is the skill that was actually wanted
 
@@ -284,9 +283,23 @@ Adding a hook to a proposal about deleting hooks needs its reason on the record.
 
 An advisory warning has the opposite tolerance. A false negative costs one un-warned push; nobody is relying on it to hold a line. So a target hook can match the command with an ordinary pattern, accept imperfect coverage, and stay small — **but only while it stays advisory.** The moment it must refuse, the lexer comes back, and with it the reason this repo has 971 lines to decide the meaning of one flag. That is the accretion trigger, and it is worth writing into item 1's ADR beside the read-only boundary.
 
-Which turns D8 into an arithmetic question. Keep force-push-to-a-role-branch as a refusal and the lexer stays. Make it advisory and it goes with the rest. **The recommendation is advisory**, for two reasons: this repo is public, so GitHub branch protection already refuses a force-push to `main` and `dev` server-side, in the right place and for free; and a consumer's protection is out of lane by the operator's own scoping. There is also a third layer nobody has to build: **`settings/harness.json` already denies `git push --force` in eight spellings and `git reset --hard`**, and those globs survive whichever way D8 goes. So "advisory" does not mean nothing refuses a force-push — it means the glob layer refuses the common spellings, the hook warns, and the 971-line lexer that closes the exotic ones goes.
+### The three layers, and why D8 resolved to advisory
 
-The counter-argument deserves stating: a force-push is the one action a revert cannot undo, so it is not stage-calibrated the way a red tree is. It is still *recoverable* — server-side reflog, and other agents' clones carry the commits — which, with the glob layer standing, is why the recommendation is advisory.
+Three things stand between an agent and a force-push to a role branch. The hook is the third of them, and the question is only what the third one adds.
+
+| Layer | What it is | Refuses | Cost |
+|---|---|---|---|
+| 1. Branch protection | Server-side, GitHub | A force-push to `main` or `dev`, absolutely — nothing running locally can circumvent it | free; available here because the repo is public |
+| 2. Deny globs | `settings/harness.json` | 11 of its 21 entries cover force-push, `--force-with-lease`, `+refspec` and `reset --hard`, in both `git` and `git -C` forms — refused before the command runs | config, zero code |
+| 3. `git-push-guard.js` | A PreToolUse hook | Only what layer 2's globs miss: `-fq` short-flag bundles, `--force` in trailing position, `+HEAD:dev` with the remote omitted, `git -c … push` reordering | **971 lines + ~960 test lines**, most of it a POSIX shell lexer |
+
+**Layer 3's entire remaining value is the gap between layers 2 and itself** — and that gap is populated by spellings a model does not produce by accident. `-fq`, a reordered `git -C … push`, a bare `+HEAD:dev`: these are what you write to *deliberately* evade a glob. A guard whose residual value is against deliberate evasion by your own agent is defending a threat model this repo does not have, which is P2's *guard for a risk never observed*.
+
+**The one observed incident is already covered by layer 2.** CAL-1001 found the `+refspec` bypass — and the globs now carry `git push * +*`, `git push origin +*` and `git -C * push * +*`. Layer 3 was added on top as belt-and-braces after the belt was fixed.
+
+**The counter, stated rather than buried:** a force-push is the one action a revert cannot undo, so unlike a red tree it is not stage-calibrated — it is bad at any stage. Two things answer it. It is *recoverable* in practice: server-side reflog, and every other agent's clone carries the commits. And on this repo layer 1 refuses it outright, in the right place, where no local process can be talked past. On a private consumer without branch protection, layers 2 and 3 are all there is — but a consumer's protection is out of lane by the repo's own principle, and layer 2 still applies to them.
+
+So: **layers 1 and 2 stay, the hook becomes an advisory warning on any push targeting a declared role branch, and 1,931 lines go.**
 
 ### The seam, and why item 4 waits for item 3
 
