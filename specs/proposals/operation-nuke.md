@@ -161,7 +161,7 @@ What the repository contains when items 1–9 have landed, and what each thing d
 | ~~`gate-marker.js`~~ | delete · 1,013 | Writes the tree-keyed marker. |
 | ~~`land.js`~~ | delete · 585 | The three-case landing decision. |
 | ~~`harness-refs.js`~~ | delete · 483 | The `refs/harness/*` cross-session namespace. |
-| ~~`promotion-step.sh`~~ | delete · 249 | Scripted promotion; `/promote` does it in git. |
+| `promotion-step.sh` | **keep** · 249 | **Corrected 2026-09-09 at #622's grounding.** Listed for deletion on the premise that it served the tree binding. It does not: it has no reference to `gate-marker`, `harness-refs`, `land.js` or `refs/harness`, and its only gate call is the declared `scripts/verify.sh`. It exists for **GH006** — `main` is protected and requires a pull request, so `github-actions[bot]` cannot update `refs/heads/main` at all — and it opens or reuses a PR with head `dev`. That constraint survives the binding's retirement. It is **this repo's own CI**, not part of the plugin surface, so ADR 0022 point 3 does not reach it, and point 2 is what keeps it: this repo runs its CI by its own choice under the same rule. |
 
 ### Supporting surface — all keep
 
@@ -174,7 +174,8 @@ What the repository contains when items 1–9 have landed, and what each thing d
 | Group | Lines | Disposition |
 |---|---|---|
 | Marker, gate-evidence, push-target, gate-command, branch-parsing, merge-path | ~9,600 | delete with items 2–3 |
-| `promotion-step`, `land`, `harness-refs`, gate-lock | ~3,150 | delete with item 3 |
+| `land`, `harness-refs`, gate-lock | ~1,450 | deleted with item 2 |
+| `promotion-step` | 1,699 | **keep** — its subject is retained (see the scripts table) |
 | Force-push hook + heredoc lexer | ~960 | delete — D8 resolved advisory |
 | `mutate` suite | ~1,920 | **keep** — D1 resolved |
 | `plugin-version` | 743 | **keep** — D3 resolved |
@@ -209,7 +210,7 @@ Item 1 sets the shape — *the plugin is the whole product, the declared gate is
 
 1. **Record the shape** *(feature; held — `input`)* — an ADR stating that the plugin is the whole deliverable, that no plugin-owned file persists in a consumer, that a consumer's own CI and branch protection are out of lane, and what the accepted residual risk is. Supersedes ADR 0020 and, in effect, ADR 0018. Held because the shape is expensive to unpick, not because a decision is outstanding. **Depends on: nothing. Everything below depends on this.**
 2. **Retire the marker complex, and reduce the push guards to one advisory** *(feature)* — delete `gate-marker.js` and `gate-evidence-guard.js` outright. **`push-target-guard.js` is reduced, not deleted:** its branch-name recognition survives as a small advisory hook that warns on a push to a declared role branch; its marker half goes with the binding. **`git-push-guard.js` is deleted** per D8 — branch protection and the 11 force-push deny globs in `settings/harness.json` remain as layers 1 and 2. Rewrite spine laws 3 and 5 and the *Enforcement* section around **the declared gate and the surviving hooks** — striking the shipped spine's current claim that *"the controls of record are server-side branch protection and gate output in CI"*, which names controls the plugin cannot require and a consumer may not have. **Also narrows `harness-config.js` from 11 exported functions to 2 and rewrites its placement rationale**, which currently justifies `scripts/` by a vendoring constraint item 1 abolishes. ~15,500 lines. **Depends on 1.**
-3. **Retire the landing and promotion machinery** *(feature)* — delete `land.js`, `harness-refs.js`, `promotion-step.sh` and their tests; `/promote` and `/build`'s ship step become plain git against a green CI status. ~3,300 lines. **Depends on 2** — these exist only to serve the binding. Item 4 then gives `/promote` the landing half, so sequencing these two adjacently avoids rewriting the same skill twice.
+3. **Retire the landing machinery** *(feature)* — delete `land.js`, `harness-refs.js` and their tests (**taken by item 2 in the event**), plus `skills/build/references/re-bind.md`; **retain `promotion-step.sh`, its test and `nightly-promotion.yml`**, which are this repo's own CI and never served the binding; `/promote` and `/build`'s ship step become plain git against a green CI status. ~3,300 lines. **Depends on 2** — these exist only to serve the binding. Item 4 then gives `/promote` the landing half, so sequencing these two adjacently avoids rewriting the same skill twice.
 4. **Split the lifecycle at PASS, and rebase before review instead of after** *(feature)* — `/build` ends at a reviewed branch; `/promote` takes it from there. The stage order becomes:
 
    | `/build` | `/promote` |
