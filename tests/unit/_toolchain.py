@@ -54,9 +54,9 @@ function whose resolution was missed that way declares nothing, so it is an
 even where the derivation cannot see the call.
 
 Both read the **git index** (:func:`tests._gitutil.indexed_text`) rather than
-the working file: ``git write-tree`` certifies the index, the gate marker is
-named after the tree it produces, and a verdict binds to that oid — so the
-index is the only operand that answers "what will ship" (#482). Unstaged work
+the working file: ``git write-tree`` resolves the index to the tree a commit
+would carry — so the index is the only operand that answers "what will ship"
+(#482). Unstaged work
 is invisible to these guards, which their failure messages say.
 """
 

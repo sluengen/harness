@@ -71,10 +71,11 @@ LINEAR 'query { teams { nodes { id key name } } }'
 
 ### Resolving states by type (the default)
 
-Workflow-state IDs are **per-team UUIDs** — not portable across repos or trackers, and they change if a team renames a state. So resolve a state at runtime by its stable `type` enum; never hard-code the UUID. Every Linear workspace has the same four state types:
+Workflow-state IDs are **per-team UUIDs** — not portable across repos or trackers, and they change if a team renames a state. So resolve a state at runtime by its stable `type` enum; never hard-code the UUID. These are the types the recipes in this file resolve:
 
 | `type` | The state(s) |
 |---|---|
+| `backlog` | Backlog |
 | `unstarted` | Todo |
 | `started` | In Progress **or** In Review — two states share this `type` |
 | `completed` | Done |
@@ -86,7 +87,7 @@ Query the team's states *with* their `type`, then pick the one you need. For the
 LINEAR 'query { workflowStates(filter: { team: { key: { eq: \"<team-key>\" } } }) { nodes { id name type } } }'
 ```
 
-From that result: `unstarted` is the Todo column, `completed` is Done, `canceled` is the cancel state, and the two `started` states are In Progress and In Review — match the one you want by `name`. This is the same call for every workspace; nothing is cached. Resolve team and label IDs (for `issueCreate`) at runtime the same way:
+From that result: `backlog` is the Backlog column, `unstarted` is the Todo column, `completed` is Done, `canceled` is the cancel state, and the two `started` states are In Progress and In Review — match the one you want by `name`. This is the same call for every workspace; nothing is cached. Resolve team and label IDs (for `issueCreate`) at runtime the same way:
 
 ```bash
 LINEAR 'query { teams { nodes { id key name } } }'
@@ -105,7 +106,17 @@ LINEAR 'mutation { issueUpdate(id: \"<issue-id>\", input: { stateId: \"<state-id
 LINEAR 'mutation { issueCreate(input: { teamId: \"<team-uuid>\", projectId: \"<project-uuid>\", title: \"...\", description: \"...\", labelIds: [\"<label-uuid>\"], assigneeId: \"<user-uuid>\", parentId: \"<parent-id>\" }) { issue { identifier url } } }'
 ```
 
-`labelIds` **must** include the resolved id of the `assurance:<level>` label the filer chose. Resolve it at runtime from the `issueLabels` query above, the same way as every other label id. An id that does not resolve — the workspace has no such label, or the mutation reports fewer labels than were passed — is an **incomplete filing**, not a filing without the label: report the identifier and URL, say so, and stop. Read the created issue's labels back before reporting; the mutation's `success` field says the call ran, not that the postcondition holds.
+`labelIds` **must** include the resolved id of the `assurance:<level>` label the filer chose. Resolve it at runtime from the `issueLabels` query above, the same way as every other label id. An id that does not resolve — the workspace has no such label, or the mutation reports fewer labels than were passed — is an **incomplete filing**, not a filing without the label: report the identifier and URL, say so, and stop.
+
+**Read both halves of the filing back before reporting it.** The `issueCreate` above passes no `stateId`, so the issue lands in the team's default state and its placement is the separate `issueUpdate` at *Move an issue's status* — a second write whose `success` field says the call ran, not that the postcondition holds. Reading the labels alone leaves that write unconfirmed, so a ticket created but never placed reports as filed and a Todo-scoped queue read never sees it. Read the state alongside the labels:
+
+```bash
+LINEAR 'query { issue(id: \"<issue-id>\") { identifier url state { id name type } labels { nodes { id name } } } }'
+```
+
+The filing is complete when the labels carry exactly one `assurance:<level>` and the returned `state.id` is the id the placement `issueUpdate` set. **Compare the id, not the state's name:** the state was resolved by `type` ([Resolving states by type](#resolving-states-by-type-the-default)) and a workspace may rename its columns, so matching on a name resolves the state a second time instead of confirming the write.
+
+**Where that read cannot run, the filing is incomplete** — report the identifier, the URL and the operation that could not run, and stop. Never report a ticket placed on the strength of the issue having been created. One branch covers it here, where the GitHub board needs two: both writes and this read go through the one GraphQL endpoint, so a transport that answers answers for both halves of the filing, and one that does not leaves neither confirmable.
 
 Resolve `projectId` at runtime by the name in `harness.yaml` → `repo.project`, and `assigneeId` for the current operator via `viewer` (the same runtime-resolution rule as team/state/label IDs — no per-repo UUID setup):
 ```bash

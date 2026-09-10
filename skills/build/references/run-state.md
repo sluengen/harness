@@ -3,12 +3,12 @@
 Load this when writing or resuming a run.
 
 **The rule that bounds the file:** `run.json` records *where the run is*, never
-*what is true of the tree*. Every oid, marker and verdict it holds is a cache
+*what is true of the tree*. Every oid and verdict it holds is a cache
 key that must be re-derived from git and compared before use, and on a mismatch
 the file's copy is discarded — never git's.
 
 It is gitignored (`/harness:hydrate` seeds `.harness/` into the gate-ignore block),
-so it never reaches the tree the verdict binds to.
+so it never reaches the tree the reviewer reads or the gate runs over.
 
 ## Fields
 
@@ -74,8 +74,8 @@ ticket missing a reflection line.
 ## Resume
 
 Always re-derived, every stage, no exceptions: the current tree oid
-(`git add -A && git write-tree`), HEAD, the branch, whether a marker exists and
-is fresh, the integration tip, and the ticket's real tracker state.
+(`git add -A && git write-tree`), HEAD, the branch, the integration tip, and the
+ticket's real tracker state.
 
 Always trusted, because they are history rather than tree facts: `ticket`,
 `lane`, `engine`, `review_cycles`, and `base_commit` once it still resolves.

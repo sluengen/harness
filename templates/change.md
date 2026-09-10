@@ -4,7 +4,7 @@ The structure for a single piece of work. This is the body of the **tracker issu
 
 **Capture mode.** `/capture` fills this template at the moment of noticing, not the moment of building: the kind (`bug` — as-built contradicts intent, repro required · `tweak` — correct behaviour being upgraded), what was observed, the desired outcome, the situation that surfaced it, the cost line, and the acceptance criteria. Grounding and Design stay empty until `/build` extends the spec at build time. A tweak that turns out to carry a real decision or spawn more than one change is not a tweak — stop and `/propose` it.
 
-**The title is verb + where** — *refuse a push with no marker*, *split the plugin-surface record*. A noun phrase names a topic; the queue is read by agents ranking work they did not file, and a topic does not say what done looks like.
+**The title is verb + where** — *warn on a push aimed at a declared branch*, *split the plugin-surface record*. A noun phrase names a topic; the queue is read by agents ranking work they did not file, and a topic does not say what done looks like.
 
 **`[NEEDS CLARIFICATION: …]` is the unanswered-question marker.** Write it inline, in the sentence the answer would change, wherever intake could not settle something material. `/build` refuses to start while one remains, so the marker is a hold with a location rather than a note somebody has to notice. Answering one means replacing the sentence it sits in, not appending the answer beside it.
 

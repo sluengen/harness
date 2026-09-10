@@ -78,8 +78,8 @@ const PAIR = /^\s*([A-Za-z_][A-Za-z0-9_.-]*)\s*:\s*(.*)$/;
 
 //: A key opening a block at the top level of the configuration map. Anchored at
 //: column 0: an indented ``commands:`` is an example inside prose or a nested
-//: mapping, and reading one would let a document's illustration decide what may
-//: mint a marker.
+//: mapping, and reading one would let a document's illustration decide what a
+//: run treats as the repository's declaration.
 function topLevelKey(name) {
   return new RegExp(`^${name}\\s*:(.*)$`);
 }

@@ -34,7 +34,7 @@
     {
       "id": 3,
       "name": "watchlist-trigger",
-      "prompt": "I'm about to start a change on /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there) that touches `scripts/gate-marker.js` \u2014 adding a new subcommand. That file is already large and every change seems to land in it.\n\nWhat does the process require of me here, before I write the change spec? Be concrete about this repo. Save your answer as watchlist.md in the output directory.",
+      "prompt": "I'm about to start a change on /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there) that touches `scripts/mutate.py` \u2014 adding a new subcommand. That file is already large and every change seems to land in it.\n\nWhat does the process require of me here, before I write the change spec? Be concrete about this repo. Save your answer as watchlist.md in the output directory.",
       "expected_output": "A written artefact demonstrating architecture judgment on a recorded failure mode.",
       "files": [],
       "expectations": [

@@ -1,8 +1,8 @@
 # Harness configuration for this repo.
 #
-# Moved out of the spine's prose by #537: the hooks, the gate marker helper and
-# the skills all read these values, and a fenced block inside a markdown document
-# needed a hand-rolled parser in each of them. This file is read by one reader,
+# Moved out of the spine's prose by #537: the hooks and the skills all read these
+# values, and a fenced block inside a markdown document needed a hand-rolled
+# parser in each of them. This file is read by one reader,
 # `scripts/harness-config.js`. The three markdown spines are still read behind it
 # for repos that have not migrated.
 #

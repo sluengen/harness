@@ -77,7 +77,6 @@ An `/assess process` pass writes the same dated file (`assessments/<YYYY-MM-DD>-
 - **Deletion candidates** — a table: what, where, the mutation performed and what it showed, and what would be lost. **Ledger entries, not tickets.**
 - **Efficiency candidates** — a table ranked by **minutes recoverable per week** (cost per run × runs per week). **Ledger entries, not tickets.**
 - **Undefended incidents** — reverts, hotfixes, and post-merge bugs from the repo's history that no current check would catch. Each is either a finding or a ledger entry; say which.
-- **Held** — candidates the pass could not disprove, and why they stay. Recording these stops the next pass re-raising them.
 - **Not assessed** — what this pass deliberately did not cover.
 
 **A pass whose baseline has not moved reports on the drain, not the suite** — say so plainly rather than re-raising undecided candidates as though they were new.

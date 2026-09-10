@@ -96,7 +96,7 @@ What (the specific issue), where (file:line or section), why (the rule it violat
 
 The three are the spine's contract, not this skill's; what each obliges a review to do is here. A review ends in exactly one of them, and no command, agent or report may act on a fourth word:
 
-- **PASS** — the criteria are met over the tree the verdict binds to, and the change is ready to integrate.
+- **PASS** — the criteria are met over the tree the reviewer read, and the change is ready to integrate.
 - **FAIL** — a blocking finding stands. Return it to the builder and re-review, bounded by the stop rule below.
 - **DEFER** — nothing blocking stands, but the ticket cannot ship as scoped without a call this review may not make. Hold it through `tracker`, and route any out-of-scope finding by the 2×2. Not a soft PASS: nothing merges on a DEFER.
 

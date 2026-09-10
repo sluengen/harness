@@ -32,9 +32,9 @@ directions hold it, and each fails on a different edit:
   that resolves a binary, which is what makes the derived set the *whole* set.
 
 Both operands read the **git index**: the corpus the set is derived from, and
-the script that is executed. ``git write-tree`` certifies the index and the gate
-marker is named after the tree it produces, so a guard reading working files
-certifies bytes that may never be committed (#482). **Unstaged work is invisible
+the script that is executed. ``git write-tree`` resolves the index to the tree a
+commit would carry, so a guard reading working files certifies bytes that may
+never be committed (#482). **Unstaged work is invisible
 here** — ``git add`` first, which every failure message below repeats.
 
 **Size, justified rather than drifted into.** This module is past `engineering`'s

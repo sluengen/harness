@@ -1,5 +1,15 @@
 """The landing page's inventory must name exactly the surface the tracked tree carries.
 
+**What "inventory" means here (#633).** The subject is every *tagged* shape on
+the page: the ``data-unit`` tags, the ``<span class="n">`` counts beside each
+card heading, and the hero's ``<li><b>N</b> kind</li>`` items. A number written
+into a sentence is not among them, and closing that bound is not this module's
+job — a predicate over what a sentence says is what D5 refuses. #626 moved every
+tagged count to seventeen while ``docs/index.html:7`` went on saying "sixteen
+skill packages", and this module was green over it, correctly. #633 removed the
+prose numerals from the page rather than widening the reader, so each count now
+lives only where this guard derives it.
+
 **What this replaces (#482).** `docs/index.html` used to catalogue the guidance
 surface out of `registry.yaml`, and `scripts/check_landing_page_guidance.py`
 held the catalogue to it. ADR 0017 deleted the registry and that guard with it,
@@ -17,8 +27,8 @@ on the source that survived — the tree itself.
 
 **Admitted under ADR 0017 D5 class (e), tree-consistency.** Both operands are in
 the tracked tree: the page's `data-unit` tags and the files under `skills/`,
-`commands/`, `agents/`, `hooks/`. It asserts that they *correspond* — nothing
-about what any sentence on the page means. The one existing class-(e) module,
+`agents/`, `hooks/`. It asserts that they *correspond* — nothing about what any
+sentence on the page means. The one existing class-(e) module,
 `tests/unit/test_accepted_proposals_cite_live_paths.py`, is the shape this
 follows: one pure predicate, paired samples in both directions, a floor on each
 set the comparison consumes, and a paired splice proving the reader reaches real
@@ -37,8 +47,8 @@ never see this machine. A guard reading `Path.glob` passes on the checkout that
 wrote the page even when the file was never added, which answers a question
 nobody asked. Both operands here read the index — the tree side through
 :func:`tests._gitutil.tracked_files_under`, the page side through
-:func:`indexed_text` — which is the same thing `git write-tree` certifies and
-the gate marker is named after.
+:func:`indexed_text` — which is the same thing `git write-tree` resolves to the
+tree a commit would carry.
 
 **How this guard is proved, and the one thing that cannot use the usual
 instrument.** The predicate half is mutation-proved by ``scripts/mutate.py``:
