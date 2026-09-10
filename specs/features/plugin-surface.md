@@ -1554,6 +1554,37 @@ review, and — for the token-load recipe specifically — independent
 re-execution of the shipped shell against both failure conditions at review,
 not the builder's report of having done so.
 
+### What #640 completed, as built
+
+Three additions to the reviewer's brief, all guidance-only. `agents/reviewer.md`
+→ *Your context is the packet* is now the packet's one definition and names the
+ticket's **comment thread** as a required part — the thread is where #610's
+strongest design objection and #636's scope amendment both lived, invisible to
+a reviewer reading the body alone. `skills/build/SKILL.md` section 3 and
+`skills/build/references/codex-review.md` point at that definition instead of
+re-enumerating it; the two rival enumerations the grounding found
+(`agents/reviewer.md:18-23`, `codex-review.md:8-12`, neither naming the thread)
+collapse to one definition plus two pointers, `codex-review.md` keeping only
+the two items the base packet lacks — the staged diff's lint output and
+`reviewed_tree`.
+
+`agents/reviewer.md` also gains one line pointing a reviewer that must
+reconcile a mid-review base movement at `skills/build/references/reconcile.md`
+(#631, held by luck before this — the rule was stated nowhere a reviewer's own
+definition reached). `agents/reviewer-feature.md` gains no second copy: its
+existing "read `agents/reviewer.md` and follow it exactly ... none of it is
+restated here" already routes a feature-lane reviewer through the same
+pointer, and a second line there would restate an operand AC-2 itself refuses.
+
+`skills/authoring/SKILL.md` → *Acceptance criteria* answers #636's open half:
+a filer amending scope in a comment now edits the acceptance criteria too,
+leaving the comment as the rationale, because the criteria are what a reviewer
+certifies against and a comment is not.
+
+`agents/reviewer.md` and `.codex/agents/reviewer.toml` moved together,
+`tests/unit/test_codex_agent_adapters.py` holding the two bodies equal. No
+tests are authored: all three criteria name direct review and no quantity.
+
 ### What #641 repointed, as built
 
 Applied #636's landed decision — the prompt names the repository under test,
