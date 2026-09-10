@@ -48,6 +48,41 @@ Three differences from the `gh issue` forms. REST `/issues` **returns pull reque
 
 **Projects v2 has no REST API at all** — no `repos/{owner}/{repo}/projectsV2`, nothing under the repo scope, by design; the board is GraphQL-only. So on a GraphQL-refused host every `gh project` call fails (often as the unhelpful `unknown owner type`, which is a 403 underneath), and with it **Status, Priority, and therefore `create`'s mandatory placement**. That is not a step to skip quietly: the issue exists and the board does not know about it, which is precisely the item-add-no-status trap arriving by another route. **Report the filing incomplete** — the identifier, the URL, and which board operations could not run — and stop. Never report a ticket as placed, queued, or prioritised on the strength of the issue having been created.
 
+#### `create` stops there; `transition` does not
+
+The rule above is `create`'s. A **`transition`** on the same host takes the
+opposite disposition, and the asymmetry is the point rather than an
+inconsistency.
+
+An unplaced filing is **invisible**: no Todo-scoped queue read will ever return
+it, so a run that continued past one would leave a ticket nobody can find. A
+transition moves an issue that is **already on the board and already reachable
+by REST**, so what goes stale is the board's currency, not the ticket's
+existence. Stopping there would also refuse every run on such a host — `/build`
+transitions twice (In Progress, In Review) and `/promote` once (Done), so
+"report incomplete and stop" applied to transitions is a refusal to work at all.
+
+So where `item-edit` cannot run:
+
+1. **Post the state change as an issue comment**, naming the state and saying
+   the board could not be written. That comment is the record of the
+   transition.
+2. **Continue the run.**
+3. **Say in the run's report that the board is stale**, naming the issue and the
+   state the board ought to show. Never report the ticket as *moved*: no board
+   write happened, and a call that did not run returns no evidence.
+
+The comment is what stands in for the board, so it carries what a board read
+would have told someone: which state, and that the board disagrees.
+
+**This is the item-add-no-status trap arriving through the transition door**,
+and step 3 is what keeps it visible. The cost is real and is accepted rather
+than solved here: the queue's selector and the queue's truth stay apart until a
+session with GraphQL reconciles them, and a closed ticket can sit with its board
+Status still reading Todo. Nothing in this section reaches Projects v2 by
+another route; the refusal is the carry recorded in
+`specs/harness-assumptions.md`, and it stays carried.
+
 ## No id here is stable — resolve at runtime
 
 Project ids, status field ids, and single-select option ids differ per board and change when a field is renamed. Resolve them each time; never hard-code or cache one.
@@ -115,6 +150,9 @@ gh project item-list <number> --owner <owner> --format json
 ```
 
 > **The `status` field in `item-list` output has been observed unreliable** — it has reported every item `Done` on a healthy board. To read the queue, prefer the issue-level view (`queue`, below) and treat `item-list` as the way to resolve **item ids**, not as the source of truth for state.
+
+Where GraphQL is refused, neither call runs. Record the transition as a comment
+and continue, per [`create` stops there; `transition` does not](#create-stops-there-transition-does-not) above.
 
 ### `comment`
 
@@ -216,3 +254,32 @@ gh issue edit <n> --repo <owner>/<name> \
 All three are `gh issue` calls, so on a GraphQL-refused host run them through
 the REST equivalents in the table above; the ledger needs no board, and the
 append completes there.
+
+**Read the appended comment back.** The append is a write like every other one
+in this file, and `create` and `hold` already carry the rule it was missing:
+verify the postcondition by re-reading, never by exit status. Capture the id the
+POST returns, then read the body it stored:
+
+```bash
+COMMENT_ID=$(gh api -X POST repos/<owner>/<name>/issues/<n>/comments \
+  -F body=@<path> --jq '.id')
+gh api repos/<owner>/<name>/issues/comments/"$COMMENT_ID" --jq '.body'
+```
+
+Compare it against the entry you composed. **A body that reads back as a
+filesystem path was posted by `-f` where `-F` was meant** — and by the time
+anyone reads the ledger, the scratchpad that path names is gone.
+
+> **`-F` reads `@<path>` as a file; `-f` sends the string verbatim.** One
+> character between them, and `gh` exits **0** either way, so nothing surfaces
+> the mistake at the call site. #450's comment `5601650321` is the live
+> instance: its body is the literal path, to a scratchpad belonging to a
+> session that no longer exists, and the entry it was meant to carry is
+> unrecoverable.
+> It is left in place as the record.
+>
+> The trap applies to every `-F body=@` form in this file — `create`,
+> `comment`, `hold` — but it costs most here. A ticket body posted wrongly is
+> visible to the next person who opens the issue, and can be edited. **A ledger
+> entry has no second copy**, and nobody re-reads it until the drain, by which
+> time the file is gone.

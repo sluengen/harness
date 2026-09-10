@@ -30,9 +30,26 @@ Linear's GitHub integration links an issue to a PR when the ticket id appears in
 
 ## Accessing Linear (GraphQL via curl)
 
-**Get the token.** Look for an env file holding `LINEAR_API_KEY`: the one named in `harness.yaml` (`env.file`), else `.env` / `.env.local` in the repo root. Source it (`set -a && source .env && set +a`). Never echo or commit the token; the env file must be gitignored.
+**Get the token — prefer the environment, and never `source` the env file.** Where `LINEAR_API_KEY` is already set, by an injecting host or a CI secret, use it as it stands and read no file. Fall back to the env file only when the variable is empty: the one named in `harness.yaml` (`env.file`), else `.env` / `.env.local` in the repo root.
 
-**If no `LINEAR_API_KEY` is found in any env file, that is the only blocker — stop and ask the user for one.** Do not conclude you lack access before checking the env files. (If `harness.yaml` defines `tools.linear_cli`, you may use that wrapper instead; the curls below are the universal fallback and always work.)
+```bash
+if [ -z "$LINEAR_API_KEY" ]; then
+  LINEAR_API_KEY=$(sed -n 's/^[[:space:]]*LINEAR_API_KEY=//p' "<env-file>" | head -n1 \
+    | sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'\$/\1/")
+  export LINEAR_API_KEY
+fi
+```
+
+Never echo or commit the token; the env file must be gitignored.
+
+**Two failures this avoids, both observed.** Until #639 this step read `set -a && source .env && set +a`, and each is a property of `source` rather than of any particular file.
+
+- **Sourcing destroys a working credential.** An env file is gitignored and seeded from a committed `.env.example`, so it routinely carries an empty `LINEAR_API_KEY=` placeholder. Where the host injects the real key, sourcing overwrites it with the empty string and Linear answers **401** on the first call. That failure is silent in the direction that costs most: an agent appending a ledger entry or posting a comment gets an error it may not read closely, and *"I recorded that"* is a claim the next reader has no reason to doubt. Two agents in one observed run reached opposite conclusions about whether a tracker write had landed. It also reaches the reviewer a `/build` run dispatches, which is told to read the ticket fresh from the tracker.
+- **Sourcing executes the file.** An unquoted value carrying a backtick, `$( )` or a redirect is run rather than assigned, on a gitignored file the agent did not write and no review saw. The `sed` above assigns text whatever the file holds: a value of `` `touch /tmp/x` `` comes back as those literal characters, and nothing runs.
+
+The read strips one layer of matching single or double quotes and keeps any `=` inside the value. **An empty result is the no-key case below, not a token** — carrying it forward is what produces the 401 this step exists to prevent.
+
+**If `LINEAR_API_KEY` is neither already set nor carries a non-empty value in any env file, that is the only blocker — stop and ask the user for one.** Do not conclude you lack access before checking the env files. (If `harness.yaml` defines `tools.linear_cli`, you may use that wrapper instead; the curls below are the universal fallback and always work.)
 
 Every call posts to the same endpoint with the token in the `Authorization` header:
 
@@ -179,3 +196,20 @@ than opening a second ledger.
 ```bash
 LINEAR 'query { issues(filter: { labels: { name: { eq: \"improvement-ledger\" } }, state: { type: { neq: \"completed\" } } }) { nodes { id identifier title url } } }'
 ```
+
+**Read the appended comment back.** `commentCreate` returns `success`, which
+says the call ran — not that the entry is on the issue carrying the body you
+meant to store. This is the same postcondition rule the rest of this file
+applies to `create` and `hold`, and the append is the one write that had been
+left outside it. Take the id from the mutation, then read the body:
+
+```bash
+LINEAR 'mutation { commentCreate(input: { issueId: \"<ledger-id>\", body: \"...\" }) { success comment { id } } }'
+LINEAR 'query { comment(id: \"<comment-id>\") { body } }'
+```
+
+Compare that body against the entry you composed. A ledger entry has **no
+second copy**: the reflection it holds exists nowhere else, so an append that
+reports success and stored something else is lost with nothing to say it ever
+existed. Where the body came from a file, confirm it is the entry's text rather
+than the file's path.
