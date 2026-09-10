@@ -65,9 +65,16 @@ def frontmatter_globs(text: str) -> list[tuple[int, str]]:
     open. Quotes are stripped from the value, since `- "design/**"` and
     `- design/**` declare the same glob.
 
-    The parser fails toward the empty list, and the per-file floor below turns
-    that into RED. A reshaped frontmatter — a flow sequence, a renamed key, a
-    lost delimiter — must not read as "no offenders found".
+    Blank lines and comments are legal inside a block sequence and are skipped,
+    not stopped on. Stopping on one returned a *partial* list: a placeholder
+    annotated with a comment above it left the per-file floor satisfied and the
+    subject assertion looking at zero offenders, which is the #643 payload
+    shipping undetected. `scripts/harness-config.js`'s `blockMap` — the other
+    reader of this subject — has carried that skip since #488.
+
+    Entries stop at the first line that is neither an entry, a comment, nor
+    blank; a frontmatter this parser cannot open at all yields the empty list,
+    and the per-file floor below turns both into RED.
     """
     lines = text.split("\n")
     if not lines or lines[0].rstrip() != "---":
@@ -87,6 +94,9 @@ def frontmatter_globs(text: str) -> list[tuple[int, str]]:
         if not in_paths:
             if line.rstrip() == "paths:":
                 in_paths = True
+            continue
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
             continue
         entry = _ENTRY.match(line)
         if entry is None:
@@ -203,6 +213,7 @@ REJECTED = (
     "**",
     "/**",
     "*/**",
+    "/src/**",
     "../ui/**",
     "frontend/src, packages/ui",
     "frontend src/**",
@@ -263,6 +274,43 @@ def test_the_parser_reads_the_globs_a_rule_template_actually_declares() -> None:
         "The parser must read both entries, strip quotes from the quoted one, "
         "stop at the next frontmatter key, and never reach into the body."
     )
+
+
+def test_an_entry_below_a_comment_or_a_blank_line_is_still_read() -> None:
+    """The killer for the partial-list defect that failed review cycle 1.
+
+    Both shapes are legal inside a yaml block sequence, and a parser that
+    stopped on either returned the entries *above* it. That left the per-file
+    floor satisfied and the subject assertion looking at zero offenders — a
+    placeholder annotated with a comment shipped green.
+    """
+    annotated = (
+        "---\n"
+        "paths:\n"
+        '  - "design/**"\n'
+        "  # the UI source root\n"
+        '  - "<ui-source-glob>/**"\n'
+        "---\n"
+    )
+    spaced = (
+        "---\n"
+        "paths:\n"
+        '  - "design/**"\n'
+        "\n"
+        '  - "<ui-source-glob>/**"\n'
+        "---\n"
+    )
+    for label, text in (("comment", annotated), ("blank line", spaced)):
+        globs = frontmatter_globs(text)
+        assert [glob for _, glob in globs] == ["design/**", "<ui-source-glob>/**"], (
+            f"A {label} inside the `paths:` list must be skipped, not stopped "
+            f"on: the entries below it are the ones this guard exists to read. "
+            f"Parsed {globs}."
+        )
+        assert [g for _, g in globs if not is_path_shaped(g)], (
+            f"With the {label} skipped, the placeholder below it must reach the "
+            "predicate and be reported as an offender."
+        )
 
 
 def test_the_parser_yields_nothing_when_the_frontmatter_is_unreadable() -> None:
