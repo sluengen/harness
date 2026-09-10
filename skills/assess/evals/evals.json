@@ -4,7 +4,7 @@
     {
       "id": 1,
       "name": "process-scope-measurements-and-doors",
-      "prompt": "Run me through a `/assess process` pass on /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there). I want to know exactly what the pass produces and where each kind of result goes — I don't need you to actually write the report, I need the procedure, grounded in this repo. Derive the measurements the pass owes if you can get them.\n\nSave it as process-pass.md in the output directory.",
+      "prompt": "Run me through a `/assess process` pass on this repository (do not read anything under skills/ or agents/ there). I want to know exactly what the pass produces and where each kind of result goes — I don't need you to actually write the report, I need the procedure, grounded in this repo. Derive the measurements the pass owes if you can get them.\n\nSave it as process-pass.md in the output directory.",
       "expected_output": "A written artefact demonstrating assess judgment on a recorded failure mode.",
       "files": [],
       "expectations": [
@@ -22,7 +22,7 @@
     {
       "id": 2,
       "name": "architecture-scope-may-file-nothing",
-      "prompt": "I ran `/assess architecture` on /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there) and the system shape looks broadly right. I found two things worth keeping, one boundary I'd watch, and no risk I'd call actionable.\n\nHave I done it wrong? What do I file, and what does the report have to carry? Save your answer as arch-pass.md in the output directory.",
+      "prompt": "I ran `/assess architecture` on this repository (do not read anything under skills/ or agents/ there) and the system shape looks broadly right. I found two things worth keeping, one boundary I'd watch, and no risk I'd call actionable.\n\nHave I done it wrong? What do I file, and what does the report have to carry? Save your answer as arch-pass.md in the output directory.",
       "expected_output": "A written artefact demonstrating assess judgment on a recorded failure mode.",
       "files": [],
       "expectations": [
