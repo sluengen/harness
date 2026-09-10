@@ -1,7 +1,7 @@
 ---
 feature: plugin-surface
 status: implemented
-last_updated: 2026-09-09
+last_updated: 2026-09-10
 ---
 
 # The plugin surface
@@ -1495,6 +1495,150 @@ not adopted: this ticket's scope is the one file its own problem statement names
 `skills/architecture/evals/evals.json` is #631's sibling repoint, and the
 remaining seven stay open, the same absent-fixture defect on a different file
 each.
+
+### The ledger append reads back what it posted, and `transition` gets the disposition `create` already had (#639)
+
+`skills/tracker/references/github.md`'s `ledger` recipe now ends the way
+`create` and `hold` already did: capture the id the append's POST returns,
+read the comment body back, and compare it against the entry composed —
+closing the gap that lost #450's comment `5601650321`, posted with
+`-f body=@<path>` (the literal string) where `-F body=@<path>` (the file
+read) was meant, `gh` exiting 0 either way. The `-f`/`-F` distinction is now
+named in a blockquote beside the recipe, flagged as applying to every
+`-F body=@` form in the file — `create`, `comment`, `hold` — but costing most
+at the ledger, which carries no second copy.
+
+`skills/tracker/references/linear.md`'s twin ledger gap — `commentCreate`
+returning `success` with no read-back — was fixed in the same change rather
+than twinned: both files carry the identical postcondition rule, and AC-4/AC-5
+already had `linear.md` open on the same surface. The `-f`/`-F` half is
+`gh`-specific and is not restated there; Linear's append goes through the
+`LINEAR` `curl` helper, which has no equivalent trap in this recipe shape.
+
+`linear.md`'s token-load step no longer sources the env file. It now prefers
+an already-set `LINEAR_API_KEY` and falls back to a `sed` extraction of the
+raw assignment only when the variable is empty, stripping one layer of
+matching quotes. Verified independently at review, against both conditions
+the ticket named: an already-set key survives an empty `LINEAR_API_KEY=`
+placeholder in the env file rather than being overwritten by it, and a value
+of `` `touch /tmp/x` `` reads back as those literal characters with nothing
+executed — where `source` on the same file would run it. Plain, both-quoted,
+and embedded-`=` values were also confirmed to read correctly.
+
+`github.md`'s *What is reachable when GraphQL is refused* now covers
+`transition` alongside `create`, in a new ``#### `create` stops there;
+`transition` does not`` subsection, and gives it the opposite disposition
+deliberately: an unplaced filing is invisible to every queue read and must
+stop, but a transition moves an issue already on the board and already
+reachable by REST, so what goes stale is the board's currency, not the
+ticket's existence. Where `item-edit` cannot run, the rule is now: post the
+state change as an issue comment, continue the run, and report the board as
+stale rather than moved. This is what four runs — #625, #631, #633, #635 —
+each independently improvised before the rule existed, confirmed by reading
+each ticket's own In Progress / In Review comments.
+
+**Already satisfied, re-confirmed rather than re-fixed.** `linear.md` carries
+no `comments(last: N)` shape reading the wrong end of a thread; its one
+`comments` selection is unpaginated.
+
+**Lane: `assurance:simple` held, not raised.** AC-4/AC-5 name the credentials
+protected area, but the diff is prose describing a token-load recipe — no
+code in this repo's tree reads, writes, or transmits a credential (ADR 0015,
+ADR 0017: no runtime). The diff was read against the spine's own line, *the
+spec's list says where to watch; it is the diff that trips* — naming an area
+a ticket never touches does not raise its lane.
+
+**No test.** Guidance only; law 2's measuring test has code as its subject,
+and ADR 0017 D5 refuses a guard over prose. Evidence is the diff, direct
+review, and — for the token-load recipe specifically — independent
+re-execution of the shipped shell against both failure conditions at review,
+not the builder's report of having done so.
+
+### What #640 completed, as built
+
+Three additions to the reviewer's brief, all guidance-only. `agents/reviewer.md`
+→ *Your context is the packet* is now the packet's one definition and names the
+ticket's **comment thread** as a required part — the thread is where #610's
+strongest design objection and #636's scope amendment both lived, invisible to
+a reviewer reading the body alone. `skills/build/SKILL.md` section 3 and
+`skills/build/references/codex-review.md` point at that definition instead of
+re-enumerating it; the two rival enumerations the grounding found
+(`agents/reviewer.md:18-23`, `codex-review.md:8-12`, neither naming the thread)
+collapse to one definition plus two pointers, `codex-review.md` keeping only
+the two items the base packet lacks — the staged diff's lint output and
+`reviewed_tree`.
+
+`agents/reviewer.md` also gains one line pointing a reviewer that must
+reconcile a mid-review base movement at `skills/build/references/reconcile.md`
+(#631, held by luck before this — the rule was stated nowhere a reviewer's own
+definition reached). `agents/reviewer-feature.md` gains no second copy: its
+existing "read `agents/reviewer.md` and follow it exactly ... none of it is
+restated here" already routes a feature-lane reviewer through the same
+pointer, and a second line there would restate an operand AC-2 itself refuses.
+
+`skills/authoring/SKILL.md` → *Acceptance criteria* answers #636's open half:
+a filer amending scope in a comment now edits the acceptance criteria too,
+leaving the comment as the rationale, because the criteria are what a reviewer
+certifies against and a comment is not.
+
+`agents/reviewer.md` and `.codex/agents/reviewer.toml` moved together,
+`tests/unit/test_codex_agent_adapters.py` holding the two bodies equal. No
+tests are authored: all three criteria name direct review and no quantity.
+
+### What #641 repointed, as built
+
+Applied #636's landed decision — the prompt names the repository under test,
+not a fixture checkout — to the remaining eight suites in one pass:
+`architecture`, `assess`, `authoring`, `drain`, `review-discipline`, `tracker`,
+`work-discovery`, `worktree-isolation`. That eval-suite scope is 42 changed
+lines across the eight files (21 `prompt` insertions, 21 deletions), and
+`expectations` is byte-unchanged in all eight — confirmed by diffing every
+changed line and finding each one a `"prompt":` line, none other.
+`git diff origin/dev...HEAD` over the whole branch touches 13 files, 52
+changed lines: the eight above plus the five version homes
+(`.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`, `AGENTS.md`,
+`CLAUDE.md`, `templates/spine.md`) carrying `/build` step 1's 11.1.0 →
+11.2.0 raise, in scope by the version-class rule rather than by this
+ticket's own problem statement.
+
+**AC-1.** The ticket's derivation, re-run over the reviewed tree:
+
+```
+architecture 0 3        assess 0 2         authoring 0 3
+drain 0 1                engineering 0 3    review-discipline 0 3
+tracker 0 3              work-discovery 0 3 worktree-isolation 0 3
+```
+
+Zero for all nine suites, `engineering` included (#636's earlier repoint,
+untouched by this diff).
+
+**AC-2, the convention.** #636's landed wording replaces the path with `this
+repository`, drops `real repo;`, and carries the read fence through
+unmodified. Nineteen of the twenty-one prompts are a straight noun
+substitution — for example `architecture` 1: `"Design question on
+/home/user/harness-ref (real repo; do not read anything under skills/ or
+agents/ there)."` becomes `"Design question on this repository (do not read
+anything under skills/ or agents/ there)."` Two needed the surrounding clause
+rebuilt rather than the noun swapped in place, because "the repo is this
+repository" is not a sentence: `review-discipline` 1 (`"Review this change for
+me. The repo is /home/user/harness-ref (real repo; …)"` becomes `"Review this
+change for me in this repository (…)"`) and `tracker` 1 (`"Working against the
+repo at /home/user/harness-ref (real repo; …)"` becomes `"Working in this
+repository (…)"`). Both keep the same substance — path gone, `real repo;`
+gone, fence intact — so the convention is one shape across all 21, matching
+`skills/engineering/evals/evals.json`'s three.
+
+**The read fence, not homogenized, by design.** These eight suites fence
+`skills/ or agents/`; `engineering` 1 and 3 additionally fence `specs/`, a
+widening #636 made on its own reasoning and this ticket does not extend.
+`worktree-isolation` 2 and 3 carry no read fence at all — true before this
+diff and true after it; the diff touched only the path clause in those two
+prompts, leaving the absent fence as it found it. Both observations predate
+this ticket and neither is a defect this diff introduced.
+
+**No guard added.** `evals.json` is `skill-creator`'s own format, run by its
+model-orchestrated sub-agent loop rather than any script; `scripts/verify.sh`
+gains nothing here, per the ledger's option A.
 
 ## Data model
 

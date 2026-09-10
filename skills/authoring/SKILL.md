@@ -82,6 +82,8 @@ Each criterion names what it protects and uses ADR 0019's evidence. Three rules 
 
 A builder who finds a criterion wrong does not descope it silently: give the evidence and a smaller replacement, get the owner's approval, amend the tracker issue before implementing. A rationale confined to a commit body leaves the ticket false.
 
+*The same obligation binds whoever amends someone else's ticket.* A scope change filed as a comment — the right channel, since a second ticket on the same surface is the twin the spine's *Filing* rule refuses — **edits the acceptance criteria, and leaves the comment carrying the rationale**. The criteria are what a reviewer certifies against; a comment is not, so an amendment that never reaches them cannot be certified either way, however carefully the thread is read. Filing it in both places costs the filer one edit, once. Leaving it in the comment alone charges every later run for the reconciliation, and #636 shipped a review against the narrow scope before anyone noticed.
+
 ### Three conditional sections
 
 A change spec may owe a **Watchlist trigger**, a **Lifecycle sweep**, or an **Instrument replacement** section, each present only when its trigger fires. Load [`references/conditional-sections.md`](references/conditional-sections.md) while writing the spec to decide which apply.

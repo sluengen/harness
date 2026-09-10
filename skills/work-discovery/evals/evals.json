@@ -4,7 +4,7 @@
     {
       "id": 1,
       "name": "held-p1-bug-still-stops-the-line",
-      "prompt": "Unattended tick against /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there). Here's the open queue I read:\n\n  #91  bug          P1  In Progress  assigned: sluengen   label: input    \"gate marker minted for a tree the gate never ran\"\n  #94  enhancement  P2  Todo         unassigned                            \"drain: ledger count includes closed entries\"\n  #95  bug          P3  Todo         unassigned                            \"promote step prints the wrong branch name\"\n  #96  enhancement  P2  Todo         unassigned          blocked-by: #94   \"drain: add a held-pile summary\"\n\nWhich ticket do I start, and what do I do this tick? Save your answer as pick.md in the output directory.",
+      "prompt": "Unattended tick against this repository (do not read anything under skills/ or agents/ there). Here's the open queue I read:\n\n  #91  bug          P1  In Progress  assigned: sluengen   label: input    \"gate marker minted for a tree the gate never ran\"\n  #94  enhancement  P2  Todo         unassigned                            \"drain: ledger count includes closed entries\"\n  #95  bug          P3  Todo         unassigned                            \"promote step prints the wrong branch name\"\n  #96  enhancement  P2  Todo         unassigned          blocked-by: #94   \"drain: add a held-pile summary\"\n\nWhich ticket do I start, and what do I do this tick? Save your answer as pick.md in the output directory.",
       "expected_output": "A written artefact demonstrating work-discovery judgment on a recorded failure mode.",
       "files": [],
       "expectations": [
@@ -19,7 +19,7 @@
     {
       "id": 2,
       "name": "unreadable-priority-field",
-      "prompt": "Unattended tick against /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there). I can read the issue list fine \u2014 I can see each ticket's kind and its labels \u2014 but every call for the board's Priority field comes back 403. No priority is readable this tick.\n\nThere are four unblocked Todo tickets, none assigned, none held. What do I do? Save your answer as pick.md in the output directory.",
+      "prompt": "Unattended tick against this repository (do not read anything under skills/ or agents/ there). I can read the issue list fine \u2014 I can see each ticket's kind and its labels \u2014 but every call for the board's Priority field comes back 403. No priority is readable this tick.\n\nThere are four unblocked Todo tickets, none assigned, none held. What do I do? Save your answer as pick.md in the output directory.",
       "expected_output": "A written artefact demonstrating work-discovery judgment on a recorded failure mode.",
       "files": [],
       "expectations": [
@@ -34,7 +34,7 @@
     {
       "id": 3,
       "name": "defer-a-ticket-that-is-not-actionable",
-      "prompt": "Unattended tick against /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there). No P1 bug is open. The highest-ranked candidate is:\n\n  #103  enhancement  P2  Todo  unassigned\n  Title: \"make the retention rule configurable\"\n  Body: \"assessments/ retention should be configurable. Decide whether it goes in harness.yaml or a per-scope override and implement it.\"\n\nCan I build this? What do I do with it this tick? Save your answer as defer.md in the output directory.",
+      "prompt": "Unattended tick against this repository (do not read anything under skills/ or agents/ there). No P1 bug is open. The highest-ranked candidate is:\n\n  #103  enhancement  P2  Todo  unassigned\n  Title: \"make the retention rule configurable\"\n  Body: \"assessments/ retention should be configurable. Decide whether it goes in harness.yaml or a per-scope override and implement it.\"\n\nCan I build this? What do I do with it this tick? Save your answer as defer.md in the output directory.",
       "expected_output": "A written artefact demonstrating work-discovery judgment on a recorded failure mode.",
       "files": [],
       "expectations": [

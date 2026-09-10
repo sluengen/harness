@@ -4,7 +4,7 @@
     {
       "id": 1,
       "name": "criteria-that-name-producible-evidence",
-      "prompt": "I'm filing a ticket against /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there).\n\nWhat we want: the capture workflow's instructions should tell whoever files a ticket to set exactly one assurance label, and should say what happens when none is set.\n\nWrite the acceptance criteria for that ticket. Save them as criteria.md in the output directory.",
+      "prompt": "I'm filing a ticket against this repository (do not read anything under skills/ or agents/ there).\n\nWhat we want: the capture workflow's instructions should tell whoever files a ticket to set exactly one assurance label, and should say what happens when none is set.\n\nWrite the acceptance criteria for that ticket. Save them as criteria.md in the output directory.",
       "expected_output": "A written artefact demonstrating authoring judgment on a recorded failure mode.",
       "files": [],
       "expectations": [
@@ -20,7 +20,7 @@
     {
       "id": 2,
       "name": "grounding-measures-rather-than-asserts",
-      "prompt": "Ticket HAR-318 against /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there) reads:\n\n  \"`.claude/hooks/*.js` are byte-identical copies of `hooks/*.js`, kept in step by hand. Make the copy step part of init so they cannot drift.\"\n\nWrite the Grounding section of the change spec for this ticket. Save it as grounding.md in the output directory.",
+      "prompt": "Ticket HAR-318 against this repository (do not read anything under skills/ or agents/ there) reads:\n\n  \"`.claude/hooks/*.js` are byte-identical copies of `hooks/*.js`, kept in step by hand. Make the copy step part of init so they cannot drift.\"\n\nWrite the Grounding section of the change spec for this ticket. Save it as grounding.md in the output directory.",
       "expected_output": "A written artefact demonstrating authoring judgment on a recorded failure mode.",
       "files": [],
       "expectations": [
@@ -34,7 +34,7 @@
     {
       "id": 3,
       "name": "lane-choice-and-change-spec",
-      "prompt": "Something came in from actual use of /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there): the drain report prints the improvement-ledger count wrong \u2014 it counts closed entries as well as open ones. Looks like a one-line fix.\n\nPick the assurance level for this ticket and write the change spec. Save it as spec.md in the output directory.",
+      "prompt": "Something came in from actual use of this repository (do not read anything under skills/ or agents/ there): the drain report prints the improvement-ledger count wrong \u2014 it counts closed entries as well as open ones. Looks like a one-line fix.\n\nPick the assurance level for this ticket and write the change spec. Save it as spec.md in the output directory.",
       "expected_output": "A written artefact demonstrating authoring judgment on a recorded failure mode.",
       "files": [],
       "expectations": [

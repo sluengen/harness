@@ -4,7 +4,7 @@
     {
       "id": 1,
       "name": "predicate-defined-by-absence",
-      "prompt": "Design question on /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there).\n\nThe hydration workflow needs to decide whether a consuming repo's gate is \"safe to rewire automatically\". The proposal on the table: it's safe when the repo has no first-party JavaScript under `scripts/` and no custom `verify` command in `harness.yaml`. If both hold, hydration writes the standard `scripts/verify.sh` wiring.\n\nIs this the right contract? Write me your assessment and, if it isn't, what it should be instead. Save it as design.md in the output directory.",
+      "prompt": "Design question on this repository (do not read anything under skills/ or agents/ there).\n\nThe hydration workflow needs to decide whether a consuming repo's gate is \"safe to rewire automatically\". The proposal on the table: it's safe when the repo has no first-party JavaScript under `scripts/` and no custom `verify` command in `harness.yaml`. If both hold, hydration writes the standard `scripts/verify.sh` wiring.\n\nIs this the right contract? Write me your assessment and, if it isn't, what it should be instead. Save it as design.md in the output directory.",
       "expected_output": "A written artefact demonstrating architecture judgment on a recorded failure mode.",
       "files": [],
       "expectations": [
@@ -20,7 +20,7 @@
     {
       "id": 2,
       "name": "decision-worthy-and-where-recorded",
-      "prompt": "Working on /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there). Two calls landed on me in the same change:\n\n1. Gate markers will be keyed by the git tree oid rather than the commit sha, so an amend that rewrites no bytes doesn't void a verdict.\n2. In `scripts/harness-config.js` I'm returning `null` rather than throwing when an optional key is absent, so callers branch on it.\n\nWhich of these is decision-worthy, and where does each get recorded? Write the record for whichever qualifies. Save it as decisions.md in the output directory.",
+      "prompt": "Working on this repository (do not read anything under skills/ or agents/ there). Two calls landed on me in the same change:\n\n1. Gate markers will be keyed by the git tree oid rather than the commit sha, so an amend that rewrites no bytes doesn't void a verdict.\n2. In `scripts/harness-config.js` I'm returning `null` rather than throwing when an optional key is absent, so callers branch on it.\n\nWhich of these is decision-worthy, and where does each get recorded? Write the record for whichever qualifies. Save it as decisions.md in the output directory.",
       "expected_output": "A written artefact demonstrating architecture judgment on a recorded failure mode.",
       "files": [],
       "expectations": [
@@ -34,7 +34,7 @@
     {
       "id": 3,
       "name": "watchlist-trigger",
-      "prompt": "I'm about to start a change on /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there) that touches `scripts/mutate.py` \u2014 adding a new subcommand. That file is already large and every change seems to land in it.\n\nWhat does the process require of me here, before I write the change spec? Be concrete about this repo. Save your answer as watchlist.md in the output directory.",
+      "prompt": "I'm about to start a change on this repository (do not read anything under skills/ or agents/ there) that touches `scripts/mutate.py` \u2014 adding a new subcommand. That file is already large and every change seems to land in it.\n\nWhat does the process require of me here, before I write the change spec? Be concrete about this repo. Save your answer as watchlist.md in the output directory.",
       "expected_output": "A written artefact demonstrating architecture judgment on a recorded failure mode.",
       "files": [],
       "expectations": [

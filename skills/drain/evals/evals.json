@@ -4,7 +4,7 @@
     {
       "id": 1,
       "name": "drain-the-ledger",
-      "prompt": "End of a `/assess code` pass on /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there), run by me at the keyboard, and it has just called you for the ledger. The improvement ledger has 34 entries built up since the last drain. Several of them are clearly about the same file.\n\nWhat do I do with them? Save your answer as drain.md in the output directory.",
+      "prompt": "End of a `/assess code` pass on this repository (do not read anything under skills/ or agents/ there), run by me at the keyboard, and it has just called you for the ledger. The improvement ledger has 34 entries built up since the last drain. Several of them are clearly about the same file.\n\nWhat do I do with them? Save your answer as drain.md in the output directory.",
       "expected_output": "A written artefact demonstrating drain judgment on a recorded failure mode.",
       "files": [],
       "expectations": [
