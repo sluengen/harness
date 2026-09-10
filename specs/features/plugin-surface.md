@@ -1496,6 +1496,64 @@ not adopted: this ticket's scope is the one file its own problem statement names
 remaining seven stay open, the same absent-fixture defect on a different file
 each.
 
+### The ledger append reads back what it posted, and `transition` gets the disposition `create` already had (#639)
+
+`skills/tracker/references/github.md`'s `ledger` recipe now ends the way
+`create` and `hold` already did: capture the id the append's POST returns,
+read the comment body back, and compare it against the entry composed —
+closing the gap that lost #450's comment `5601650321`, posted with
+`-f body=@<path>` (the literal string) where `-F body=@<path>` (the file
+read) was meant, `gh` exiting 0 either way. The `-f`/`-F` distinction is now
+named in a blockquote beside the recipe, flagged as applying to every
+`-F body=@` form in the file — `create`, `comment`, `hold` — but costing most
+at the ledger, which carries no second copy.
+
+`skills/tracker/references/linear.md`'s twin ledger gap — `commentCreate`
+returning `success` with no read-back — was fixed in the same change rather
+than twinned: both files carry the identical postcondition rule, and AC-4/AC-5
+already had `linear.md` open on the same surface. The `-f`/`-F` half is
+`gh`-specific and is not restated there; Linear's append goes through the
+`LINEAR` `curl` helper, which has no equivalent trap in this recipe shape.
+
+`linear.md`'s token-load step no longer sources the env file. It now prefers
+an already-set `LINEAR_API_KEY` and falls back to a `sed` extraction of the
+raw assignment only when the variable is empty, stripping one layer of
+matching quotes. Verified independently at review, against both conditions
+the ticket named: an already-set key survives an empty `LINEAR_API_KEY=`
+placeholder in the env file rather than being overwritten by it, and a value
+of `` `touch /tmp/x` `` reads back as those literal characters with nothing
+executed — where `source` on the same file would run it. Plain, both-quoted,
+and embedded-`=` values were also confirmed to read correctly.
+
+`github.md`'s *What is reachable when GraphQL is refused* now covers
+`transition` alongside `create`, in a new ``#### `create` stops there;
+`transition` does not`` subsection, and gives it the opposite disposition
+deliberately: an unplaced filing is invisible to every queue read and must
+stop, but a transition moves an issue already on the board and already
+reachable by REST, so what goes stale is the board's currency, not the
+ticket's existence. Where `item-edit` cannot run, the rule is now: post the
+state change as an issue comment, continue the run, and report the board as
+stale rather than moved. This is what four runs — #625, #631, #633, #635 —
+each independently improvised before the rule existed, confirmed by reading
+each ticket's own In Progress / In Review comments.
+
+**Already satisfied, re-confirmed rather than re-fixed.** `linear.md` carries
+no `comments(last: N)` shape reading the wrong end of a thread; its one
+`comments` selection is unpaginated.
+
+**Lane: `assurance:simple` held, not raised.** AC-4/AC-5 name the credentials
+protected area, but the diff is prose describing a token-load recipe — no
+code in this repo's tree reads, writes, or transmits a credential (ADR 0015,
+ADR 0017: no runtime). The diff was read against the spine's own line, *the
+spec's list says where to watch; it is the diff that trips* — naming an area
+a ticket never touches does not raise its lane.
+
+**No test.** Guidance only; law 2's measuring test has code as its subject,
+and ADR 0017 D5 refuses a guard over prose. Evidence is the diff, direct
+review, and — for the token-load recipe specifically — independent
+re-execution of the shipped shell against both failure conditions at review,
+not the builder's report of having done so.
+
 ## Data model
 
 **No persistent state beyond the tree itself, since #621.** The gate marker under `<git-common-dir>/harness/gate/` and the `refs/harness/*` namespace #539 added — gate records, claims and the green pointer — are both deleted, and nothing writes either. The one file that survives is `.harness/run.json`, which is gitignored, records where a run is rather than what is true of the tree, and is read by exactly one hook. This was never a run ledger (ADR 0015) and it is less of one now.
