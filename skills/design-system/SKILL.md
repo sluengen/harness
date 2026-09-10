@@ -1,6 +1,6 @@
 ---
 name: design-system
-description: "Use when standing up or working in a repo's design system — the eight-tier structure (`00-brand` … `07-flows`), the three-tier token model, and the builder that resolves tokens into a page's generated `:root` region. This skill's `assets/` are what `/harness:hydrate` copies into the repo's `paths.design_system` when `layers.design_system` is on. Not for the discipline of *using* a system that already exists — the seeded `.claude/rules/design-system.md` carries that, and loads on its own whenever a UI file is opened."
+description: "Use when standing up or working in a repo's design system — the eight-tier structure (`00-brand` … `07-flows`), the three-tier token model, and the builder that resolves tokens into a page's generated `:root` region. This skill's `assets/` are what `/harness:hydrate` copies into the repo's `paths.design_system` when `layers.design_system` is on. Not for the discipline of *using* a system that already exists — the seeded `.claude/rules/design-system.md` carries that, and loads on the paths its own frontmatter names."
 model: inherit
 ---
 # Design system

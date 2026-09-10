@@ -43,5 +43,12 @@ paths:
   proposals: specs/proposals/
   features: specs/features/
   decisions: specs/decisions/
+  # Both belong to the design layer: uncomment and fill them where
+  # `layers.design_system` is on, and leave them commented where it is off.
+  # One directory each, never a list — `scripts/harness-config.js` reads this
+  # block as scalars, so a sequence or a `{placeholder}` left here makes the
+  # whole `paths:` map unreadable, and `paths.tests` goes with it.
+  # design_system: design/      # where this repo's design system lives
+  # ui_source: src/             # the UI source root the design rule binds to
 env:
   file: .env

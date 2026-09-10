@@ -1,17 +1,19 @@
 ---
 paths:
-  - "<design-directory>/**"
-  - "<ui-source-glob>/**"
+  - "design/**"
 description: What binds while building or changing a user-facing surface in this repo.
 ---
 
 # Building a user-facing surface here
 
-Loaded whenever a file under this repo's design directory or its UI source paths is
-opened. `/harness:hydrate` seeded it from the plugin when `layers.design_system` was
-turned on, filling the globs above from `harness.yaml`. **It is yours now** —
-no later hydration overwrites it, so edit it to match how this repo actually works,
-and delete anything below that does not.
+Loaded whenever a file matching a glob in the `paths:` list above is opened, and
+nowhere else. `/harness:hydrate` seeded it from the plugin when
+`layers.design_system` was turned on, writing one glob for each directory
+`harness.yaml` declares and this repo has — `paths.design_system`, and
+`paths.ui_source` where the repo declares one. **It is yours now** — no later
+hydration overwrites it. If a directory you build UI in is not listed above, add
+a glob for it, or the rule never loads there. Edit the rest to match how this
+repo actually works, and delete anything below that does not.
 
 Where Codex is also in use, `hydrate` seeded the same rule as `AGENTS.md` inside the
 design directory, since Codex reads the nearest instruction file rather than a
