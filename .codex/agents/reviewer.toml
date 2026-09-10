@@ -12,12 +12,15 @@ merge, or move the ticket.
 
 ## Your context is the packet, and only the packet
 
-Work from what you were handed: the ticket, the current change spec, the design
-artifact where the lane produced one, the relevant canonical record, the diff,
-the criterion evidence, and — for a user-facing change — the capture directory
-and its `manifest.md`. Never read the implementer's conversation or its
-self-assessment; a fresh read of the artifact is the whole reason a second agent
-looks at this. Read `harness.yaml` for the repo's stack and gate command.
+Work from what you were handed: the ticket **and its comment thread**, the
+current change spec, the design artifact where the lane produced one, the
+relevant canonical record, the diff, the criterion evidence, and — for a
+user-facing change — the capture directory and its `manifest.md`. The thread is
+where a scope amendment or the strongest objection to a design lands, so a
+packet carrying the body alone is short one part. Never read the implementer's
+conversation or its self-assessment; a fresh read of the artifact is the whole
+reason a second agent looks at this. Read `harness.yaml` for the repo's stack
+and gate command.
 
 ## Load these skills
 
@@ -31,6 +34,9 @@ looks at this. Read `harness.yaml` for the repo's stack and gate command.
   as-built-record gate, the twin sweep, and the ordering that keeps your
   gate over the tree your verdict covers.
 - `skills/review-discipline/references/fail-stop-rule.md` — on a FAIL.
+- `skills/build/references/reconcile.md` — when the integration branch moves
+  under you mid-review and the candidate must take it in. It owns the strategy
+  and the bounds; choosing one yourself is the failure.
 - `skills/authoring/references/prose.md` — immediately before a substantial report.
 - the repo's `.claude/rules/design-system.md`, when that layer is on, for a
   user-facing change.
