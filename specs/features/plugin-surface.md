@@ -1,7 +1,7 @@
 ---
 feature: plugin-surface
 status: implemented
-last_updated: 2026-09-09
+last_updated: 2026-09-10
 ---
 
 # The plugin surface
@@ -1553,6 +1553,61 @@ and ADR 0017 D5 refuses a guard over prose. Evidence is the diff, direct
 review, and — for the token-load recipe specifically — independent
 re-execution of the shipped shell against both failure conditions at review,
 not the builder's report of having done so.
+
+### What #641 repointed, as built
+
+Applied #636's landed decision — the prompt names the repository under test,
+not a fixture checkout — to the remaining eight suites in one pass:
+`architecture`, `assess`, `authoring`, `drain`, `review-discipline`, `tracker`,
+`work-discovery`, `worktree-isolation`. That eval-suite scope is 42 changed
+lines across the eight files (21 `prompt` insertions, 21 deletions), and
+`expectations` is byte-unchanged in all eight — confirmed by diffing every
+changed line and finding each one a `"prompt":` line, none other.
+`git diff origin/dev...HEAD` over the whole branch touches 13 files, 52
+changed lines: the eight above plus the five version homes
+(`.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`, `AGENTS.md`,
+`CLAUDE.md`, `templates/spine.md`) carrying `/build` step 1's 11.1.0 →
+11.2.0 raise, in scope by the version-class rule rather than by this
+ticket's own problem statement.
+
+**AC-1.** The ticket's derivation, re-run over the reviewed tree:
+
+```
+architecture 0 3        assess 0 2         authoring 0 3
+drain 0 1                engineering 0 3    review-discipline 0 3
+tracker 0 3              work-discovery 0 3 worktree-isolation 0 3
+```
+
+Zero for all nine suites, `engineering` included (#636's earlier repoint,
+untouched by this diff).
+
+**AC-2, the convention.** #636's landed wording replaces the path with `this
+repository`, drops `real repo;`, and carries the read fence through
+unmodified. Nineteen of the twenty-one prompts are a straight noun
+substitution — for example `architecture` 1: `"Design question on
+/home/user/harness-ref (real repo; do not read anything under skills/ or
+agents/ there)."` becomes `"Design question on this repository (do not read
+anything under skills/ or agents/ there)."` Two needed the surrounding clause
+rebuilt rather than the noun swapped in place, because "the repo is this
+repository" is not a sentence: `review-discipline` 1 (`"Review this change for
+me. The repo is /home/user/harness-ref (real repo; …)"` becomes `"Review this
+change for me in this repository (…)"`) and `tracker` 1 (`"Working against the
+repo at /home/user/harness-ref (real repo; …)"` becomes `"Working in this
+repository (…)"`). Both keep the same substance — path gone, `real repo;`
+gone, fence intact — so the convention is one shape across all 21, matching
+`skills/engineering/evals/evals.json`'s three.
+
+**The read fence, not homogenized, by design.** These eight suites fence
+`skills/ or agents/`; `engineering` 1 and 3 additionally fence `specs/`, a
+widening #636 made on its own reasoning and this ticket does not extend.
+`worktree-isolation` 2 and 3 carry no read fence at all — true before this
+diff and true after it; the diff touched only the path clause in those two
+prompts, leaving the absent fence as it found it. Both observations predate
+this ticket and neither is a defect this diff introduced.
+
+**No guard added.** `evals.json` is `skill-creator`'s own format, run by its
+model-orchestrated sub-agent loop rather than any script; `scripts/verify.sh`
+gains nothing here, per the ledger's option A.
 
 ## Data model
 

@@ -4,7 +4,7 @@
     {
       "id": 1,
       "name": "absolute-sentence-weaker-check",
-      "prompt": "Review this change for me. The repo is /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there). The candidate diff is in the file diff.patch in the input directory \u2014 read it there.\n\nThe ticket's acceptance criteria are:\n  AC-1: `scripts/land.js` gains a `done` verb that publishes the gate record and advances the green pointer.\n  AC-2: no verb of `land.js` pushes to a remote.\n\nGive me your review. Save it as review.md in the output directory.",
+      "prompt": "Review this change for me in this repository (do not read anything under skills/ or agents/ there). The candidate diff is in the file diff.patch in the input directory \u2014 read it there.\n\nThe ticket's acceptance criteria are:\n  AC-1: `scripts/land.js` gains a `done` verb that publishes the gate record and advances the green pointer.\n  AC-2: no verb of `land.js` pushes to a remote.\n\nGive me your review. Save it as review.md in the output directory.",
       "expected_output": "A written artefact demonstrating review-discipline judgment on a recorded failure mode.",
       "files": [
         "evals/files/r1-diff.patch"
@@ -23,7 +23,7 @@
     {
       "id": 2,
       "name": "review-scope-is-the-diff",
-      "prompt": "You're the reviewer on ticket T-604 against /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there). The branch diff is in diff.patch in the input directory.\n\nT-604's single acceptance criterion: the `assessments/` retention rule keeps the latest report per scope plus any report with an open finding.\n\nWhile reading around the change I noticed the repo has a lot of prose elsewhere that looks out of date \u2014 stale counts in specs, docstrings describing older behaviour. Some of it predates this branch by months.\n\nGive me your review. Save it as review.md in the output directory.",
+      "prompt": "You're the reviewer on ticket T-604 against this repository (do not read anything under skills/ or agents/ there). The branch diff is in diff.patch in the input directory.\n\nT-604's single acceptance criterion: the `assessments/` retention rule keeps the latest report per scope plus any report with an open finding.\n\nWhile reading around the change I noticed the repo has a lot of prose elsewhere that looks out of date \u2014 stale counts in specs, docstrings describing older behaviour. Some of it predates this branch by months.\n\nGive me your review. Save it as review.md in the output directory.",
       "expected_output": "A written artefact demonstrating review-discipline judgment on a recorded failure mode.",
       "files": [
         "evals/files/r2-diff.patch"
@@ -41,7 +41,7 @@
     {
       "id": 3,
       "name": "self-check-before-handoff",
-      "prompt": "I'm the builder, not the reviewer, and I'm about to hand ticket T-712 to review in /home/user/harness-ref (real repo; do not read anything under skills/ or agents/ there). My diff is in diff.patch in the input directory.\n\nDo a self-check on it before I hand it over and tell me what a reviewer is going to find. Save it as self-check.md in the output directory.",
+      "prompt": "I'm the builder, not the reviewer, and I'm about to hand ticket T-712 to review in this repository (do not read anything under skills/ or agents/ there). My diff is in diff.patch in the input directory.\n\nDo a self-check on it before I hand it over and tell me what a reviewer is going to find. Save it as self-check.md in the output directory.",
       "expected_output": "A written artefact demonstrating review-discipline judgment on a recorded failure mode.",
       "files": [
         "evals/files/r3-diff.patch"
