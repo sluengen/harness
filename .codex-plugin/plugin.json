@@ -1,6 +1,6 @@
 {
   "name": "harness",
-  "version": "11.2.0",
+  "version": "12.0.0",
   "description": "A spec-driven development process for agent-driven repos: nine lifecycle workflows, the craft skills behind them, six agent roles, and the guards that keep a build honest.",
   "author": {
     "name": "sluengen",
