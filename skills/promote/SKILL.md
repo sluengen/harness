@@ -116,10 +116,13 @@ a run that skipped the review, which this command does not launder.
 
 ## After the push
 
-- **Reflect.** At most three lines, or `none` — the wastes this run met by P2's
-  categories and what should change, each line appended to an improvement ledger,
-  this repo's or the guidance source's, resolved as `review-discipline` →
-  `references/improvement-ledger.md` says and never hardcoded.
+- **Reflect.** At most three lines, and the first is the system that produced the
+  problem this run fixed. The rest are the wastes this run met by P2's categories
+  and what should change. Any line with nothing to report reads `none`, and every
+  line that has something is appended to an improvement ledger, this repo's or the
+  guidance source's, resolved as `review-discipline` →
+  `references/improvement-ledger.md` says and never hardcoded. The fix shipped at
+  the push above, so the cause line is the only thing that outlives it.
 - **Close the ticket and clean up.** Run `worktree-isolation`'s cleanup
   procedure, reporting any resource it could not release rather than substituting
   a broad host cleanup.
