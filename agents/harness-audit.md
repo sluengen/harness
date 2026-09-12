@@ -72,24 +72,27 @@ what a hydration writes and under which rule, then compare artefact by artefact.
   is the rule's name, and that basename with hyphens as underscores is the
   `layers:` key — `/harness:hydrate` step 5 seeds `.claude/rules/<name>.md` and
   an `AGENTS.md` twin. **The twin's directory is the one `harness.yaml` names
-  for that layer**, `paths.design_system` for the design rule, and never the
-  globs in the rule's own frontmatter: those can name somewhere else entirely,
-  and following them reports a drifted pair as two absent files.
+  for that layer** — `paths.design_system` for the design rule — and never
+  anything the rule itself says about its own location, in its frontmatter
+  globs or in its prose. A seeded rule carries both, both can name somewhere
+  else entirely, and both are inside the file you are about to read.
   **Establish what the repo is owed before calling anything absent.** Step 5
-  writes the twin only where that key is declared and the directory carried,
-  and writes no rule at all where neither it nor `paths.ui_source` resolves to a
-  directory the repo has, reporting the path blocked instead. A repo in either
-  position is owed no such file, so both the finding and the re-hydration that
-  would close it would be false.
+  writes the twin only where that key is declared and its directory present,
+  and writes no rule at all where none of the path keys that rule's globs come
+  from resolves to a directory the repo has, reporting the path blocked
+  instead. A repo in either position is owed no such file, so both the finding
+  and the re-hydration that would close it would be false.
   Where both are owed, three things can be true. **Both present:** compare them.
   The shared region is everything from the first line matching `^## ` to end of
   file, that heading line included, and it is the only region compared — the
   preamble above differs by design, `paths:` frontmatter on the Claude side
   against location-scoping on the Codex side, so a difference there is not
-  drift. Compare byte for byte and quote the lines that differ, numbering each
-  in its own file; where the difference is not line-shaped — trailing space, a
-  line ending, a missing final newline — say what it is instead, because a
-  quoted line will not show it. A present file with no such heading yields no
+  drift. Diff the two regions rather than comparing them line by position, or
+  one inserted line reports every line after it as differing, and quote what
+  the diff returns, numbering each side in its own file; where the difference
+  is not line-shaped — trailing space, a line ending, a missing final newline —
+  say what it is instead, because a quoted line will not show it. A present
+  file with no such heading yields no
   region, which is its own finding rather than agreement: two empty extractions
   compare equal and would read as green. **One present:** an absent file, and
   say which side. **Neither present:** report that and leave the cause open, a
@@ -97,12 +100,13 @@ what a hydration writes and under which rule, then compare artefact by artefact.
   The remedies differ. Another `/harness:hydrate` creates an absent file, since
   absence licenses creation. It repairs no divergence: both files are repo-owned
   and no hydration overwrites either, so two that disagree are the operator's to
-  reconcile, and measuring each against the template is what tells them which
-  one drifted. Where exactly one survives, step 5 seeds the missing side from
-  the template and leaves the survivor alone, so closing that absence
-  **creates** a divergence whenever the survivor has drifted from the template.
-  Measure it there before recommending the re-hydration, and say what the
-  re-hydration will produce.
+  reconcile — so measure each side's region against the template's and name the
+  one that drifted, or the finding hands them two files and no direction. Where
+  exactly one survives, step 5 writes the missing side's shared region from the
+  template under that host's own preamble and leaves the survivor alone, so
+  closing that absence **creates** a divergence whenever the survivor's region
+  has drifted from the template's. Measure that region before recommending the
+  re-hydration, and say what it will produce.
 - **`harness.yaml`.** Is it present, and does it declare the branch roles, the
   five commands, the tracker backend and its addresses, the layer switches and
   the paths? A key the skills read and the file does not declare is what makes a
