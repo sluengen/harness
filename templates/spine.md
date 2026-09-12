@@ -65,7 +65,7 @@ One hook refuses; three advise. The refusal is a PreToolUse hook over an edit to
 
 **Stage: pre-user, pre-revenue. Posture: speed and simplicity; a wrong change costs a revert. Protected: user data, credentials, money.** Rewrite this line the day the product gains a user: the operating context above is read against it.
 
-**Guidance provenance.** This repo runs the `harness` plugin from the `sluengen/harness` marketplace. Claude Code declares it as `extraKnownMarketplaces` in `.claude/settings.json` and installs it with `/plugin marketplace add sluengen/harness`, then `/plugin install harness@harness`. Codex installs the same release with `codex plugin marketplace add sluengen/harness`, then `codex plugin add harness@harness`. Marketplace registration is machine-local, so a fresh clone uses these commands when the plugin is absent.
+**Guidance provenance.** This repo runs the `harness` plugin from the `sluengen/harness` marketplace. Claude Code declares it as `extraKnownMarketplaces` in `.claude/settings.json` and installs it with `/plugin marketplace add sluengen/harness`, then `/plugin install harness@harness`. Codex installs the same release with `codex plugin marketplace add sluengen/harness`, then `codex plugin add harness@harness`. Marketplace registration is machine-local, so a fresh clone uses these commands when the plugin is absent. `enabledPlugins` enables but never installs: a host without the plugin is told to install it rather than given it. The declaration's `autoUpdate` carries later publishes to a host that already has it, so publishing on the marketplace's default branch is what moves everyone at once.
 
 Configuration is `harness.yaml` at the repo root, written by `/harness:hydrate`.
 

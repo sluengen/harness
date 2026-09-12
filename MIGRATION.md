@@ -47,9 +47,21 @@ source repo moves.
 
    ```json
    "extraKnownMarketplaces": {
-     "harness": { "source": { "source": "github", "repo": "sluengen/harness" } }
+     "harness": {
+       "source": { "source": "github", "repo": "sluengen/harness" },
+       "autoUpdate": true
+     }
    }
    ```
+
+   An entry already there without `autoUpdate` gains the flag the same way. A
+   third-party marketplace defaults to `autoUpdate: false`, so a host that
+   installed once stays on that version until somebody updates it by hand. With
+   the flag, Claude Code refreshes the marketplace and updates its installed
+   plugins in the background after startup, so a published `version` is what
+   moves every host that has the plugin. It cannot install for a host that has
+   none: `enabledPlugins` enables but never installs, and each contributor still
+   runs the install command Claude Code prints.
 
    Commit it with the rest of the hydration. The spine's repo section carries the
    same fact in prose, for a host too old to read the key.

@@ -1640,6 +1640,54 @@ this ticket and neither is a defect this diff introduced.
 model-orchestrated sub-agent loop rather than any script; `scripts/verify.sh`
 gains nothing here, per the ledger's option A.
 
+### What #653 fixed, as built
+
+Hydrate step 8 and `MIGRATION.md` step 3 both wrote `extraKnownMarketplaces.harness`
+with no `autoUpdate` key. A third-party marketplace defaults that flag to
+`false`, so every repo onto the plugin by either route froze at its installed
+version, and a publish on `sluengen/harness`'s default branch reached nobody
+not already watching for it. nano-erp measured the drift on 2026-09-11 — its
+`spine:generated` stamp read `harness@11.1.0` against an installed `11.2.0` —
+and fixed its own entry by hand in `ff92933`; this ticket carries the fix to
+the two routes that write the entry for every other consumer.
+
+Both JSON blocks now carry `"autoUpdate": true`, held byte-identical at
+review by extracting each and comparing (`skills/hydrate/SKILL.md:47-54`,
+`MIGRATION.md:48-55`); nothing guards the match, so it stays a review point
+each time either block moves. Both steps also state the upgrade case — an
+entry already present without the flag gains it, the same way, on the next
+hydration or hand-edit — and what the flag can and cannot do: `enabledPlugins`
+enables but never installs, so a host with no plugin still prints the install
+command rather than receiving one. `agents/harness-audit.md` and its Codex
+twin `.codex/agents/harness-audit.toml` extend the *Scaffold and plumbing*
+bullet so a present-but-flagless entry reads as drift an already-hydrated
+repo's own audit surfaces, rather than a satisfied check no re-hydration
+reaches. The mirror pair separated for one review cycle — the bullet moved in
+the markdown role definition without its Codex twin, caught red by
+`tests/unit/test_codex_agent_adapters.py`, the same guard #537 built for
+exactly this class of gap — and closed in the next commit, mirroring the same
+three sentences into the `.toml` adapter.
+
+`templates/spine.md`'s *Guidance provenance* paragraph carries the same two
+facts, for the record a consuming repo commits. It exists once in the tree,
+below the `spine:generated:end` marker rather than inside the parity-tested
+region: this repo is the plugin's source rather than one of its consumers, so
+`AGENTS.md` and `CLAUDE.md` never carried the paragraph and gained none here.
+The ticket's Approach expected the paragraph in all three files moving
+together under `tests/unit/test_spine_template_parity.py`; grounding at build
+time corrected that, and AC-4's evidence is direct review of the one file
+rather than the parity test, which still runs green as a control.
+
+No plugin version move was owed either: `dev` already carried `12.1.0`
+against `main`'s `12.0.0` when the branch was cut, so the `harness@12.1.0`
+stamp in all three `spine:generated` markers stands unmoved by this ticket.
+
+**No guard added.** Every edit is prose, or generated configuration a
+producer check already holds (`test_spine_template_parity.py`);
+`tests/unit/test_marketplace_provenance.py` stays scoped to this repo's own
+declaration, which carries no `enabledPlugins` and so has nothing for
+`autoUpdate` to update here — out of scope, confirmed at capture.
+
 ### Naming the system that produced the problem (#648)
 
 P0 gains one body sentence and one refusal, P5 two sentences and two refusals, and each lands byte-identically in `AGENTS.md`, `CLAUDE.md` and `templates/spine.md`. P0 now carries *Solve for the outcome, rather than for what is already built: existing behaviour is one attempt at that outcome and may be the thing to remove*, refusing *a solution measured against the built status quo rather than the outcome it was meant to produce*. The sentence's second half is what places the idea under *Do less* rather than under a general instruction to think harder: once existing behaviour is a candidate rather than a given, removal becomes an available answer. It says *existing behaviour* and not *baseline*, which `/assess process` already owns for its standing measurements. P5 now carries *Fix the problem and name the system that produced it: a run names the cause behind what it just fixed, a drain the cause behind a pile of symptoms*, then *That cause is an ordinary improvement — the ledger by default, a ticket only where its fix is already decided and sized*, refusing *a symptom fixed with its cause unexamined* and *a fix held while its cause is argued*. Both altitudes sit inside one sentence rather than in two clauses, because they differ in their material and not in their obligation, and the sentence follows the drain sentence so a reader reaches it having just read both mechanisms. *Unexamined* rather than *unnamed* is what lets a run record that it looked and found none; *ordinary improvement* is what keeps the drain's outcomes at three. P0's amendment ships with **no mechanism**, by the operator's scoping of the ticket: where one would go, if the behaviour does not appear in use, is `skills/architecture/SKILL.md`'s design contract or `skills/capture/SKILL.md`'s problem framing.
@@ -1651,7 +1699,6 @@ P0 gains one body sentence and one refusal, P5 two sentences and two refusals, a
 **Deliberately not edited.** `skills/review-discipline/SKILL.md`'s ledger-writing exception, because a reviewer fixed nothing and the per-run clause does not attach to one; a wording that did attach would have contradicted *a review proposes nothing* two lines above it. `skills/engineering/SKILL.md`'s *root cause*, which is the technical cause of a defect in code, where P5 says *the system that produced it* and never *root cause*, so the two senses stay lexically separated. `agents/steward.md`'s systemic insight, which is a proposed fix where a named cause is a diagnosis; both land in the ledger a drain reads, and the three-insight cap binds what a report writes. And the drain's three outcomes.
 
 **Evidence, and the version class.** Every artefact here is prose, so law 2 does not attach and no guard was added: a wording predicate over prose is what #511 and #520 retired, and P2 refuses a guard over prose. The three-file identity is the one mechanical property in play, and `tests/unit/test_spine_template_parity.py` already holds it over the git index. That guard was green before this change, so it was proven able to fail on this one rather than assumed — a one-word divergence in `templates/spine.md`'s new P5 refusal alone, staged, fails `test_the_spine_and_its_template_carry_the_same_generated_block` with the diverging line named in the assertion, run by the build and again independently at review over `af4c6a70` before reverting. The cycle's raise stays at the minor floor: no command is renamed, no argument changes, and no call a consuming repo makes is refused that used to succeed or succeeds that used to be refused. The reflection's changed shape is the counter-argument and it does not reach major, because the reserved line arrives as an obligation an agent follows rather than a decision a consuming repo has to take, and nothing outside the plugin parses those lines (`specs/architecture-principles.md` → *Surface is a versioned interface*).
-
 
 ## Data model
 
