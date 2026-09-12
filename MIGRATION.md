@@ -47,9 +47,21 @@ source repo moves.
 
    ```json
    "extraKnownMarketplaces": {
-     "harness": { "source": { "source": "github", "repo": "sluengen/harness" } }
+     "harness": {
+       "source": { "source": "github", "repo": "sluengen/harness" },
+       "autoUpdate": true
+     }
    }
    ```
+
+   An entry already there without `autoUpdate` gains the flag the same way. A
+   third-party marketplace defaults to `autoUpdate: false`, so a host that
+   installed once stays on that version until somebody updates it by hand. With
+   the flag, Claude Code refreshes the marketplace and updates its installed
+   plugins in the background after startup, so a published `version` is what
+   moves every host that has the plugin. It cannot install for a host that has
+   none: `enabledPlugins` enables but never installs, and each contributor still
+   runs the install command Claude Code prints.
 
    Commit it with the rest of the hydration. The spine's repo section carries the
    same fact in prose, for a host too old to read the key.
@@ -85,6 +97,21 @@ Per-file `guidance:` pins are gone. The plugin has one version; a repo that
 needs to diverge from a skill forks that skill locally (a repo-local skill
 shadows nothing — it is simply also present) rather than pinning a file.
 
+## What a per-release section names
+
+A section documenting one release names both halves: what the release takes out
+of a consumer's tree, and what it puts in. Most of a release is guidance, which
+lives in the plugin and never enters a consumer's tree, so the second half is the
+one that gets left out. One set does enter it: `/harness:hydrate` rewrites the
+plugin's Codex role adapters (`.codex/agents/*.toml`) on every run, so a release
+that gains a role lands a new file in every consumer that hydrates, and a repo
+pinning that set meets the addition as a red gate instead of as a line here.
+That is what v11 did to `calibrate` (sluengen/harness#644).
+
+Additions therefore get a row in the release's per-artefact table: the path, what
+puts it there, and what a consumer who pins the set has to do. A release that
+adds nothing says so.
+
 ## Retiring the vendored gate assets (2026-09-09, plugin v11)
 
 **Delete this section once `calibrate` and `nano-erp` have both adopted.** It
@@ -97,12 +124,16 @@ ADR 0022 point 1 stops the plugin writing executables into a consumer:
 `verify.sh` skeleton. The rule is **ownership, not execution** — `verify.sh` is
 disowned rather than removed, and remains the gate you run at landing.
 
-**Nothing breaks on the update, and nothing is urgent.** A repo that does
+**This retirement breaks nothing, and none of it is urgent.** A repo that does
 nothing keeps a working gate: `verify.sh`'s public branch execs the local
 `gate-marker.js`, which resolves `commands.verify`, spawns the internal branch
 and runs the stages, writing a marker no surviving hook reads. The cost is a
 redundant hop and some dead files, not a red gate. Simplify on your own
 schedule.
+
+**The release as a whole is not silent on your gate.** v11 also adds a file to
+your tree, and a repo that pins its Codex adapter set goes red on it at the
+first hydration. It is the last row of the table below.
 
 The transition itself is the consumer's to perform. Paste the prompt below into
 a session in the repo being adapted.
@@ -139,7 +170,9 @@ Read every hit. Two things this turns up that a quick reading misses:
 
 ### 2. What happens to each artefact
 
-The verbs differ. Getting one wrong is the only real risk in this transition.
+The verbs differ, and the last row arrives rather than leaves. Getting a
+removal's verb wrong is what breaks a gate during this transition; the
+arrival is what breaks one after it.
 
 | Artefact | What happens | Why |
 |---|---|---|
@@ -148,6 +181,7 @@ The verbs differ. Getting one wrong is the only real risk in this transition.
 | `harness-config.js` | **Delete**, once nothing calls it. | Its only caller here was `gate-marker.js`. The plugin's own hooks resolve their copy from the plugin root, never from this repo, so deleting yours cannot affect them. Confirm with the grep first: you may have wired your own callers. |
 | `package.json` beside the helpers | **Judge it.** Delete it if it exists only to pin `"type": "commonjs"` for the vendored pair — its own `"//"` comment usually says so. Keep it if it is the repo's own. | Some repos have one of each: a project `package.json` at the root, and a module-type pin next to the helper. The purpose decides, not the path. |
 | `.git/harness/gate/` | **Remove at leisure.** Already gitignored. | Dead evidence files. |
+| `.codex/agents/harness-audit.toml` | **New in v11. Expect it; do not delete it.** The next `/harness:hydrate` copies it in with the rest of the adapter set. If anything here pins that set — a test asserting the adapter roster, a lock list, a checked-in inventory — add this file to it before you gate. | v11 added a sixth role adapter. Hydration rewrites plugin-owned adapters on every run, so the set grows whenever the plugin gains a role. `calibrate` asserts set equality over that directory and went red on this file. |
 
 ### 3. The order, which is the part that can break a gate
 

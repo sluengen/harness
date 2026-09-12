@@ -41,6 +41,8 @@ The ledger accumulates every improvement the loop proposed and nothing in it exp
 
 Then make the survivors answerable: group entries whose suggested home is the same file, abstract several small ones into the pattern-level candidate they are evidence for, prioritise what is left by the cost of leaving it, and present a short slate the operator can decide in one sitting — each with its case, not the raw list.
 
+**Then ask what produced them.** The pass above groups by where a fix would land, so entries sharing an origin but naming different files never meet; read the survivors once more for a common origin, and name it where there is one. A named cause is one more candidate on the slate and leaves by one of the three outcomes below, like every other entry — there is no fourth.
+
 **Drop is the default.** An entry is promoted only when it names what a user or a consuming repo gets from it; an entry that names only a tidier tree, a more consistent wording, or a risk nobody has met is dropped, and the drop is written down. Every entry leaves marked in exactly one of three ways — otherwise this is a review of a list that keeps growing, not a drain.
 
 | Outcome | Means | What happens |

@@ -78,7 +78,11 @@ what a hydration writes and under which rule, then compare artefact by artefact.
 - **Scaffold and plumbing.** The specs directories `paths:` declares, the
   gate-ignore patterns in `.gitignore`, the plugin enablement and marketplace
   provenance in `.claude/settings.json`, and the path-scoped rule plus its Codex
-  sub-directory twin for every layer switched on.
+  sub-directory twin for every layer switched on. A marketplace entry that
+  exists but carries no `autoUpdate` is drift rather than a satisfied check: the
+  repository resolves the plugin and then never moves off the version it was
+  installed at, silently. Name the flag, and say that another
+  `/harness:hydrate` adds it.
 
 Check what the repository has rather than what you expect it to have. A repository
 that declines an artefact by its own policy is not drifting, and a finding that
