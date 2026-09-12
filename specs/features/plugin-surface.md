@@ -1640,6 +1640,54 @@ this ticket and neither is a defect this diff introduced.
 model-orchestrated sub-agent loop rather than any script; `scripts/verify.sh`
 gains nothing here, per the ledger's option A.
 
+### What #653 fixed, as built
+
+Hydrate step 8 and `MIGRATION.md` step 3 both wrote `extraKnownMarketplaces.harness`
+with no `autoUpdate` key. A third-party marketplace defaults that flag to
+`false`, so every repo onto the plugin by either route froze at its installed
+version, and a publish on `sluengen/harness`'s default branch reached nobody
+not already watching for it. nano-erp measured the drift on 2026-09-11 — its
+`spine:generated` stamp read `harness@11.1.0` against an installed `11.2.0` —
+and fixed its own entry by hand in `ff92933`; this ticket carries the fix to
+the two routes that write the entry for every other consumer.
+
+Both JSON blocks now carry `"autoUpdate": true`, held byte-identical at
+review by extracting each and comparing (`skills/hydrate/SKILL.md:47-54`,
+`MIGRATION.md:48-55`); nothing guards the match, so it stays a review point
+each time either block moves. Both steps also state the upgrade case — an
+entry already present without the flag gains it, the same way, on the next
+hydration or hand-edit — and what the flag can and cannot do: `enabledPlugins`
+enables but never installs, so a host with no plugin still prints the install
+command rather than receiving one. `agents/harness-audit.md` and its Codex
+twin `.codex/agents/harness-audit.toml` extend the *Scaffold and plumbing*
+bullet so a present-but-flagless entry reads as drift an already-hydrated
+repo's own audit surfaces, rather than a satisfied check no re-hydration
+reaches. The mirror pair separated for one review cycle — the bullet moved in
+the markdown role definition without its Codex twin, caught red by
+`tests/unit/test_codex_agent_adapters.py`, the same guard #537 built for
+exactly this class of gap — and closed in the next commit, mirroring the same
+three sentences into the `.toml` adapter.
+
+`templates/spine.md`'s *Guidance provenance* paragraph carries the same two
+facts, for the record a consuming repo commits. It exists once in the tree,
+below the `spine:generated:end` marker rather than inside the parity-tested
+region: this repo is the plugin's source rather than one of its consumers, so
+`AGENTS.md` and `CLAUDE.md` never carried the paragraph and gained none here.
+The ticket's Approach expected the paragraph in all three files moving
+together under `tests/unit/test_spine_template_parity.py`; grounding at build
+time corrected that, and AC-4's evidence is direct review of the one file
+rather than the parity test, which still runs green as a control.
+
+No plugin version move was owed either: `dev` already carried `12.1.0`
+against `main`'s `12.0.0` when the branch was cut, so the `harness@12.1.0`
+stamp in all three `spine:generated` markers stands unmoved by this ticket.
+
+**No guard added.** Every edit is prose, or generated configuration a
+producer check already holds (`test_spine_template_parity.py`);
+`tests/unit/test_marketplace_provenance.py` stays scoped to this repo's own
+declaration, which carries no `enabledPlugins` and so has nothing for
+`autoUpdate` to update here — out of scope, confirmed at capture.
+
 ## Data model
 
 **No persistent state beyond the tree itself, since #621.** The gate marker under `<git-common-dir>/harness/gate/` and the `refs/harness/*` namespace #539 added — gate records, claims and the green pointer — are both deleted, and nothing writes either. The one file that survives is `.harness/run.json`, which is gitignored, records where a run is rather than what is true of the tree, and is read by exactly one hook. This was never a run ledger (ADR 0015) and it is less of one now.
