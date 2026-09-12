@@ -67,6 +67,42 @@ what a hydration writes and under which rule, then compare artefact by artefact.
   host gap: the Codex session simply has no such agent. A file whose marker line
   is gone is the consumer's own and is not drift — say so rather than flagging
   it.
+- **Path-scoped rules and their Codex twins.** For each layer switched on that
+  the plugin's `templates/rules/` carries a rule for — the template's basename
+  is the rule's name, and that basename with hyphens as underscores is the
+  `layers:` key — `/harness:hydrate` step 5 seeds `.claude/rules/<name>.md` and
+  an `AGENTS.md` twin. **The twin's directory is the one `harness.yaml` names
+  for that layer**, `paths.design_system` for the design rule, and never the
+  globs in the rule's own frontmatter: those can name somewhere else entirely,
+  and following them reports a drifted pair as two absent files.
+  **Establish what the repo is owed before calling anything absent.** Step 5
+  writes the twin only where that key is declared and the directory carried,
+  and writes no rule at all where neither it nor `paths.ui_source` resolves to a
+  directory the repo has, reporting the path blocked instead. A repo in either
+  position is owed no such file, so both the finding and the re-hydration that
+  would close it would be false.
+  Where both are owed, three things can be true. **Both present:** compare them.
+  The shared region is everything from the first line matching `^## ` to end of
+  file, that heading line included, and it is the only region compared — the
+  preamble above differs by design, `paths:` frontmatter on the Claude side
+  against location-scoping on the Codex side, so a difference there is not
+  drift. Compare byte for byte and quote the lines that differ, numbering each
+  in its own file; where the difference is not line-shaped — trailing space, a
+  line ending, a missing final newline — say what it is instead, because a
+  quoted line will not show it. A present file with no such heading yields no
+  region, which is its own finding rather than agreement: two empty extractions
+  compare equal and would read as green. **One present:** an absent file, and
+  say which side. **Neither present:** report that and leave the cause open, a
+  pair never seeded and a pair since deleted looking the same from here.
+  The remedies differ. Another `/harness:hydrate` creates an absent file, since
+  absence licenses creation. It repairs no divergence: both files are repo-owned
+  and no hydration overwrites either, so two that disagree are the operator's to
+  reconcile, and measuring each against the template is what tells them which
+  one drifted. Where exactly one survives, step 5 seeds the missing side from
+  the template and leaves the survivor alone, so closing that absence
+  **creates** a divergence whenever the survivor has drifted from the template.
+  Measure it there before recommending the re-hydration, and say what the
+  re-hydration will produce.
 - **`harness.yaml`.** Is it present, and does it declare the branch roles, the
   five commands, the tracker backend and its addresses, the layer switches and
   the paths? A key the skills read and the file does not declare is what makes a
@@ -79,9 +115,9 @@ what a hydration writes and under which rule, then compare artefact by artefact.
   than a broken gate, and naming them is how a repository learns it has a
   transition to make.
 - **Scaffold and plumbing.** The specs directories `paths:` declares, the
-  gate-ignore patterns in `.gitignore`, the plugin enablement and marketplace
-  provenance in `.claude/settings.json`, and the path-scoped rule plus its Codex
-  sub-directory twin for every layer switched on. A marketplace entry that
+  gate-ignore patterns in `.gitignore`, and the plugin enablement and
+  marketplace provenance in `.claude/settings.json`. The path-scoped rules and
+  their twins are the bullet above, presence included. A marketplace entry that
   exists but carries no `autoUpdate` is drift rather than a satisfied check: the
   repository resolves the plugin and then never moves off the version it was
   installed at, silently. Name the flag, and say that another
