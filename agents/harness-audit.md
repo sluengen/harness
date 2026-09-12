@@ -84,7 +84,7 @@ what a hydration writes and under which rule, then compare artefact by artefact.
   sub-directory twin for every layer switched on. A marketplace entry that
   exists but carries no `autoUpdate` is drift rather than a satisfied check: the
   repository resolves the plugin and then never moves off the version it was
-  installed at, silently. Name the flag and say that another
+  installed at, silently. Name the flag, and say that another
   `/harness:hydrate` adds it.
 
 Check what the repository has rather than what you expect it to have. A repository
