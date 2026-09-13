@@ -1700,6 +1700,121 @@ P0 gains one body sentence and one refusal, P5 two sentences and two refusals, a
 
 **Evidence, and the version class.** Every artefact here is prose, so law 2 does not attach and no guard was added: a wording predicate over prose is what #511 and #520 retired, and P2 refuses a guard over prose. The three-file identity is the one mechanical property in play, and `tests/unit/test_spine_template_parity.py` already holds it over the git index. That guard was green before this change, so it was proven able to fail on this one rather than assumed — a one-word divergence in `templates/spine.md`'s new P5 refusal alone, staged, fails `test_the_spine_and_its_template_carry_the_same_generated_block` with the diverging line named in the assertion, run by the build and again independently at review over `af4c6a70` before reverting. The cycle's raise stays at the minor floor: no command is renamed, no argument changes, and no call a consuming repo makes is refused that used to succeed or succeeds that used to be refused. The reflection's changed shape is the counter-argument and it does not reach major, because the reserved line arrives as an obligation an agent follows rather than a decision a consuming repo has to take, and nothing outside the plugin parses those lines (`specs/architecture-principles.md` → *Surface is a versioned interface*).
 
+### What #645 ships, as built
+
+The design layer's twins were checked for presence alone; the one failure the
+convention can actually have — the two files saying different things — passed
+silently, because both are repo-owned and a hydration never overwrites either
+(`skills/hydrate/SKILL.md:37`). *What you check* gains one bullet, **Path-scoped
+rules and their Codex twins**, in `agents/harness-audit.md` and its Codex mirror
+`.codex/agents/harness-audit.toml`, both edited in the same commit each time
+(`3366dc8`, `61bbce1`); the *Scaffold and plumbing* bullet loses its now-duplicate
+presence clause and points at the new one instead. AC1 (compare the shared
+region for every layer switched on) and AC4 (one twin and not the other is its
+own state) are the bullet's **Both present / One present / Neither present**
+split; AC2 (the delimiter is step 5's own — everything from the first `## `
+line down) is stated verbatim from that step; AC3 (name the lines, not the
+fact) is the diff-not-position instruction, because a positional compare turns
+one inserted line into a wall of false differences.
+
+**Three probe rounds, three real defects each, all closed inside the two
+commits above.** Six fixtures under `/tmp/claude-501/fixtures/` (`diverged`,
+`agrees`, `twin-absent`, `rule-absent`, `neither`, `undeclared`), each read by a
+fresh context executing the shipped bullet. Round 1 found a state that fell
+through (neither file present), a remedy that could manufacture the divergence
+it called unfixable, and a vacuity — a heading-less file yields an empty
+region, and two empty extractions compare equal. Round 2 found a false
+negative: an exemption that covered the twin but not the rule, so a repo owed
+only one of the two (`undeclared`'s shape — `layers.design_system: true`, no
+`paths.design_system`) read as a drifted pair rather than as the file it was
+never owed. Round 3 found the bullet's own justification false — the rule's
+frontmatter globs can misplace the twin, never the rule itself — and an
+overstated remedy, "seeds the missing side from the template" naming a file
+step 5 does not write that shape into; both are deleted rather than corrected
+a fourth time, on #568's precedent. Re-verified at this review: `diverged` and
+`agrees` differ **only** in the shared region (`## The two-stage lookup...
+visual change` vs `...visual edit`, both at their file's first `## ` line),
+confirmed by diffing both fixtures' rule and twin files directly, so a probe
+reading green on both is measuring something other than the shared region.
+
+**The remedy language stays inside the divergence it is already reporting, not
+a second check.** *Both present* also tells the auditor to measure each
+region against the template before recommending a re-hydration, because
+closing a one-survivor state with the template's copy silently manufactures a
+divergence if the survivor has drifted from the template. This reads adjacent
+to the ticket's own exclusion — do not compare the seeded rule to
+`templates/rules/design-system.md`, because the whole rule is meant to be
+edited down and such a comparison fires on every well-maintained repo — but it
+is not that comparison: it fires only once AC1's own twin-vs-twin check has
+already found a divergence, and it names the **shared region** alone, which
+step 5 defines as *identical in both* and which this repo's own twins confirm
+is meant to stay template-identical rather than edited — `.claude/rules/
+design-system.md:29-137` and `templates/rules/design-system.md:30-138` diff
+empty, verified at this review. So the guidance the exclusion rules out —
+"differs from the template" as its own standalone finding — is not what
+shipped; what shipped only ever runs after a defect this ticket exists to
+surface.
+
+**The open decision the grounding comment raised stays open, correctly.**
+`specs/features/plugin-surface.md`'s own *Decision: The design rule and its
+Codex twin join the created-where-absent set* (below) states that hydrate
+writes a missing twin "from the present one" and blocks a divergence between
+two existing files; `skills/hydrate/SKILL.md` step 5 does neither — it writes
+a missing side from the **template**, under that side's own preamble, and
+never blocks. The shipped bullet's remedy paragraph says the same thing step
+5 says — "step 5 writes the missing side's shared region from the template" —
+never the sibling, so it does not resolve the mismatch between the decision's
+text and the shipped skill and does not overstate what a re-hydration
+produces. Reconciling the two is the mechanism change this ticket's own body
+puts out of scope.
+
+**A generic clause with one instance.** The bullet derives the twin's
+directory from `harness.yaml`'s `paths.<layer>` key and derives the `layers:`
+key from the seeding template's basename, generalising past the one rule
+`templates/rules/` carries today. #652 (open at this tree, unrelated to this
+agent) is the precedent the grounding comment cites for the pattern itself —
+name the class a check belongs to rather than the one instance it was written
+against — not evidence that this bullet's own two derivations have been
+exercised against a second template. Unmeasured beyond the one instance, as
+the grounding comment already recorded before the build began; not a new gap
+this diff introduces.
+
+**Left to the improvement ledger, correctly.** Both preambles — the `.claude/
+rules/design-system.md` frontmatter block and `design/AGENTS.md`'s own opening
+— assert "everything from the first `## ` heading down is identical in both,"
+a claim the new bullet can now falsify but, by AC2's own delimiter, cannot
+read: the preamble is excluded from the compared region by design. That is a
+known blind spot rather than a contradiction the tree carries today — nothing
+in the preamble is false, since after this ships the assertion is what the
+new bullet mechanically checks — and it names no consumer outcome the tree
+gets wrong, so it does not clear the bug bar (`review-discipline` → *Bugs are
+filed; improvements are proposed*).
+
+**Verified at this review.** The mirror test
+(`tests/unit/test_codex_agent_adapters.py::test_both_copies_of_a_role_carry_the_same_body[harness-audit]`)
+was proven able to fail rather than trusted: staging `agents/harness-audit.md`
+alone with one appended line turned it red, naming the diverging bytes; the
+file was then restored from a byte copy and `git write-tree` re-derived
+`f26da755270105ba97eb9432b89e2096ed7567a8`, matching `HEAD` exactly, so the
+probe left no trace on the candidate.
+
+**Evidence, and the version class.** The deliverable is guidance, so law 1
+takes the cheapest evidence that can fail — using it — and no test module is
+added; ADR 0017 D5 refuses a guard over what prose means. The existing mirror
+guard covers the two-file correspondence, proven able to fail above. The
+version stays at the minor floor `/build` step 1 set (`12.1.0` → `12.2.0`,
+consistent across both plugin manifests and the three `spine:generated`
+markers): the audit renames no command, changes no argument, and both commands
+that dispatch it (`/harness:hydrate` step 13, an operator's direct dispatch)
+keep the same invocation and the same no-verdict, report-only contract. Widening
+what the report can name is not a changed refusal reason under
+`specs/architecture-principles.md` → *The installed surface is a versioned
+interface* — nothing this bullet reads was previously refused and is now
+accepted, or the reverse — which is the same ground #643's "no glob means no
+rule" raise (above) does *not* share: that change made a hydration write
+nothing where it used to write a file, which is exactly the changed-refusal
+shape this one lacks.
+
 ## Data model
 
 **No persistent state beyond the tree itself, since #621.** The gate marker under `<git-common-dir>/harness/gate/` and the `refs/harness/*` namespace #539 added — gate records, claims and the green pointer — are both deleted, and nothing writes either. The one file that survives is `.harness/run.json`, which is gitignored, records where a run is rather than what is true of the tree, and is read by exactly one hook. This was never a run ledger (ADR 0015) and it is less of one now.

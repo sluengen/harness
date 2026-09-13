@@ -272,6 +272,35 @@ def test_ci_runs_pull_request_checks_only_for_the_integration_branch() -> None:
     )
 
 
+
+def test_ci_can_be_dispatched_by_hand_to_re_raise_the_required_check() -> None:
+    """``ci.yml`` declares ``workflow_dispatch``, the only manual re-raise there is.
+
+    The promotion polls for a ``lint-and-test`` check-run on the candidate SHA
+    and ``main``'s protection requires the same check, so both hang off the run
+    the ``push: dev`` trigger raises. That run is a single point of failure: on
+    2026-09-13 GitHub accepted run 34748466306 and never dispatched it (zero
+    jobs, ``updated_at`` still equal to ``created_at`` fourteen hours on), and
+    cancel, force-cancel and re-run each refused it with a different, mutually
+    exclusive state. With no second way to raise the check, the integration tip
+    was unpromotable and every nightly burned its full poll rediscovering that.
+
+    Anchored to the trigger's own position in the ``on:`` block, over the text
+    with comment lines stripped, rather than asserting the bare substring. The
+    literal appears nowhere else in ``ci.yml`` today, so anchoring is not what
+    kills the plain deletion — an unanchored assertion would catch that too.
+    What it does buy is that the trigger has to be *declared* to count: the
+    block above it is free to name ``workflow_dispatch:`` while explaining why
+    it is there, and a commented-out or misnested trigger reads as the absence
+    it is. Both mutants are exercised below.
+    """
+    triggers = _uncommented(CI_WORKFLOW.read_text(encoding="utf-8"))
+    assert re.search(r"^  workflow_dispatch:\s*$", triggers, re.MULTILINE), (
+        "ci.yml declares no `workflow_dispatch:` trigger, so a `lint-and-test` "
+        "run that GitHub accepts but never dispatches leaves the candidate SHA "
+        "permanently unpromotable — there is no other way to raise that check"
+    )
+
 def test_the_promotion_step_carries_no_logic_of_its_own() -> None:
     """The step invokes the script and nothing else.
 
