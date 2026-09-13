@@ -14,6 +14,27 @@ on:
   # and deliberate. Pinned by tests/unit/test_nightly_promotion_workflow.py.
   pull_request:
     branches: [dev]
+  # A manual re-raise, for the one failure the two triggers above cannot recover
+  # from. The nightly promotion polls for a `lint-and-test` check-run on the
+  # candidate SHA, and `main`'s protection requires the same check; both are
+  # satisfied only by the run the `push: dev` trigger raises. On 2026-09-13 that
+  # run (34748466306) was accepted by GitHub and never dispatched — zero jobs,
+  # `updated_at` never moving off `created_at` — and it could not be cancelled,
+  # force-cancelled or re-run: those three endpoints reported the run completed,
+  # not yet queued, and already running respectively. With no way to re-raise the
+  # check, `dev@901e139` was unpromotable while it stayed the tip, and each
+  # nightly burned its full 1200 s poll rediscovering that.
+  #
+  # This adds the missing lever and nothing else: dispatching runs the same
+  # single `lint-and-test` job against the chosen ref, so the check lands on that
+  # ref's tip. It raises no new authority — `permissions:` below is unchanged and
+  # dispatch is restricted to those who can already push here.
+  #
+  # Placement is load-bearing: `_ci_trigger_branches` in
+  # tests/unit/test_nightly_promotion_workflow.py matches `^  <event>:` followed
+  # by `branches: [...]`, so a trigger carrying no branch filter must not sit
+  # between an event and its filter.
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
