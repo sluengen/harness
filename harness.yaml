@@ -33,8 +33,13 @@ loop:
 queue:
   # One queue for the harness (#588). This repo's work arrives from feedback,
   # one initiative at a time, so it is its own project: no project field, and
-  # `queue.active_projects` does not apply. `wip_limit` is left at the reader's
-  # default. The per-project mechanics are for the product repos.
+  # `queue.active_projects` does not apply. The per-project mechanics are for
+  # the product repos.
+  # Declared rather than deferred: #621 retired `queueSettings` from
+  # `scripts/harness-config.js`, so nothing supplies a default any more. The
+  # skills name the key and an agent reads the value here, the same arrangement
+  # `loop.max_review_cycles` above already runs on.
+  wip_limit: 6
   project_field: none
 layers:
   design_system: true    # the skill's assets are the source for docs/index.html
