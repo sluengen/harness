@@ -1815,6 +1815,88 @@ rule" raise (above) does *not* share: that change made a hydration write
 nothing where it used to write a file, which is exactly the changed-refusal
 shape this one lacks.
 
+### #649 and #651: seeded prose names the operation, and the design-system skill names a second shape
+
+**#649.** Six occurrences across four templates named a harness command by its
+spelling inside text that becomes repo-owned the moment a consumer receives
+it, so a rename left every existing copy stale with nothing to catch it —
+`nano-erp` and `calibrate` both found `/harness:init --refresh` frozen in
+seeded rule bodies after that verb's retirement at #624 (ledger #450,
+comments `5613258569` and `5613285918`). All six now name the operation
+rather than the command: `templates/harness.yaml:1`, `templates/spine.md:3`
+and `:70`, `templates/rules/design-system.md:10` and `:41`,
+`templates/design-system.md:8`–`9`. `templates/rules/design-system.md:41`
+("run hydration, which copies…") stays swept rather than kept as the
+ticket's migration exception — it is standing guidance for a builder facing
+a design-system gap, not a one-time migration step, so it carries the same
+stale-by-construction risk as the other five and a stale instruction is
+worse than a vague one. Verified at this review: `grep -rn "/harness:"
+templates/` returns nothing.
+
+Two classes under `templates/` name a command and are correctly excluded,
+checked against `skills/hydrate/SKILL.md` at this review rather than taken
+on the builder's word. The `spine:generated` block
+(`templates/spine.md:37`–`:40`, `/capture` through `/drain`) is replaced
+wholesale at every hydration of an existing spine — step 4: "replace the
+content between the markers with the template's" — so a rename reaches
+every consumer on its next run; it is seeded but never repo-owned, the
+opposite of AC-1's predicate. `templates/assessment.md` and
+`templates/change.md` are read directly from the plugin and copied into no
+consumer: step 4 names `templates/harness.yaml`, `templates/spine.md`,
+`templates/rules/design-system.md` and `templates/infrastructure.md` as the
+whole seeded set (steps 3, 4, 5, 7), confirmed by `grep -n "templates/"
+skills/hydrate/SKILL.md`.
+
+The two ledger mechanisms the ticket asked to decide — report a retired verb
+at hydration (comment `5613258569` case 1) and a positive-identification
+rewrite of the frozen spine preamble (comment `5613285918` extension A) —
+are both retired rather than carried forward. Once seeded prose names no
+command, neither has a defect left to catch except in repos seeded before
+this lands, and both consumers on record report sweeping theirs by hand
+already, leaving that population empty today. The stronger of the two, the
+preamble rewriter, would have written into a repo-owned file
+`skills/hydrate/SKILL.md` step 4 declares untouched — the one line recording
+which guidance a repo runs — and its own proposing comment already calls
+this ticket's fix "probably better than either."
+
+**#651.** `skills/design-system/SKILL.md` headlined only the page shape of
+the token mechanism — `PAGE_DEFAULT`, `--page`, the marker region — leaving
+a package-emitting consumer (a native client with no page) to re-derive
+which two-thirds of the skill applied to it. Two consumers converged from
+opposite directions on the same ledger entries (`5613255895` case 4,
+`5613285918` new case 2): `calibrate` verified against a real Expo/native
+implementation that everything but the page anchors transfers, `nano-erp`
+independently generalised the second `--check` certification into a
+raw-value scan over 361 files of consuming source. The description headline
+now names both shapes (`skills/design-system/SKILL.md:3`), and a new `###
+Where the consumer is a package, not a page` subsection follows the existing
+reference-implementation walkthrough, stating both certifications'
+package-shape equivalents — the emitted package standing in for the region,
+and a raw-value scan over consuming source standing in for the
+page-outside-region check. The page shape stays the primary, detailed
+narrative and the skill's section order is unchanged; the package shape is
+an appended variant, not a restructuring (AC-3). `nano-erp`'s scanner
+(`scripts/tokens/lint.ts` and its sanctioned-exceptions file) is recorded on
+the ticket and ships nothing here, coupled to #650's copy-on-request
+decision.
+
+**Evidence and the version class.** Both changes are prose; law 2 names code
+as its subject and ADR 0017 D5 admits no guard over what prose means, so
+neither ships a new test. `tests/unit/test_spine_template_parity.py` (AC-3,
+#649), `tests/unit/test_template_rule_globs.py`,
+`tests/unit/test_design_system_skill_assets.py` and
+`tests/unit/test_native_codex_plugin.py` were run at this review and stay
+green — 60 passed, 0 failed — as the existing guards over the surfaces
+touched; the full gate (`bash scripts/verify.sh`) also passed at this review,
+614 tests, and was independently re-run over the intermediate tree at
+`26782f7` (the version-raise commit), also green, 614 tests. The plugin
+version raised `12.2.0` → `12.3.0` across both manifests and the three
+`spine:generated` markers stays at the minor floor: neither ticket renames a
+command, changes an argument, or changes what a call does or refuses — the
+templates' new wording describes the same operations under different words,
+and the skill's new subsection adds description without narrowing or
+widening either certification's behaviour.
+
 ## Data model
 
 **No persistent state beyond the tree itself, since #621.** The gate marker under `<git-common-dir>/harness/gate/` and the `refs/harness/*` namespace #539 added — gate records, claims and the green pointer — are both deleted, and nothing writes either. The one file that survives is `.harness/run.json`, which is gitignored, records where a run is rather than what is true of the tree, and is read by exactly one hook. This was never a run ledger (ADR 0015) and it is less of one now.
