@@ -1,4 +1,4 @@
-# The repo's Harness configuration. `/harness:hydrate` writes it from the
+# The repo's Harness configuration. Hydration writes it from the
 # interview where the repo does not already carry one, and it is repo-owned from
 # that moment. One reader parses it: `scripts/harness-config.js`.
 #
