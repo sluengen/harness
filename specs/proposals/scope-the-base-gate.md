@@ -1,6 +1,6 @@
 ---
 proposal: scope-the-base-gate
-status: under-decision
+status: accepted
 date: 2026-09-14
 related: [specs/decisions/0022-the-plugin-is-the-whole-deliverable.md]
 ---
@@ -94,12 +94,12 @@ Shipping B first would add a configuration key, a reader, and a way to get it
 wrong, to serve one observed repo that can fix itself today without waiting for
 a plugin release.
 
-D also keeps the two jobs the base gate is doing separable. *Gating the base*
-names only attribution — "a red gate from here on is yours". Calibrate's
-configuration has quietly given it a second job, integration-branch health,
-because nothing else watches `dev` there. A repo that can see both jobs stated
-can choose a base command that serves both; a plugin that guesses on its behalf
-will serve one.
+D also gets both of the base gate's jobs stated. *Gating the base* names only
+attribution — "a red gate from here on is yours". Calibrate's configuration has
+quietly given it a second job, integration-branch health, because nothing else
+watches `dev` there. The operator's answer to the second decision makes that
+second job explicit rather than emergent, so a repo sizing a base command knows
+what it is buying.
 
 This spends against P1: a documented dependency sits on the prose rung, and the
 principle prefers enforcement on the lowest rung that can hold it. The rung is
@@ -117,25 +117,41 @@ shipped.
 
 ## Open decisions
 
-| Decision | Who decides | Recorded in |
-|---|---|---|
-| D or B — does one observed consumer earn a configuration key, or does the consumer fix its own fallback first? | user | this proposal; `specs/architecture-principles.md` if B |
-| Is integration-branch health part of the base gate's job, or only attribution? Calibrate relies on the first and *Gating the base* names only the second | user | `skills/worktree-isolation/SKILL.md`, and the assumptions register |
+Both were decided by the operator on 2026-09-14, and the proposal was accepted
+the same day.
 
-The second decision is load-bearing under either option. If the base gate is
-only for attribution, a repo may declare something cheap and narrow. If it is
-also what watches the integration branch, a narrow base command hands every
-concurrent agent a red base nobody caught.
+| Decision | Outcome | Recorded in |
+|---|---|---|
+| D or B — does one observed consumer earn a configuration key, or does the consumer fix its own fallback first? | **D.** Document the dependency; the repo that owns its gate script resolves it. B stays in *Not doing* with its reopen trigger | this proposal |
+| Is integration-branch health part of the base gate's job, or only attribution? | **Both jobs, declared.** The base gate serves attribution *and* integration-branch health, so a base command must be broad enough to catch a red integration branch | `skills/worktree-isolation/SKILL.md` → *Gating the base* |
+
+**What the second decision costs, recorded because it was taken knowingly.** A
+base command that must catch a red integration branch cannot be made arbitrarily
+cheap, so the saving available to a repo under D is bounded by that floor rather
+than by the arm its ticket touches. Calibrate's backend-arm fallback is already
+doing the health job on one surface; what D buys there is the choice being made
+deliberately, with both jobs named, rather than inherited from an empty-diff
+default nobody weighed. The alternative — attribution only — was declined, and
+is not a silent option for a later ticket to pick up: reopening it means
+amending this proposal.
+
+The assumptions register is not a recording home for this. It holds what the
+harness assumes a *model* cannot do, and this is a statement about what a run
+must prove, so the guidance itself is the only home.
 
 ## Breakdown
 
-1. **State the base-gate scope dependency in `worktree-isolation`** — one paragraph in *Gating the base* naming what the run must answer, that a change-aware gate sees no diff at a base, and that the repo owns resolving it. Records the second open decision's answer in the same edit. Change lane; no test, because the subject is guidance and ADR 0019 verifies prose by review or use.
+1. **State the base-gate scope dependency in `worktree-isolation`** — one paragraph in *Gating the base* naming both jobs the run must answer for (attribution, and integration-branch health), that a change-aware gate sees no diff at a base and so answers with whatever its author chose for the empty case, and that the repo owns resolving it because the repo owns its gate script. Change lane; no test, because the subject is guidance and ADR 0019 verifies prose by review or use.
 
-One item, because the thinking was the expensive part and the edit is small. If
-the decision goes to B instead, this breakdown is replaced rather than extended:
-B spawns a config key, its reader, and the guidance change together, and the
-config shape fires the comprehension dimension, so it would be item 1 and held
-for the operator.
+   Filed 2026-09-14 as [#662](https://github.com/sluengen/harness/issues/662),
+   `assurance:simple`. **Placement did not run:** the filing session could not
+   reach Projects v2, so the issue carries no Status and no Todo-scoped queue
+   read will return it until somebody places it. It is filed, not queued.
+
+One item, because the thinking was the expensive part and the edit is small.
+The four-dimension test fires on none of it — a paragraph migrates nothing,
+fans out to no call site, decides no access pattern, and the operator has
+already seen the shape in this proposal — so it is not held.
 
 ## Risks / unknowns
 
