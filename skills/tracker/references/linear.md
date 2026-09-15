@@ -61,7 +61,7 @@ LINEAR() { curl -s -X POST https://api.linear.app/graphql \
 
 **Read an issue** (brief, description, labels, state):
 ```bash
-LINEAR 'query { issue(id:\"<issue-id>\") { identifier title description url state { name } labels { nodes { name } } } }'
+LINEAR 'query { issue(id:\"<issue-id>\") { identifier title description url state { name } labels { nodes { name } } comments { nodes { body createdAt } } } }'
 ```
 
 **Pull the Todo queue** for a team (the work to pick up):
