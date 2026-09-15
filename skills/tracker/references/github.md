@@ -101,7 +101,7 @@ gh project field-list <number> --owner <owner> --format json
 
 ```bash
 gh issue view <number> --repo <owner>/<name> \
-  --json number,title,body,state,assignees,labels,url
+  --json number,title,body,state,assignees,labels,url,comments
 ```
 
 ### `create` — file an issue **onto the board, with Status set**

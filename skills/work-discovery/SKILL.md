@@ -17,11 +17,11 @@ Consider only tickets in Todo — an In Progress ticket is somebody's live run, 
 
 The andon check is the one exception, and it reads **the open queue in every state**: a P1 bug somebody is already fixing still stops the line for everyone else, and a Todo-scoped read cannot see it.
 
-## Andon — an open P1 bug is the only pick
+## Andon — an open P1 bug stops the line
 
 Run this check **before ranking anything**.
 
-An open ticket that is a bug and carries the tracker's top priority is the cord (spine P4). While one exists it is the only ticket this skill returns — ahead of dependencies, ahead of ID order, ahead of every limit, ahead of a lower-priority ticket that is otherwise perfectly actionable. Nothing new starts until it is closed, and the normalise-and-pull step below does not run either: a stopped line moves no tickets.
+An open ticket that is a bug and carries the tracker's top priority is the cord (spine P4). While one exists it is the only ticket this skill may return — ahead of dependencies, ahead of ID order, ahead of every limit, ahead of a lower-priority ticket that is otherwise perfectly actionable. Nothing new starts until it is closed, and the normalise-and-pull step below does not run either: a stopped line moves no tickets. Whether this run is the one that repairs it is a second question, and *A claimed cord* below answers it.
 
 What earns that priority is narrow, and the narrowing is the point: a hook or script that **refuses correct work or lands wrong work**. Everything else — a rough edge, a confusing message, a hook that is merely wrong about something nobody is blocked by — is a P2 bug on the queue and stops nothing. A repo whose cord is pulled by every misbehaving script has no cord.
 
@@ -29,16 +29,24 @@ Read both halves from the tracker's own fields, through `tracker`: the kind (bug
 
 **A half you cannot read is itself a cord.** If the board is unreachable, the credential is missing, or the API refuses, the tick is stopped: ranking cannot see a cord, so a run that degrades to it walks past an open P1 bug and says nothing, which is the failure P4 exists to prevent happening inside the rule that implements P4.
 
+### A claimed cord is somebody's repair
+
+A cord another run is already repairing stops the line for this one exactly as an unrepaired cord does. What it does not need is a second repair: one measured downstream cost two branches, two reviews and two landing gates for a single defect, because the ticket sat In Review and unassigned and nothing on the board said a run held it. Read the claim through `tracker`, which owns what a claim is and when one goes stale; `harness.yaml` owns the number, and neither is restated here.
+
+- **A live claim.** Report the stopped line and return no pick. This is the one case where the cord is not this run's to start.
+- **A stale claim.** The run that wrote it is gone and the defect is not, so the cord is this run's like any other pick — judged for actionability below, and handed on with the stale claim named, so the record shows a handover rather than a duplicate.
+- **No claim.** The cord is the pick, and the rest of this section is unchanged.
+
 ### What a stopped tick outputs
 
-When the cord is pulled, or a cord field will not read, the run reports three things: which cord (the ticket, or the field that failed to read), what would clear it, and that nothing was started.
+When the cord is pulled, or a cord field will not read, the run reports three things: which cord (the ticket, or the field that failed to read), what would clear it — a live claim names the repair already running and how old its claim is — and that nothing was started.
 
 **Produce nothing else.** Do not rank the remaining tickets, do not name a front-runner, and do not offer a likely next pick for a later tick, even as a table, a shortlist, or an aside. Nobody is permitted to act on a ranking made under a stopped line, and publishing one is exactly how an andon rule quietly becomes a ranking tweak.
 
 Three consequences, where the rule usually gets dropped:
 
-- **A held P1 bug is still the cord.** It is not this loop's to pick — a held ticket is always skipped — but it is also not permission to start something else. Report the stopped line and stop; the operator clears the hold. A cord that a hold releases is not a cord.
-- **Attended runs are not exempt.** `/build` on any other ticket reports the open P1 bug before it starts. It does not refuse, because an operator who names a ticket has the authority to build it; it does not stay silent either, because the value of an andon signal is that it reaches whoever is about to add work beside it.
+- **A held P1 bug is still the cord.** It is not this loop's to pick — a held ticket is always skipped — but it is also not permission to start something else. Report the stopped line and stop; the operator clears the hold. A cord that a hold releases is not a cord. A hold outranks a claim in that report, live or stale: the hold is the half a human has to clear.
+- **Attended runs are not exempt.** `/build` on any other ticket reports the open P1 bug before it starts. It does not refuse, because an operator who names a ticket has the authority to build it; it does not stay silent either, because the value of an andon signal is that it reaches whoever is about to add work beside it. Named the cord itself while another run's claim is live, it reports the claim and still starts — the same authority — and the claim it writes in turn records the takeover.
 - The cord itself still has to be actionable, and one that is not does not release the line. Judge it by Actionability below like any other pick. Where an ordinary ticket that cannot be actioned is deferred and the loop moves to the next candidate, this one is deferred and **the tick stops**.
 
 ## The limit — normalise, then pull

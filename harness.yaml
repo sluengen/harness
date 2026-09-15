@@ -30,6 +30,7 @@ branches:
   release: main   # ADR 0003 as amended: two-branch topology, dev -> main
 loop:
   max_review_cycles: 3
+  cord_claim_minutes: 120   # a cord claim older than this is stale, and the cord is pickable again
 queue:
   # One queue for the harness (#588). This repo's work arrives from feedback,
   # one initiative at a time, so it is its own project: no project field, and
