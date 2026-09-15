@@ -1,6 +1,6 @@
 ---
 name: design-system
-description: "Use when standing up or working in a repo's design system — the eight-tier structure (`00-brand` … `07-flows`), the three-tier token model, and the builder that resolves tokens into a page's generated `:root` region. This skill's `assets/` are what `/harness:hydrate` copies into the repo's `paths.design_system` when `layers.design_system` is on. Not for the discipline of *using* a system that already exists — the seeded `.claude/rules/design-system.md` carries that, and loads on the paths its own frontmatter names."
+description: "Use when standing up or working in a repo's design system — the eight-tier structure (`00-brand` … `07-flows`), the three-tier token model, and the builder that resolves tokens into a page's generated `:root` region, or into a token package where the consumer is not a page. This skill's `assets/` are what `/harness:hydrate` copies into the repo's `paths.design_system` when `layers.design_system` is on. Not for the discipline of *using* a system that already exists — the seeded `.claude/rules/design-system.md` carries that, and loads on the paths its own frontmatter names."
 model: inherit
 ---
 # Design system
@@ -101,6 +101,22 @@ directory sits — nested under `skills/` as it is in the harness, or a repo-roo
 
 Wire `--check` into the repo's gate; it names the literal, its line, and the
 `var(--…)` that replaces it.
+
+### Where the consumer is a package, not a page
+
+A design system that emits a **token package** for a native client has no page
+and no marker region, so `PAGE_DEFAULT`, `--page` and the region mechanism have
+no counterpart there. Everything else transfers unchanged — the eight tiers and
+their dependency direction, the three-tier model, `{dotted.path}` resolution,
+and semantic-as-the-contract.
+
+Both certifications hold, against different operands. The first asks whether the
+emitted package matches what a build of `tokens.json` would write, the package
+standing in for the region. The second scans the **consuming source** rather than
+one page: every file that renders UI, for raw values that byte-equal a resolved
+token — hex and functional colours, and the size literals a stylesheet would have
+kept in a `var(…)`. A scan that wide needs a sanctioned-exceptions list, or it is
+switched off within a release.
 
 ## The three-tier token model
 

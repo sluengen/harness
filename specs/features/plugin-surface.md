@@ -109,6 +109,10 @@ Intake carries the upstream half. `/capture` gains a **clarification loop with a
 
 `work-discovery` gains **Andon**, checked ahead of ranking: an open ticket that the tracker's own fields say is a **bug** at **top priority** is the only pick until it is closed. The check reads the open queue in **every** state rather than Todo alone, because a P1 bug somebody is already fixing is still the line stopped, and both halves come from the tracker's fields — never from a ticket's prose claiming urgency, which is text anyone who can open an issue may write (law 6). Two consequences are stated where they would otherwise be dropped: a **held** P1 bug is still the cord, so the loop reports the stopped line and stops rather than reaching past it; and a cord that is not actionable stops the tick rather than falling through to the next candidate, which is how an andon rule quietly becomes a ranking tweak. `/routine` step 1 names the same rule, and an attended `/build` on any other ticket reports the open P1 bug before it starts — it does not refuse, because an operator who names a ticket has the authority to build it, but silence would waste the signal. #588 narrowed what earns the cord to a hook or script that **refuses correct work or lands wrong work**, and nothing else: a rough edge, a confusing message, or a hook merely wrong about something nobody is blocked by is a P2 bug on the queue, because a repo whose cord is pulled by every misbehaving script has no cord.
 
+**The cord carries a claim, and a P1 filing searches before it creates (#664).** One `act()` race downstream on 2026-09-12 produced two failures: CAL-1721 and CAL-1722 filed twelve minutes apart for the same defect, and CAL-1721 then repaired twice by concurrent runs. Both trace to one sentence doing two jobs, so the sentence is split. `work-discovery`'s heading stops reading *an open P1 bug is the only pick* and reads *an open P1 bug stops the line*: the cord is still the only ticket the skill may return, and whether this run performs the repair is a second question, answered by *A claimed cord*. A run that starts or resumes the cord writes a claim, a comment saying which run holds the repair and when it took it, whose age is the whole signal. A later run reads it three ways. **Live**, it reports the stopped line, names the repair already running and how old its claim is, and returns no pick. **Stale** by `loop.cord_claim_minutes`, it takes the cord like any other pick and names the superseded claim in its own, so the record shows a handover rather than a duplicate. **Absent**, the cord is the pick as before. A hold outranks a claim either way, because the hold is the half a human clears. `tracker` owns what a claim is and when one goes stale, `harness.yaml` owns the number, and `work-discovery` and `skills/build/SKILL.md` step 1 read both rather than restating either.
+
+**The filing half is `tracker` → *The andon cord* (#664).** The cord's exemption from `queue.wip_limit` used to stand alone under *The limit*, where it read as the cord skipping the ordinary rules; it now says the cord is exempt from that limit and from nothing else, and points at what a P1 filing still owes. A P1 found at a red gate is searched for before it is filed, keyed to the failure rather than to the wording: the failing test, or the surface it names. An open P1 on that failure is already the cord whatever state it is in and whoever started it, so the second run comments its evidence onto it and files nothing. That widens the spine's filing rule, which extends an *unstarted* ticket, to a cord already in flight, which is what the observed case needed: CAL-1721 sat In Review and unassigned when the second run walked past it. Both transports gained the one field a claim read needs, `comments` on `gh issue view --json` and `comments { nodes { body createdAt } }` on the Linear issue read, and the age comes from that timestamp rather than from the body, which is data like every other comment (law 6). Nothing enforces the write, since P2 refuses a guard over prose, so a run that skips it leaves the cord looking unclaimed. The mechanism is **inert where a repo declares no `loop.cord_claim_minutes`**: write no claim, read none, name the undeclared key once in the run's report. Fail-closed there was refused in the Decision block below, which also fixes the boundary with #660, allocates the cord ticket's tracker state as the only signal that crosses a host, and leaves open rather than answers whether the colliding runs shared one. `templates/harness.yaml` ships the key beside `max_review_cycles`, so a hydrating repo gets it and an unchanged consumer meets no new refusal: the cycle stays at the minor floor it was raised to at 12.3.0. The evidence is ADR 0019's for prose, direct review of the changed files plus two cases added to `skills/work-discovery/evals/evals.json`, one claim inside the bound and one well past it. No wording predicate measures any of it, because law 2's subject is code.
+
 **The queue is bounded, and one step performs the pull (#588).** `queue.wip_limit` (default 6) bounds a project's Todo, In Progress and In Review tickets with held ones excluded; `queue.active_projects` (default 3) bounds how many projects may have anything in flight; and `queue.project_field` names the tracker field a ticket's project is read from — `project` for Linear, `milestone` for GitHub — or declares that the repo is its own single queue, which is what this repo declares. **Backlog** stops meaning *existence uncertain*, which is what the improvement ledger holds, and becomes confirmed work waiting for a slot, ordered by dependencies then priority. What the bounds govern is what *enters*: `tracker`'s `create` grows from four mandatory elements to five — the fifth is the ticket's **project**, inherited from the parent where the filing comes from inside a build — and its existing placement step stops meaning *Todo* and starts meaning Todo where the project has a free slot and Backlog where it has none, a breakdown files its first `wip_limit` into Todo and the rest into Backlog, `/assess`'s drain folds only into Backlog and drops by default, and starting a ticket already in Todo is never blocked by a limit. `work-discovery` gains *The limit*, run after the andon check and before ranking, and it is the only step in the loop that moves a ticket out of Backlog: count, normalise a project over its limit by moving its lowest-ranked Todo tickets to Backlog, pull the highest-ranked eligible Backlog ticket while a slot is free, then rank. Without it the redefinition of Backlog would be one-way — filings and folds enter and nothing carries them back out — so the step is what makes the reservoir a queue rather than a second ledger. It does not run under a stopped line, because a stopped line moves no tickets, and the cord itself is filed into Todo whatever the count with nothing demoted to make room. `/digest` printed the numbers per project beside the R line, and #627 retired both with the console; nothing prints them now (*The console retires into a drain* below). **None of this is enforced mechanically**: the limit is guidance a run performs, and the only code the change adds is the reader that returns the keys.
 
 **One improvement channel (#588).** The reviewer's Proposals section is gone from `review-discipline`, its evals, `skills/review/SKILL.md` and both hosts' reviewer agents; the 2×2's non-blocking/large cell now reads *let it go — say nothing*, and the one thing that still leaves a review is a **blocking** finding that is not this ticket's. The builder's three-line reflection is the single channel out of a build. A bug also gains a second half: the tree contradicts its own contract **and** the contradiction breaks a user outcome or a consumer behaviour that can be named — a stale comment, a wording mismatch, or a test asserting the wrong thing is an improvement, not a bug. `templates/change.md`'s cost line gains a **guard-to-change** figure and `engineering` states the bound: above 3 : 1 a guard needs a recorded reason naming the user outcome it protects at this repo's stage, and a mutation table is not that reason, because it says the guard works and never that it was worth writing. Since #648 the first of those three lines is reserved for the system that produced the problem the run fixed; the count is unchanged, and *Naming the system that produced the problem (#648)* below carries the shape.
@@ -553,11 +557,13 @@ sweep of `skills/*/evals/*.json` found no residue this ticket owns beyond the
 #636 hits named above and the eval framework's own output-filename and
 fixture-diff tokens, neither a claim about the tree.
 
-**#635 is now resolved too.** `skills/assess/references/process-economy.md:62`'s
+**#635 is now resolved too.** `skills/assess/references/process-economy.md:66`'s
 Gate wall-clock row dropped the marker-median clause; it now states what the row
 measures — the per-run half of *Ground 3*'s own `cost per run × runs per week`
-ranking (`:53`) — and carries no derivation, so `skills/assess/SKILL.md:49`
-stays the row's one surviving derivation, untouched. `skills/build/references/run-state.md`
+ranking (`:55`) — and carries no derivation, so `skills/assess/SKILL.md:49`
+stays the row's one surviving derivation, untouched. (#663 shifted both anchors
+by two lines each, from `:64`/`:53`; the first was already off by two before
+that branch, so this record now cites the tree at `66d2fda`.) `skills/build/references/run-state.md`
 lost `marker` from the cache-key sentence at `:6` and from the always-re-derived
 list at `:76-77`; the Fields table it already pointed at (`:15-27`) carried no
 such field, so nothing else in the file moved. #636's evals residue is a
@@ -1230,6 +1236,12 @@ The third scope is **`process`**, and its domain standard is `skills/assess/refe
 
 The baseline that reference pins is three numbers whose derivations are recorded beside them, and its worked example carries the trap that produced this repo's own incomparable pair — ADR 0017's *24 modules, ~10,600 lines* counting helpers against the *31 modules, ~17.0k lines* this record carried at the time, excluding them, at different dates, with no command written beside either. The example: `git ls-files 'tests/*.py'` matches 37 files where `tests/**/*.py` matches 35, git not expanding the doubled star across the missing slash. The two it drops are `tests/__init__.py`, an empty package marker, and `tests/_gitutil.py`, one of the suite's four shared helpers whose other three sit under `tests/unit/` and survive either glob — so neither pattern settles helper treatment, which is why the treatment goes in the recorded command. Every figure in that paragraph was re-derived against the tree at review.
 
+**#663 adds a fourth baseline dimension to Gate wall-clock, two Ground-3 bullets, and a refuted-lever record.** `skills/assess/references/process-economy.md` → *The baseline*, item 2 now records the invocation and the arm set beside the host and worker count, reports the figure per arm rather than only as a total, and disposes a total taken over a changed arm set as not-comparable rather than differencing it; a pass that cannot reproduce the previous invocation starts a fresh series and says so. *Ground 3* gains two bullets: mean parallelism `(user + sys) / real` against the declared worker budget — near 1x means the lever is structural, not the worker count — and the longest single test file per parallel stage, where a stage whose wall-clock equals that file is critical-path-bound and no worker count improves it. `skills/assess/SKILL.md:49`'s Gate wall-clock derivation row is untouched; `:44`'s own routing sentence assigns "what each measures" to this reference, so the row staying terse is not staleness — the same division of labour item 1's row already relies on against this same reference's much longer *Assurance lines* treatment.
+
+A refuted lever earns its own fold field rather than joining the baseline one. The ticket's exact wording asked to carry a refuted lever into `assessments/LOG.md`'s fold field "alongside the three numbers," but `skills/assess/SKILL.md:44` states that field "carries exactly those three" — a fourth occupant inside it would make that sentence false. So the change adds a fifth field instead, `· refuted: <lever> (<the measurement that killed it>)`, one per dead lever, stated identically in `assessments/LOG.md`'s own header and in `templates/assessment.md`'s Retention paragraph, and populated by a new *Refuted hypotheses* section the report shape gains between *Efficiency candidates* and *Undefended incidents*. `:44`'s "exactly those three" still holds precisely: it scopes the `baseline:` field alone, and `refuted:` is that field's sibling on the same fold line, never a fourth member inside it. No entry in `assessments/LOG.md` or the one report still on disk (`assessments/2026-09-13-process.md`) carries a refuted lever yet, so the new field has no live instance to check against.
+
+No version raise: no command, skill, argument or refusal changed, so the change stays at the cycle's already-raised `12.3.0` floor.
+
 Why `process` is a scope rather than a lens inside `code` is recorded once, in `specs/architecture-principles.md` → *Assessment layering*: **a scope is admitted by its report contract, not by its subject.** `code` is a finding engine, `architecture` a holistic judgement, `process` a subtractive slate — three contracts, three scopes. A fourth needs a fourth contract; a subject that fits an existing one is a lens inside it, and the single genuine exception, a codebase too large for one run, is about size and is handled per-repo in `skills/assess/SKILL.md`. The workflow defers to that spec instead of re-arguing the split.
 
 ### The native Codex package and compatibility surface
@@ -1471,7 +1483,7 @@ below reduces it without closing it.
 | Eval | Was | Now | Verified against the tree |
 |---|---|---|---|
 | 1 `fail-open-guard-build-plan` | `hooks/push-target-guard.js` refusing a push without a marker | `hooks/test-lock-guard.js` refusing a locked-test edit outside the `fix` lane | `:241` the refusal, `:246` the fix lane's base-tree allowance, both read in full |
-| 2 `retired-claim-sweep-before-handoff` | `--legacy-path` on the deleted `scripts/gate-marker.js` | `--repo` on `scripts/plugin-version.js` | Homes at `scripts/plugin-version.js:70,78-79`, `skills/build/SKILL.md:25`, `specs/features/plugin-surface.md:21,1506`, `tests/unit/test_plugin_version_script.py:734` — code, a shipped skill instruction, a spec record and a test, each read |
+| 2 `retired-claim-sweep-before-handoff` | `--legacy-path` on the deleted `scripts/gate-marker.js` | `--repo` on `scripts/plugin-version.js` | Homes at `scripts/plugin-version.js:70,78-79`, `skills/build/SKILL.md:26`, `specs/features/plugin-surface.md:21,1506`, `tests/unit/test_plugin_version_script.py:734` — code, a shipped skill instruction, a spec record and a test, each read |
 | 3 `quantitative-criterion-needs-measuring-test` | `scripts/land.js`, deleted at #621 | `scripts/harness-config.js` | 406 lines; scalar, fence and flow-mapping parsing at `:63-302`; the substitute keeps both numbers expectation 4 pins, `300` and `214`, arithmetically honest rather than asserted |
 
 **The read fence is not uniform, by amendment.** Evals 1 and 3 widen the excluded
@@ -1815,6 +1827,196 @@ rule" raise (above) does *not* share: that change made a hydration write
 nothing where it used to write a file, which is exactly the changed-refusal
 shape this one lacks.
 
+### #649 and #651: seeded prose names the operation, and the design-system skill names a second shape
+
+**#649.** Six occurrences across four templates named a harness command by its
+spelling inside text that becomes repo-owned the moment a consumer receives
+it, so a rename left every existing copy stale with nothing to catch it —
+`nano-erp` and `calibrate` both found `/harness:init --refresh` frozen in
+seeded rule bodies after that verb's retirement at #624 (ledger #450,
+comments `5613258569` and `5613285918`). All six now name the operation
+rather than the command: `templates/harness.yaml:1`, `templates/spine.md:3`
+and `:70`, `templates/rules/design-system.md:10` and `:41`,
+`templates/design-system.md:8`–`9`. `templates/rules/design-system.md:41`
+("run hydration, which copies…") stays swept rather than kept as the
+ticket's migration exception — it is standing guidance for a builder facing
+a design-system gap, not a one-time migration step, so it carries the same
+stale-by-construction risk as the other five and a stale instruction is
+worse than a vague one. Verified at this review: `grep -rn "/harness:"
+templates/` returns nothing.
+
+Two classes under `templates/` name a command and are correctly excluded,
+checked against `skills/hydrate/SKILL.md` at this review rather than taken
+on the builder's word. The `spine:generated` block
+(`templates/spine.md:37`–`:40`, `/capture` through `/drain`) is replaced
+wholesale at every hydration of an existing spine — step 4: "replace the
+content between the markers with the template's" — so a rename reaches
+every consumer on its next run; it is seeded but never repo-owned, the
+opposite of AC-1's predicate. `templates/assessment.md` and
+`templates/change.md` are read directly from the plugin and copied into no
+consumer: step 4 names `templates/harness.yaml`, `templates/spine.md`,
+`templates/rules/design-system.md` and `templates/infrastructure.md` as the
+whole seeded set (steps 3, 4, 5, 7), confirmed by `grep -n "templates/"
+skills/hydrate/SKILL.md`.
+
+The two ledger mechanisms the ticket asked to decide — report a retired verb
+at hydration (comment `5613258569` case 1) and a positive-identification
+rewrite of the frozen spine preamble (comment `5613285918` extension A) —
+are both retired rather than carried forward. Once seeded prose names no
+command, neither has a defect left to catch except in repos seeded before
+this lands, and both consumers on record report sweeping theirs by hand
+already, leaving that population empty today. The stronger of the two, the
+preamble rewriter, would have written into a repo-owned file
+`skills/hydrate/SKILL.md` step 4 declares untouched — the one line recording
+which guidance a repo runs — and its own proposing comment already calls
+this ticket's fix "probably better than either."
+
+**#651.** `skills/design-system/SKILL.md` headlined only the page shape of
+the token mechanism — `PAGE_DEFAULT`, `--page`, the marker region — leaving
+a package-emitting consumer (a native client with no page) to re-derive
+which two-thirds of the skill applied to it. Two consumers converged from
+opposite directions on the same ledger entries (`5613255895` case 4,
+`5613285918` new case 2): `calibrate` verified against a real Expo/native
+implementation that everything but the page anchors transfers, `nano-erp`
+independently generalised the second `--check` certification into a
+raw-value scan over 361 files of consuming source. The description headline
+now names both shapes (`skills/design-system/SKILL.md:3`), and a new `###
+Where the consumer is a package, not a page` subsection follows the existing
+reference-implementation walkthrough, stating both certifications'
+package-shape equivalents — the emitted package standing in for the region,
+and a raw-value scan over consuming source standing in for the
+page-outside-region check. The page shape stays the primary, detailed
+narrative and the skill's section order is unchanged; the package shape is
+an appended variant, not a restructuring (AC-3). `nano-erp`'s scanner
+(`scripts/tokens/lint.ts` and its sanctioned-exceptions file) is recorded on
+the ticket and ships nothing here, coupled to #650's copy-on-request
+decision.
+
+**Evidence and the version class.** Both changes are prose; law 2 names code
+as its subject and ADR 0017 D5 admits no guard over what prose means, so
+neither ships a new test. `tests/unit/test_spine_template_parity.py` (AC-3,
+#649), `tests/unit/test_template_rule_globs.py`,
+`tests/unit/test_design_system_skill_assets.py` and
+`tests/unit/test_native_codex_plugin.py` were run at this review and stay
+green — 60 passed, 0 failed — as the existing guards over the surfaces
+touched; the full gate (`bash scripts/verify.sh`) also passed at this review,
+614 tests, and was independently re-run over the intermediate tree at
+`26782f7` (the version-raise commit), also green, 614 tests. The plugin
+version raised `12.2.0` → `12.3.0` across both manifests and the three
+`spine:generated` markers stays at the minor floor: neither ticket renames a
+command, changes an argument, or changes what a call does or refuses — the
+templates' new wording describes the same operations under different words,
+and the skill's new subsection adds description without narrowing or
+widening either certification's behaviour.
+
+### #660: `/build` establishes ownership by ordering, and grounds inside the worktree
+
+**The setup order.** `skills/build/SKILL.md` → *Set up* goes from eight steps to
+nine, and two reads move. Step 1 gains a clause asking whether this host already
+holds this ticket, in the slot that already holds the andon-cord check "before
+any tracker write", and it delegates the question, its matching rule and its
+bound to `worktree-isolation` → *Creating the worktree* rather than restating
+any of them. Grounding moves from step 4 to step 5, performed **from inside the
+worktree** step 4 now cuts and **before** the base gate step 6 now runs: the
+worktree is added detached at the freshly fetched integration tip, so the bytes
+a grounding sub-agent reads under an ordinary `Read` are the bytes the branch
+will be cut from — which a fetch alone does not buy, since it advances the
+remote-tracking ref and moves no file on disk. Steps 6 through 9 are the old
+order's gate-and-branch-cut, version raise, run-state write and engine
+resolution, renumbered and otherwise untouched. The `/propose` redirect at the
+end of step 5 gains one obligation, remove the worktree first through
+*Cleanup*'s commands, and keeps the property the ticket's 03:27 comment was
+defending: it costs no gate run.
+
+**The two clauses in `worktree-isolation`.** *Creating the worktree* gains two
+paragraphs ahead of the reclaim walk. The first is the twin question: it matches
+a `git worktree list` entry on the task segment of its directory name or the
+leading segment of its branch, as a delimited token rather than a substring;
+stops before the task is transitioned, assigned or commented on anywhere;
+reports the path, the branch and what that directory's run state last recorded;
+refuses to remove or reuse the directory; refuses to judge liveness from a
+timestamp; and routes an operator-recognised ended run to a resume. The second
+states the blast radius — the worktrees of this clone wherever they sit, with a
+second clone, a container and another host all invisible to it, an unmatchable
+directory left standing, and a branch with no worktree left to the native
+collision at the branch cut. *Gating the base*'s **Red** bullet gains a
+search-before-you-file clause pointing at `tracker` → *The andon cord* for the
+search and what a hit obliges, and saying in its own words that an open P1 on
+the failure gains this run's evidence instead of the board gaining a twin. The
+disposition is untouched on both branches — remove the worktree, hold the task
+naming the cord and the age of its claim, stop — and the bullet now says
+outright that a repair in flight is not a licence to build on the red base.
+
+**The criteria reviewed against were amended on the ticket, not in a commit
+body.** Review cycle 1 returned that as blocking, and comment 6 carries the
+amendment: AC-4's filed "waits and re-gates" narrows to "searches before it
+files", the *Approach*'s "Wait and re-gate on an owned base repair" narrows the
+same way, and the same comment settles where grounding sits. The dropped half —
+a run proceeding to build once a repair lands — is recorded in the Decision
+block with its measurement rather than deferred silently; an attended run
+re-invokes `/build` on its held ticket, which *Resuming a held or deferred
+ticket* already owns.
+
+**The design.** *Decision: `/build` establishes ownership by ordering, and the
+host signal carries no clock*, under *Decisions* below, carries the four design
+points, seven rejected alternatives, the blast radius, and AC-5's answer: the
+host signal carries no clock, a bound over `run.json`'s `updated_at` is refused
+on what that field measures rather than on taste, and three existing paths
+remove the directory without help from the run that made it — #610's reclaim
+once the ticket closes, *Cleanup* on a task that ships, and the resume rule. It
+also states why point 4 is not a breach of the #664 boundary block above it:
+points 2 and 3 reach no tracker at all, and point 4 asks a question that is
+cross-host by construction and has no answer on disk, which is that block's
+intended consumer rather than the host-exclusivity read it refuses.
+
+**Evidence.** Two cases join `skills/worktree-isolation/evals/evals.json`, ids 4
+and 5 — a twin worktree found before the tracker write, with `<repo>-51` beside
+`<repo>-512` as the delimiter control, and a red base sorted by whether a live
+claim exists. Eval files sit outside `scripts/verify.sh` by the 2026-09-10
+drain's standing decision, so they are review material rather than gate
+material. Law 2's subject is code and ADR 0017 D5 admits no guard over what
+prose means, so nothing here ships a wording predicate; the criteria are
+verified by use. Two probe pairs were run independently at this review, each a
+fresh headless context given only the shipped files and a question that
+stipulated no answer. Given both skills and asked for *Set up*'s operations in
+order, the pre-change context grounded at operation 7 — ahead of the fetch and
+the worktree add — and asked no ownership question; the post-change context ran
+`git worktree list` at operation 2 ahead of every tracker write, added the
+detached worktree at 8, grounded inside it at 10, and ran the verify command
+against the base at 11. Given `worktree-isolation` alone on a red base, with no
+existing cord named in the prompt, the pre-change context filed a bug as its
+first operation; the post-change context searched the tracker for the failure
+signature first, added its observation to a match instead of opening a
+duplicate, and still removed the worktree, held the task naming what would clear
+it, and stopped. `bash scripts/verify.sh` was run at this review over the tree
+this record closes: 614 passed, 85.47% coverage, `All checks passed`, exit 0.
+
+**The version stays at `12.3.0`**, this cycle's existing minor, and the class was
+judged per design point rather than in aggregate. Grounding's new position
+between the worktree cut and the base gate leaves intact both outcomes its
+placement *after* the gate would have changed: a `/propose` redirect stays
+reachable whatever the base's colour, and a ticket held on a red base still
+carries the grounded spec it carried before. The twin stop intercepts a call
+that already ended in a native `git worktree add` or `git checkout -b` refusal,
+so it refuses earlier and says why rather than refusing something new. The
+matched-entry routing adds no refusal and points at a resume path that already
+existed. The red-base clause changes what a run writes and leaves the
+disposition identical on both branches. So no call either skill used to refuse
+now succeeds and none that used to succeed now refuses, which is the compatibility
+grammar's whole major clause. Both manifests and all three `spine:generated`
+markers read `12.3.0`, unchanged from this branch's base `990156e`, where this
+cycle's raise already stood.
+
+**Three citations, decided explicitly.** `:1486`'s eval-2 home moved with the
+renumbering and is corrected here, `skills/build/SKILL.md:25` → `:26`, still the
+`--repo` flag's own line at this tree. The other two are left: `:716` cites
+`build/SKILL.md:69-70` and measures that file at 70 lines, both already false at
+`990156e`, where it stood at 63 lines with no line 69, and this change takes it
+to 64 — no closer to true and no further from it, so it is the ledger's rather
+than this ticket's. And neither skill names which hold label a red-base hold
+carries, which was equally true before this change.
+
+
 ## Data model
 
 **No persistent state beyond the tree itself, since #621.** The gate marker under `<git-common-dir>/harness/gate/` and the `refs/harness/*` namespace #539 added — gate records, claims and the green pointer — are both deleted, and nothing writes either. The one file that survives is `.harness/run.json`, which is gitignored, records where a run is rather than what is true of the tree, and is read by exactly one hook. This was never a run ledger (ADR 0015) and it is less of one now.
@@ -2026,6 +2228,59 @@ shape this one lacks.
 **Consequences.** `tests/unit/test_template_rule_globs.py` holds every glob declared in `templates/rules/*.md` to a path-shaped value, reading both operands from the git index, with three floors so that a renamed, moved or reshaped template cannot pass by leaving the subject assertion nothing to read. It refuses the *shape* a placeholder has, never the substitution: a `design/**` no run rewrote is indistinguishable from one a run filled, and the template ships that real `design/**` because the per-file floor requires it to declare a glob the guard can read. The residual is narrower than the placeholder it replaces and it announces itself — the seeded preamble now tells its reader that a directory not listed above is one the rule never loads in, and to add a glob for it. Substitution stays guidance, verified by use.
 
 For a consumer already hydrated, step 3 retains their `harness.yaml` whatever it says, so a repo with the layer on and neither key reaches `blocked` at step 5 until an operator adds the keys by hand. Nothing they own is touched: a seeded rule is repo-owned, so an existing one is never overwritten and what changes for such a repo is a report row rather than a file. That gap is the whole content of this cycle's version class, which is **major**. Hydrating with `layers.design_system: true` and no `paths.design_system` used to write `.claude/rules/design-system.md` and now writes nothing, which is the compatibility grammar's changed refusal reason, and a major reaches a consuming repo as a decision rather than an auto-pull. Both plugin manifests and all three `spine:generated` markers carry `12.0.0` at this tree, over the `11.2.0` `origin/main` carries.
+
+### Decision: The cord's claim is tracker state; host and git state decide same-host exclusivity
+
+*Decided at the design stage of #664, 2026-09-15.*
+
+**Context.** One defect downstream produced two separate failures on 2026-09-12, and the records of both are on the tickets themselves. **One defect was filed as two cords:** CAL-1721 at 01:51 from one run's landing gate, CAL-1722 twelve minutes later from a `/routine` tick gating the base, both P1, both the same `act()` race; CAL-1722's own record names CAL-1721 as having been "filed independently... from a landing gate that hit the same defect". **Then one cord was repaired twice:** CAL-1721's record says it "was picked up by a concurrent `/routine` tick that did not see it had already been taken — it was In Review and unassigned, so nothing on the board said a run held it", and that tick reviewed the same branch to PASS in a fresh context, arriving minutes after the landing. Two branches, two reviews, two landing gates, one race. The second record is this decision's case in the affected run's own words: it read the board, saw a state, and had nothing to read that said a run held the ticket. Three open tickets reach that outcome from different sides — #664 is the cord ticket's own state, #660 detects another live worktree or run for the same ticket across worktree roots preferring host and git state over a lock service, and #661 fails closed when the cord read itself is unverified. P0 refuses a second defence sharing an operand with the first, so the allocation is stated once here rather than settled twice at two build times.
+
+**Decision.** The **cord ticket's own tracker state** decides whether a run performs the repair, and it is the only signal that crosses a host boundary. **Host and git state** decide whether a second run on *this* host builds a ticket it already has a worktree or a branch for, and they never reach the tracker for that answer. The two share no operand: one is a comment on a board any container can read, the other is a directory and a ref on one disk. They share no scope either. The claim covers the cord alone, because the cord is the one ticket discovery reads in every state and therefore the only one that can be picked twice; every other ticket is already excluded from a second pick by In Progress (`work-discovery` → *The queue*).
+
+**What it refuses.** #660 reading or writing the claim, or any tracker field, to decide host exclusivity — a network read is not the cheapest evidence for a fact on disk (law 1). #664 probing worktree roots, lock files or `.harness/run.json` — none of the three is visible to another host. And either ticket claiming to deliver exclusive ownership: neither does, and both are cheaper than the lease service that would.
+
+**Neither subsumes the other, and one question is left open rather than answered here.** #664 does not cover an operator-named `/build` on a ticket a second local agent already holds; the claim covers the cord alone. What #660 would have caught in the observed case is **not established**: neither record says whether the colliding runs shared a host, and the only account either gives of why the second run proceeded is that the board carried no ownership signal. So the two failures divide cleanly by mechanism — the twin search answers one defect filed as two cords, the claim answers one cord repaired twice — but the host question is #660's design stage to settle, and it should settle it on a measurement rather than on this block. Two facts bound that work without prejudging it: a same-host second build already collides on `git worktree add` for a branch that exists, which refuses natively (P2, native first); and an unattended second pick of a *non-cord* ticket is already refused by In Progress, so what #660 adds is concentrated on the cord and on the attended case.
+
+**Alternatives.** *A lock file or a lease service* — refused: it re-implements what a tracker already is, and adds a second thing that can be abandoned. *Ticket state alone, In Progress meaning claimed* — refused, and the observed failure is the refusal: the second tick saw In Review and could not tell an active handoff from an abandoned one. *An assignment-based claim* — refused: assignment is the hold signal the loop skips on (the spine's contract), so a claim written there makes a cord unpickable by construction. *The issue's `updatedAt`* — refused: every label edit and every unrelated comment refreshes it, so it measures attention rather than repair. *A claim on every ticket* — refused: In Progress already carries that for every ticket but the cord, and a second defence on one operand is what P0 names.
+
+**Consequences.** A duplicate repair now costs an idle tick and a report instead of a build, a review and a landing gate. Nothing enforces the claim write: it is guidance a run performs, like the limit (P2 refuses a guard over prose), so a run that skips it leaves the cord looking unclaimed and the old behaviour returns for that cord. The claim is inert in a repo that declares no `loop.cord_claim_minutes`, which is what keeps this release a minor: an unchanged consumer sees no new refusal, and fail-closed there would read every claim as live forever and wedge that repo's queue behind one unclosed cord. #661 edits the same `work-discovery` section without colliding — it governs the read that finds the cord, this governs a second read on a cord already found — and if #661 lands first, the claim read inherits its fail-closed posture unchanged.
+
+### Decision: `/build` establishes ownership by ordering, and the host signal carries no clock
+
+*Decided at the design stage of #660, 2026-09-15.*
+
+**Context.** `/build`'s setup ran, before this decision, in an order nothing chose: grounding sat fourth, telling the run to check every fact "against the code as it is *now*", and the worktree was cut fifth — which is where the setup path's only `git fetch` lives, under `skills/worktree-isolation/SKILL.md` → *Creating the worktree*. The steps are named rather than numbered here because this decision renumbers them. Grounding therefore reads whatever the checkout last saw. It failed twice on this ticket alone — once reading the #664 Decision block as absent because the checkout was two commits behind it, and once, recorded on the ticket at 03:27, reading the ticket's own central claim as false because the checkout predated the test that landed it. Step 1 has the mirror problem in the other direction: it writes In Progress and a comment onto the ticket *before* anything looks at the host, so a second attended `/build <TICKET>` marks a ticket another run holds and only then meets `git worktree add`'s native refusal at step 5. Two writes onto somebody else's ticket, and a board state that names the wrong run, are the cost this ticket can measure on this host. Whether the duplicate build the ticket was filed from shared a host stays unestablished — both primary records are silent, the ticket's own 02:19 comment says so, and nothing below claims that case.
+
+**Decision.** Three of the four criteria are answered by moving a read, and none of them adds a signal.
+
+1. **Grounding moves inside the worktree**, to sit between the worktree cut and the base gate rather than ahead of both. The ticket's own 03:27 comment considered this reorder and did not recommend it, preferring a `git fetch` at the existing step 4, and that preference was reversed on 2026-09-15 against a demonstration rather than an argument. **A fetch does not move a working tree.** It advances `origin/<integration>` and leaves the files on disk where they were, so a grounding sub-agent reading those files still reads the stale bytes — measured in this ticket's own build session, where a fetch put `origin/dev` at `2a203a5` while the checkout stayed at `4f6a27d` and the #664 Decision block this design depends on read as absent from disk. A fetch satisfies AC-1's wording and not its purpose. The reorder is what puts current bytes under the sub-agent's ordinary `Read`, which is the only instrument it is certain to use. The worktree is cut detached at the fetched integration tip, so grounding there reads the exact bytes the branch starts from, which is stronger than a fetch performed near it in time. The grounding sub-agent is given that directory. The `/propose` escape at the end of the step gains one clause: remove the worktree first, through *Cleanup*'s commands. **It sits ahead of the base gate rather than after it, and that placement is load-bearing rather than incidental.** Review cycle 1 found the reason: grounding placed after the gate makes a red base swallow the `/propose` redirect, which under the previous order was reachable whatever the base's colour, and leaves a ticket held on a red base carrying no grounded spec where it used to carry a complete one — a changed refusal reason and a changed output, which is the major clause. Ahead of the gate, both return to what they were, and the cost the ticket's own 03:27 comment objected to shrinks with them: a run that redirects to `/propose` now spends a worktree cut and no gate run at all.
+2. **The twin question is asked before the first tracker write.** `skills/worktree-isolation/SKILL.md` → *Creating the worktree* already runs `git worktree list` and matches each entry to a ticket; that walk gains a second question — does an entry carry **this** task — and a sentence placing it before the run starting the task writes anything anywhere. `/build` step 1 consults it in the same slot that already holds "check the andon cord **before any tracker write**". An entry matches on its directory's task segment or its branch's leading segment, as a delimited token rather than a substring: `harness-66` and `harness-660` differ by a delimiter, and a substring match would refuse the wrong run.
+3. **A matched entry routes; it does not refuse.** Where a run may be live in it, `/build` stops before the transition and reports what it found — the path, the branch, and what that worktree's `.harness/run.json` last recorded. Where the directory is an ended run of the operator's own, this is a resume, and `/build` section 4's *Resuming a held or deferred ticket* already owns it: recover the branch, carry `run.json` across, remove the old directory. Nobody adjudicates live-versus-abandoned from the file, for the reason below.
+4. **A red base asks who is repairing it before it files anything.** `tracker` → *The andon cord* already obliges a search keyed to the failure before a P1 is filed at a gate; *Gating the base*'s Red bullet performs that search **first** and lets it pick what gets written. An open cord for that failure carrying a **live** claim is a repair in flight: file nothing, add the evidence to that cord, and hold this task naming the cord and the age of its claim. No open cord, or one whose claim is absent or stale, keeps today's outcome exactly — file or extend, then hold. **Both branches end the same way**, and that is the scope decision rather than an oversight: the worktree is removed, the task is held, and the run stops. What the claim changes is the *writing*, never the disposition — one cord gains evidence instead of the board gaining a twin. Where the repo declares no tracker or no `loop.cord_claim_minutes`, there is no repair signal and every red base is unowned, which `tracker` already says to name once in the report. **This came out as one clause rather than a mechanism, and the composition is why.** Measured at build time with a discriminating pair of fresh-context probes: a run given `worktree-isolation` *and* `tracker` already searches by failing test, files nothing, adds its evidence to the cord and holds — #664's rule composes to the right answer on its own. A run given `worktree-isolation` alone files the twin, and says why: "this file is simply silent on what precedes the filing." The defect is a producer whose Red bullet says *file a bug* flatly, not an absent rule, so what it needs is the pointer, not a second copy of the search.
+
+**This is not a second defence, and it does not re-open #664.** `git worktree add` refuses a colliding path natively and keeps doing so; nothing here duplicates that operand, because the change is the moment the read happens rather than a second reader. And the block above refuses "#660 reading or writing the claim, or any tracker field, to decide host exclusivity". Points 2 and 3 honour that: they reach no tracker at all, and answer from a directory and a ref on one disk. Point 4 asks a different question. "Is somebody already repairing this red base" is cross-host by construction and has no answer on disk, so the claim is the only instrument that can carry it, and reading it there is that block's intended consumer rather than a breach of it.
+
+**Blast radius, stated rather than implied.** `git worktree list` reports the worktrees of **this clone**, wherever on disk they sit. A second clone of the same repository on this host has its own list and is invisible to this one; so is a container, and so is another host. A worktree whose directory and branch both fall outside the naming convention is unmatchable and is left standing, which the reclaim rule already says — the host's own `agent-*` worktrees are that case. A branch with no worktree is not a live run and is not matched; it still collides natively at `git checkout -b`. What crosses a host boundary is unchanged: In Progress for an ordinary ticket, the cord's claim for the cord. #660 adds no cross-host coverage and claims none.
+
+**Why the host signal cannot silently become a permanent lock.** It carries no clock, so nothing declares it dead and nothing declares it alive. A bound over `run.json`'s `updated_at` was the obvious candidate and is refused on what the field measures: it advances at stage boundaries, and a gate run or a review cycle is silent for tens of minutes, so any bound safe against a live run parks an abandoned directory for the same tens of minutes — the flaw #664 named in the issue's `updatedAt`, one level down. The signal is a directory, which three existing paths already remove without help from the run that made it: the reclaim at the next cut once the ticket closes, *Cleanup* on a task that ships, and the resume rule. Nothing unattended ever waits on it, because In Progress and In Review already exclude a second unattended pick and the cord is the one exception, whose own staleness bound has already decided the question before a directory is reached. Every path that meets a live-looking twin is one a human invoked, and the report hands that human a path they can list and remove. A false positive costs one report and no state at all, against the two tracker writes it replaces. The residue it keeps is the one #610's reclaim exists for: a directory left by a dead run on a ticket nobody resumes answers "this host holds it" until the ticket closes. Its bound is the ticket, not a clock. No configuration key is introduced, so a repo that declares nothing sees exactly what every other repo sees.
+
+**Alternatives.**
+- *Cut the worktree before the transition and let `git worktree add` refuse natively* — the smallest change of all, and refused. It puts a whole base-gate run between deciding to build and writing In Progress, and In Progress is what refuses a second **unattended** pick across hosts. Trading a cross-host protection for a same-host one is the wrong direction for the defect on file.
+- *A staleness bound, new or borrowed from `loop.cord_claim_minutes`* — refused above on what `updated_at` measures. Borrowing compounds it: one number would then mean a tracker claim's age and a directory's, and a reader has no way to see that they are two subjects.
+- *A lock file, a lease, or a PID in `run.json`* — refused. #664 refused the first two as a second abandonable artefact; a PID adds a signal that survives a reboot as a false positive, and ADR 0022 point 1 forecloses the plugin-owned executable that would reap it.
+- *Ground against `git show <remote>/<integration>:<path>` and leave the order alone* — refused. It makes every grounding read indirect while leaving the sub-agent's own file reads, which are the failure, pointed at the stale checkout.
+- *A bounded wait loop on a repaired red base* — refused. Only an attended run reaches that branch, since an unattended tick stops at the andon check before it ever cuts a worktree, so the bound would have no reader. The operator's presence is the bound.
+- *A guard asserting the new setup order* — refused: law 2's subject is code, and a predicate over a markdown ordering is #511 again.
+- *A new `skills/build/evals/evals.json`* — refused. The judgment under test is `worktree-isolation`'s in both new branches, and that file already exists.
+
+**Consequences.** Setup runs: ticket read, cord check and twin question, transition and hold clearance, the clarification refusal, the detached worktree, grounding, the base gate and the branch cut, the version raise, `run.json`, the review engine. Two costs come with it, and a third was considered and designed out. A grounding that redirects to `/propose` has spent a worktree cut it did not need — cheap, and cheaper than the gate run an earlier draft of this block would have spent on it. And `git worktree list` is read twice in a `/build` — once for the twin question, which needs no tracker read, once for the reclaim walk, which needs one per entry; they are two questions of different cost, not one read duplicated. The third is the one review cycle 1 caught: placing grounding *after* the base gate would have saved the grounding tokens on a red base, and changed a refusal reason to do it.
+
+One case stays out of scope by the ticket's own words and is recorded rather than built: a run repairing a red-base cord meets its own defect at the base gate, and *Gating the base* as written tells it to remove its worktree and hold its own ticket, which would leave that cord unrepairable. Allowing work on a red base is the ticket's stated exclusion, so this design leaves it untouched and names it for a ticket of its own.
+
+The evidence is review plus use. Two eval cases go into `skills/worktree-isolation/evals/evals.json` — a twin worktree found before the tracker write, and a red base sorted by whether a live claim exists — and each new branch also takes a fresh-context probe against the shipped prose during the build, with a control that must answer differently against the pre-change text. Nothing here is verified by a wording predicate.
+
+**The version stays at this cycle's minor, and point 4 is scoped so that it does.** The design as first drafted let a `/build` meeting a red base under a live claim wait, re-gate and go on to build. That is a call that used to be refused and now succeeds, which `skills/review-discipline/references/certifying.md` puts squarely in the major clause, and the reading was **major, `13.0.0`**. The operator took the other option on 2026-09-15: **scope point 4 to the writing and leave the disposition alone.** The reasoning is the consumer's, not this repo's — major reaches a pinned consuming repo as a decision rather than an auto-pull, so `calibrate` and `nano-erp` would sit at `12.x` until somebody moved their pins, and the half of point 4 that costs that is not the half the downstream case measured. What was measured is one defect filed as two cords; what the proceed-and-rebuild would add is a convenience for an attended run that can re-invoke `/build` itself. So the cycle stands at `12.3.0` across `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`, `AGENTS.md`, `CLAUDE.md` and `templates/spine.md`. **That claim is owed per point, and the first draft of this paragraph owed it and did not pay** — it accounted for points 2 and 4 and never asked what point 1 did, which is the finding review cycle 1 returned. All four, then. **Point 1** reorders `/build`'s setup and, placed between the worktree cut and the base gate, changes no call's outcome: a `/propose` redirect stays reachable whatever the base's colour, a red base still holds the task and stops, and the ticket it holds still carries the grounded spec it carried before. Placed *after* the gate it would have changed both, and that is why it is not placed there. **Point 2**'s twin stop intercepts a call that already ended in a `git worktree add` fatal, so nothing that used to succeed now refuses — it refuses earlier, and says why. **Point 3** adds no refusal at all; it routes to a resume path that already existed. **Point 4** changes what gets written and leaves the disposition identical on both branches, which is the scoping the operator chose and the reason it was chosen. **The dropped half is recorded rather than deferred silently:** a run that wants to build once the repair lands re-invokes `/build` on its held ticket, which is the resume path section 4 already owns. If that turns out to cost enough to be worth a major, it is a ticket of its own with the measurement attached.
+
 
 ## Cross-references
 

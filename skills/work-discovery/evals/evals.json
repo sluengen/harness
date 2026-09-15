@@ -45,6 +45,37 @@
         "It moves on to the next candidate rather than stopping the tick",
         "It does not guess the answer to the open question or build a version of the ticket it invented"
       ]
+    },
+    {
+      "id": 4,
+      "name": "a-live-claim-means-somebody-is-already-repairing-the-cord",
+      "prompt": "Unattended tick against this repository (do not read anything under skills/ or agents/ there). This repo's harness.yaml declares `loop.cord_claim_minutes: 120`. It is now 14:30. Here's the open queue I read:\n\n  #88  bug          P1  In Review  unassigned                          \"push guard refuses a correctly-named branch\"\n       last comment, 13:10, by a build run: \"Claiming this cord. Repair in progress on branch 88-push-guard.\"\n  #92  enhancement  P2  Todo       unassigned                          \"drain: summarise the held pile\"\n  #93  bug          P3  Todo       unassigned                          \"promote prints the wrong branch name\"\n\nWhich ticket do I start, and what do I do this tick? Save your answer as pick.md in the output directory.",
+      "expected_output": "A written artefact demonstrating work-discovery judgment on a recorded failure mode.",
+      "files": [],
+      "expectations": [
+        "The answer starts nothing at all this tick",
+        "It identifies #88 as the cord and states that the line is stopped for the whole repo while it is open",
+        "It reads the 13:10 comment as a live claim, because it is 80 minutes old against a 120-minute bound, and concludes another run is already repairing #88",
+        "It distinguishes the two questions explicitly: the line being stopped is one, whether this run performs the repair is a second, and the claim answers the second",
+        "It does not pick #88 and start a second repair of it",
+        "It does not fall through to rank or start #92 or #93",
+        "Its report names the cord, the live claim and the claim's age, and says nothing was started"
+      ]
+    },
+    {
+      "id": 5,
+      "name": "a-stale-claim-is-a-handover-not-a-second-repair",
+      "prompt": "Unattended tick against this repository (do not read anything under skills/ or agents/ there). This repo's harness.yaml declares `loop.cord_claim_minutes: 120`. It is now 14:30. Here's the open queue I read:\n\n  #88  bug          P1  In Progress  unassigned                        \"push guard refuses a correctly-named branch\"\n       last comment, 09:05, by a build run: \"Claiming this cord. Repair in progress on branch 88-push-guard.\"\n  #92  enhancement  P2  Todo         unassigned                        \"drain: summarise the held pile\"\n\nWhich ticket do I start, and what do I do this tick? Save your answer as pick.md in the output directory.",
+      "expected_output": "A written artefact demonstrating work-discovery judgment on a recorded failure mode.",
+      "files": [],
+      "expectations": [
+        "The answer judges the 09:05 claim stale, because it is well past the 120-minute bound",
+        "It concludes the cord is available to this run: the run that wrote the claim is gone and the defect is not",
+        "It picks #88 and judges it for actionability like any other pick",
+        "It states that the claim it writes must name the stale claim it superseded, so the record shows a handover rather than a duplicate repair",
+        "It does not treat In Progress on its own as proof that a run still holds the ticket",
+        "It does not start #92"
+      ]
     }
   ]
 }

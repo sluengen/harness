@@ -1,4 +1,4 @@
-# The repo's Harness configuration. `/harness:hydrate` writes it from the
+# The repo's Harness configuration. Hydration writes it from the
 # interview where the repo does not already carry one, and it is repo-owned from
 # that moment. One reader parses it: `scripts/harness-config.js`.
 #
@@ -24,6 +24,7 @@ branches:
   # staging: only where something deploys to a staging environment (ADR 0003 as amended)
 loop:
   max_review_cycles: 3
+  cord_claim_minutes: 120   # a cord claim older than this is stale, and the cord is pickable again
 queue:
   # The bounds the queue is pulled against. A project's queue is its Todo,
   # In Progress and In Review tickets with held ones excluded; a filing with no

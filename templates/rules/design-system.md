@@ -7,8 +7,8 @@ description: What binds while building or changing a user-facing surface in this
 # Building a user-facing surface here
 
 Loaded whenever a file matching a glob in the `paths:` list above is opened, and
-nowhere else. `/harness:hydrate` seeded it from the plugin when
-`layers.design_system` was turned on, writing one glob for each directory
+nowhere else. Hydration seeded it from the plugin when `layers.design_system`
+was turned on, writing one glob for each directory
 `harness.yaml` declares and this repo has — `paths.design_system`, and
 `paths.ui_source` where the repo declares one. **It is yours now** — no later
 hydration overwrites it. If a directory you build UI in is not listed above, add
@@ -38,7 +38,7 @@ If you are about to write a visual value by hand, stop and do this lookup first.
 
 **No system yet is a gap to fill, not a licence to hardcode.** Where
 `paths.design_system` is unset or names a location with nothing at it, set the path and
-run `/harness:hydrate`, which copies the `design-system` skill's assets there — the
+run hydration, which copies the `design-system` skill's assets there — the
 eight tiers, the token source and the token builder — and they are yours from that
 moment. `templates/design-system.md` is the contract that tree implements, and the
 reference for standing one up by hand where hydration is not available. An
