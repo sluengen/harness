@@ -1909,6 +1909,114 @@ templates' new wording describes the same operations under different words,
 and the skill's new subsection adds description without narrowing or
 widening either certification's behaviour.
 
+### #660: `/build` establishes ownership by ordering, and grounds inside the worktree
+
+**The setup order.** `skills/build/SKILL.md` → *Set up* goes from eight steps to
+nine, and two reads move. Step 1 gains a clause asking whether this host already
+holds this ticket, in the slot that already holds the andon-cord check "before
+any tracker write", and it delegates the question, its matching rule and its
+bound to `worktree-isolation` → *Creating the worktree* rather than restating
+any of them. Grounding moves from step 4 to step 5, performed **from inside the
+worktree** step 4 now cuts and **before** the base gate step 6 now runs: the
+worktree is added detached at the freshly fetched integration tip, so the bytes
+a grounding sub-agent reads under an ordinary `Read` are the bytes the branch
+will be cut from — which a fetch alone does not buy, since it advances the
+remote-tracking ref and moves no file on disk. Steps 6 through 9 are the old
+order's gate-and-branch-cut, version raise, run-state write and engine
+resolution, renumbered and otherwise untouched. The `/propose` redirect at the
+end of step 5 gains one obligation, remove the worktree first through
+*Cleanup*'s commands, and keeps the property the ticket's 03:27 comment was
+defending: it costs no gate run.
+
+**The two clauses in `worktree-isolation`.** *Creating the worktree* gains two
+paragraphs ahead of the reclaim walk. The first is the twin question: it matches
+a `git worktree list` entry on the task segment of its directory name or the
+leading segment of its branch, as a delimited token rather than a substring;
+stops before the task is transitioned, assigned or commented on anywhere;
+reports the path, the branch and what that directory's run state last recorded;
+refuses to remove or reuse the directory; refuses to judge liveness from a
+timestamp; and routes an operator-recognised ended run to a resume. The second
+states the blast radius — the worktrees of this clone wherever they sit, with a
+second clone, a container and another host all invisible to it, an unmatchable
+directory left standing, and a branch with no worktree left to the native
+collision at the branch cut. *Gating the base*'s **Red** bullet gains a
+search-before-you-file clause pointing at `tracker` → *The andon cord* for the
+search and what a hit obliges, and saying in its own words that an open P1 on
+the failure gains this run's evidence instead of the board gaining a twin. The
+disposition is untouched on both branches — remove the worktree, hold the task
+naming the cord and the age of its claim, stop — and the bullet now says
+outright that a repair in flight is not a licence to build on the red base.
+
+**The criteria reviewed against were amended on the ticket, not in a commit
+body.** Review cycle 1 returned that as blocking, and comment 6 carries the
+amendment: AC-4's filed "waits and re-gates" narrows to "searches before it
+files", the *Approach*'s "Wait and re-gate on an owned base repair" narrows the
+same way, and the same comment settles where grounding sits. The dropped half —
+a run proceeding to build once a repair lands — is recorded in the Decision
+block with its measurement rather than deferred silently; an attended run
+re-invokes `/build` on its held ticket, which *Resuming a held or deferred
+ticket* already owns.
+
+**The design.** *Decision: `/build` establishes ownership by ordering, and the
+host signal carries no clock*, under *Decisions* below, carries the four design
+points, seven rejected alternatives, the blast radius, and AC-5's answer: the
+host signal carries no clock, a bound over `run.json`'s `updated_at` is refused
+on what that field measures rather than on taste, and three existing paths
+remove the directory without help from the run that made it — #610's reclaim
+once the ticket closes, *Cleanup* on a task that ships, and the resume rule. It
+also states why point 4 is not a breach of the #664 boundary block above it:
+points 2 and 3 reach no tracker at all, and point 4 asks a question that is
+cross-host by construction and has no answer on disk, which is that block's
+intended consumer rather than the host-exclusivity read it refuses.
+
+**Evidence.** Two cases join `skills/worktree-isolation/evals/evals.json`, ids 4
+and 5 — a twin worktree found before the tracker write, with `<repo>-51` beside
+`<repo>-512` as the delimiter control, and a red base sorted by whether a live
+claim exists. Eval files sit outside `scripts/verify.sh` by the 2026-09-10
+drain's standing decision, so they are review material rather than gate
+material. Law 2's subject is code and ADR 0017 D5 admits no guard over what
+prose means, so nothing here ships a wording predicate; the criteria are
+verified by use. Two probe pairs were run independently at this review, each a
+fresh headless context given only the shipped files and a question that
+stipulated no answer. Given both skills and asked for *Set up*'s operations in
+order, the pre-change context grounded at operation 7 — ahead of the fetch and
+the worktree add — and asked no ownership question; the post-change context ran
+`git worktree list` at operation 2 ahead of every tracker write, added the
+detached worktree at 8, grounded inside it at 10, and ran the verify command
+against the base at 11. Given `worktree-isolation` alone on a red base, with no
+existing cord named in the prompt, the pre-change context filed a bug as its
+first operation; the post-change context searched the tracker for the failure
+signature first, added its observation to a match instead of opening a
+duplicate, and still removed the worktree, held the task naming what would clear
+it, and stopped. `bash scripts/verify.sh` was run at this review over the tree
+this record closes: 614 passed, 85.47% coverage, `All checks passed`, exit 0.
+
+**The version stays at `12.3.0`**, this cycle's existing minor, and the class was
+judged per design point rather than in aggregate. Grounding's new position
+between the worktree cut and the base gate leaves intact both outcomes its
+placement *after* the gate would have changed: a `/propose` redirect stays
+reachable whatever the base's colour, and a ticket held on a red base still
+carries the grounded spec it carried before. The twin stop intercepts a call
+that already ended in a native `git worktree add` or `git checkout -b` refusal,
+so it refuses earlier and says why rather than refusing something new. The
+matched-entry routing adds no refusal and points at a resume path that already
+existed. The red-base clause changes what a run writes and leaves the
+disposition identical on both branches. So no call either skill used to refuse
+now succeeds and none that used to succeed now refuses, which is the compatibility
+grammar's whole major clause. Both manifests and all three `spine:generated`
+markers read `12.3.0`, unchanged from this branch's base `990156e`, where this
+cycle's raise already stood.
+
+**Three citations, decided explicitly.** `:1486`'s eval-2 home moved with the
+renumbering and is corrected here, `skills/build/SKILL.md:25` → `:26`, still the
+`--repo` flag's own line at this tree. The other two are left: `:716` cites
+`build/SKILL.md:69-70` and measures that file at 70 lines, both already false at
+`990156e`, where it stood at 63 lines with no line 69, and this change takes it
+to 64 — no closer to true and no further from it, so it is the ledger's rather
+than this ticket's. And neither skill names which hold label a red-base hold
+carries, which was equally true before this change.
+
+
 ## Data model
 
 **No persistent state beyond the tree itself, since #621.** The gate marker under `<git-common-dir>/harness/gate/` and the `refs/harness/*` namespace #539 added — gate records, claims and the green pointer — are both deleted, and nothing writes either. The one file that survives is `.harness/run.json`, which is gitignored, records where a run is rather than what is true of the tree, and is read by exactly one hook. This was never a run ledger (ADR 0015) and it is less of one now.
