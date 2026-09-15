@@ -13,7 +13,9 @@ Entries are chronological (oldest first); each new fold appends below. Format:
 
 A `process` entry carries a fourth field — `· baseline: <assurance:product ratio> /
 <gate wall-clock> / <unjustified checks>` — so that scope's tracked quantities
-survive the fold (`templates/assessment.md`). The first process pass did not record an unjustified-check count; its fold preserves that absence rather than inventing a value.
+survive the fold (`templates/assessment.md`). A pass that refuted a lever carries a
+fifth — `· refuted: <lever> (<the measurement that killed it>)`, one per dead lever — so the
+next pass does not buy the same measurement twice. The first process pass did not record an unjustified-check count; its fold preserves that absence rather than inventing a value.
 
 **Each entry preserves the scope vocabulary in force when that pass ran**, so
 `system`, `code-deep`, and the same-day `-am` / `-pm` / `-eve` stems appear below
