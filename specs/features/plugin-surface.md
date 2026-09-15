@@ -2173,6 +2173,53 @@ row overlaps none of them, so no shipped table can exercise a conflict. A rule
 written now would be a mechanism for a case nobody has met, and the first skill to
 mark a second row decides it.
 
+### What #652 named, as built
+
+Four of the five widening clauses landed; the fifth is recorded rather than
+shipped, and this record confirms that call rather than taking it on trust.
+The ticket's item 2 held that `skills/build/SKILL.md` step 4 named "now"
+without a tree; at `27ba63c`, the base this branch cut from, that step is
+step 5 of *1. Set up* (`skills/build/SKILL.md:24`), and it already reads
+"from inside that worktree and before the base gate runs... A fetch alone
+would not buy that: it advances the remote-tracking ref and leaves the files
+on disk where they were, so a sub-agent reading them still reads whatever
+this checkout last saw" — the stale-checkout failure the ticket names, in the
+ticket's own terms, landed by #660. Widening it again would have restated a
+rule already stated.
+
+The four that shipped, each a single sentence added to or widened within its
+own section, at this review's tree (`f876c74d`):
+
+- `skills/build/SKILL.md`, *Tests first, checks, then lock* (renamed from
+  *Tests first, lint, then lock* — `grep -rn "Tests first, lint"` over the
+  tree returns no other reference to the retired name, so nothing points at
+  it stale). The run command widens from the repo's lint command alone to
+  "every check the repo declares that reads the test paths — its lint
+  command, and any bound its own suite holds over test files."
+- `skills/build/SKILL.md`, the review stage: one added sentence bounds a
+  packet to "context, scope and the tree, never the reviewer's own
+  procedure — that is `review-discipline`'s to state", without repeating
+  what `references/certifying.md` obliges the reviewer to do.
+- `skills/authoring/SKILL.md` → *Acceptance criteria*: a fourth rule, "Nor is
+  a file list", joins the three that predate this ticket. Counted at this
+  tree, the section carries exactly four rules, matching the corrected count
+  sentence above them.
+- `skills/authoring/SKILL.md` → *Grounding*: a third rule, "Where the spec
+  names a file the diff will touch, name the guards over it", joins the two
+  that predate this ticket. Counted at this tree, the section carries exactly
+  three rules, matching the corrected count sentence above them.
+
+**No guard.** `grep -rln "skills/build" tests/` returns one file,
+`test_build_lifecycle_order.py`, which reads only the delimited
+`harness:build-lifecycle` block and none of the prose either shipped clause
+touches; `grep -rln "skills/authoring" tests/` returns nothing. Guard-to-change
+0 : 4, confirmed at this tree rather than carried over from the ticket's own
+accounting.
+
+The plugin version stays at this cycle's `12.4.0`, raised at #650's build:
+none of the four clauses renames a command, changes an argument, or changes
+what a call does or refuses.
+
 
 ## Data model
 
