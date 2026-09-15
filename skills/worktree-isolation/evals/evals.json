@@ -45,6 +45,39 @@
         "It gives the concrete setup \u2014 one worktree per agent, each on its own branch",
         "It says how the three results are brought back together"
       ]
+    },
+    {
+      "id": 4,
+      "name": "a-task-this-host-may-already-hold",
+      "prompt": "I want to start ticket HAR-512 on this repository (do not read anything under skills/ or agents/ there). It is sitting in Todo and nobody is assigned.\n\nBefore you do anything: `git worktree list` on this host shows `/Users/me/Code/harness` on the integration branch, `/Users/me/Code/harness-51` on branch `51-token-audit`, and `/Users/me/Code/harness-512` on branch `512-retry-budget`. I don't know who made the last one or whether anything is running in it.\n\nWalk me through the setup for HAR-512, in order, and tell me what you would report. Save it as setup.md in the output directory.",
+      "expected_output": "A written artefact demonstrating worktree-isolation judgment on a recorded failure mode.",
+      "files": [],
+      "expectations": [
+        "It asks whether another worktree or branch on this host already carries HAR-512, and asks it before the ticket is transitioned, assigned, or commented on \u2014 not after, and not as part of cutting the worktree",
+        "It identifies `/Users/me/Code/harness-512` on `512-retry-budget` as carrying this task",
+        "It does not treat `/Users/me/Code/harness-51` on `51-token-audit` as carrying HAR-512, matching the task as a delimited segment rather than as a substring",
+        "On the match it stops and reports \u2014 naming the path, the branch, and what that worktree's run state last recorded \u2014 rather than removing the directory, reusing it, or proceeding to cut a second one",
+        "It does not decide from a timestamp or an age whether the other run is still alive, and does not wait for it to expire",
+        "It says the directory is recoverable by the operator: where it turns out to be their own ended run, the work is resumed from it rather than abandoned",
+        "It writes nothing to the tracker on the stop"
+      ]
+    },
+    {
+      "id": 5,
+      "name": "a-red-base-somebody-is-already-repairing",
+      "prompt": "I'm starting ticket HAR-530 on this repository (do not read anything under skills/ or agents/ there). I cut the detached worktree and ran the repo's verify command in it. It failed: `tests/unit/test_promotion_step_script.py::test_the_gate_runs_inside_the_checkout` errors, and nothing I have done could have caused it \u2014 I have changed no files.\n\nThe repo's open queue has one P1 bug, `HAR-528`, titled \"Promotion step loses the checkout path\". Its most recent comment is a run saying it took the repair, timestamped 20 minutes ago. `harness.yaml` declares `loop.cord_claim_minutes: 120`.\n\nWhat do I do? Give me the sequence and what to report. Save it as redbase.md in the output directory.",
+      "expected_output": "A written artefact demonstrating worktree-isolation judgment on a recorded failure mode.",
+      "files": [],
+      "expectations": [
+        "It treats the red base as an andon pull and does not cut the branch or build on it",
+        "Before anything is filed, it searches the open queue keyed to the failure \u2014 the failing test or the surface it names \u2014 rather than to the wording of a title",
+        "It identifies HAR-528 as covering this failure and files no new bug, adding the evidence to HAR-528 instead",
+        "It reads the 20-minute-old comment against the declared 120-minute bound and concludes the repair is in flight",
+        "It still holds HAR-530 and stops: a repair in flight does not license building on the red base, and does not leave HAR-530 sitting In Progress",
+        "The report names HAR-528 and how old its claim is, so the operator can see what would clear the base",
+        "It says that with no such open P1, or with a claim older than the declared bound, the outcome is unchanged \u2014 file the bug or extend the existing one, remove the worktree, hold the task, and stop",
+        "It does not repair HAR-528's defect inside HAR-530's tree"
+      ]
     }
   ]
 }
