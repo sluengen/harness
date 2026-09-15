@@ -14,9 +14,11 @@ design system, this skill is the system itself.
 
 **Destination: `paths.design_system`, as `harness.yaml` declares it.**
 `/harness:hydrate` step 11 copies this skill's `assets/` there **file by file,
-each one only where its own destination path is absent.** That is the
-workflow's root rule rather than an exception to it — a file that does not exist
-has no repo-owned bytes to lose, and one that does is never rewritten. Copied
+each one only where its own destination path is absent — except the rows the
+table below marks `on request`, which a repo asks for rather than receives.**
+**The absence half of that** is the workflow's root rule rather than an exception
+to it — a file that does not exist has no repo-owned bytes to lose, and one that
+does is never rewritten. Copied
 bytes are the repo's from that moment: no later hydration rewrites one, which is
 what keeps this inside ADR 0022 point 1, whose permitted pattern is exactly a
 generator copied out once and owned thereafter by the consumer.
@@ -41,13 +43,19 @@ means it receives tiers it has no use for beside its own — visible in the run'
 report, owned by the repo, and removable. The alternative, skipping the whole
 copy on any pre-existing directory, is the failure two paragraphs up.
 
-| Asset | What it is |
-|---|---|
-| `00-brand` … `07-flows` | The eight tiers. The zero-padded prefix *is* the dependency order. |
-| `03-tokens/tokens.json` | The token source of truth — primitive → semantic → component. |
-| `03-tokens/_naming.md`, `how-it-works.md` | The naming scheme, and how a token reaches a page. |
-| `04-primitives` … `07-flows` `_template.md` | The per-entry scaffold each tier's first real entry copies. |
-| `build_design_tokens.py` | The token builder. **A reference implementation — see below.** |
+| Asset | What it is | Copy |
+|---|---|---|
+| `00-brand` … `07-flows` | The eight tiers. The zero-padded prefix *is* the dependency order. | |
+| `03-tokens/tokens.json` | The token source of truth — primitive → semantic → component. | |
+| `03-tokens/_naming.md`, `how-it-works.md` | The naming scheme, and how a token reaches a page. | |
+| `04-primitives` … `07-flows` `_template.md` | The per-entry scaffold each tier's first real entry copies. | |
+| `README.md` | The tree's own account of itself. Harness-specific today, and #667 decides what to do about that. | |
+| `build_design_tokens.py` | The token builder. **A reference implementation — see below.** | `on request` |
+
+An empty `Copy` cell is the default and means copy-if-absent. `on request` is the
+only other value, and the builder is the only row that carries it — the section
+below says why. A marked asset ships with the skill, hydration reports where it
+would land, and a repo that wants it copies it deliberately.
 
 ## The eight tiers
 
@@ -85,6 +93,14 @@ full of variable names nothing in the page consumes. That failure is quiet — t
 region is syntactically fine and the old hand-authored declarations are gone —
 which is why this warning is here rather than in a comment.
 
+**That is why it is the one asset marked `on request`.** It is the only one that
+*acts*: every other asset is prose or data a repo reads and deletes, while this
+one rewrites a page. Landing unasked inside `paths.design_system` it also becomes
+a second answer to the question the repo's own `03-tokens/how-it-works.md`
+answers, and the wrong answer carries the plugin's authority. **A repo that
+already builds tokens keeps its own builder and asks for nothing** — hydration
+names the file and where it would go, and stops there.
+
 **What it resolves without configuration:** its token source. The builder reads
 `03-tokens/tokens.json` **beside itself**, so it works wherever the design
 directory sits — nested under `skills/` as it is in the harness, or a repo-root
@@ -117,6 +133,12 @@ one page: every file that renders UI, for raw values that byte-equal a resolved
 token — hex and functional colours, and the size literals a stylesheet would have
 kept in a `var(…)`. A scan that wide needs a sanctioned-exceptions list, or it is
 switched off within a release.
+
+**The plugin ships no scanner, and that is a decision rather than a gap.** A scan
+is per-language and per-framework, and the exceptions list it needs is a judgment
+about a tree the plugin cannot see. What ships is this description of what the
+scan must certify; the scan itself is the consumer's to write in its own language
+and wire into its own gate.
 
 ## The three-tier token model
 

@@ -30,10 +30,10 @@ other task.
   owns and rewrites inside somebody else's tree. Every file above runs from the plugin
   root and takes `--repo <dir>` where it needs to name a checkout. The token builder is
   the one that does land in a consumer, and lands under the other half of that rule —
-  `/harness:hydrate` copies it out **once**, only where the destination is absent, and it
-  is the consumer's from that moment. It is a reference implementation they edit, which
-  is why it carries no `--repo` flag and why `skills/design-system/SKILL.md` says plainly
-  which two constants they must rewrite.
+  `/harness:hydrate` copies it out **once**, on request and only where the destination
+  is absent, and it is the consumer's from that moment. It is a reference
+  implementation they edit, which is why it carries no `--repo` flag and why
+  `skills/design-system/SKILL.md` says plainly which two constants they must rewrite.
   #621 retired the one *plugin-owned* exception — the marker helper and
   `harness-config.js` were copied in as a pair so a consumer's `verify.sh` could invoke
   the helper locally, and both the helper and the reason are gone. A change that proposes

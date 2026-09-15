@@ -6,7 +6,9 @@ a system once it exists, routing to `harness.yaml` `paths.design_system` for
 where the result lives.
 
 **What lands at that path is the `design-system` skill's assets** (#626): a real
-eight-tier tree, a `tokens.json` and the token builder, copied out at hydration.
+eight-tier tree and a `tokens.json`, copied out at hydration. The token builder
+ships with the same skill and is copied only on request, so a repo that already
+builds tokens keeps its own.
 This document is the contract that tree implements — read it to judge a tree, to
 extend one, or to stand one up by hand where hydration is not available. It is no
 longer the thing that goes at the path.
