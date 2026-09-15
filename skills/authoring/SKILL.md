@@ -62,23 +62,27 @@ A bug noticed in actual use does not start from a blank change spec: `/capture` 
 
 Verify every fact the spec rests on that names a file, function, flag, version or decision against the code as it is *now* — a recalled fact reflects what was true when it was written.
 
-Record it as a **Grounding** section: verified facts each anchored to a `path:line` or a measured value, any decision the ticket assumed settled that is actually open, and the open questions. Two rules separate grounding from restating the ticket.
+Record it as a **Grounding** section: verified facts each anchored to a `path:line` or a measured value, any decision the ticket assumed settled that is actually open, and the open questions. Three rules separate grounding from restating the ticket.
 
 *Use an instrument that can return the answer you are not expecting.* A comparison that follows a symlink cannot tell a copy from a link; a search matching only file paths cannot see a retired flag name. Choose the probe by what would falsify the claim, not by what would confirm it.
 
 *A completeness claim names the method that produced it and that method's blind spot.* "Every consumer", "the only home", "nothing else reads this" are claims about the whole call graph, so cite the enumeration — the grep, or the type followed to its readers. If it finds a second consumer, the invariant is not recorded: it *is* a finding. A scope claim without its enumeration launders an open violation into a documented invariant that later review trusts.
 
+*Where the spec names a file the diff will touch, name the guards over it.* A test that mirrors or bounds that file is a fact about current reality in exactly the sense this section already requires, and a run that leaves it out spends a gate cycle discovering it.
+
 Grounding scales to size: a one-line fix gets a one-line grounding. Where a sub-agent host is available, a read-only sub-agent produces the brief and the executor records it verbatim; otherwise the executor self-grounds inline.
 
 ### Acceptance criteria
 
-Each criterion names what it protects and uses ADR 0019's evidence. Three rules decide whether one is writable at all.
+Each criterion names what it protects and uses ADR 0019's evidence. Four rules decide whether one is writable at all.
 
 **A criterion names evidence the building session can produce, or it names who produces it and when — and a criterion of the second kind does not block a PASS.** Evidence needing a credential the run has not got, a second backend, a board it cannot write, or an operator at a keyboard cannot be closed by building, so a criterion naming one holds the verdict hostage to something no work supplies. Marking it operator-supplied at filing turns a review-time discovery into a known precondition. Measured: a feature-lane ticket shipped with three criteria short of their stated evidence for exactly this reason, unnoticed until the binding.
 
 *An evidence line names an artefact and its producer, not a class.* "Direct review" and "representative use" are categories from the matrix, not evidence. Write the read, the anchors it is read against, and where the result is recorded — *the reviewer reads the new text against `templates/change.md:41` and records the comparison in the review report*.
 
 *File size is never a criterion.* State the structural outcome the size stands for: the engine-protocol layer lives in its own module, the verb file holds only glue, no test import changes — checkable by import structure and tests. A quantity gets no carve-out; the measuring-test rule applies with no exemption (`engineering`), and being forced to write the counting test is the tell that the number was never the requirement.
+
+*Nor is a file list.* Name the outcome and the surface it must be reachable from, never the files a fix is expected to touch — a list is a guess at the implementation made before the grounding runs, and #640's AC-2 named two files that must each carry a pointer when one of them says in its own body that none of the method is restated there.
 
 A builder who finds a criterion wrong does not descope it silently: give the evidence and a smaller replacement, get the owner's approval, amend the tracker issue before implementing. A rationale confined to a commit body leaves the ticket false.
 
