@@ -201,6 +201,18 @@ resolver is what changes, not the command.
      Either way, the PR body carries the commit range and the gate evidence,
      and a human merges it — this command never merges its own PR.
 
+   **What the release's notes name (#644).** A release's notes name both
+   halves: what the release takes out of a consumer's tree, and what it puts
+   in. Most of a release is guidance, which lives in the plugin and never
+   enters a consumer's tree, so the second half is the one that gets left out.
+   One set does enter it — `/harness:hydrate` rewrites the plugin's Codex role
+   adapters (`.codex/agents/*.toml`) on every run, so a release that gains a
+   role lands a new file in every consumer that hydrates, and a repo pinning
+   that set meets the addition as a red gate instead of as a line in the
+   notes. Additions therefore get a row naming the path, what puts it there,
+   and what a consumer who pins the set has to do. A release that adds nothing
+   says so.
+
    A protected target that can only advance through a pull request cannot be
    fast-forwarded: a merged PR always writes a commit the source does not
    carry. Assert the property fast-forwarding was protecting instead — **the
