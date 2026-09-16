@@ -2486,6 +2486,43 @@ The evidence is review plus use. Two eval cases go into `skills/worktree-isolati
 **The version stays at this cycle's minor, and point 4 is scoped so that it does.** The design as first drafted let a `/build` meeting a red base under a live claim wait, re-gate and go on to build. That is a call that used to be refused and now succeeds, which `skills/review-discipline/references/certifying.md` puts squarely in the major clause, and the reading was **major, `13.0.0`**. The operator took the other option on 2026-09-15: **scope point 4 to the writing and leave the disposition alone.** The reasoning is the consumer's, not this repo's — major reaches a pinned consuming repo as a decision rather than an auto-pull, so `calibrate` and `nano-erp` would sit at `12.x` until somebody moved their pins, and the half of point 4 that costs that is not the half the downstream case measured. What was measured is one defect filed as two cords; what the proceed-and-rebuild would add is a convenience for an attended run that can re-invoke `/build` itself. So the cycle stands at `12.3.0` across `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`, `AGENTS.md`, `CLAUDE.md` and `templates/spine.md`. **That claim is owed per point, and the first draft of this paragraph owed it and did not pay** — it accounted for points 2 and 4 and never asked what point 1 did, which is the finding review cycle 1 returned. All four, then. **Point 1** reorders `/build`'s setup and, placed between the worktree cut and the base gate, changes no call's outcome: a `/propose` redirect stays reachable whatever the base's colour, a red base still holds the task and stops, and the ticket it holds still carries the grounded spec it carried before. Placed *after* the gate it would have changed both, and that is why it is not placed there. **Point 2**'s twin stop intercepts a call that already ended in a `git worktree add` fatal, so nothing that used to succeed now refuses — it refuses earlier, and says why. **Point 3** adds no refusal at all; it routes to a resume path that already existed. **Point 4** changes what gets written and leaves the disposition identical on both branches, which is the scoping the operator chose and the reason it was chosen. **The dropped half is recorded rather than deferred silently:** a run that wants to build once the repair lands re-invokes `/build` on its held ticket, which is the resume path section 4 already owns. If that turns out to cost enough to be worth a major, it is a ticket of its own with the measurement attached.
 
 
+### What #655 stated, as built
+
+Five roles — `architect`, `dev`, `harness-audit`, `reviewer`, `steward` — gained
+one preamble sentence, added to both `agents/<role>.md` and
+`.codex/agents/<role>.toml` for each, above the `#` heading: a `skills/...`
+path in a role body resolves from the installed plugin's root, never the
+consumer workspace. The sentence names no directory count, because the
+mirrored body ships at two different depths — one level under the plugin root
+in `agents/`, two in `.codex/agents/` — and `/harness:hydrate` step 9 vendors
+the `.toml` copy into a consuming repo's own `.codex/agents/`, where the
+plugin root sits elsewhere again. `reviewer-feature` carries no such sentence:
+it references no `skills/...` path of its own and defers to
+`agents/reviewer.md` in full (`agents/reviewer-feature.md` — "Read
+`agents/reviewer.md` and follow it exactly"), so a second copy there would
+duplicate the operand #640 already ruled against at the same site.
+
+The decision is recorded in a new path-scoped rule, `.claude/rules/agents.md`,
+bound to `agents/**` and `.codex/agents/**` — the mechanism this repo already
+uses for guidance that matters in one part of the tree (spine, *Repo
+principles*), so it reaches whoever next opens a role file without being read
+by anyone else. It carries no Codex twin: this repo seeds a Codex-side twin
+only for the design layer's rule, which `/harness:hydrate` step 5 writes into
+the directory it scopes because Codex has no path-scoped rules of its own;
+`.claude/rules/scripts.md` has none.
+
+No new guard, per the ticket. `tests/unit/test_codex_agent_adapters.py::test_both_copies_of_a_role_carry_the_same_body`
+already holds the two copies of each role in correspondence, and does so
+live: splicing the sentence out of `agents/architect.md` alone (staged, then
+restored) fails that test at the same assertion the commit names, printing
+the two bodies' diff; restoring the file reproduces the original tree exactly
+(`git write-tree` unchanged before and after). Guard-to-change: 0 : 5.
+
+The plugin version stays at this cycle's `12.5.0`, raised at this cycle's
+first ticket: the change adds no command, argument or refusal reason — a role
+body reads differently, but nothing that dispatches it changes what it
+accepts or returns.
+
 ## Cross-references
 
 - `specs/harness-assumptions.md` — one row per hook, script, skill and agent: what it assumes the model cannot do, and the test that would retire it. Read at every model or host release.
