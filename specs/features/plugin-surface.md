@@ -2523,6 +2523,88 @@ first ticket: the change adds no command, argument or refusal reason — a role
 body reads differently, but nothing that dispatches it changes what it
 accepts or returns.
 
+### What #656 stated, as built
+
+`MIGRATION.md` (316 lines) is deleted. Its subject — a consumer's move from the
+pre-v5 lock-file install to the plugin — is complete: nano-erp adopted
+2026-08-18, calibrate 2026-08-19, both recorded in the file's own *Edges from
+performed migrations*, and no third consumer remains on the lock-file install.
+Two rules the file carried outlive it and are rehomed rather than lost.
+
+**The per-release rule** (formerly `## What a per-release section names`) moves
+to `skills/promote/SKILL.md`, Altitude 2, inside *The loop* step 4 — the release
+hop's "On green, publish" step, immediately after the sentence already stating
+that the PR body carries the commit range and the gate evidence. ADR 0014
+deleted the `changelog.d/` fragment system and derives the changelog from
+commits at release; this tree carries no `CHANGELOG.md`, so the release-hop PR
+body is, today, the only place a release's notes are authored, and the rule now
+sits with the act it governs rather than in a document about migrating away
+from a channel that no longer exists.
+
+**The exit-code idiom**, plus the quiet-machine clause the same bullet carried
+(*"gate the final run on a quiet machine: a contended run stacked a
+load-induced subprocess timeout on top of a genuine defect"*), moves to
+`skills/engineering/SKILL.md` → *Verification*, as one new paragraph ahead of
+the evidence table. Both clauses were general verification practice rather
+than migration-specific — three migrations hit the masked-red-gate failure,
+the third recorded on the improvement ledger — so the shipped home reaches
+every consuming repo rather than only whoever opened the migration guide. The
+adjacent hazard the ticket flagged is closed in the same diff: `AGENTS.md:78`
+and its `CLAUDE.md` copy read "capture to a file and read the tail" — one
+misreading away from the `verify.sh | tail` that caused the failure — and now
+name the trap explicitly ("never pipe the gate into `tail`, which reports
+tail's exit status and masks a red gate"). Both spine copies changed
+identically: `CLAUDE.md`'s first 88 lines remain a byte-exact copy of
+`AGENTS.md` in full, verified directly rather than assumed. `templates/spine.md`
+never carried the line — it lives in each repo's own section — so the template
+needed no matching edit.
+
+**`## Version pinning` is dropped**, not rehomed as a section. Its two standing
+facts already live elsewhere: the retired per-file `guidance:` pins at
+`specs/features/plugin-surface.md` → *One plugin, one version* (`:13`) and at
+ADR 0017 point 1. The one clause nothing else in the tree stated — that a repo
+diverging from a shipped skill forks it locally, and a repo-local fork shadows
+nothing, it is simply also present — goes to `README.md` → *Install*, next to
+where a consumer reads what they installed. `skills/engineering/evals/evals.json`'s
+non-obvious-home example is re-subjected from "README or MIGRATION" to "README
+or CONTRIBUTING" (`CONTRIBUTING.md` exists; the expectation keeps its point
+with a live file) rather than repointed at a path this same diff deletes.
+
+**Eight references are left as history and none is rewritten**, confirmed by
+grep against the shipped tree rather than the ticket's own count (which had
+drifted): five in `specs/features/plugin-surface.md` (`:1277`, `:1657`,
+`:1668`, `:2248`, `:2249`), two in the accepted `specs/proposals/operation-nuke.md`
+(`:170`, `:222`), and one in `assessments/2026-09-13-process.md` (`:99`). Each
+is a dated record of what was true when written; an as-built record and a dated
+assessment both say what was true then, not what is true now, so none of the
+eight changed. None of the three files carrying them appears in this diff.
+
+**Two residual notes, checked and left as found rather than folded into this
+change.** Reading the deleted file's *Edges from performed migrations* in full
+against the current tree turned up two more sentences that read as general
+practice rather than migration edges — "`paths.decisions` may point at a file"
+(a repo recording decisions in one document, e.g. its architecture-principles
+spec, points the configured path there instead of scaffolding an empty
+competing directory) and "a vendored or verbatim-snapshot tree is exempt from a
+reference sweep, because rewriting one corrupts it." Neither is stated anywhere
+else in the tree today (`skills/authoring/references/decisions.md` frames
+`paths.decisions` as naming "that directory" throughout, and
+`skills/engineering/SKILL.md`'s retirement-sweep guidance names no snapshot
+carve-out). Both are narrow, low-traffic nuances rather than a contradiction in
+the tree today, and this repo's own risk appetite treats a documentation
+completeness gap of this size as an improvement rather than a blocker; they are
+named here rather than silently dropped, for whoever next touches either
+document.
+
+**No new guard, per the ticket** (`0 : n`); the eval fixture is prose, verified
+by review rather than a wording predicate (law 2). The plugin version stays at
+this cycle's `12.5.0`: the change renames no command, changes no argument, and
+changes no refusal reason — guidance content moves between shipped documents,
+and nothing that dispatches a workflow changes what it accepts or returns.
+Verified: `bash scripts/verify.sh` — ruff, mypy, 614 tests passed, 85.47%
+coverage against the 85% floor, design-token drift guard clean.
+
+
 ## Cross-references
 
 - `specs/harness-assumptions.md` — one row per hook, script, skill and agent: what it assumes the model cannot do, and the test that would retire it. Read at every model or host release.
