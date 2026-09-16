@@ -12,7 +12,9 @@ last_updated: 2026-09-01
 > No runtime re-skin, no per-tenant anything — the harness's page has exactly
 > one skin.
 
-This describes the generator that writes the token source into the page.
+This describes the generator that writes the token source into the page. It
+ships with the `design-system` skill and is copied out only on request, so this
+file describes the mechanism whether or not the builder itself is beside it.
 
 ```
  ┌──────────────────┐     ../build_design_tokens.py      ┌───────────────────────┐

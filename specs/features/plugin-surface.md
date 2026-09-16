@@ -1,7 +1,7 @@
 ---
 feature: plugin-surface
 status: implemented
-last_updated: 2026-09-10
+last_updated: 2026-09-16
 ---
 
 # The plugin surface
@@ -2015,6 +2015,210 @@ renumbering and is corrected here, `skills/build/SKILL.md:25` → `:26`, still t
 to 64 — no closer to true and no further from it, so it is the ledger's rather
 than this ticket's. And neither skill names which hold label a red-base hold
 carries, which was equally true before this change.
+
+
+### #650: an asset can be copy-on-request, and the design layer ships one executable
+
+**The column.** `skills/design-system/SKILL.md`'s asset table gains a third
+column, `Copy`, whose only value is `on request`. At this record's tree the table
+carries six data rows and exactly one carries the mark: `build_design_tokens.py`.
+`README.md` joins as a row of its own, so every file the assets directory ships
+outside `AGENTS.md` now has a row and a stated disposition; it keeps the default,
+and that its prose describes the harness rather than the consumer is #667's to
+decide rather than this change's. An empty cell, a row in a table declaring no
+such column, and an asset no row names at all all keep copy-if-absent, which is
+why `design-system`'s is the only table that changes and why a later
+asset-carrying skill inherits the right default without an edit. Withholding is a
+positive identification: a cell the reader cannot parse copies as before.
+
+**Step 11 honours the mark, and the report needed no new word.**
+`skills/hydrate/SKILL.md` step 11 gains one clause — absence does not license a
+marked row, so the run copies nothing, reports the path `retained`, and names
+both ends of the copy it did not make, the path the file ships from and the path
+it would have landed at. Such a row is never `blocked`: nothing waits on an
+answer and the run is complete without it, and the step says so rather than
+leaving the `retained`/`blocked` discriminator in step 13 to be re-derived. A
+mark reaches every file at or under what its row names, a directory it names
+included, which is what makes the first row's range of tier directories markable
+at all. Step 13's gloss for `retained` widens to admit it, "or shipped but not asked
+for", so the word covers this case by definition rather than by step 11's
+instruction.
+
+**`Per asset` became `Per file` in the same step.** The bolded phrase predates
+this change and was correct while a row and a file were the same thing. The
+column makes a row the unit a mark attaches to, and the first row's asset is a
+range of directories, so `Per asset, not per directory` began licensing the
+directory test it exists to refuse. `skills/design-system/SKILL.md` already read
+`Per file, not per directory` in its own copy of the rule, so the edit closes a
+disagreement the column opened rather than introducing a term. A fresh-context
+probe over the shipped text returned it; the builder did not find it by reading.
+
+**The one marked row, and why the alternatives lost.** The builder is the only
+asset that acts: run unedited it rewrites a page's `:root` region with variable
+names nothing in that page consumes, a failure the skill already calls quiet, and
+landing inside `paths.design_system` it becomes a second answer to the question
+the consumer's own `03-tokens/how-it-works.md` answers. Gating the copy on the
+consumer declaring a token build command was rejected because no such field
+exists and `calibrate` declares none either, so the predicate would have handed
+`calibrate` the copy it declined. Moving the builder out of `assets/` is refused
+by two standing guards rather than by judgment —
+`tests/unit/test_design_system_skill_assets.py`'s
+`test_the_token_source_and_its_builder_travel_with_the_skill` requires it tracked
+under the assets tree and `test_this_repo_consumes_the_assets_where_it_declares_them`
+pins `paths.design_system` to that same tree, which is this repo's own working
+design system.
+
+**Five sentences corrected, one appended, and the three rule copies stayed
+unequal on purpose.** `.claude/rules/design-system.md`,
+`templates/rules/design-system.md` and `skills/design-system/assets/AGENTS.md`
+each enumerated what hydration lands as "the eight tiers, the token source and
+the token builder — and they are yours from that moment", which the mark makes
+false; `templates/design-system.md` and `.claude/rules/scripts.md` carried the
+same claim in their own words. All five now name the tiers and the token source,
+then say the builder is copied only on request. #649 shipped a deliberate
+per-host difference between the three rule copies — the portable template names
+the operation, the two Claude Code copies name the command — and it survives:
+diffing each pair's shared region from its first `^## ` heading at this record's
+tree returns exactly that one line and nothing else, so the added sentence, which
+names no command, is byte-identical across all three. The sixth file,
+`skills/design-system/assets/03-tokens/how-it-works.md`, had nothing false in it;
+it gains a sentence saying the generator it documents ships with the skill and is
+copied on request, because without it a consumer receives a landed page pointing
+at `../build_design_tokens.py`, a file the same run deliberately did not land.
+
+**The design.** Two Decision blocks at the end of
+`specs/architecture-principles.md` → *Cross-cutting decisions*, not ADRs and not
+an amendment to [ADR 0022](../decisions/0022-plugin-only-shape.md). *An asset
+table carries a copy disposition, and absence is not consent* records the column,
+the split that gives the workflow the meaning of a mark and the producing skill
+the choice of which rows carry one, and the discriminator for a future asset: a
+mark is for an asset whose landing does something a deletion does not undo, and
+surplus alone does not earn one. Its four rejected alternatives are the consumer-side
+declined-assets list `nano-erp` proposed, the build-command gate, a
+three-value vocabulary, and the move out of `assets/`. *The design layer ships one
+executable, and no raw-value scanner* answers the coupled question the ticket
+named, declining #651's recorded offer of a raw-value scanner rather than leaving
+it pending; #651 closed at `8b9bf66`, which is reachable from `origin/main` at
+this record's tree, and nothing was queued to build the scanner. Both sit below
+the ADR bar this file states: each is cross-cutting and cheap to reverse, and
+neither touches branch topology, tracker architecture, security posture or a
+certification invariant. ADR 0022 point 1 **permits** a generator copied out once
+and owned thereafter by the consumer and obliges nobody to copy it unasked, so
+narrowing when the copy happens needs no amendment to it.
+
+**Evidence.** No guard. The subject is what two guidance documents instruct, law
+2's subject is code, and ADR 0017 D5 admits no guard over what prose means; the
+one tree fact the change leans on, that the builder stays tracked under
+`assets/`, is already held by the guard named above. Guidance is verified by use,
+so the evidence is three fresh-context probes executing the edited step 11
+against a synthetic TypeScript consumer with the design layer on and an empty
+design directory. Probes 1 and 2 are a pair differing in one thing, whether the
+skill's table carries the `Copy` column: with it the builder is not copied and
+takes a row of its own, without it the builder is copied and takes no row, and
+the tier files copy in both. A subject-only probe could not have told an
+honoured column from a run that stopped for another reason. Probe 3 re-ran over
+the shipped text after the pair's findings landed, confirmed the outcome, and
+returned three more, all acted on: the `Per asset` phrase above, `retained`'s
+gloss, and step 11 naming only one end of the copy it declines. The pair also
+returned five findings the change absorbed — no action word for a withheld asset,
+three cases the clause did not dispose of, a step-11 sentence still naming
+`AGENTS.md` as "the one file it excludes", the mark's granularity, and
+`README.md` sitting in the directory and in no row — and four it did not: #667,
+#668 and two ledger entries. `bash scripts/verify.sh` was run at this review over
+the tree this record closes: ruff and mypy clean, 614 passed, 85.47% coverage
+against an 85% floor, the design-token drift guard OK, `All checks passed`, exit
+0. No test file and no executable changed; the nine files in `3c26b11` are all
+markdown.
+
+**The version stays at `12.4.0`**, this cycle's minor raise, and the class was
+judged over every point of the change rather than over the one the design argued.
+The design's own read was major, on the ground that a consumer running hydration
+after this update receives strictly less at the same invocation and must act to
+obtain the builder. The grammar's major clause names three things — a renamed
+command, a changed argument or output schema, and a changed refusal reason, a
+call that used to be refused and now succeeds or the reverse — and no point of
+this change reaches one. `/harness:hydrate` keeps its name and its no-flag
+invocation; the report keeps its four columns and its four-word action
+vocabulary, and only the value in one row moves. Nothing refuses: step 11 says in
+terms that a withheld row is never `blocked` and that the run is complete without
+it, which is the deliberate opposite of #643's major, where hydration stopped
+writing a rule and reported `blocked`. The column is additive with a
+backward-compatible default, stated in step 11, so a table without it behaves
+exactly as before. `README.md`'s new row changes nothing that copies, since an
+unlisted asset copied and a row with an empty cell copies. `retained`'s widened
+gloss admits a case and refuses none. The corrected asset
+`03-tokens/how-it-works.md` reaches no existing consumer, because a copied asset
+is never rewritten. `.claude/rules/scripts.md` and `specs/architecture-principles.md`
+are source-only and the installed surface never carries them. Every existing
+consumer therefore auto-pulls: one that holds the builder sees an unchanged
+`retained` row, and the two that declined it stop receiving it, which is what
+they asked for. The behaviour that changed belongs to a first hydration of the
+design layer, which has no prior release to read this one against. Both manifests
+and all three `spine:generated` markers read `12.4.0`, raised from the base's
+`12.3.0` at `797f31b`, which is also the version on `origin/main` at this tree.
+
+**Two things left open, and one of them deliberately.** Hydration cannot tell a
+consumer that declined a marked asset from one that has never seen it: both
+present as an absent destination path, and nothing in a consumer's tree records a
+deletion. Both get the same row, so AC-2 is met as written — the decliner does
+not receive it, the newcomer is told it is available — and the column removes the
+re-copy rather than the re-mention. `nano-erp` will read one report line about the
+builder at every hydration. Recording the decline needs either the consumer's
+configuration, which AC-4 refuses, or a plugin-owned file inside the consumer,
+which ADR 0022 point 1 refuses, so the mention stays and the first Decision block
+says so where an operator reads it. Precedence between overlapping marked rows is
+the second: `design-system`'s rows do overlap, since `03-tokens/tokens.json` is
+named by its own row and contained in the tier range above it, and the one marked
+row overlaps none of them, so no shipped table can exercise a conflict. A rule
+written now would be a mechanism for a case nobody has met, and the first skill to
+mark a second row decides it.
+
+### What #652 named, as built
+
+Four of the five widening clauses landed; the fifth is recorded rather than
+shipped, and this record confirms that call rather than taking it on trust.
+The ticket's item 2 held that `skills/build/SKILL.md` step 4 named "now"
+without a tree; at `27ba63c`, the base this branch cut from, that step is
+step 5 of *1. Set up* (`skills/build/SKILL.md:24`), and it already reads
+"from inside that worktree and before the base gate runs... A fetch alone
+would not buy that: it advances the remote-tracking ref and leaves the files
+on disk where they were, so a sub-agent reading them still reads whatever
+this checkout last saw" — the stale-checkout failure the ticket names, in the
+ticket's own terms, landed by #660. Widening it again would have restated a
+rule already stated.
+
+The four that shipped, each a single sentence added to or widened within its
+own section, at this review's tree (`f876c74d`):
+
+- `skills/build/SKILL.md`, *Tests first, checks, then lock* (renamed from
+  *Tests first, lint, then lock* — `grep -rn "Tests first, lint"` over the
+  tree returns no other reference to the retired name, so nothing points at
+  it stale). The run command widens from the repo's lint command alone to
+  "every check the repo declares that reads the test paths — its lint
+  command, and any bound its own suite holds over test files."
+- `skills/build/SKILL.md`, the review stage: one added sentence bounds a
+  packet to "context, scope and the tree, never the reviewer's own
+  procedure — that is `review-discipline`'s to state", without repeating
+  what `references/certifying.md` obliges the reviewer to do.
+- `skills/authoring/SKILL.md` → *Acceptance criteria*: a fourth rule, "Nor is
+  a file list", joins the three that predate this ticket. Counted at this
+  tree, the section carries exactly four rules, matching the corrected count
+  sentence above them.
+- `skills/authoring/SKILL.md` → *Grounding*: a third rule, "Where the spec
+  names a file the diff will touch, name the guards over it", joins the two
+  that predate this ticket. Counted at this tree, the section carries exactly
+  three rules, matching the corrected count sentence above them.
+
+**No guard.** `grep -rln "skills/build" tests/` returns one file,
+`test_build_lifecycle_order.py`, which reads only the delimited
+`harness:build-lifecycle` block and none of the prose either shipped clause
+touches; `grep -rln "skills/authoring" tests/` returns nothing. Guard-to-change
+0 : 4, confirmed at this tree rather than carried over from the ticket's own
+accounting.
+
+The plugin version stays at this cycle's `12.4.0`, raised at #650's build:
+none of the four clauses renames a command, changes an argument, or changes
+what a call does or refuses.
 
 
 ## Data model
