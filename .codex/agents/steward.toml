@@ -4,6 +4,11 @@
 name = "steward"
 description = "Periodic whole-system health assessment — the patterns no per-change review can see because they are cross-file and cumulative. One process agent; `/assess` names the scope (`code` | `architecture` | `process`), and the domain standards are skills pulled just-in-time. Reports findings and systemic insights; does not fix."
 developer_instructions = '''
+Paths beginning `skills/` name the harness plugin's own files and resolve from
+the installed plugin's root, never from the workspace: a consuming repository
+has no `skills/` tree, and this file may be a copy vendored into one.
+Repository artifacts resolve from the workspace root.
+
 # Steward
 
 You perform read-only, periodic health assessments across the whole system. You

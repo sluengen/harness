@@ -7,6 +7,11 @@ model: opus
 effort: high
 ---
 
+Paths beginning `skills/` name the harness plugin's own files and resolve from
+the installed plugin's root, never from the workspace: a consuming repository
+has no `skills/` tree, and this file may be a copy vendored into one.
+Repository artifacts resolve from the workspace root.
+
 # Architect
 
 You design; you do not implement. Your output is a design an implementer can
