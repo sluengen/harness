@@ -100,18 +100,23 @@ def _repo(
     name: str,
     *,
     tests_root: str | None = "tests/",
+    test_files: str | None = None,
     committed: tuple[str, ...] = ("tests/test_existing.py", "scripts/thing.py"),
 ) -> Path:
     """A repository whose base commit carries ``committed``.
 
     ``tests_root`` of ``None`` writes a ``harness.yaml`` with no ``paths:``
-    block at all, which is the undeclared case.
+    block at all, which is the undeclared case. ``test_files`` of ``None``
+    declares no filename filter, which is the shipped rule: every file under a
+    declared root is governed.
     """
     repo = tmp_path / name
     repo.mkdir(parents=True)
     config = "repo:\n  name: fixture\n"
     if tests_root is not None:
         config += f"paths:\n  tests: {tests_root}\n"
+        if test_files is not None:
+            config += f"  test_files: {test_files}\n"
     (repo / "harness.yaml").write_text(config, encoding="utf-8")
     for rel in committed:
         target = repo / rel
@@ -369,10 +374,17 @@ def test_an_unhydrated_template_placeholder_is_not_a_test_root(tmp_path: Path) -
     that copied the template and never answered the interview reads as
     undeclared rather than protecting a directory literally named ``{tests/}``.
     Pinned here because the behaviour lives in a module this hook only calls.
+
+    Since #659 the hook also *says so* under an armed run, so the notice is
+    asserted here rather than left as an unclaimed behaviour: an unhydrated
+    template is exactly the repo whose lock is inactive for a reason nobody
+    would otherwise see.
     """
     repo = _repo(tmp_path, "allow-placeholder", tests_root="{tests/}")
     _arm(repo)
-    assert not _denied(_run(_edit(repo, "tests/test_existing.py"), repo))
+    proc = _run(_edit(repo, "tests/test_existing.py"), repo)
+    assert not _denied(proc)
+    assert _TAG in proc.stderr
 
 
 def test_a_lock_in_one_worktree_does_not_reach_another(tmp_path: Path) -> None:
@@ -495,3 +507,295 @@ def test_the_refusal_does_not_echo_the_run_states_free_text(tmp_path: Path) -> N
     reason = json.loads(proc.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
     assert "IGNORE PREVIOUS" not in reason
     assert "also-untrusted" not in reason
+
+
+# --- #659: the governed set is declared roots times declared basename globs ----
+#
+# Membership stopped being "one prefix, everything below it" at #659. A repo may
+# declare several roots, and may narrow which files under them carry assertions.
+# The rows below are ordered kills first, then the controls that stop each kill
+# passing for the wrong reason. Three control/kill pairs deliberately share one
+# fixture and differ by a single edited path — splitting a pair removes the
+# control without removing the test.
+
+
+def test_a_second_declared_root_is_governed(tmp_path: Path) -> None:
+    """K1 — a comma separates roots; the second one is not decoration.
+
+    Before #659 the whole value was one literal prefix, so ``integration/`` was
+    reachable only by a repo whose test directory was named
+    ``tests/, integration``.
+    """
+    repo = _repo(
+        tmp_path,
+        "kill-second-root",
+        tests_root='"tests/, integration/"',
+        committed=("tests/test_existing.py", "integration/test_flow.py", "scripts/thing.py"),
+    )
+    _arm(repo)
+    assert _denied(_run(_edit(repo, "integration/test_flow.py"), repo))
+
+
+def test_a_co_located_test_under_a_source_root_is_governed(tmp_path: Path) -> None:
+    """K2 — the co-located layout the ticket exists for.
+
+    Shares its fixture with :func:`test_a_production_file_beside_a_co_located_test_is_not_governed`,
+    which is the control that stops this passing because the globs govern
+    everything. One fixture, one difference.
+    """
+    repo = _repo(
+        tmp_path,
+        "kill-colocated",
+        tests_root='"tests/, src/"',
+        test_files='"*.test.ts, *.spec.ts"',
+        committed=("tests/test_existing.py", "src/app/widget.ts", "src/app/widget.test.ts"),
+    )
+    _arm(repo)
+    assert _denied(_run(_edit(repo, "src/app/widget.test.ts"), repo))
+
+
+def test_a_production_file_beside_a_co_located_test_is_not_governed(tmp_path: Path) -> None:
+    """C1 — the control for K2, and the reason the filter exists.
+
+    Governing ``src/`` wholesale to reach ``widget.test.ts`` would refuse every
+    production edit in the source tree, which is the false-deny this hook must
+    never become. Vacuous if its fixture stops arming or stops being readable,
+    which is why it is K2's fixture verbatim.
+    """
+    repo = _repo(
+        tmp_path,
+        "allow-production-beside-test",
+        tests_root='"tests/, src/"',
+        test_files='"*.test.ts, *.spec.ts"',
+        committed=("tests/test_existing.py", "src/app/widget.ts", "src/app/widget.test.ts"),
+    )
+    _arm(repo)
+    assert not _denied(_run(_edit(repo, "src/app/widget.ts"), repo))
+
+
+def test_a_dedicated_tree_stays_governed_beside_declared_globs(tmp_path: Path) -> None:
+    """K3 — declaring globs for one convention must not drop the other.
+
+    A repo mixing a Python tree and TypeScript co-located tests enumerates both
+    conventions in one flat list, because the globs are repo-wide.
+    """
+    repo = _repo(
+        tmp_path,
+        "kill-mixed-conventions",
+        tests_root='"tests/, src/"',
+        test_files='"test_*.py, *.test.ts"',
+        committed=("tests/test_existing.py", "src/app/widget.ts"),
+    )
+    _arm(repo)
+    assert _denied(_run(_edit(repo, "tests/test_existing.py"), repo))
+
+
+def test_a_support_module_inside_the_test_tree_is_not_governed(tmp_path: Path) -> None:
+    """K8 — the ERP-521 refusal, from the other direction.
+
+    A ticket whose implementation is a test-support module was refused its own
+    implementation, because a bare prefix cannot tell a support module from the
+    suite beside it. Under declared globs the support module is editable while
+    the assertions stay locked, which strengthens the lock for that ticket
+    rather than exempting it. Paired with
+    :func:`test_the_cover_beside_a_support_module_is_still_governed`.
+    """
+    repo = _repo(
+        tmp_path,
+        "allow-support-module",
+        tests_root="test/",
+        test_files='"*.test.ts, *.spec.ts"',
+        committed=("test/support/notificationQueue.ts", "test/notification_queue.test.ts"),
+    )
+    _arm(repo)
+    assert not _denied(_run(_edit(repo, "test/support/notificationQueue.ts"), repo))
+
+
+def test_the_cover_beside_a_support_module_is_still_governed(tmp_path: Path) -> None:
+    """C2 — the control for K8: the assertions stay locked.
+
+    Without this row K8 is satisfied by a lock that went inactive, which is the
+    outcome the ticket is trying to stop. K8's fixture verbatim.
+    """
+    repo = _repo(
+        tmp_path,
+        "kill-cover-beside-support",
+        tests_root="test/",
+        test_files='"*.test.ts, *.spec.ts"',
+        committed=("test/support/notificationQueue.ts", "test/notification_queue.test.ts"),
+    )
+    _arm(repo)
+    assert _denied(_run(_edit(repo, "test/notification_queue.test.ts"), repo))
+
+
+def test_a_declared_root_with_no_globs_governs_every_file_under_it(tmp_path: Path) -> None:
+    """C3 — AC-5, and the only row standing between it and a built-in default.
+
+    Absent ``test_files`` is the shipped rule: everything under the root. A
+    mutant that defaults the globs to ``*.test.*`` when the key is absent passes
+    every other row in this module and fails only here, because
+    ``tests/helpers/fixtures.py`` matches no conventional glob.
+    """
+    repo = _repo(
+        tmp_path,
+        "kill-no-globs-governs-all",
+        committed=("tests/test_existing.py", "tests/helpers/fixtures.py", "scripts/thing.py"),
+    )
+    _arm(repo)
+    assert _denied(_run(_edit(repo, "tests/helpers/fixtures.py"), repo))
+
+
+@pytest.mark.parametrize("rel", ["srcx/app.ts", "src-gen/app.ts"])
+def test_a_lookalike_sibling_of_a_second_root_is_not_it(tmp_path: Path, rel: str) -> None:
+    """C4 — the boundary, carried onto every entry of the list.
+
+    ``test_a_path_that_merely_looks_like_the_test_root_is_not_it`` holds this
+    for the first root. A split that appends the trailing slash once, to the
+    whole value rather than per entry, leaves the second root boundary-less.
+    """
+    repo = _repo(
+        tmp_path,
+        f"allow-lookalike-{rel.replace('/', '-')}",
+        tests_root='"tests/, src/"',
+        committed=("tests/test_existing.py", rel),
+    )
+    _arm(repo)
+    assert not _denied(_run(_edit(repo, rel), repo))
+
+
+def test_an_empty_entry_in_the_root_list_is_not_the_repository_root(tmp_path: Path) -> None:
+    """C5 — the catastrophic mutant, and the reason an empty entry is dropped.
+
+    A trailing comma normalising to ``""`` gives a root whose ``startsWith`` is
+    true for every path in the repository, so the hook refuses every edit and
+    the refusal cannot be cleared from inside it. Both directions are asserted:
+    the production file is allowed *and* the real root still denies, so this
+    cannot pass by the lock going inactive.
+    """
+    repo = _repo(tmp_path, "allow-empty-entry", tests_root='"tests/, "')
+    _arm(repo)
+    assert not _denied(_run(_edit(repo, "scripts/thing.py"), repo))
+    assert _denied(_run(_edit(repo, "tests/test_existing.py"), repo))
+
+
+def test_a_glob_without_a_wildcard_matches_a_nested_basename(tmp_path: Path) -> None:
+    """K9 — the glob is matched against the basename, not the whole path.
+
+    ``app.test.ts`` governs ``src/nested/app.test.ts``. **Green before #659**,
+    because the root alone governed everything under it, so this is a pin rather
+    than a kill and it proves nothing on its own. Its evidence is the mutant: a
+    matcher applied to the repo-relative path, or to the first path segment,
+    fails to match ``src/nested/app.test.ts`` against ``app.test.ts`` and dies
+    here and nowhere else.
+    """
+    repo = _repo(
+        tmp_path,
+        "kill-basename-match",
+        tests_root="src/",
+        test_files="app.test.ts",
+        committed=("src/nested/app.test.ts", "src/nested/app.ts"),
+    )
+    _arm(repo)
+    assert _denied(_run(_edit(repo, "src/nested/app.test.ts"), repo))
+
+
+@pytest.mark.parametrize("rel", ["src/foo.test.ts.snap", "src/unitXtestYts"])
+def test_a_glob_metacharacter_is_a_literal_not_a_pattern(tmp_path: Path, rel: str) -> None:
+    """C6 — anchored at both ends, and ``.`` is a literal.
+
+    A snapshot file is not a test, and head-anchoring alone admits it; an
+    unescaped ``.`` admits ``unitXtestYts``. Both are the same mistake seen from
+    two sides, which is why the row carries both.
+    """
+    repo = _repo(
+        tmp_path,
+        f"allow-literal-{rel.rsplit('/', 1)[1].replace('.', '-')}",
+        tests_root="src/",
+        test_files='"*.test.ts"',
+        committed=("src/foo.test.ts", rel),
+    )
+    _arm(repo)
+    assert not _denied(_run(_edit(repo, rel), repo))
+
+
+def test_an_unreadable_paths_block_says_so_while_the_lock_is_armed(tmp_path: Path) -> None:
+    """K6 — AC-2: the reader was already loud and the hook was deaf.
+
+    A yaml sequence under ``tests:`` makes the **whole** ``paths:`` map
+    unreadable, so the lock goes inactive. The shared reader reports that
+    through ``onUnreadable``; before #659 ``testRoot`` passed no reporter and
+    threw the report away, leaving an unreadable declaration indistinguishable
+    from an absent one. The hook still allows — a ``PreToolUse`` deny on a
+    configuration error refuses the edit that would fix it — so what changes is
+    that the disabling stops being silent. Paired with
+    :func:`test_an_unarmed_session_says_nothing_about_an_unreadable_declaration`.
+    """
+    repo = _repo(tmp_path, "allow-unreadable-paths", tests_root="[tests/, src/]")
+    _arm(repo)
+    proc = _run(_edit(repo, "tests/test_existing.py"), repo)
+    assert not _denied(proc)
+    assert _TAG in proc.stderr
+    assert "fail-open" in proc.stderr
+
+
+def test_an_unarmed_session_says_nothing_about_an_unreadable_declaration(tmp_path: Path) -> None:
+    """C7 — the noise control, and a load-bearing fact about call order.
+
+    The notice sits behind the armed check, so an ordinary session in a repo
+    whose ``paths:`` block never parsed writes nothing to stderr. Moving the
+    read above ``tests_locked`` makes every write in such a repo chatter. K6's
+    fixture with no run state.
+    """
+    repo = _repo(tmp_path, "allow-unreadable-unarmed", tests_root="[tests/, src/]")
+    proc = _run(_edit(repo, "tests/test_existing.py"), repo)
+    assert not _denied(proc)
+    assert proc.stderr == ""
+
+
+def test_a_malformed_test_files_declaration_deactivates_the_lock_and_says_so(
+    tmp_path: Path,
+) -> None:
+    """K7 — a glob this hook cannot use governs nothing, loudly.
+
+    ``test_files`` takes basename globs; an entry carrying ``/`` is a path glob
+    and is refused whole rather than silently never matching. The fallback
+    direction is the decision: widening to blanket root coverage would refuse
+    every production edit under a declared source root on a typo, which is the
+    catastrophic direction for a hook that blocks work. Today the key does not
+    exist, so the declaration is ignored and the edit is denied by the root
+    alone.
+    """
+    repo = _repo(
+        tmp_path,
+        "allow-malformed-globs",
+        tests_root="tests/",
+        test_files='"src/**/*.test.ts"',
+    )
+    _arm(repo)
+    proc = _run(_edit(repo, "tests/test_existing.py"), repo)
+    assert not _denied(proc)
+    assert _TAG in proc.stderr
+
+
+def test_a_governed_test_deleted_through_apply_patch_is_refused(tmp_path: Path) -> None:
+    """K4 — a regression pin, green today, and labelled as one.
+
+    Moving or renaming a governed test is editing it. Of the mechanisms a rename
+    reaches this hook through, the one it sees is the patch header naming the
+    old path: ``Delete File:`` is already in ``editedPaths``' alternation and was
+    untested. It proves nothing until its mutant — ``Delete`` removed from that
+    alternation — is shown to kill it. A rename through ``Bash`` (``git mv``,
+    ``mv``, ``sed -i``) is outside this matcher entirely and is recorded in
+    ``specs/harness-assumptions.md`` rather than argued here.
+    """
+    repo = _repo(tmp_path, "kill-apply-patch-delete")
+    _arm(repo)
+    payload = {
+        "tool_name": "apply_patch",
+        "cwd": str(repo),
+        "turn_id": "t1",
+        "tool_input": {
+            "command": "*** Begin Patch\n*** Delete File: tests/test_existing.py\n*** End Patch\n"
+        },
+    }
+    assert _denied(_run(payload, repo))
