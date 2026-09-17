@@ -2,35 +2,34 @@
 layer: 03-tokens
 kind: how-to
 status: active
-owner: sluengen
 last_updated: 2026-09-01
 ---
 
-# How tokens flow into `docs/index.html`
+# How a token reaches a page
 
 > One JSON. One narrow, marker-bounded write into the page's `:root` block.
-> No runtime re-skin, no per-tenant anything — the harness's page has exactly
-> one skin.
+> No runtime re-skin and no per-tenant resolution: a system that needs either
+> is making a layer-00 decision, not a token one.
 
 This describes the generator that writes the token source into the page. It
 ships with the `design-system` skill and is copied out only on request, so this
 file describes the mechanism whether or not the builder itself is beside it.
 
 ```
- ┌──────────────────┐     ../build_design_tokens.py      ┌───────────────────────┐
- │ 03-tokens/        │ ─────────────────────────────────► │ docs/index.html      │
- │ tokens.json       │      (stdlib-only Python, #242)     │ :root{ ... } — a     │
+ ┌───────────────────┐          the token builder          ┌───────────────────────┐
+ │ 03-tokens/        │ ──────────────────────────────────► │ your page             │
+ │ tokens.json       │                                     │ :root{ … } — a        │
  │ (source of truth) │                                     │ marker-bounded region │
- └──────────────────┘                                     └───────────────────────┘
+ └───────────────────┘                                     └───────────────────────┘
 ```
 
 ## Why a narrow, marker-bounded write
 
-`docs/index.html` combines hand-authored CSS, SVG, and prose. The token
-generator owns only the `:root{...}` region between its markers; it must not
-reflow any other part of the page. `tests/unit/test_build_design_tokens.py`
-and the verification gate check that generated region. The inventory test
-checks the plugin surface, while narrative copy remains direct-review work.
+A page combines hand-authored CSS, markup and prose. The builder owns only the
+`:root{…}` region between its markers and must not reflow any other part of the
+page — which is what makes a generated region safe to drop into a file people
+still edit by hand. Wire the builder's check mode into this repo's gate so that
+region is verified on every change; everything outside it stays review work.
 
 ## The semantic tier the build emits
 
@@ -46,15 +45,16 @@ name from the token path. Primitives stay out of the page:
 }
 ```
 
-There is no component tier to emit in this capture — `tokens.json`'s
-`component` namespace is empty (see [`README.md`](README.md)).
+The shipped `tokens.json` has an empty `component` namespace, so nothing is
+emitted from that tier until you add one (see [`README.md`](README.md)).
 
-## The contract #242 and #243 hold to
+## The contract
 
 1. `tokens.json` is authored by hand; it is the only file a person edits.
-2. `docs/index.html`'s `:root` block becomes a **generated region**, written
+2. The consuming page's `:root` block becomes a **generated region**, written
    only inside explicit start/end markers.
 3. The repo's verification gate drift-checks the generated region against
-   `tokens.json`.
+   `tokens.json`, so a source edited without a rebuild fails rather than
+   drifting quietly.
 4. The generated region is never hand-edited; an edit there is lost the next
    build.

@@ -2,7 +2,6 @@
 layer: 05-patterns
 kind: template
 status: scaffold
-owner: sluengen
 last_updated: 2026-07-29
 ---
 

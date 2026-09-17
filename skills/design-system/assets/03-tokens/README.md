@@ -2,16 +2,15 @@
 layer: 03-tokens
 kind: readme
 status: active
-owner: sluengen
 last_updated: 2026-09-01
 ---
 
 # 03 · Tokens
 
-The atomic design decisions — colour and elevation — as a single committed
-source of truth for `docs/index.html`, the harness's one external-facing
-artifact. This is the substantive layer of the system (#241); the page's
-`:root` block is what it captures.
+The atomic design decisions — colour, elevation, and whatever else this
+product names — as a single committed source of truth. This is the layer every
+other one binds to: a value that exists here has a name, and a value that does
+not is a hardcode waiting to drift.
 
 ## Files
 
@@ -19,13 +18,13 @@ artifact. This is the substantive layer of the system (#241); the page's
 |---|---|
 | [`tokens.json`](tokens.json) | **The source of truth.** A three-tier tree: primitive → semantic → component. Authored by hand; the only file you edit. |
 | [`_naming.md`](_naming.md) | The naming scheme. Predictable names, followed everywhere. |
-| [`how-it-works.md`](how-it-works.md) | How a token flows from JSON into the generated `:root` region in `docs/index.html`. |
+| [`how-it-works.md`](how-it-works.md) | How a token flows from JSON into the generated `:root` region of a page. |
 
-[`../build_design_tokens.py`](../build_design_tokens.py)
-resolves `tokens.json` and writes only the marker-bounded generated region in
-[`docs/index.html`](../../../../docs/index.html)'s `:root` block. The rest of
-the page remains hand-authored. Its write and drift-check behaviour is covered
-by [`tests/unit/test_build_design_tokens.py`](../../../../tests/unit/test_build_design_tokens.py).
+A token builder resolves `tokens.json` and writes **only** a marker-bounded
+region inside the consuming page's `:root` block; the rest of the page stays
+hand-authored. The reference implementation ships with the `design-system`
+skill and is copied on request — see [`how-it-works.md`](how-it-works.md) for
+the mechanism, which holds whether or not that builder is the one you use.
 
 ## The three tiers
 
@@ -37,19 +36,20 @@ by [`tests/unit/test_build_design_tokens.py`](../../../../tests/unit/test_build_
   what gives `#0f9d6e` a *meaning* (the Build loop's accent) rather than just a
   value.
 - **component** — an optional per-component narrowing of a semantic value.
-  Empty in this capture: every literal the page renders today resolves at
-  primitive/semantic, with nothing genuinely single-use enough to warrant its
-  own component-tier entry.
+  Start empty. A component entry earns its place when one component needs a
+  value genuinely single-use; inventing narrowings up front gives every
+  component a private palette and defeats the semantic tier.
 
-## Capture, not redesign
+## Starting values
 
-Every emitted token value in `tokens.json` is byte-identical to what
-[`docs/index.html`](../../../../docs/index.html) renders through its generated
-`:root` region. `tests/unit/test_build_design_tokens.py` verifies the generated
-region is derived from the token source, is confined to its markers, and fails
-the drift check when either source or region changes without regeneration.
+The values shipped here are a **placeholder palette**: they resolve, and they
+demonstrate the three tiers working together. They are not a recommendation and
+they are not your brand. Replace them, keep the structure, and rebuild.
 
-## What's next
+## Wire up the drift check
 
-[`how-it-works.md`](how-it-works.md) explains the generated region and the
-drift check the repo's verification gate runs against it.
+The point of a single source is that nothing may disagree with it. Add the
+builder's check mode to this repo's verification gate, so a generated region
+edited by hand — or a source edited without a rebuild — fails the gate rather
+than drifting quietly. [`how-it-works.md`](how-it-works.md) describes the
+contract that check enforces.

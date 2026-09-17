@@ -2,7 +2,6 @@
 layer: 04-primitives
 kind: readme
 status: scaffold
-owner: sluengen
 last_updated: 2026-07-29
 ---
 
@@ -11,16 +10,14 @@ last_updated: 2026-07-29
 Single-responsibility UI elements — a card, a pill, a status pip — that bind
 only to semantic or component tokens (layer 03) and own no page layout.
 
-`docs/index.html` already has recurring shapes that *would* become
-primitives if this page grew a second screen or a component build step: the
-loop card, the pill/status badge, the code chip. None is extracted yet — the
-page is a single hand-authored HTML file with no component system, so a
-"primitive" today is just a repeated CSS class, not an independently
-testable unit.
+**Extract one when the same shape appears three or more times** and there is a
+component boundary to extract it into. Before that, a "primitive" is a repeated
+CSS class rather than an independently testable unit, and documenting it here
+produces an entry that describes markup instead of governing it.
 
-> Scaffold. There is nothing to specify yet: a primitive with no consumer
-> other than the CSS class it already is would be dead code the value scan
-> can't see (`.claude/rules/design-system.md`). This layer fills in only if the page
-> grows a real component boundary — e.g. a build step that assembles the
-> page from fragments — at which point the first extracted primitive lands
-> here as the worked example the rest of the layer follows.
+**Materialise a primitive only when a consumer adopts it in the same change.**
+One with no callsites is dead code that a raw-value scan cannot see, because
+every value in it is already a token.
+
+> Scaffold. The first extracted primitive lands here as the worked example the
+> rest of the layer follows; `_template.md` is what it copies.

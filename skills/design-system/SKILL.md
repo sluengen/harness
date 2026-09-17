@@ -37,6 +37,20 @@ it ahead of step 5: this skill's copy of that file is the harness's own, carryin
 this repo's preamble, while step 5 writes the consumer's from
 `templates/rules/design-system.md`.
 
+**Every shipped asset is written about the repo that receives it, never about
+this one.** They are scaffolds: each tier states what belongs in it and what
+fills it, and the token values are a placeholder palette a consumer replaces.
+This directory is also *this* repo's own design system — `paths.design_system`
+resolves here — so the temptation to write the harness's own brand, voice and
+page into these files is permanent and was once acted on (#667: every tracked
+asset named the harness, and the root `README.md` told a consumer it had no
+end-users). This repo's own instance lives in `.claude/rules/design.md`, which
+ships nowhere. **An asset that can only be true of one repo does not belong
+here**, and the copy disposition is not the remedy: a mark is for an asset whose
+landing does something a deletion does not undo, and surplus prose is not that
+(`specs/architecture-principles.md` → *An asset table carries a copy
+disposition*).
+
 **A repo that already owns a design system keeps every file of it** and receives
 only the ones it lacks. Where its layout differs from these eight tiers, that
 means it receives tiers it has no use for beside its own — visible in the run's
@@ -49,7 +63,7 @@ copy on any pre-existing directory, is the failure two paragraphs up.
 | `03-tokens/tokens.json` | The token source of truth — primitive → semantic → component. | |
 | `03-tokens/_naming.md`, `how-it-works.md` | The naming scheme, and how a token reaches a page. | |
 | `04-primitives` … `07-flows` `_template.md` | The per-entry scaffold each tier's first real entry copies. | |
-| `README.md` | The tree's own account of itself. Harness-specific today, and #667 decides what to do about that. | |
+| `README.md` | The tree's own account of itself, and what to fill in first. | |
 | `build_design_tokens.py` | The token builder. **A reference implementation — see below.** | `on request` |
 
 An empty `Copy` cell is the default and means copy-if-absent. `on request` is the

@@ -2,7 +2,6 @@
 layer: 07-flows
 kind: template
 status: scaffold
-owner: sluengen
 last_updated: 2026-07-29
 ---
 

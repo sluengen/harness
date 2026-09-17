@@ -2,7 +2,6 @@
 layer: 07-flows
 kind: readme
 status: scaffold
-owner: sluengen
 last_updated: 2026-07-29
 ---
 
@@ -11,13 +10,14 @@ last_updated: 2026-07-29
 Multi-screen sequences that carry a user through a goal — the top of the
 stack, referencing everything below and referenced by nothing.
 
-The harness's page is a single scroll a reader lands on and reads; there is
-no multi-screen sequence to document — no navigation between pages, no
-form, no wizard. A "flow" for a one-page static artifact would be a
-description of the reader's scroll order, which layer 00's own prose
-already states (hero → loop detail → triggering → specs → the harness →
-the guidance).
+A flow documents what carries a user *between* screens: the entry points, the
+decision at each step, what happens on failure, and where the sequence can be
+resumed. Sign-up, checkout and a multi-step form are the usual first entries.
 
-> Scaffold. Flows describe transitions *between* screens; the harness has
-> one screen. This layer fills in only if the harness grows a second page
-> and a sequence that connects them.
+**Write the first one when there is a sequence to write down** — more than one
+screen, and a goal that spans them. On a single screen a "flow" degenerates into
+a description of reading order, which layer 00 and layer 02 already carry; the
+entry would restate them and then go stale independently.
+
+> Scaffold. Flows describe transitions *between* screens. This layer fills in
+> when this repo's surface has a sequence that connects two.

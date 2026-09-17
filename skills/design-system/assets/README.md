@@ -2,76 +2,66 @@
 layer: root
 kind: readme
 status: active
-owner: sluengen
-last_updated: 2026-07-29
+last_updated: 2026-09-18
 ---
 
-# harness design system
+# Design system
 
-A layered design system for the harness's **one external-facing artifact**:
-[`docs/index.html`](../../../docs/index.html), the landing page explaining the
-operating model, the harness's own verbs, and the guidance catalog. The
-structure follows `templates/design-system.md` (#239) — a one-way dependency
-stack, a three-tier token model, and (once #243 lands) a lint that forbids
-raw values in the generated region.
+A layered design system for this repo's user-facing surface. The structure
+follows `templates/design-system.md` — a one-way dependency stack, a three-tier
+token model, and a drift check that keeps the generated region of a page honest
+against its token source.
 
-The harness has no product UI and no end-users — it is infrastructure other
-repos self-host. This system exists to eat its own contract: distributing
-`templates/design-system.md` without running it here would leave the
-contract aspirational (#241).
+This tree arrived from hydration, which copies it out of the `design-system`
+skill once. **It is yours from that moment**: no later hydration rewrites a file
+here, so edit freely and delete what you have no use for.
 
 ```
-┌─ 00 · Brand        ─ who the harness is, and what the page is for
-├─ 01 · Voice        ─ how the page reads (headings, loop/verb descriptions)
-├─ 02 · Principles   ─ the self-contained-page constraint, density, a11y laws
-├─ 03 · Tokens       ─ the atomic decisions — colour, elevation (the source of truth)
-├─ 04 · Primitives   ─ single-responsibility UI elements (scaffold — no consumer yet)
-├─ 05 · Patterns     ─ reusable compositions of primitives (scaffold)
-├─ 06 · Archetypes   ─ page-level chrome contracts (scaffold — only one page exists)
-└─ 07 · Flows        ─ multi-screen sequences (scaffold — only one screen exists)
+┌─ 00 · Brand        ─ who the product is, and what this system governs
+├─ 01 · Voice        ─ how it sounds — copy principles, tone, register
+├─ 02 · Principles   ─ interaction, density and accessibility laws
+├─ 03 · Tokens       ─ the atomic named decisions (the source of truth)
+├─ 04 · Primitives   ─ single-responsibility elements
+├─ 05 · Patterns     ─ reusable compositions of primitives
+├─ 06 · Archetypes   ─ page-level chrome contracts
+└─ 07 · Flows        ─ multi-screen sequences
 ```
 
-A layer may consume the layers above it; **nothing reaches downward**. A
-token that references a component, or a primitive that defines its own page
-chrome, is in the wrong layer.
+A layer may consume the layers above it; **nothing reaches downward**. A token
+that references a component, or a primitive that defines its own page chrome, is
+in the wrong layer.
 
 ## Three rules
 
-1. **A layer never reaches downward.** If you find a downward dependency,
-   the abstraction lives in the wrong layer — move it up.
+1. **A layer never reaches downward.** If you find a downward dependency, the
+   abstraction lives in the wrong layer — move it up.
 
 2. **Nothing is hardcoded.** The source of truth is
-   [`03-tokens/tokens.json`](03-tokens/tokens.json). Once the generator
-   lands (#242), consuming code — the generated region of
-   `docs/index.html` — binds to semantic (or component) tokens only, never
-   a raw hex or pixel value; #243 wires a drift check into
-   the repo's verification gate to enforce it.
+   [`03-tokens/tokens.json`](03-tokens/tokens.json). Consuming code binds to
+   semantic (or component) tokens only, never a raw hex or pixel value. A token
+   builder resolves that source into a page's generated region;
+   [`03-tokens/how-it-works.md`](03-tokens/how-it-works.md) describes the
+   mechanism, and the reference implementation ships with the `design-system`
+   skill and is copied **on request** rather than by default, so a repo that
+   already builds tokens keeps its own.
 
-3. **Chrome belongs to the archetype, never the screen.** Not yet
-   exercised — the harness has one page, so layer 06 is a scaffold. The rule
-   stands for the day a second page exists.
+3. **Chrome belongs to the archetype, never the screen.** A page's shell, its
+   breakpoints and its scroll behaviour are the archetype's contract; a screen
+   fills that shell rather than redefining it.
 
-## Status
+## Filling it in
 
-Layers **00-brand**, **01-voice**, **02-principles** and **03-tokens** are
-**substantive** as of #241: the harness's positioning and the rules that
-constrain the page (00), its existing register captured from the page's own
-prose (01), the self-contained-page and density/accessibility laws (02), and
-`tokens.json` capturing every colour and elevation literal the page renders
-today, byte-identical (03).
+Tiers **00**–**03** are where a new system earns its keep, and they are worth
+writing before any component work: who the product is (00), how it reads (01),
+the interaction and accessibility laws that constrain every screen (02), and the
+palette, type and spacing decisions everything else binds to (03).
 
-Layers **04-primitives**, **05-patterns**, **06-archetypes** and
-**07-flows** are declared **scaffolds** — each states its purpose and why it
-is empty rather than omitted. The harness's public surface is one
-hand-authored HTML page with no component build step, so there are no
-primitives to extract, no patterns to compose, only one page (so no second
-archetype to contrast it against), and no multi-screen sequence (so no
-flow). Each would fill in only if that precondition changes — a real
-component boundary, or a second page.
+Tiers **04**–**07** ship as scaffolds. Each states its purpose and why it is
+empty rather than being omitted — a tier fills in when its precondition arrives
+(a real component boundary, a second page, a multi-screen sequence), and an empty
+tier that says so is worth more than a missing one. Each carries a
+`_template.md` for its first real entry to copy.
 
-**No visual change shipped with #241.** `docs/index.html` is byte-unchanged;
-`tokens.json`'s values were captured from what the page already renders. The
-generator that makes the page consume `tokens.json` — and the first (and
-so far only) real stack seam — is [`03-tokens/how-it-works.md`](03-tokens/how-it-works.md),
-built in #242; the gate wiring and the ADR 0004 amendment that narrows its
-scope to the token block are #243.
+**The starting token values are a placeholder palette, not a recommendation.**
+They resolve, and they demonstrate the three tiers; they are not your brand.
+Replace them in `03-tokens/tokens.json` and rebuild.
