@@ -2449,6 +2449,25 @@ For a consumer already hydrated, step 3 retains their `harness.yaml` whatever it
 
 **Consequences.** A duplicate repair now costs an idle tick and a report instead of a build, a review and a landing gate. Nothing enforces the claim write: it is guidance a run performs, like the limit (P2 refuses a guard over prose), so a run that skips it leaves the cord looking unclaimed and the old behaviour returns for that cord. The claim is inert in a repo that declares no `loop.cord_claim_minutes`, which is what keeps this release a minor: an unchanged consumer sees no new refusal, and fail-closed there would read every claim as live forever and wedge that repo's queue behind one unclosed cord. #661 edits the same `work-discovery` section without colliding — it governs the read that finds the cord, this governs a second read on a cord already found — and if #661 lands first, the claim read inherits its fail-closed posture unchanged.
 
+### Decision: An empty cord answer is trusted only where the read shows coverage and completeness
+
+*Decided at the design stage of #661, 2026-09-17.*
+
+**Context.** The andon cord's read treated an empty result as proof of a clear line. One run received an empty answer while an urgent open bug existed, and the same query returned that bug later. Two mechanisms make a silent empty easy and both exit 0: a board read with no explicit limit truncates on a board that outgrew the default, and a renamed field, wrong option id or wrong board scope answers "empty" with the same status as a clear queue. The cord's two halves also arrive over two transports on GitHub — labels by issue, priority by board, since Projects v2 has no REST API — so the halves can disagree while both succeed. The shipped rule covered a read that *announces* failure and said nothing about one that succeeds and returns nothing.
+
+**Decision.** The cord read asks for the open queue with its priorities and finds the cord in it, never asking the server for the matches. An empty answer is trusted only where the read shows **coverage** — every open bug *in the queue* carries a priority that reads back — and **completeness** — no call the check made stopped at a limit it was given. A run re-reads before it stops, since both anchors fail in ways one more call clears. An answer that cannot show both is a half that could not be read, which the existing rule already makes a cord, so the disposition is stated once and inherited rather than restated.
+
+**Coverage is a comparison, and that is the part a first draft got wrong.** Written as "every open bug *in the read*", the anchor quantifies over the rows returned and therefore reads *pass* in exactly the scenario it exists for: a bug the board never received is invisible to any check made only against the rows in hand. A fresh-context probe executing the drafted text found this, having answered the scenario correctly only by falling back on the sentence after the anchor. The anchor now names both counts — the open queue, and the set the read priced.
+
+**Alternatives.**
+- *A second confirming read, or a known-open canary ticket* — a second monitoring mechanism, and on GitHub it anchors the issue transport while the observed failure was on the board. The ticket's own Approach suggested resolving the run's own ticket; it does not reach the failing half, and `/routine` runs the andon check before it holds any ticket.
+- *A tracker health probe or service* — scoped out on the ticket, and P0 refuses a mechanism where a property of the existing read serves.
+- *Treat every empty answer as a cord* — stops every clean tick; the rule would be switched off within a release.
+- *Coverage as "at least one overlapping row"* — cheaper, and blind to the case that happens: a board holding some issues and not others returns rows, readable priorities and an overlap while leaving open bugs unpriced.
+- *A guard over the guidance* — refused by ADR 0017 D5 and law 2. The evidence is the evals, used.
+
+**Consequences.** A repo whose board read is capped or partial now gets a stopped tick where it used to get a pick, and no configuration exempts it: the rule keys on nothing declared and fires on every tick, on every backend. That is a refusal reason no consumer has met, which is what this cycle's version class turns on. Two costs are accepted rather than solved. A repo whose tracker holds zero open tickets fails the coverage floor and reports a stopped line on its first tick, cleared by filing anything. And an open bug left off the board stops the line until it is placed — the item-add-no-status trap made loud rather than a new failure. The claim read gains no obligation: it names one ticket that must resolve, and the non-optional `--paginate` on the comments call already holds its completeness, so the block above expecting the claim read to inherit this posture is met without a second rule. `/routine`'s report gains the anchor that failed, so an operator reads a repair rather than "the tracker failed".
+
 ### Decision: `/build` establishes ownership by ordering, and the host signal carries no clock
 
 *Decided at the design stage of #660, 2026-09-15.*

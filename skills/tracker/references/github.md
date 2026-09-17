@@ -141,7 +141,7 @@ gh project item-edit --id <item-id> --field-id <status-field-id> \
 # 4. verify the postcondition by re-reading both properties, not by exit
 #    status: the label on the issue, and the Status on the board item
 gh issue view <number> --repo <owner>/<name> --json labels
-gh project item-list <number> --owner <owner> --format json
+gh project item-list <number> --owner <owner> --format json --limit <n>
 ```
 
 `<level>` is the lane the filer chose per `authoring` → *Choosing assurance* — this recipe maps a value, it never selects one. `gh issue create` **errors when the label does not exist in the repo**, which is the correct fail-closed behaviour and is exactly the incomplete filing the spine's filing contract names: report the identifier and URL, say the filing is incomplete, and stop.
@@ -159,7 +159,7 @@ gh project item-list <number> --owner <owner> --format json
 The same `gh project item-edit` call as step 3 above, with the option id of the target state. Resolve the item id for an already-filed issue from the board:
 
 ```bash
-gh project item-list <number> --owner <owner> --format json
+gh project item-list <number> --owner <owner> --format json --limit <n>
 ```
 
 > **The `status` field in `item-list` output has been observed unreliable** — it has reported every item `Done` on a healthy board. To read the queue, prefer the issue-level view (`queue`, below) and treat `item-list` as the way to resolve **item ids**, not as the source of truth for state.
@@ -201,10 +201,41 @@ Skip anything with a non-empty `assignees` (a human holds it) or a hold label. C
 **The held pile is the same operation with that filter inverted.** Ask for the hold label *and* the operator's own assignment, both conditions, plus the fields a triage read needs (the queue read above returns neither `url` nor `body`):
 
 ```bash
-gh issue list --repo <owner>/<name> --state open \
+gh issue list --repo <owner>/<name> --state open --limit <n> \
   --label <input|operator> --assignee @me \
   --json number,title,url,body,updatedAt
 ```
+
+**Give every one of these reads an explicit `--limit`, size it well above the
+open queue, and compare the rows returned against it.** A limit chosen
+generously is the cheap way never to stand at one. `gh project item-list` applies a default when none is
+given, and a board that has outgrown it drops rows at exit 0 — the same silence
+as the unpaginated comments call under `open`. A row count equal to the limit is
+a read that stopped, not a queue that ended.
+
+### The cord read — the open queue with its priorities
+
+The cord's two halves arrive over two transports here: kind from the issue's
+labels, priority from the board. Neither call filters on the top priority
+(`tracker` → *The andon cord*), so the cord read is the `queue` call widened to
+every open issue, joined to the board read by issue number:
+
+```bash
+gh issue list --repo <owner>/<name> --state open --limit <n> \
+  --json number,title,labels,assignees
+gh project item-list <number> --owner <owner> --format json --limit <n>
+gh project field-list <number> --owner <owner> --format json   # the Priority field and its option ids
+```
+
+**The join is what makes the answer about this queue.** Every open issue whose
+labels make it a bug must appear in the item list with a priority that reads back
+as one of the options `field-list` declares. An empty or partial intersection
+means the two calls are describing different things — a board scoped to another
+owner or number, an issue never added to the board, a Priority field renamed out
+from under the query — and none of those is a clear line. An issue on the board
+with no Status is the trap `create` names; an open bug with no board item at all
+is the same trap seen from the read side, and a truncated half cannot support an
+empty cord answer either way.
 
 ## Closing an issue
 
