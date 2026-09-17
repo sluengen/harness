@@ -162,11 +162,14 @@ function runState(top) {
 
 /** The roots ``paths.tests`` declares, each a posix prefix ending in one slash.
  *
- * An entry that is empty after normalising is **dropped, never widened**:
- * ``tests/, `` declares one root, not a root plus the repository. A root of
- * ``""`` would make ``startsWith`` true for every path in the tree, so the hook
- * would refuse every edit — including the one to ``harness.yaml`` that would fix
- * it.
+ * An entry that is empty after normalising is dropped: ``tests/, `` declares one
+ * root, not two. **What makes that safe is the trailing slash, not this filter**
+ * — an undropped empty entry becomes ``"/"``, and no repo-relative path starts
+ * with a slash, so it matches nothing. Mutation says so: removing the filter
+ * alone kills no test, because it cannot. The filter is here to keep a root
+ * nobody declared out of the set; the catastrophic value is ``""``, which
+ * ``startsWith`` admits for every path in the tree, and the append is what the
+ * set is never allowed to lose.
  */
 function testRoots(raw) {
   if (typeof raw !== "string") return [];

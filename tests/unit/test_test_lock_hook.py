@@ -664,13 +664,20 @@ def test_a_lookalike_sibling_of_a_second_root_is_not_it(tmp_path: Path, rel: str
 
 
 def test_an_empty_entry_in_the_root_list_is_not_the_repository_root(tmp_path: Path) -> None:
-    """C5 — the catastrophic mutant, and the reason an empty entry is dropped.
+    """C5 — a trailing comma does not widen the governed set.
 
-    A trailing comma normalising to ``""`` gives a root whose ``startsWith`` is
-    true for every path in the repository, so the hook refuses every edit and
-    the refusal cannot be cleared from inside it. Both directions are asserted:
-    the production file is allowed *and* the real root still denies, so this
-    cannot pass by the lock going inactive.
+    **Corrected after mutation.** An earlier draft of this docstring claimed the
+    dropped entry would otherwise become a root of ``""``, admitting every path.
+    It would not: an undropped empty entry normalises to ``"/"``, and no
+    repo-relative path starts with a slash, so removing the emptiness filter
+    alone kills nothing and the mutation reported exactly that. What this row
+    holds is the *composition* — drop the empty entry, and append the trailing
+    slash per entry. The catastrophic value is ``""``, reachable by dropping the
+    append, and its killer is
+    :func:`test_a_lookalike_sibling_of_a_second_root_is_not_it`.
+
+    Both directions are asserted: the production file is allowed *and* the real
+    root still denies, so this cannot pass by the lock going inactive.
     """
     repo = _repo(tmp_path, "allow-empty-entry", tests_root='"tests/, "')
     _arm(repo)
