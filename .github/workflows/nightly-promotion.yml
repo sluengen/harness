@@ -1,13 +1,18 @@
 name: Nightly promotion
 
 # GitHub Actions schedules are UTC. Australia/Brisbane is UTC+10 year-round, so
-# 14:00 UTC is midnight local time. Scheduled workflows are read from the default
+# 18:30 UTC is 04:30 local time. That slot is chosen by the overnight sequence it
+# sits in, not by convenience: the three local routine slots land on `dev` at
+# 00:00, 01:30 and 03:00, and the per-repo nightly ticks read the promoted plugin
+# from 05:30. The promotion has to fall between them, and an hour of headroom on
+# each side absorbs both this job's own 35-minute timeout and the delay Actions
+# routinely adds to a scheduled run. Scheduled workflows are read from the default
 # branch; this job explicitly checks out `dev`, the branch it promotes — and that
 # checkout is also where the promotion step's script comes from, so this file and
 # the shell it invokes are read from different refs (scripts/promotion-step.sh).
 on:
   schedule:
-    - cron: "0 14 * * *"
+    - cron: "30 18 * * *"
   workflow_dispatch:
 
 concurrency:
