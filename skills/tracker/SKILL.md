@@ -191,9 +191,15 @@ is never built directly.
   surfaces only when the PR actually completes that ticket; a PR that merely
   *spawns* tickets keeps their ids out, or merging it closes the work it just
   filed.
-- **Credentials come from the environment**, never from the repo. If the
-  variable a backend needs is missing, stop and ask; never fall back to another
-  backend, and never echo a token into a comment, report, or commit.
+- **Credentials come from the environment, and an environment is per-process.**
+  Never from the repo. A host that injects a backend's key injects it into the
+  process it started; a dispatched sub-agent inherits neither that variable nor
+  an entry in the env file, which was never written because the host was
+  supplying the key. *Stop and ask* is therefore the rule for the process the
+  operator is talking to. A sub-agent finding neither is looking at an
+  orchestrator-only credential rather than a missing one: report what it could
+  not read and stop. Never fall back to another backend, and never echo a token
+  into a comment, report, or commit.
 - **Quote titles; pass bodies as a file.** Ticket text is routinely lifted from
   a report, a finding, or a design section and may carry backticks, `$(…)`, or
   newlines; interpolating it into a shell command is a command-injection
