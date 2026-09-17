@@ -624,7 +624,8 @@ dead files, not a red gate (#629).
 **One hook refuses and three advise, and none reads a verdict:**
 
 - `test-lock-guard.js` (PreToolUse: `Write`|`Edit`, and Codex's `apply_patch`) refuses
-  an edit to a file under the repo's declared `paths.tests` while the run has declared
+  an edit to a file the repo's declared `paths.tests` roots and its optional
+  `paths.test_files` basename globs govern between them, while the run has declared
   its tests locked — the hook half of law 7, detailed below. It reads `version`,
   `tests_locked`, `lane` and `base_commit` out of `.harness/run.json` and no `stage`,
   so a change to that vocabulary cannot move what it denies. It is the only refusal
@@ -656,9 +657,10 @@ place where #621 moved the guarded count and left the sentence beside it standin
 The same `hooks/hooks.json` serves both hosts. The PreToolUse scripts normalize Claude Code's `tool_name` / `tool_input` and Codex's corresponding payload before evaluating the request. Claude decisions retain their existing output contract. A Codex advisory returns `hookSpecificOutput.additionalContext`; a benign Codex request and every Codex fail-open catch path exit successfully with no stdout, rather than emitting the unsupported `{continue:true}` response. `prompt-guard.js` and `workflow-guard.js` also read Codex `apply_patch` requests from `tool_input.command`.
 
 `push-target-guard.js` and `plugin-version.js` resolve `branches:` through
-`scripts/harness-config.js`, and `test-lock-guard.js` resolves `paths.tests` through
-the same module; those two accessors are its whole public surface since #621. The
-reader searches `harness.yaml`, `AGENTS.md`, `CLAUDE.md` and `CONTEXT.md` in that
+`scripts/harness-config.js`, and `test-lock-guard.js` resolves `paths.tests` and,
+since #659, the optional `paths.test_files` through that same module's one
+`declaredPaths` accessor; those two accessors are its whole public surface since
+#621. The reader searches `harness.yaml`, `AGENTS.md`, `CLAUDE.md` and `CONTEXT.md` in that
 order for a source that declares the key, so a repo hydrated before v5, or before
 #537, keeps working unchanged. The grammar below is that one reader's and is
 **untouched by the narrowing** — the export set shrank, the parser did not.
@@ -771,7 +773,7 @@ meets it fixes it then.
 
 ### The test lock and the run file
 
-`hooks/test-lock-guard.js` is one of four shipped hooks and, since #621, the only one that refuses. It arms only when three facts hold together: the repository resolved from the **edited file's** directory carries `.harness/run.json`, that file is version `1` and says `tests_locked: true`, and `harness.yaml` declares `paths.tests` — read through the shared reader's `declaredPaths` accessor, which since #621 is one of that module's two remaining exports rather than one of eleven. Any one of the three missing leaves the lock inactive, which is the state of every repo that never adopts the run file and of every session in this one that is not a build. Under the lock, an edit to a path under the declared test root is refused in the `change` and `feature` lanes and in any lane value the hook does not recognise — the permissive branch belongs to `fix` alone, so a typo, a truncated write or a lane invented later locks rather than unlocks. The `fix` lane may **add** a test file, where *new* means absent from `base_commit`'s tree: not absent from the filesystem, which would refuse the fix lane's own second edit to the file it just wrote, and not absent from the index, which flips the moment a run stages for review. Because the repository is resolved from the edited file rather than from the hook's own directory, a locked run in one worktree never reaches another worktree of the same repo, which matters where concurrency is the norm (law 5).
+`hooks/test-lock-guard.js` is one of four shipped hooks and, since #621, the only one that refuses. It arms only when four facts hold together (#659 made the third and fourth what they are): the repository resolved from the **edited file's** directory carries `.harness/run.json`, that file is version `1` and says `tests_locked: true`, the `paths:` map reads — through the shared reader's `declaredPaths` accessor, which since #621 is one of that module's two remaining exports rather than one of eleven — and declares at least one `paths.tests` root, and any `paths.test_files` it declares is a set of basename globs this hook can build. Any one of the four missing leaves the lock inactive, which is the state of every repo that never adopts the run file and of every session in this one that is not a build; the last two say so on stderr under an armed run rather than going quiet, which is the half of #659 that is not about membership. Under the lock, an edit to a path the roots and globs govern between them is refused in the `change` and `feature` lanes and in any lane value the hook does not recognise — the permissive branch belongs to `fix` alone, so a typo, a truncated write or a lane invented later locks rather than unlocks. The `fix` lane may **add** a test file, where *new* means absent from `base_commit`'s tree: not absent from the filesystem, which would refuse the fix lane's own second edit to the file it just wrote, and not absent from the index, which flips the moment a run stages for review. Because the repository is resolved from the edited file rather than from the hook's own directory, a locked run in one worktree never reaches another worktree of the same repo, which matters where concurrency is the norm (law 5).
 
 Two details are load-bearing and were found rather than designed. The repository is resolved from the edited path's nearest **existing** ancestor directory, because a `Write` creates the file *and* its directory: a `git` probe in a directory that is not there yet fails, no repository resolves, and the lock is simply off — `mkdir tests/new/` was a one-command bypass, and three lookalike controls had been passing vacuously against a predicate the hook never reached. And the refusal names the offending path, the law, and the escape — return the run to `stage: "tests"` with `tests_locked: false`, record why on the ticket, and expect the reviewer to ask — while echoing **nothing** from the model-writable run file into a reason that re-enters a model's context (law 6); the path itself is reduced to path characters and truncated.
 
@@ -2946,6 +2948,146 @@ a role body reads differently, and nothing that dispatches a workflow changes
 what it accepts or returns. Verified at certification: `bash scripts/verify.sh` —
 ruff, mypy, 614 tests passed, 85.47% coverage against the 85% floor, design-token
 drift guard clean.
+
+
+### What #659 stated, as built
+
+The test lock's membership stopped being one prefix and became **declared roots
+times declared basename globs**. One file decides it —
+`hooks/test-lock-guard.js`, 292 lines at `6fc1daf7` and 402 at this tree — and
+two record it: `templates/harness.yaml`, which is what a consumer reads, and the
+Decision block this change added to `specs/architecture-principles.md`. The guard
+is `tests/unit/test_test_lock_hook.py`, which gained the rows below.
+
+**`paths.tests` carries several roots inside the one scalar, comma-separated,
+and `scripts/harness-config.js` did not change to read them.** `testRoots`
+splits on commas and normalises each entry, appending the trailing slash **per
+entry** rather than once to the whole value — the boundary a lookalike sibling
+(`srcx/app.ts` against a declared `src/`) tests for, carried onto every entry of
+the list. An entry empty after normalising is dropped; the row that pins that
+holds the *composition* of the drop and the per-entry append, because an
+undropped empty entry becomes `"/"` and matches nothing, while the catastrophic
+value `""` is reachable only by losing the append. That distinction was found by
+mutation, not by reading, and the correction is recorded below.
+
+**`paths.test_files` is new, optional, and narrowing only.** Absent, every file
+under a root is governed — the rule the hook shipped with, which is how an
+existing consumer's refusals stay exactly where they were with no configuration
+change. Declared, a file is governed only where its basename matches one of the
+globs, anchored at **both** ends with `*` the single metacharacter: head-anchored
+alone, `*.test.ts` would admit `foo.test.ts.snap`, and an unescaped `.` would
+admit `unitXtestYts`. An entry carrying a `/` is a path glob this matcher does
+not implement and is refused whole, which leaves the lock inactive and says so —
+deliberately *not* falling back to blanket root coverage, because the fallback
+that preserves protection is the one that refuses every production edit under a
+declared source root on a typo, and a `PreToolUse` refusal cannot be cleared from
+inside the hook.
+
+**The reader was already loud and the hook was deaf.** `declaredPaths` reports
+every source it cannot parse; the old `testRoot` passed no reporter, so an
+unsupported spelling — a yaml sequence under `tests:`, an unhydrated `{tests/}`
+placeholder — was indistinguishable from a repo that declares nothing.
+`governedSet` now passes a latched reporter that writes through the hook's own
+`failOpen`. Measured here on four synthetic repos: a quoted comma inside a flow
+mapping (`paths: {tests: "tests/, src/", …}`) reads; an **unquoted** comma there,
+and a `test_files` whose value is an empty quoted scalar, each take the **whole**
+`paths:` map down and are reported — which is why the template's new comment
+tells a consumer to quote the value in a flow mapping.
+
+**AC-2 is met as "loudly" rather than as "fails closed", and that reading is
+recorded rather than assumed.** The criterion reads *fails loudly instead of
+disabling the lock*; what ships fails loudly **while** disabling it. The ticket's
+own Problem paragraph names the defect as multiple roots *silently* deactivating
+the reader, and the primary case is no longer a deactivation at all — a
+comma-separated declaration now works. For the residue, an unreadable `paths:`
+map, the lock has nothing to govern: the reader refuses that map whole, and a
+guessed test root is the false-deny factory `declaredPaths`' own docstring
+refuses. A naive fail-closed would refuse the edit to `harness.yaml` that clears
+the error; the narrower true statement, which the Decision block's alternatives
+carry, is that fail-closed is rejected as the catastrophic direction for a hook
+that blocks work, not that no exempting form of it could be built.
+
+**AC-4 ships as the `Delete File:` pin plus prose, and the design's `Move to:`
+alternation was deliberately dropped.** AC-4's subject is a *governed* test being
+moved or renamed, and every mechanism this hook sees already names that file:
+`Write` names the destination, and an `apply_patch` header names the old path
+under `Update File:` or `Delete File:`. `Delete File:` was in `editedPaths`'
+alternation and untested, so the row pins it and the mutant that removes the
+alternation kills it. The `*** Move to:` spelling could not be grounded anywhere
+in this tree, and an alternation added on an unverified spelling would be a
+guard over a guess. What stays open is the reverse direction — a move whose
+*destination* is governed and whose source is not — and it is open only through
+that unverified spelling. The rename this hook genuinely cannot see is the one
+through `Bash`, which `specs/harness-assumptions.md` already records as a known
+gap on the same row as the `sed -i` and heredoc cases.
+
+**The run returned to its `tests` stage once, for a docstring.** Mutation
+reported `empty-entry-kept` as SURVIVED, and the diagnosis was a false mechanism
+claim rather than a weak row: the docstring said an undropped empty entry yields
+a root of `""`. It yields `"/"`. The docstring now says what the row holds and
+names the sibling that kills the catastrophic case. The diff between `e52917d5`
+and `431bbab7` over `tests/` is that docstring and nothing else — no assertion,
+fixture or parametrisation moved — and the hook's own comment carrying the same
+false claim was corrected in the same commit.
+
+**The retirement sweep.** `testRoot` and `underRoot` are gone and have no
+surviving callers. `templates/harness.yaml`'s "one directory each, never a list"
+comment is replaced by the multi-root and `test_files` instructions.
+`scripts/harness-config.js`'s `declaredPaths` docstring names both keys and the
+reason a sequence is refused. `skills/assess/SKILL.md`'s assurance-ratio row
+warns that its `git ls-files '<paths.tests>*.py'` interpolation needs one
+pathspec per root, since a comma inside one pathspec matches nothing and reads as
+zero rather than as broken. `skills/build/SKILL.md`'s single clause about an
+undeclared `paths.tests` becomes the AC-3 coverage report. In this record, the
+hooks-list bullet, the `declaredPaths` sentence and *The test lock and the run
+file*'s arming enumeration are rewritten above. Two neighbouring sentences were
+checked and deliberately left: the #622 narrowing risk at *The sharpest risk was
+AC-4's* — "indistinguishable from a repo that declares no `paths.tests`" — is
+about a **dropped export**, which throws and takes the hook's outer catch both
+before and after #659, and its silent residue (a repo declaring nothing, or an
+empty root list) is still silent by design; and
+`skills/engineering/evals/evals.json`'s scene-setting line about the hook
+refusing "any file under `paths.tests`" stays true of any repo declaring no
+`test_files`, which is every repo today including this one.
+
+**What it costs, stated where a consumer reads it.** Declaring globs narrows the
+dedicated tree too: `tests/conftest.py` and shared fixtures stop being governed
+the moment a repo declares `test_files`, which is the trade ERP-521 asks for and
+is not free, since a shared fixture is a place a cheat can live. `/build`'s new
+coverage report is what keeps that residue visible, and it is a report rather
+than a stop. Globs are repo-wide rather than per-root, so a repo covering two
+conventions enumerates both in one flat list. The hook passes `engineering`'s
+300-line soft limit — it is under the 500-line hard limit — with the reason in
+its own header.
+
+**The version class: the floor is correct.** Every point of the change was run
+through the compatibility grammar, not just one. No command or skill is renamed;
+no argument is renamed or removed; the refusal string is byte-identical to
+`6fc1daf7`'s; the set of calls refused is unchanged for every repo that declares
+one root and no `test_files`, which the module's pre-existing rows and
+`test_a_declared_root_with_no_globs_governs_every_file_under_it` hold together.
+`paths.test_files` is additive and opt-in, and `paths.tests` keeps its name and
+its meaning for every value that contains no comma. The one repo whose behaviour
+moves without touching its configuration is one that already wrote a comma and
+was running with the lock silently off; it gains the protection it configured
+for and has nothing to decide. Minor, so #659 asks for no raise of its own above
+the floor `/build` step 1 already took. The version this branch carries is
+`13.0.0`: #661, which shares the branch, was judged major at its own review and
+raised the five homes there, and a cycle's version is per cycle rather than per
+change.
+
+**Verification.** `bash scripts/verify.sh`, run and read at certification over
+the candidate carrying this record — ruff clean, mypy clean over three source
+files, 631 tests passed, 85.47% coverage against the 85% floor, design-token
+drift guard OK; and `scripts/mutate.py` re-run independently
+by the reviewer over the builder's eleven-entry table — eleven killed, each
+killing exactly the rows it predicted, reproducing the builder's figures. The
+fail-first half was measured rather than taken on trust: the module is 48 node
+ids, all green at this tree, and with `6fc1daf7`'s hook restored beneath it ten
+fail — the eight new rows carrying new behaviour, plus the one pre-existing row
+this change modified, which gained the stderr assertion. The seven new controls
+and pins stay green there, each carrying its own entry in the table that kills
+it, which is what stops a green control being read as evidence.
 
 
 ## Cross-references
