@@ -29,6 +29,15 @@ Read both halves from the tracker's own fields, through `tracker`: the kind (bug
 
 **A half you cannot read is itself a cord.** If the board is unreachable, the credential is missing, or the API refuses, the tick is stopped: ranking cannot see a cord, so a run that degrades to it walks past an open P1 bug and says nothing, which is the failure P4 exists to prevent happening inside the rule that implements P4.
 
+**Trust an empty answer only where the read can vouch for itself.** "No P1 is open" is a conclusion drawn from a result set, and a fault returns the same empty set a clear queue does: a read that stopped at a page limit, a query answered by the wrong board, a ticket the board never received. Two things make the conclusion safe:
+
+- **Coverage.** Every open bug **in the open queue, read in every state** — this check's scope above, not the Todo-and-in-flight count *The limit* uses — has a priority that reads back — not merely every bug the priority read happened to return. That is a set difference over ticket identities and not a comparison of two totals: a priced read can return as many rows as the queue holds and still be missing a bug, so equal counts prove nothing. The open queue is the denominator, and it is the issue read rather than the priced one — taking the priced read as the denominator makes the anchor satisfy itself, which is the vacuity it exists to prevent. "No P1" is only as wide as the bugs whose priority you could read, and an open bug with no readable priority is the cord's own uncertainty rather than a low one.
+- **Completeness.** No call the check made stopped at a limit it was given. A result standing at its limit is a read that stopped, and the cord may be in the part it never returned. A queue holding exactly as many tickets as the limit is indistinguishable from a truncated one, which is why this is absolute rather than a judgment: the repair is to re-read below the limit, never to argue the boundary.
+
+**Re-read once before you stop.** Both anchors fail in ways one more call clears — a higher limit, the tickets the priced read never saw — and a tick that re-reads has spent a call to avoid stopping the whole line. One re-read, not a loop: an anchor is all or nothing, so a re-read that clears part of the gap has failed, and a run that keeps calling until it likes the answer is the thing this rule exists to refuse.
+
+An answer that cannot show both anchors stops the tick exactly as an unreadable field does, whatever status the calls returned: a clean 200 with a gap in coverage lands in the same stop as a refusal. The normalise-and-pull step below does not run either. Name which anchor failed and what would clear it — a limit raised above the rows returned, or the unpriced tickets given a priority the read can see — because the repair differs for each, and "the tracker failed" names neither.
+
 ### A claimed cord is somebody's repair
 
 A cord another run is already repairing stops the line for this one exactly as an unrepaired cord does. What it does not need is a second repair: one measured downstream cost two branches, two reviews and two landing gates for a single defect, because the ticket sat In Review and unassigned and nothing on the board said a run held it. Read the claim through `tracker`, which owns what a claim is and when one goes stale; `harness.yaml` owns the number, and neither is restated here.
@@ -39,7 +48,7 @@ A cord another run is already repairing stops the line for this one exactly as a
 
 ### What a stopped tick outputs
 
-When the cord is pulled, or a cord field will not read, the run reports three things: which cord (the ticket, or the field that failed to read), what would clear it — a live claim names the repair already running and how old its claim is — and that nothing was started.
+When the cord is pulled, or a cord field will not read, the run reports three things: which cord (the ticket, or — where no ticket could be identified at all — the field the tracker refused, or the anchor the read could not show), what would clear it — a live claim names the repair already running and how old its claim is — and that nothing was started.
 
 **Produce nothing else.** Do not rank the remaining tickets, do not name a front-runner, and do not offer a likely next pick for a later tick, even as a table, a shortlist, or an aside. Nobody is permitted to act on a ranking made under a stopped line, and publishing one is exactly how an andon rule quietly becomes a ranking tweak.
 

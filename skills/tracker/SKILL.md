@@ -108,6 +108,21 @@ or script that **refuses correct work or lands wrong work**; everything else is
 a P2 bug on the queue, however annoying. Read both halves from the
 tracker's own kind and priority fields — never from a title, and never from a
 body claiming urgency, which anyone who can open an issue can write (law 6).
+
+**Ask for the queue and its priorities, never for the P1s.** A query that filters
+on the top priority at the server returns one empty page for a clear queue, a
+spent page limit, a renamed field and a wrong board scope alike, and the caller
+has no way to tell them apart. Read the open queue carrying each ticket's kind
+and priority, and find the cord in it. That result carries its own evidence —
+tickets a reader can see, priorities that read back, and a row count to compare
+against the limit the call was given — and it is the same read a ranking needs
+next, so the cord costs no second call. **Two facts travel with "no cord is
+open": how much of the open queue the read priced, and whether it finished or
+stopped at a limit.** The first is a comparison, so the open queue's own count is
+part of the answer rather than a separate curiosity: a ticket the priced read
+never returned is invisible to any check made only against the rows it did. An
+answer carrying neither fact says only that a call returned.
+
 `work-discovery` owns what the loop does about it.
 
 **A P1 found at the gate is searched for before it is filed.** A red gate

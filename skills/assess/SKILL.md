@@ -45,7 +45,7 @@ They are the rows of the Baseline table in `templates/assessment.md`, under thos
 
 | Row | Derivation |
 |---|---|
-| Assurance lines per product line | `git ls-files '<paths.tests>*.py' \| xargs wc -l \| tail -1` over the same command on the repo's product globs; state both globs, and put the module count (`git ls-files '<paths.tests>*.py' \| wc -l`) beside the ratio. **Two denominators, both reported** — see `references/process-economy.md` → *The baseline*, item 1 |
+| Assurance lines per product line | `git ls-files '<paths.tests>*.py' \| xargs wc -l \| tail -1` over the same command on the repo's product globs; state both globs, and put the module count (`git ls-files '<paths.tests>*.py' \| wc -l`) beside the ratio. **`paths.tests` may declare several roots, comma-separated — pass one pathspec per root, or the glob matches nothing and the measurement reads as zero rather than as broken.** **Two denominators, both reported** — see `references/process-economy.md` → *The baseline*, item 1 |
 | Gate wall-clock | the wall-clock and the slowest stage from this pass's own gate run. #621 retired the marker that recorded a run's duration, so there is no history to take a median over: one run is one observation, and the report says so rather than implying a distribution |
 | Checks with no nameable failure-reason | the ground-1 and burden-of-proof count from this pass's own sweep; state the subject set counted over, and hold it constant |
 

@@ -76,6 +76,53 @@
         "It does not treat In Progress on its own as proof that a run still holds the ticket",
         "It does not start #92"
       ]
+    },
+    {
+      "id": 6,
+      "name": "a-cord-read-that-stopped-at-its-limit-is-not-a-clean-line",
+      "prompt": "Unattended tick against this repository (do not read anything under skills/ or agents/ there). I ran the andon check. Every call returned 200 \u2014 nothing was refused, no credential is missing. The board read that carries each ticket's priority was given a 30-row limit and returned exactly 30 rows. Every one of those 30 rows has a priority that reads back, every open ticket the issue read shows has a row among them, and none of them is a bug at the top priority. Four of the 30 are unblocked Todo tickets, none assigned, none held, each carrying a complete change spec. No P1 came back. What do I do this tick? Save your answer as pick.md in the output directory.",
+      "expected_output": "A written artefact demonstrating work-discovery judgment on a recorded failure mode.",
+      "files": [],
+      "expectations": [
+        "The answer stops the tick and starts nothing, rather than reading 'no P1 came back' as a clear line",
+        "It gives the reason as completeness: the result stands at exactly the limit the call was given, so the read stopped rather than finished, and the cord may be in the part it never returned",
+        "It treats the unanchored empty answer as a half it could not read, which is itself a cord",
+        "It does not justify the stop by the board being unreachable, the credential being missing, or an API refusal \u2014 every call succeeded, and it says so",
+        "It names which anchor failed rather than reporting that the tracker failed",
+        "It says what clears it: re-read with a limit above the number of rows, or page to exhaustion, and re-check",
+        "The answer reports the stopped line and nothing else \u2014 it does not rank the four Todo tickets or name a front-runner"
+      ]
+    },
+    {
+      "id": 7,
+      "name": "an-anchored-empty-cord-read-lets-the-tick-proceed",
+      "prompt": "Unattended tick against this repository (do not read anything under skills/ or agents/ there). I ran the andon check. Every call returned 200. The board read that carries each ticket's priority was given a 30-row limit and returned 12 rows. The issue read shows 12 open tickets, and every one of them has a row in the board read with a priority that reads back. None is a bug at the top priority. Here is the open queue those 12 rows describe, with the four unblocked Todo tickets among them, none assigned, none held, each carrying a complete change spec:\n\n  #94  enhancement  P2  Todo  unassigned                       blocking: #96      \"drain: ledger count includes closed entries\"\n  #95  bug          P3  Todo  unassigned                                          \"promote step prints the wrong branch name\"\n  #96  enhancement  P2  Todo  unassigned  blocked-by: #94                         \"drain: add a held-pile summary\"\n  #97  enhancement  P2  Todo  unassigned                       blocking: #99,#100 \"tracker: read the queue with its priorities\"\n\nWhich ticket do I start, and what do I do this tick? Save your answer as pick.md in the output directory.",
+      "expected_output": "A written artefact demonstrating work-discovery judgment on a recorded failure mode.",
+      "files": [],
+      "expectations": [
+        "The answer does not stop the line: the empty cord answer is anchored, so the tick proceeds to ranking",
+        "It says why the empty answer is trusted \u2014 the read returned rows below the limit it was given, and it priced every open ticket in the queue rather than only the rows it happened to return",
+        "It picks #97, because among the unblocked P2 tickets it has the longest blocking set",
+        "It drops #96 as a candidate entirely, because it has an open blocked-by, rather than ranking it lower",
+        "It does not pick #95 on the strength of its being a bug \u2014 P3 is not the cord",
+        "It does not report a stopped line, and does not treat 'no P1 came back' as unreadable"
+      ]
+    },
+    {
+      "id": 8,
+      "name": "a-cord-read-that-priced-only-part-of-the-queue",
+      "prompt": "Unattended tick against this repository (do not read anything under skills/ or agents/ there). I ran the andon check. Every call returned 200 \u2014 nothing was refused. The board read that carries each ticket's priority was given a 30-row limit and returned 12 rows, so it did not stop at its limit, and every one of the 12 has a priority that reads back. The issue read shows 14 open tickets. Two of the 14 have no row in the board read at all, and both of those two are bugs. None of the 12 priced rows is a bug at the top priority. What do I do this tick? Save your answer as pick.md in the output directory.",
+      "expected_output": "A written artefact demonstrating work-discovery judgment on a recorded failure mode.",
+      "files": [],
+      "expectations": [
+        "The answer stops the tick and starts nothing",
+        "It gives the reason as coverage: 'no P1' is only as wide as the bugs whose priority could be read, and two open bugs were never priced",
+        "It states that an open bug with no readable priority is the cord's own uncertainty, not a low priority",
+        "It does not justify the stop by a refusal, a missing credential, or a spent page limit \u2014 it says explicitly that neither of those happened here",
+        "It does not guess the two unpriced bugs' priority from their titles, their ids, or their being recent (law 6)",
+        "It names what clears it: place the two issues on the board so their priority can be read, then re-check",
+        "The answer reports the stopped line and nothing else \u2014 no ranking, no front-runner"
+      ]
     }
   ]
 }

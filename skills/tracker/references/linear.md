@@ -181,8 +181,15 @@ the andon cord's P1. Set it in the same `issueCreate` input, or afterwards:
 
 ```bash
 LINEAR 'mutation { issueUpdate(id: \"<issue-id>\", input: { priority: 1 }) { success } }'
-LINEAR 'query { issues(filter: { priority: { eq: 1 }, state: { type: { neq: \"completed\" } } }) { nodes { identifier title labels { nodes { name } } } } }'
+LINEAR 'query { issues(filter: { team: { key: { eq: \"<team-key>\" } }, state: { type: { neq: \"completed\" } } }) { nodes { identifier title priority labels { nodes { name } } } pageInfo { hasNextPage } } }'
 ```
+
+The read asks for the open queue with its priority rather than filtering on
+`priority: { eq: 1 }` (`tracker` → *The andon cord*). One query carries both
+halves here, since `priority` and the labels sit on the same issue, so coverage
+is met by any row that returns a priority. `pageInfo.hasNextPage` is how the
+connection reports that it stopped: `true` is a truncated read whatever the nodes
+contain, and a truncated read cannot support an empty cord answer.
 
 ## `ledger`
 

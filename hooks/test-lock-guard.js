@@ -18,6 +18,18 @@
  * test-file diff and the declared gate. Whatever a repository runs server-side
  * is its own and is not claimed here (ADR 0022 point 2).
  *
+ * **A move or a rename is an edit**, and it reaches here as whatever path the
+ * tool names: `Write` names the destination, and an `apply_patch` header naming
+ * a governed path under `Add`, `Update` or `Delete` is refused like any other
+ * edit to it. A rename through `Bash` is invisible for the reason above, and
+ * `specs/harness-assumptions.md` records that gap with the test that would
+ * retire it.
+ *
+ * **Past `engineering`'s 300-line soft limit, deliberately.** #659 replaced one
+ * prefix test with a declared-roots-times-declared-globs predicate; the added
+ * length is that predicate and the reasons each half of it refuses what it
+ * refuses, which is the part a reader needs most in a file that blocks work.
+ *
  * **The refusal is a speed bump with a recorded escape, by design.** Releasing
  * the lock is one edit to a gitignored file — and that edit is exactly what
  * makes the bypass deliberate and reviewable instead of silent.
@@ -141,14 +153,116 @@ function runState(top) {
   }
 }
 
-/** ``paths.tests`` as a posix prefix ending in one slash, or null. */
-function testRoot(config, top) {
+//: The governed set is **declared roots times declared basename globs** (#659).
+//: `paths.tests` carries the roots, comma-separated; the optional
+//: `paths.test_files` carries basename globs that narrow which files under them
+//: are governed. Absent globs govern everything under a root, which is the rule
+//: this hook shipped with and is what keeps an existing consumer's refusals
+//: exactly where they were.
+
+/** The roots ``paths.tests`` declares, each a posix prefix ending in one slash.
+ *
+ * An entry that is empty after normalising is dropped: ``tests/, `` declares one
+ * root, not two. **What makes that safe is the trailing slash, not this filter**
+ * — an undropped empty entry becomes ``"/"``, and no repo-relative path starts
+ * with a slash, so it matches nothing. Mutation says so: removing the filter
+ * alone kills no test, because it cannot. The filter is here to keep a root
+ * nobody declared out of the set; the catastrophic value is ``""``, which
+ * ``startsWith`` admits for every path in the tree, and the append is what the
+ * set is never allowed to lose.
+ */
+function testRoots(raw) {
+  if (typeof raw !== "string") return [];
+  const roots = [];
+  for (const entry of raw.split(",")) {
+    const normalised = entry.trim().replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/+$/, "");
+    if (normalised) roots.push(normalised + "/");
+  }
+  return roots;
+}
+
+/** The basename matchers ``paths.test_files`` declares.
+ *
+ * ``null`` — not declared: every file under a root is governed, the shipped rule.
+ * ``false`` — declared and unusable: govern nothing, and say so.
+ * ``RegExp[]`` — the declared set, each anchored at **both** ends.
+ *
+ * ``*`` is the only metacharacter and every other character is a literal, ``.``
+ * included. Anchoring at both ends is load-bearing: head-anchored, ``*.test.ts``
+ * also matches ``foo.test.ts.snap``, and a snapshot file is not a test.
+ *
+ * An entry carrying ``/`` is a **path** glob, which this matcher does not
+ * implement, and it is refused whole rather than silently never matching. The
+ * fallback direction is the decision: widening to blanket root coverage would
+ * refuse every production edit under a declared source root on a typo.
+ */
+function testFileGlobs(raw) {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== "string") return false;
+  const entries = raw.split(",").map((entry) => entry.trim()).filter((entry) => entry !== "");
+  if (!entries.length) return false;
+  const globs = [];
+  for (const entry of entries) {
+    if (entry.includes("/")) return false;
+    const pattern = entry.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\\\*/g, "[^/]*");
+    globs.push(new RegExp("^" + pattern + "$"));
+  }
+  return globs;
+}
+
+/** Is ``rel`` in the governed set? Pure over its three arguments. */
+function governs(rel, roots, globs) {
+  let underAny = false;
+  for (const root of roots) {
+    if (rel === root.slice(0, -1) || rel.startsWith(root)) {
+      underAny = true;
+      break;
+    }
+  }
+  if (!underAny) return false;
+  if (globs === null) return true;
+  const slash = rel.lastIndexOf("/");
+  const base = slash === -1 ? rel : rel.slice(slash + 1);
+  return globs.some((glob) => glob.test(base));
+}
+
+/** ``{roots, globs}`` for the repo at ``top``, or null to leave the lock inactive.
+ *
+ * **The reader was already loud and this hook was deaf.** ``declaredPaths``
+ * reports every source it cannot parse, and the call here used to pass no
+ * reporter, so a declaration the reader refused — a yaml sequence under
+ * ``tests:``, an unhydrated ``{tests/}`` placeholder — was indistinguishable
+ * from a repo that declares nothing (#659, #302).
+ *
+ * The disabling is what stops being silent. No part of the lock survives an
+ * unreadable declaration: the reader refuses that map whole, and a guessed test
+ * root is the false-deny factory ``declaredPaths``' own docstring refuses.
+ * Failing **closed** is not available to a ``PreToolUse`` deny — it would refuse
+ * the edit to ``harness.yaml`` that clears it.
+ */
+function governedSet(config, top) {
   if (!config) return null;
-  const declared = config.declaredPaths(top);
-  const raw = declared && declared.tests;
-  if (typeof raw !== "string" || !raw.trim()) return null;
-  const normalised = raw.trim().replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/+$/, "");
-  return normalised ? normalised + "/" : null;
+  // Latched: the reader walks up to four sources and may report more than once,
+  // and this hook's notices are one line by convention.
+  let unreadable = null;
+  const declared = config.declaredPaths(top, (source) => {
+    if (unreadable === null) unreadable = path.basename(source);
+  });
+  if (unreadable !== null) {
+    failOpen("could not read the paths declaration, so the test lock is inactive", unreadable);
+    return null;
+  }
+  const roots = testRoots(declared && declared.tests);
+  if (!roots.length) return null;
+  const globs = testFileGlobs(declared && declared.test_files);
+  if (globs === false) {
+    failOpen(
+      "could not use the declared paths.test_files globs, so the test lock is inactive",
+      "basename globs only, and none may contain a slash"
+    );
+    return null;
+  }
+  return { roots, globs };
 }
 
 /** The repo-relative posix path of ``file``, or null when it is outside ``top``. */
@@ -157,10 +271,6 @@ function relativeTo(top, dir, file) {
   const rel = path.relative(top, abs).split(path.sep).join("/");
   if (!rel || rel === ".." || rel.startsWith("../") || path.isAbsolute(rel)) return null;
   return rel;
-}
-
-function underRoot(rel, root) {
-  return rel === root.slice(0, -1) || rel.startsWith(root);
 }
 
 /** Does ``rel`` exist in the tree the run branched from? */
@@ -229,15 +339,15 @@ function verdict(input) {
   }
   if (state.tests_locked !== true) return null;
 
-  const root = testRoot(loadConfig(), top);
-  if (!root) return null;
+  const governed = governedSet(loadConfig(), top);
+  if (!governed) return null;
 
   const lane = LANES[state.lane];
   const base = typeof state.base_commit === "string" ? state.base_commit : "";
 
   for (const file of files) {
     const rel = relativeTo(top, dir, file);
-    if (rel === null || !underRoot(rel, root)) continue;
+    if (rel === null || !governs(rel, governed.roots, governed.globs)) continue;
     if (lane !== "fix") return rel;
     // The fix lane may add a test. "New" is absence from the tree the run
     // branched from — not from the filesystem, which would deny the author's

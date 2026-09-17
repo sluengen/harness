@@ -379,10 +379,14 @@ function declaredBranches(top, onUnreadable) {
 
 /** The ``paths:`` map the repo at ``top`` declares — the tree's named directories.
  *
- * Read by ``hooks/test-lock-guard.js`` for ``paths.tests``, which is the only
- * thing that tells the test lock which files it governs. Guessing that set
- * instead would make the hook a false-deny factory, so an undeclared ``paths:``
- * leaves the lock inactive rather than protecting a directory nobody named.
+ * Read by ``hooks/test-lock-guard.js`` for ``paths.tests`` and the optional
+ * ``paths.test_files``, which together are the only thing that tells the test
+ * lock which files it governs. Guessing that set instead would make the hook a
+ * false-deny factory, so an undeclared ``paths:`` leaves the lock inactive
+ * rather than protecting a directory nobody named. Both are plain scalars here:
+ * a repo declaring more than one root separates them with commas, because a
+ * yaml sequence is a spelling this reader refuses and it takes the whole
+ * ``paths:`` map down with it.
  */
 function declaredPaths(top, onUnreadable) {
   return readMap(top, "paths", onUnreadable);

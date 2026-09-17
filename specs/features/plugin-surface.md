@@ -624,7 +624,8 @@ dead files, not a red gate (#629).
 **One hook refuses and three advise, and none reads a verdict:**
 
 - `test-lock-guard.js` (PreToolUse: `Write`|`Edit`, and Codex's `apply_patch`) refuses
-  an edit to a file under the repo's declared `paths.tests` while the run has declared
+  an edit to a file the repo's declared `paths.tests` roots and its optional
+  `paths.test_files` basename globs govern between them, while the run has declared
   its tests locked — the hook half of law 7, detailed below. It reads `version`,
   `tests_locked`, `lane` and `base_commit` out of `.harness/run.json` and no `stage`,
   so a change to that vocabulary cannot move what it denies. It is the only refusal
@@ -656,9 +657,10 @@ place where #621 moved the guarded count and left the sentence beside it standin
 The same `hooks/hooks.json` serves both hosts. The PreToolUse scripts normalize Claude Code's `tool_name` / `tool_input` and Codex's corresponding payload before evaluating the request. Claude decisions retain their existing output contract. A Codex advisory returns `hookSpecificOutput.additionalContext`; a benign Codex request and every Codex fail-open catch path exit successfully with no stdout, rather than emitting the unsupported `{continue:true}` response. `prompt-guard.js` and `workflow-guard.js` also read Codex `apply_patch` requests from `tool_input.command`.
 
 `push-target-guard.js` and `plugin-version.js` resolve `branches:` through
-`scripts/harness-config.js`, and `test-lock-guard.js` resolves `paths.tests` through
-the same module; those two accessors are its whole public surface since #621. The
-reader searches `harness.yaml`, `AGENTS.md`, `CLAUDE.md` and `CONTEXT.md` in that
+`scripts/harness-config.js`, and `test-lock-guard.js` resolves `paths.tests` and,
+since #659, the optional `paths.test_files` through that same module's one
+`declaredPaths` accessor; those two accessors are its whole public surface since
+#621. The reader searches `harness.yaml`, `AGENTS.md`, `CLAUDE.md` and `CONTEXT.md` in that
 order for a source that declares the key, so a repo hydrated before v5, or before
 #537, keeps working unchanged. The grammar below is that one reader's and is
 **untouched by the narrowing** — the export set shrank, the parser did not.
@@ -771,7 +773,7 @@ meets it fixes it then.
 
 ### The test lock and the run file
 
-`hooks/test-lock-guard.js` is one of four shipped hooks and, since #621, the only one that refuses. It arms only when three facts hold together: the repository resolved from the **edited file's** directory carries `.harness/run.json`, that file is version `1` and says `tests_locked: true`, and `harness.yaml` declares `paths.tests` — read through the shared reader's `declaredPaths` accessor, which since #621 is one of that module's two remaining exports rather than one of eleven. Any one of the three missing leaves the lock inactive, which is the state of every repo that never adopts the run file and of every session in this one that is not a build. Under the lock, an edit to a path under the declared test root is refused in the `change` and `feature` lanes and in any lane value the hook does not recognise — the permissive branch belongs to `fix` alone, so a typo, a truncated write or a lane invented later locks rather than unlocks. The `fix` lane may **add** a test file, where *new* means absent from `base_commit`'s tree: not absent from the filesystem, which would refuse the fix lane's own second edit to the file it just wrote, and not absent from the index, which flips the moment a run stages for review. Because the repository is resolved from the edited file rather than from the hook's own directory, a locked run in one worktree never reaches another worktree of the same repo, which matters where concurrency is the norm (law 5).
+`hooks/test-lock-guard.js` is one of four shipped hooks and, since #621, the only one that refuses. It arms only when four facts hold together (#659 made the third and fourth what they are): the repository resolved from the **edited file's** directory carries `.harness/run.json`, that file is version `1` and says `tests_locked: true`, the `paths:` map reads — through the shared reader's `declaredPaths` accessor, which since #621 is one of that module's two remaining exports rather than one of eleven — and declares at least one `paths.tests` root, and any `paths.test_files` it declares is a set of basename globs this hook can build. Any one of the four missing leaves the lock inactive, which is the state of every repo that never adopts the run file and of every session in this one that is not a build; the last two say so on stderr under an armed run rather than going quiet, which is the half of #659 that is not about membership. Under the lock, an edit to a path the roots and globs govern between them is refused in the `change` and `feature` lanes and in any lane value the hook does not recognise — the permissive branch belongs to `fix` alone, so a typo, a truncated write or a lane invented later locks rather than unlocks. The `fix` lane may **add** a test file, where *new* means absent from `base_commit`'s tree: not absent from the filesystem, which would refuse the fix lane's own second edit to the file it just wrote, and not absent from the index, which flips the moment a run stages for review. Because the repository is resolved from the edited file rather than from the hook's own directory, a locked run in one worktree never reaches another worktree of the same repo, which matters where concurrency is the norm (law 5).
 
 Two details are load-bearing and were found rather than designed. The repository is resolved from the edited path's nearest **existing** ancestor directory, because a `Write` creates the file *and* its directory: a `git` probe in a directory that is not there yet fails, no repository resolves, and the lock is simply off — `mkdir tests/new/` was a one-command bypass, and three lookalike controls had been passing vacuously against a predicate the hook never reached. And the refusal names the offending path, the law, and the escape — return the run to `stage: "tests"` with `tests_locked: false`, record why on the ticket, and expect the reviewer to ask — while echoing **nothing** from the model-writable run file into a reason that re-enters a model's context (law 6); the path itself is reduced to path characters and truncated.
 
@@ -2221,6 +2223,112 @@ none of the four clauses renames a command, changes an argument, or changes
 what a call does or refuses.
 
 
+### #661: an empty cord answer must show coverage and completeness, as built
+
+The andon cord's read used to treat one empty result as proof of a clear line,
+and a truncated page, a wrong board scope and a clean queue all produce that
+result at exit 0. Five surfaces moved, all prose and its evals; nothing
+executes, so nothing was guarded.
+
+- `skills/work-discovery/SKILL.md` → *Andon* gains the judgment, beside the
+  pre-existing *A half you cannot read is itself a cord*: an empty answer is
+  trusted only where the read shows **coverage** — every open bug in the open
+  queue, read in every state, has a priority that reads back — and
+  **completeness** — no call the check made stopped at a limit it was given.
+  Coverage is written as a set difference over ticket identities with the
+  *issue* read as the denominator, and says in terms that equal counts prove
+  nothing; taking the priced read as the denominator is the vacuity the anchor
+  exists to prevent. One re-read precedes a stop, and an anchor that a re-read
+  clears only in part has failed. The disposition is **not** restated: an
+  answer that cannot show both anchors "stops the tick exactly as an unreadable
+  field does", inheriting the stop, the report contents and the
+  no-ranking rule from the sentences already there.
+- `skills/work-discovery/SKILL.md` → *What a stopped tick outputs* widens its
+  first of three things from "the field that failed to read" to include "the
+  anchor the read could not show", so the operator reads a repair rather than
+  "the tracker failed".
+- `skills/tracker/SKILL.md` → *The andon cord* gains the read shape, which is
+  the producer's half: **ask for the queue and its priorities, never for the
+  P1s**, because a server-side filter on the top priority answers a clear
+  queue, a spent limit, a renamed field and a wrong scope with one empty page.
+  The paragraph names the two facts that must travel with "no cord is open"
+  and stops short of what the loop does about them; the pre-existing
+  "`work-discovery` owns what the loop does about it" still stands after it
+  and is what keeps the disposition stated once.
+- `skills/tracker/references/github.md` gains *The cord read — the open queue
+  with its priorities*: the issue list joined to the board read by issue
+  number, with `field-list` for the Priority option ids, and the join stated as
+  what makes the answer about this queue. The same edit gives an explicit
+  `--limit` to the three recipes that carried none — `create` step 4,
+  `transition`, and the held pile — under one paragraph requiring it of every
+  read in the file. Those three are outside the cord path and are in this
+  change because the paragraph above them would otherwise be false where it
+  stands.
+- `skills/tracker/references/linear.md` replaces the `priority: { eq: 1 }`
+  query with a team-scoped open-queue read carrying `priority` and
+  `pageInfo.hasNextPage`. One query carries both halves there, so coverage is
+  met by any row that returns a priority and `hasNextPage` carries
+  completeness.
+- `skills/work-discovery/evals/evals.json` gains evals 6, 7 and 8 — a read
+  standing at its limit (completeness fails, the tick stops), an anchored empty
+  read (both hold, the tick proceeds and picks), and a read that priced only
+  part of the queue (coverage fails, the tick stops). Evals 1–5 are untouched.
+  Nothing under `evals/` is a test — `pyproject.toml` sets
+  `testpaths = ["tests"]` — and no test file changed in this ticket's commit.
+
+**The evidence is prose evidence, and that is the correct class.** Every
+criterion here is about what a document says, so law 2's measuring test does not
+attach and ADR 0017 D5 admits no guard over what prose means; the evidence is
+direct review plus the evals, which is the same form #664 shipped into this
+same evals file, for this same section, at 12.3.0.
+
+**The version class is major, decided at this review: `13.0.0`.** A tick that
+returned a pick now returns a stopped line for a reason no consumer has met,
+the rule keys on nothing declared, and it fires on every tick and every
+backend, so a consuming repo whose board read is capped or whose bugs are not
+all placed must act before its loop runs again. The grammar in
+`specs/architecture-principles.md` makes a changed refusal reason major and a
+major reaches a consumer as a decision rather than an auto-pull. The contrast
+is in this file: #664's claim mechanism stayed at the minor floor precisely
+because it is inert where a repo declares no `loop.cord_claim_minutes`, so an
+unchanged consumer met no new refusal. This one has no such switch. The
+counter-argument — that the stop already existed, so this is an implementation
+swap — reads the disposition rather than the reason, and the grammar names the
+reason. The raise was made by hand in the five version homes inside the
+candidate before the certifying gate, and it covers the whole branch, #659
+included.
+
+**Three residuals, named rather than fixed.**
+
+- **The empty queue is unnamed.** Coverage quantifies over the open bugs in the
+  queue, so a tracker holding none satisfies it vacuously and completeness
+  holds at zero rows below any limit; on the text alone the tick proceeds and
+  finds nothing to rank, which `skills/routine/SKILL.md` step 1 already calls a
+  clean outcome. A fresh-context probe run at this review, given the *Andon*
+  section alone and that scenario, stopped the line instead — on a misreading
+  of completeness as needing the row count confirmed from outside the read. Its
+  control, the same section and the same prompt shape with a 14-row result,
+  read completeness correctly, so the misreading is specific to a result with
+  nothing in it rather than a general stop-everything risk. The Decision block
+  below first recorded this case as a coverage failure and an accepted cost;
+  that sentence described the positive-control anchor the block rejects, and it
+  is corrected there.
+- **`tracker`'s half says "count" where `work-discovery` says identities.** The
+  producer clause reads "how much of the open queue the read priced" and "the
+  open queue's own count is part of the answer", then states the identity
+  argument in the clause after it. The operative instruction — read the open
+  queue as well as the priced rows — is right, and the consumer skill that owns
+  the judgment states the set difference twice and emphatically, so no run is
+  misdirected; the phrasing is the weaker of the two homes for the sentence the
+  design says a first draft got wrong.
+- **Linear's priority 0.** `priority` is a non-null integer there and `0` means
+  *No priority*, so an unprioritised open bug returns a priority and satisfies
+  coverage on Linear while the same state — a bug with no readable priority —
+  fails it on GitHub, where Priority is a board field that can be unset. The
+  two backends therefore disagree about one state that the shipped rule calls
+  "the cord's own uncertainty".
+
+
 ## Data model
 
 **No persistent state beyond the tree itself, since #621.** The gate marker under `<git-common-dir>/harness/gate/` and the `refs/harness/*` namespace #539 added — gate records, claims and the green pointer — are both deleted, and nothing writes either. The one file that survives is `.harness/run.json`, which is gitignored, records where a run is rather than what is true of the tree, and is read by exactly one hook. This was never a run ledger (ADR 0015) and it is less of one now.
@@ -2448,6 +2556,25 @@ For a consumer already hydrated, step 3 retains their `harness.yaml` whatever it
 **Alternatives.** *A lock file or a lease service* — refused: it re-implements what a tracker already is, and adds a second thing that can be abandoned. *Ticket state alone, In Progress meaning claimed* — refused, and the observed failure is the refusal: the second tick saw In Review and could not tell an active handoff from an abandoned one. *An assignment-based claim* — refused: assignment is the hold signal the loop skips on (the spine's contract), so a claim written there makes a cord unpickable by construction. *The issue's `updatedAt`* — refused: every label edit and every unrelated comment refreshes it, so it measures attention rather than repair. *A claim on every ticket* — refused: In Progress already carries that for every ticket but the cord, and a second defence on one operand is what P0 names.
 
 **Consequences.** A duplicate repair now costs an idle tick and a report instead of a build, a review and a landing gate. Nothing enforces the claim write: it is guidance a run performs, like the limit (P2 refuses a guard over prose), so a run that skips it leaves the cord looking unclaimed and the old behaviour returns for that cord. The claim is inert in a repo that declares no `loop.cord_claim_minutes`, which is what keeps this release a minor: an unchanged consumer sees no new refusal, and fail-closed there would read every claim as live forever and wedge that repo's queue behind one unclosed cord. #661 edits the same `work-discovery` section without colliding — it governs the read that finds the cord, this governs a second read on a cord already found — and if #661 lands first, the claim read inherits its fail-closed posture unchanged.
+
+### Decision: An empty cord answer is trusted only where the read shows coverage and completeness
+
+*Decided at the design stage of #661, 2026-09-17.*
+
+**Context.** The andon cord's read treated an empty result as proof of a clear line. One run received an empty answer while an urgent open bug existed, and the same query returned that bug later. Two mechanisms make a silent empty easy and both exit 0: a board read with no explicit limit truncates on a board that outgrew the default, and a renamed field, wrong option id or wrong board scope answers "empty" with the same status as a clear queue. The cord's two halves also arrive over two transports on GitHub — labels by issue, priority by board, since Projects v2 has no REST API — so the halves can disagree while both succeed. The shipped rule covered a read that *announces* failure and said nothing about one that succeeds and returns nothing.
+
+**Decision.** The cord read asks for the open queue with its priorities and finds the cord in it, never asking the server for the matches. An empty answer is trusted only where the read shows **coverage** — every open bug *in the queue* carries a priority that reads back — and **completeness** — no call the check made stopped at a limit it was given. A run re-reads before it stops, since both anchors fail in ways one more call clears. An answer that cannot show both is a half that could not be read, which the existing rule already makes a cord, so the disposition is stated once and inherited rather than restated.
+
+**Coverage is a comparison, and that is the part a first draft got wrong.** Written as "every open bug *in the read*", the anchor quantifies over the rows returned and therefore reads *pass* in exactly the scenario it exists for: a bug the board never received is invisible to any check made only against the rows in hand. A fresh-context probe executing the drafted text found this, having answered the scenario correctly only by falling back on the sentence after the anchor. The anchor now names both counts — the open queue, and the set the read priced.
+
+**Alternatives.**
+- *A second confirming read, or a known-open canary ticket* — a second monitoring mechanism, and on GitHub it anchors the issue transport while the observed failure was on the board. The ticket's own Approach suggested resolving the run's own ticket; it does not reach the failing half, and `/routine` runs the andon check before it holds any ticket.
+- *A tracker health probe or service* — scoped out on the ticket, and P0 refuses a mechanism where a property of the existing read serves.
+- *Treat every empty answer as a cord* — stops every clean tick; the rule would be switched off within a release.
+- *Coverage as "at least one overlapping row"* — cheaper, and blind to the case that happens: a board holding some issues and not others returns rows, readable priorities and an overlap while leaving open bugs unpriced.
+- *A guard over the guidance* — refused by ADR 0017 D5 and law 2. The evidence is the evals, used.
+
+**Consequences.** A repo whose board read is capped or partial now gets a stopped tick where it used to get a pick, and no configuration exempts it: the rule keys on nothing declared and fires on every tick, on every backend. That is a refusal reason no consumer has met, which is what this cycle's version class turns on. One cost is accepted rather than solved: an open bug left off the board stops the line until it is placed — the item-add-no-status trap made loud rather than a new failure. *Corrected at review, 2026-09-18:* a second accepted cost stood here — a repo whose tracker holds zero open tickets failing the coverage floor on its first tick. Coverage quantifies over the open bugs in the queue, so a queue holding none satisfies it vacuously; that sentence described the positive-control anchor this block rejects rather than the one that shipped. What an empty queue actually does is a residual the shipped text does not name, and the as-built entry above records it with the probe that measured it. The claim read gains no obligation: it names one ticket that must resolve, and the non-optional `--paginate` on the comments call already holds its completeness, so the block above expecting the claim read to inherit this posture is met without a second rule. `/routine`'s report gains the anchor that failed, so an operator reads a repair rather than "the tracker failed".
 
 ### Decision: `/build` establishes ownership by ordering, and the host signal carries no clock
 
@@ -2821,6 +2948,146 @@ a role body reads differently, and nothing that dispatches a workflow changes
 what it accepts or returns. Verified at certification: `bash scripts/verify.sh` —
 ruff, mypy, 614 tests passed, 85.47% coverage against the 85% floor, design-token
 drift guard clean.
+
+
+### What #659 stated, as built
+
+The test lock's membership stopped being one prefix and became **declared roots
+times declared basename globs**. One file decides it —
+`hooks/test-lock-guard.js`, 292 lines at `6fc1daf7` and 402 at this tree — and
+two record it: `templates/harness.yaml`, which is what a consumer reads, and the
+Decision block this change added to `specs/architecture-principles.md`. The guard
+is `tests/unit/test_test_lock_hook.py`, which gained the rows below.
+
+**`paths.tests` carries several roots inside the one scalar, comma-separated,
+and `scripts/harness-config.js` did not change to read them.** `testRoots`
+splits on commas and normalises each entry, appending the trailing slash **per
+entry** rather than once to the whole value — the boundary a lookalike sibling
+(`srcx/app.ts` against a declared `src/`) tests for, carried onto every entry of
+the list. An entry empty after normalising is dropped; the row that pins that
+holds the *composition* of the drop and the per-entry append, because an
+undropped empty entry becomes `"/"` and matches nothing, while the catastrophic
+value `""` is reachable only by losing the append. That distinction was found by
+mutation, not by reading, and the correction is recorded below.
+
+**`paths.test_files` is new, optional, and narrowing only.** Absent, every file
+under a root is governed — the rule the hook shipped with, which is how an
+existing consumer's refusals stay exactly where they were with no configuration
+change. Declared, a file is governed only where its basename matches one of the
+globs, anchored at **both** ends with `*` the single metacharacter: head-anchored
+alone, `*.test.ts` would admit `foo.test.ts.snap`, and an unescaped `.` would
+admit `unitXtestYts`. An entry carrying a `/` is a path glob this matcher does
+not implement and is refused whole, which leaves the lock inactive and says so —
+deliberately *not* falling back to blanket root coverage, because the fallback
+that preserves protection is the one that refuses every production edit under a
+declared source root on a typo, and a `PreToolUse` refusal cannot be cleared from
+inside the hook.
+
+**The reader was already loud and the hook was deaf.** `declaredPaths` reports
+every source it cannot parse; the old `testRoot` passed no reporter, so an
+unsupported spelling — a yaml sequence under `tests:`, an unhydrated `{tests/}`
+placeholder — was indistinguishable from a repo that declares nothing.
+`governedSet` now passes a latched reporter that writes through the hook's own
+`failOpen`. Measured here on four synthetic repos: a quoted comma inside a flow
+mapping (`paths: {tests: "tests/, src/", …}`) reads; an **unquoted** comma there,
+and a `test_files` whose value is an empty quoted scalar, each take the **whole**
+`paths:` map down and are reported — which is why the template's new comment
+tells a consumer to quote the value in a flow mapping.
+
+**AC-2 is met as "loudly" rather than as "fails closed", and that reading is
+recorded rather than assumed.** The criterion reads *fails loudly instead of
+disabling the lock*; what ships fails loudly **while** disabling it. The ticket's
+own Problem paragraph names the defect as multiple roots *silently* deactivating
+the reader, and the primary case is no longer a deactivation at all — a
+comma-separated declaration now works. For the residue, an unreadable `paths:`
+map, the lock has nothing to govern: the reader refuses that map whole, and a
+guessed test root is the false-deny factory `declaredPaths`' own docstring
+refuses. A naive fail-closed would refuse the edit to `harness.yaml` that clears
+the error; the narrower true statement, which the Decision block's alternatives
+carry, is that fail-closed is rejected as the catastrophic direction for a hook
+that blocks work, not that no exempting form of it could be built.
+
+**AC-4 ships as the `Delete File:` pin plus prose, and the design's `Move to:`
+alternation was deliberately dropped.** AC-4's subject is a *governed* test being
+moved or renamed, and every mechanism this hook sees already names that file:
+`Write` names the destination, and an `apply_patch` header names the old path
+under `Update File:` or `Delete File:`. `Delete File:` was in `editedPaths`'
+alternation and untested, so the row pins it and the mutant that removes the
+alternation kills it. The `*** Move to:` spelling could not be grounded anywhere
+in this tree, and an alternation added on an unverified spelling would be a
+guard over a guess. What stays open is the reverse direction — a move whose
+*destination* is governed and whose source is not — and it is open only through
+that unverified spelling. The rename this hook genuinely cannot see is the one
+through `Bash`, which `specs/harness-assumptions.md` already records as a known
+gap on the same row as the `sed -i` and heredoc cases.
+
+**The run returned to its `tests` stage once, for a docstring.** Mutation
+reported `empty-entry-kept` as SURVIVED, and the diagnosis was a false mechanism
+claim rather than a weak row: the docstring said an undropped empty entry yields
+a root of `""`. It yields `"/"`. The docstring now says what the row holds and
+names the sibling that kills the catastrophic case. The diff between `e52917d5`
+and `431bbab7` over `tests/` is that docstring and nothing else — no assertion,
+fixture or parametrisation moved — and the hook's own comment carrying the same
+false claim was corrected in the same commit.
+
+**The retirement sweep.** `testRoot` and `underRoot` are gone and have no
+surviving callers. `templates/harness.yaml`'s "one directory each, never a list"
+comment is replaced by the multi-root and `test_files` instructions.
+`scripts/harness-config.js`'s `declaredPaths` docstring names both keys and the
+reason a sequence is refused. `skills/assess/SKILL.md`'s assurance-ratio row
+warns that its `git ls-files '<paths.tests>*.py'` interpolation needs one
+pathspec per root, since a comma inside one pathspec matches nothing and reads as
+zero rather than as broken. `skills/build/SKILL.md`'s single clause about an
+undeclared `paths.tests` becomes the AC-3 coverage report. In this record, the
+hooks-list bullet, the `declaredPaths` sentence and *The test lock and the run
+file*'s arming enumeration are rewritten above. Two neighbouring sentences were
+checked and deliberately left: the #622 narrowing risk at *The sharpest risk was
+AC-4's* — "indistinguishable from a repo that declares no `paths.tests`" — is
+about a **dropped export**, which throws and takes the hook's outer catch both
+before and after #659, and its silent residue (a repo declaring nothing, or an
+empty root list) is still silent by design; and
+`skills/engineering/evals/evals.json`'s scene-setting line about the hook
+refusing "any file under `paths.tests`" stays true of any repo declaring no
+`test_files`, which is every repo today including this one.
+
+**What it costs, stated where a consumer reads it.** Declaring globs narrows the
+dedicated tree too: `tests/conftest.py` and shared fixtures stop being governed
+the moment a repo declares `test_files`, which is the trade ERP-521 asks for and
+is not free, since a shared fixture is a place a cheat can live. `/build`'s new
+coverage report is what keeps that residue visible, and it is a report rather
+than a stop. Globs are repo-wide rather than per-root, so a repo covering two
+conventions enumerates both in one flat list. The hook passes `engineering`'s
+300-line soft limit — it is under the 500-line hard limit — with the reason in
+its own header.
+
+**The version class: the floor is correct.** Every point of the change was run
+through the compatibility grammar, not just one. No command or skill is renamed;
+no argument is renamed or removed; the refusal string is byte-identical to
+`6fc1daf7`'s; the set of calls refused is unchanged for every repo that declares
+one root and no `test_files`, which the module's pre-existing rows and
+`test_a_declared_root_with_no_globs_governs_every_file_under_it` hold together.
+`paths.test_files` is additive and opt-in, and `paths.tests` keeps its name and
+its meaning for every value that contains no comma. The one repo whose behaviour
+moves without touching its configuration is one that already wrote a comma and
+was running with the lock silently off; it gains the protection it configured
+for and has nothing to decide. Minor, so #659 asks for no raise of its own above
+the floor `/build` step 1 already took. The version this branch carries is
+`13.0.0`: #661, which shares the branch, was judged major at its own review and
+raised the five homes there, and a cycle's version is per cycle rather than per
+change.
+
+**Verification.** `bash scripts/verify.sh`, run and read at certification over
+the candidate carrying this record — ruff clean, mypy clean over three source
+files, 631 tests passed, 85.47% coverage against the 85% floor, design-token
+drift guard OK; and `scripts/mutate.py` re-run independently
+by the reviewer over the builder's eleven-entry table — eleven killed, each
+killing exactly the rows it predicted, reproducing the builder's figures. The
+fail-first half was measured rather than taken on trust: the module is 48 node
+ids, all green at this tree, and with `6fc1daf7`'s hook restored beneath it ten
+fail — the eight new rows carrying new behaviour, plus the one pre-existing row
+this change modified, which gained the stderr assertion. The seven new controls
+and pins stay green there, each carrying its own entry in the table that kills
+it, which is what stops a green control being read as evidence.
 
 
 ## Cross-references

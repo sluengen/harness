@@ -46,9 +46,21 @@ paths:
   decisions: specs/decisions/
   # Both belong to the design layer: uncomment and fill them where
   # `layers.design_system` is on, and leave them commented where it is off.
-  # One directory each, never a list — `scripts/harness-config.js` reads this
-  # block as scalars, so a sequence or a `{placeholder}` left here makes the
+  # Every value here is a scalar — `scripts/harness-config.js` reads this block
+  # as scalars, so a yaml sequence or a `{placeholder}` left here makes the
   # whole `paths:` map unreadable, and `paths.tests` goes with it.
+  #
+  # `tests` takes one root, or several separated by commas inside the one
+  # scalar: `tests: "test/, src/"`. Quote it in a flow mapping (`paths: {...}`),
+  # where an unquoted comma splits the mapping instead.
+  #
+  # `test_files` is optional and narrows which files under those roots the test
+  # lock governs — comma-separated basename globs, `*` the only metacharacter,
+  # matched whole. Leave it out and every file under a root is governed, which
+  # is what a repo with a dedicated test tree wants. Declare it where tests sit
+  # beside the code they cover, or where the tree holds support modules the lock
+  # should not refuse:
+  # test_files: "*.test.ts, *.spec.ts"
   # design_system: design/      # where this repo's design system lives
   # ui_source: src/             # the UI source root the design rule binds to
 env:
