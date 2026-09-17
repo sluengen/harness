@@ -1307,10 +1307,12 @@ runs earlier in the same layer-on run and seeds the Codex twin `AGENTS.md` *into
 design directory*, so a copy gated on the destination **directory** being absent would
 find it present in every ordinary run, copy nothing, and report success over a consumer
 holding an `AGENTS.md` and no tiers. Asking per file is hydrate's own root rule — absence
-licenses creation — rather than an exception to it, and it makes `AGENTS.md` resolve
-itself: step 5 writes it first, so the per-file rule finds it present and skips it. A
-consumer that already owns a design system keeps every file of it and receives only the
-ones it lacks. The first cut of this change gated on the directory and was caught at
+licenses creation — rather than an exception to it. The reading this record shipped,
+that `AGENTS.md` resolves itself because step 5 writes it first and the per-file rule
+then finds it present, was an ordering rather than a rule and **#668 retired it**: the
+file is out because no row of the skill's table names it, in every run and whether or
+not step 5 wrote a twin. A consumer that already owns a design system keeps every file
+of it and receives only the ones it lacks. The first cut of this change gated on the directory and was caught at
 review; the per-file rule is stated in both `skills/design-system/SKILL.md` and step 11,
 and generalises to any later asset-carrying skill.
 
@@ -3088,6 +3090,232 @@ fail — the eight new rows carrying new behaviour, plus the one pre-existing ro
 this change modified, which gained the stderr assertion. The seven new controls
 and pins stay green there, each carrying its own entry in the table that kills
 it, which is what stops a green control being read as evidence.
+
+
+### #667: the design assets describe the repo that receives them
+
+**The scope was eighteen files, not two or three.** The ticket named the root
+`README.md`, `00-brand/README.md` and `03-tokens/tokens.json`. At the base
+`c49dd55e` every one of the eighteen tracked files under
+`skills/design-system/assets/` matched `harness`, `sluengen` or
+`docs/index.html`, and the widest instance was the least visible: `owner:
+sluengen` stood in fifteen frontmatter blocks, so a consumer hydrating the
+design layer received a personal username recorded as the owner of its own
+design system. Harness-as-subject prose was concentrated in the root
+`README.md`, `00-brand`, `03-tokens` and the archetype and flow tiers, with a
+sentence each in four more files. That distribution is what refuted the ticket's
+own first option: a per-file `never` disposition would have marked every asset
+and left the design layer delivering nothing.
+
+**Sixteen files rewritten, and no new value on the copy column.** The two
+tracked assets left alone are `build_design_tokens.py`, which #650 already
+marked `on request` and whose two non-portable constants the skill already
+names, and `AGENTS.md`, which the next commit takes out of the asset set
+entirely — so both sit outside AC-1 by a stated disposition rather than by
+having been missed. The sixteen are now scaffolds written about the repo that
+receives them: each tier states what belongs in it and what fills it, the root
+`README.md` is the tree's own portable account of itself, and `tokens.json`
+declares its values a placeholder palette. **No token value moved.** The
+`tokens.json` diff touches `_meta.system`, `_meta.note`, `_meta.capture` and two
+`_comment` strings and no leaf, so the drift guard compares the bytes it
+compared before — confirmed by its stage passing at the certifying run rather
+than asserted.
+
+**The decision and its alternatives, which AC-3 asked for.** No third copy
+disposition: the discriminator this repo recorded three days earlier
+(`specs/architecture-principles.md` → *An asset table carries a copy
+disposition, and absence is not consent*) says a mark is for an asset whose
+landing does something a deletion does not undo, and that surplus alone does not
+earn one. Harness-describing prose in a scaffold is surplus — a deletion undoes
+it completely — so the rule already on the books refuses the mark, and the fix
+is the files rather than the table. The three alternatives lost for reasons that
+were measured rather than preferred. A `never` value per file empties the set,
+as the eighteen-of-eighteen scan shows. Keeping a second, harness-only copy of
+the assets outside `assets/` is refused by a standing guard, not by judgment:
+`tests/unit/test_design_system_skill_assets.py`'s
+`test_this_repo_consumes_the_assets_where_it_declares_them` pins
+`paths.design_system` to the shipped tree precisely so there is one copy.
+Marking the instance-shaped files `on request` uses only the existing
+vocabulary and is therefore the cheapest option that exists, and it loses
+because it leaves a consumer a hole at `00-brand` — the tier every other tier
+depends on — and turns the report into a standing offer of a file nobody should
+accept.
+
+**This repo's own brand, voice and page rules moved; they were not deleted.**
+The spec's first read was that `00-brand/README.md` held one load-bearing rule
+already carried elsewhere. Re-derivation corrected it before the build: one of
+its four rules was a second copy (the page-states-what-is rule, whose inventory
+half `tests/unit/test_landing_page_inventory.py` holds), and the other three —
+one skin and no re-skinning mechanism, the four-hue domain table with the note
+that the names are inherited from the retired Four Loops model, and
+self-contained as a brand constraint — were carried nowhere else. Those, the
+whole of `01-voice`'s register and principles, and the whole of
+`02-principles`' density, interactivity, accessibility and motion laws are now
+`.claude/rules/design.md`, which is repo-owned, ships nowhere, and already loads
+on `skills/design-system/assets/**` and `docs/**` — the two trees an author of
+the landing page or the token source is working in. The move was checked against
+the base text rather than taken on trust: every rule in the three files survives,
+and what was dropped is the *Colour carries structure, not mood* paragraph, a
+restatement of the four-hue rule beside it, and `00-brand`'s *Where the detail
+lives* note, whose instruction to file a brand decision "here" would have been
+false the moment the directory became a scaffold. The page claims the moved text
+makes were re-derived against `docs/index.html` at this tree: two favicon link
+elements and no other `<link>`, no `<script>`, `<iframe>` or `<img>`, no `url()`
+or `@import`, no transition or keyframe, and one external anchor —
+`https://github.com/sluengen/harness` — which is the click the *self-contained*
+rule explicitly permits.
+
+**AC-1 and AC-2, re-derived over the shipping tree.** The sixteen files a
+consumer receives carry no match for `harness`, `sluengen`, `docs/index.html`,
+`spine`, `plugin`, `verify.sh`, `four loops`, `self-host`, `landing page`, a
+ticket reference or a `../../..` path. Every markdown link in the set resolves
+inside the design directory. The four `owner:` lines that remain are the
+`_template.md` scaffolds' own field, reading `owner: <who answers for it>`,
+which is the placeholder a consumer fills. AC-2 holds by absence: no shipped
+asset describes the token generator as unlanded, and the two claims that did —
+"once the generator lands (#242)" and "(once #243 lands) a lint that forbids raw
+values" — lived only in the root `README.md`, which was rewritten whole.
+
+**What stays repo-shaped, deliberately.** The placeholder palette keeps its
+`loop.*` semantic token paths, because those are this repo's live token source
+and the drift guard binds them to `docs/index.html`; `03-tokens/README.md`
+explains the shipped names as it finds them, and a consumer replacing the
+palette renames them. The root `README.md` still points at
+`templates/design-system.md` for the contract the tree implements — a plugin
+path, named the same way the rule seeded into every consumer at step 5 already
+names it, and none of the three subjects AC-1 enumerates.
+
+### #668: a table row is the membership, so an unlisted file never travels
+
+**Two documents asserted an exclusion that neither made.** `skills/hydrate/`
+step 11 called `AGENTS.md` "the file step 5 already owns", and
+`skills/design-system/SKILL.md` stated the mechanism honestly — step 5 writes it
+first, so the per-file rule finds it present and skips it — and then, four
+sentences into the same paragraph, stated the special case it had just denied
+having: "Nothing here may copy it ahead of step 5". What excluded the file was
+the destination being occupied, and the input where it is not occupied is
+reachable: a repo that declares a design directory it has not created
+contributes no glob at step 5, so step 5 writes no Codex twin there, and step
+11's own first copy is what brings the directory into being. The absence rule
+then licensed copying this skill's `AGENTS.md` — a preamble that opens "this
+repo's design directory" and cites `#547` and `.claude/rules/design.md` — into
+that consumer as its binding Codex instruction file. The second half of the same
+clause was that nothing bounded the asset set: neither document said tracked,
+committed or shipped, so a build artifact under `assets/` had an absent
+destination, no mark, and no clause excluding it.
+
+**One rule closes both halves.** A row reaches every file at or under what it
+names, and that reach is now both the membership and the extent of any mark it
+carries. Step 11 copies what the table names and nothing else; a skill that
+ships assets and names none copies nothing and is reported rather than having a
+set invented for it. The column's default is untouched — a table declaring no
+`Copy` column still has every row copy-if-absent — so what narrows is which
+*files* a table governs, never how a cell reads.
+
+**The membership was derived file by file at this tree, because the rule is a
+regression if any shipped asset falls outside it.** Eighteen files are tracked
+under `skills/design-system/assets/`. The first row, `00-brand` … `07-flows`,
+reaches the fifteen files under the eight tier directories; the `README.md` row
+reaches one; the `build_design_tokens.py` row reaches one and carries the only
+mark. That is seventeen, which is every tracked asset except `AGENTS.md`. The
+remaining three rows — `03-tokens/tokens.json`, the naming pair, and the four
+`_template.md` scaffolds — name files the first row already reaches, so they
+describe the set without extending it and no file's membership depends on
+reading their ellipses. The first row's ellipsis is the one that had to be
+unambiguous, and the sentence beneath the table now says "the first row carries
+its **eight** tier directories entire" against a skill body that enumerates all
+eight by name.
+
+**`AGENTS.md` gets no row, which is the point rather than an omission.** It is
+not this skill's asset: it is the Codex twin step 5 seeds from
+`templates/rules/design-system.md`, resident under `assets/` only because this
+repo's `paths.design_system` resolves to the tree the skill ships. A row would
+have recorded the false premise — that the file is one of the skill's assets —
+in the table, which is the more authoritative place to be wrong. The producing
+skill's paragraph now says so plainly, and the denial and the special case go
+together, which is AC-3.
+
+**What step 11 does in the reachable input, stated rather than inferred.**
+Where the gap is one this step's own copy creates — the repo declared a design
+directory it did not have, step 5's precondition failed, and this step's first
+file brings the directory into being — the run reports the twin's path
+`blocked`, naming `templates/rules/design-system.md` as what fills it, and names
+two remedies: hydrate again now that the directory exists, or write the twin by
+hand. `blocked` is the existing word and the discriminator it is chosen against
+is step 13's own — bytes untouched and something waiting on a decision — which
+is exactly the case, and the deliberate opposite of the `retained` a withheld
+`on request` row takes.
+
+**No third `Copy` value, and no `tracked` bound.** `never` on an `AGENTS.md`
+row answers half the defect and leaves the build artifact, because it keeps the
+directory as the membership list. Bounding that other half on the repository's
+index fails at the point of use: an installed plugin runs from a version-pinned
+copy of the tree at `~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/`,
+and none of the eleven such copies of this plugin on the machine the change was
+measured on carries a `.git` — nor does any of the eighteen cached plugin
+versions there — so `git ls-files` in that tree answers nothing or answers about
+some enclosing checkout. Membership by row is evaluable from the document alone,
+in every deployment. `on request` for the same file is worse than either: it
+converts a silent wrong copy into a standing offer of the harness's own
+instruction file at every hydration.
+
+**The artifact half is not hypothetical.** `tests/unit/test_build_design_tokens.py`
+loads the builder through `importlib.util.spec_from_file_location`, so CPython
+writes `skills/design-system/assets/__pycache__/` beside the source on every
+gate run — inside the tree hydration copies out. It is invisible today only
+because `tests/unit/test_seeded_assets_are_tracked.py` exempts `__pycache__` by
+name in its `_NEVER_SHIPPED` tuple, which holds the tree side of the property
+and never that step 11 reads only the index. Under the new rule no row reaches
+it: the builder's row names a file, and a sibling directory is not at or under
+it. Removing the pollution at the source is on the improvement ledger rather
+than in this change.
+
+**Recorded as an amendment, not a new block.** `specs/architecture-principles.md`
+→ *An asset table carries a copy disposition, and absence is not consent* gains
+three paragraphs: the membership rule and the one instance that forced it, the
+refused third value with its measurement, and a note that no row gains a mark
+here so the precedence question the original block left open is still
+unreachable. That last paragraph also records that the block's stated trigger
+for precedence — "the first skill to mark a second row" — is predicated on a
+count where the failure is containment, and sends the correction to the ledger
+rather than folding it in, because nothing in this change depends on it. Four
+further residuals went the same way: step 5's "declares *and has*" predicate is
+evaluated before the step that creates the directory; whether a second hydration
+seeds an absent twin is ambiguous in the shipped text, which is why step 11 names
+the by-hand remedy beside the re-hydration one rather than relying on either;
+step 11's trigger says "a skill this run *seeds*", which is undefined for a skill
+that ships with the plugin; and the `__pycache__` above.
+
+**The version stays at `13.0.0`, and the class was judged rather than
+inherited.** #668 reaches the grammar's major clause on its own terms: in the
+one reachable input, a hydration that used to write `<design>/AGENTS.md` now
+writes nothing there and reports `blocked`, and this record already calls that
+shape "#643's major" where #650 distinguished itself from it. What the class
+buys is that the release reaches a consuming repo as a decision rather than an
+auto-pull, and `13.0.0` against `origin/main`'s `12.5.0` already buys it: #661
+took the cycle's raise to major at its own review, and a cycle's version moves
+once per cycle rather than once per change. A second raise to `14.0.0` would
+change nothing about how the release is pulled and would break the
+one-move-per-cycle rule that gives `/build` step 1 its owner. #667 is minor on
+every point — no command, argument, output schema or refusal reason moves, and a
+consumer that already holds copied assets is never rewritten — so it asks for
+nothing above the floor either. All five homes read `13.0.0`: both plugin
+manifests and the three `spine:generated` markers.
+
+**Verification, over the branch rather than over either commit.** The two
+tickets share `667-668` on one branch with the commits kept separate, and #667
+lands first because #668 edits the same asset table; `AGENTS.md` is therefore
+still harness-shaped and still in the set at `bdd8737c`, and out of the set at
+`e0c1cfc7`, which is the tree the verdict and the landing cover. `bash
+scripts/verify.sh` was run and read by the reviewer at certification over the
+tree carrying this record: ruff clean, mypy clean over three source files, 631
+tests passed, 85.47% coverage against the 85% floor, design-token drift guard
+OK, `All checks passed`, exit 0. The base `c49dd55e` is `origin/dev` unmoved, so
+no reconciliation stood between the branch and the landing. No test and no
+executable changed in either commit — the twenty changed files are nineteen
+markdown and one JSON whose leaf values are untouched — so the evidence for both is the gate plus
+direct reading, which is what ADR 0017 D5 leaves for a change whose subject is
+what a document instructs.
 
 
 ## Cross-references
