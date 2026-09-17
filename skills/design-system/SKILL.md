@@ -13,9 +13,9 @@ design system, this skill is the system itself.
 ## The assets, and where they go
 
 **Destination: `paths.design_system`, as `harness.yaml` declares it.**
-`/harness:hydrate` step 11 copies this skill's `assets/` there **file by file,
-each one only where its own destination path is absent — except the rows the
-table below marks `on request`, which a repo asks for rather than receives.**
+`/harness:hydrate` step 11 copies **the files the table below names** there, file
+by file, each one only where its own destination path is absent — except the rows
+that table marks `on request`, which a repo asks for rather than receives.
 **The absence half of that** is the workflow's root rule rather than an exception
 to it — a file that does not exist has no repo-owned bytes to lose, and one that
 does is never rewritten. Copied
@@ -31,11 +31,15 @@ ordinary run, copy nothing, and leave the consumer an `AGENTS.md` and no tiers
 while the run reported success. Asking per file is what makes the two steps
 compose.
 
-**`AGENTS.md` needs no special case, and is still step 5's.** Step 5 writes it
-first, so the per-file rule finds it present and skips it. Nothing here may copy
-it ahead of step 5: this skill's copy of that file is the harness's own, carrying
-this repo's preamble, while step 5 writes the consumer's from
-`templates/rules/design-system.md`.
+**`AGENTS.md` is in this directory and is not one of these assets.** It is the
+Codex twin of the path-scoped rule, seeded by `/harness:hydrate` step 5 from
+`templates/rules/design-system.md`, and it lives here because
+`paths.design_system` resolves here — this repo's own twin, seeded into this
+repo's own design directory, which happens to be the tree the skill ships. No row
+below names it, so step 11 copies it under no circumstances: not where step 5
+wrote the consumer's, and not where step 5 wrote none. The copy sitting here
+carries this repo's preamble; landed in a consumer it would be that repo's
+binding Codex instruction file, written about this one.
 
 **Every shipped asset is written about the repo that receives it, never about
 this one.** They are scaffolds: each tier states what belongs in it and what
@@ -66,10 +70,15 @@ copy on any pre-existing directory, is the failure two paragraphs up.
 | `README.md` | The tree's own account of itself, and what to fill in first. | |
 | `build_design_tokens.py` | The token builder. **A reference implementation — see below.** | `on request` |
 
-An empty `Copy` cell is the default and means copy-if-absent. `on request` is the
-only other value, and the builder is the only row that carries it — the section
-below says why. A marked asset ships with the skill, hydration reports where it
-would land, and a repo that wants it copies it deliberately.
+**These rows are the whole of what hydration copies.** A row reaches every file
+at or under what it names, so the first row carries its eight tier directories
+entire; a file under `assets/` that no row reaches — `AGENTS.md`, and anything a
+tool leaves behind, such as the `__pycache__` this repo's own gate writes beside
+the builder — is not an asset of this skill and never travels. An empty
+`Copy` cell is the default and means copy-if-absent. `on request` is the only
+other value, and the builder is the only row that carries it — the section below
+says why. A marked asset ships with the skill, hydration reports where it would
+land, and a repo that wants it copies it deliberately.
 
 ## The eight tiers
 
