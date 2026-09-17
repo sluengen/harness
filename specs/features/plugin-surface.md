@@ -1,7 +1,7 @@
 ---
 feature: plugin-surface
 status: implemented
-last_updated: 2026-09-16
+last_updated: 2026-09-17
 ---
 
 # The plugin surface
@@ -2484,6 +2484,343 @@ One case stays out of scope by the ticket's own words and is recorded rather tha
 The evidence is review plus use. Two eval cases go into `skills/worktree-isolation/evals/evals.json` — a twin worktree found before the tracker write, and a red base sorted by whether a live claim exists — and each new branch also takes a fresh-context probe against the shipped prose during the build, with a control that must answer differently against the pre-change text. Nothing here is verified by a wording predicate.
 
 **The version stays at this cycle's minor, and point 4 is scoped so that it does.** The design as first drafted let a `/build` meeting a red base under a live claim wait, re-gate and go on to build. That is a call that used to be refused and now succeeds, which `skills/review-discipline/references/certifying.md` puts squarely in the major clause, and the reading was **major, `13.0.0`**. The operator took the other option on 2026-09-15: **scope point 4 to the writing and leave the disposition alone.** The reasoning is the consumer's, not this repo's — major reaches a pinned consuming repo as a decision rather than an auto-pull, so `calibrate` and `nano-erp` would sit at `12.x` until somebody moved their pins, and the half of point 4 that costs that is not the half the downstream case measured. What was measured is one defect filed as two cords; what the proceed-and-rebuild would add is a convenience for an attended run that can re-invoke `/build` itself. So the cycle stands at `12.3.0` across `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`, `AGENTS.md`, `CLAUDE.md` and `templates/spine.md`. **That claim is owed per point, and the first draft of this paragraph owed it and did not pay** — it accounted for points 2 and 4 and never asked what point 1 did, which is the finding review cycle 1 returned. All four, then. **Point 1** reorders `/build`'s setup and, placed between the worktree cut and the base gate, changes no call's outcome: a `/propose` redirect stays reachable whatever the base's colour, a red base still holds the task and stops, and the ticket it holds still carries the grounded spec it carried before. Placed *after* the gate it would have changed both, and that is why it is not placed there. **Point 2**'s twin stop intercepts a call that already ended in a `git worktree add` fatal, so nothing that used to succeed now refuses — it refuses earlier, and says why. **Point 3** adds no refusal at all; it routes to a resume path that already existed. **Point 4** changes what gets written and leaves the disposition identical on both branches, which is the scoping the operator chose and the reason it was chosen. **The dropped half is recorded rather than deferred silently:** a run that wants to build once the repair lands re-invokes `/build` on its held ticket, which is the resume path section 4 already owns. If that turns out to cost enough to be worth a major, it is a ticket of its own with the measurement attached.
+
+
+### Decision: The run that dispatches a reviewer fetches the ticket; the reviewer makes no tracker call
+
+*Decided at the design stage of #680, 2026-09-17.*
+
+**Context.** `agents/reviewer.md` told the reviewer to work from the ticket **and
+its comment thread** without saying whether the thread travelled as bytes or as
+an instruction to go and fetch one, and a dispatched sub-agent read it as the
+second. An environment variable is per-process, so a host that injects the
+tracker key into the orchestrator leaves the sub-agent holding neither the
+variable nor an env-file entry — the file was seeded from a committed
+`.env.example` that never carried the line, because the host was supplying the
+key. With no tracker access a reviewer can fabricate, stop, or accept the
+orchestrator's restatement of the ticket. The third is the quiet one, and the
+orchestrator that wrote the restatement cannot audit its own omissions. One
+observed `/build` → `/promote` cycle against plugin 11.2.0 hit it on a Linear
+repo: the reviewer reported the 401 as an access caveat rather than passing
+silently, and the verdict was re-taken against the ticket fetched verbatim to a
+file. It did not change, but it moved from resting on a summary to resting on
+the tracker's own text, and the guidance got that outcome by luck.
+
+**Decision.** The packet's one definition — `agents/reviewer.md` → *Your context
+is the packet, and only the packet* — states that the description and the thread
+arrive as data, fetched by the run that dispatches the reviewer, and that the
+reviewer makes no tracker call of its own. Every dispatcher inherits the
+obligation from the definition it already points at. The fetch is **issue-level**
+(the description and the comments through `tracker`'s `open`, never a board
+read), verbatim, and repeated per review cycle.
+
+**Alternatives.**
+- *A reviewer-side backstop declaring an unreachable tracker* — a second defence
+  sharing the first's operand, refused on the ticket (P0). Once the bytes always
+  travel, no case is left for it to catch.
+- *Give the dispatched sub-agent its own tracker credential* — widens the
+  credential surface, a protected area, to solve a problem the fetch already
+  solves.
+- *Restate the packet in `skills/build/SKILL.md`* — rebuilds one of the rival
+  enumerations #640 retired.
+
+**Consequences.** A reviewer never meets a 401 on a ticket read. A tracker the
+*orchestrator* cannot read now stops the run rather than degrading the review
+silently: attended it asks, unattended it holds the ticket. `/review` is amended
+too, because the definition binds it — leaving it alone would have taken the
+thread away from a `/review`-dispatched reviewer with nothing putting it back.
+The reviewer's independence is now materially weaker than a fresh read, which
+the ticket recorded at filing and accepted: the bytes are the tracker's words
+rather than the builder's, which is the property the packet rule exists to
+protect.
+
+### Decision: The ticket travels as a gitignored file, and each dispatcher owns its own location
+
+*Decided at the design stage of #680, 2026-09-17; the second half settled at
+build time and recorded on the ticket.*
+
+**Context.** Verbatim hand-over needs a transport. A file in the worktree and an
+inline block in the dispatch prompt both work; they differ in what they cost and
+in what they can silently lose.
+
+**Decision.** `/build`'s fetch redirects the transport's output into
+`.harness/ticket.md` in the worktree and the dispatch names that path. The bytes
+never enter the orchestrator's context, so *verbatim* is mechanical rather than a
+promise, and a long thread costs the orchestrator nothing. `/review` keeps no run
+area of its own, so it states the same fetch and requires only a location outside
+the reviewed tree, naming no path convention.
+
+**Alternatives.**
+- *Inline in the dispatch prompt* — simpler by one file and adequate on a short
+  thread. It loses because the thread must pass through the context of the one
+  agent in the run that must not paraphrase it, at a token cost linear in thread
+  length paid twice, leaving truncation and tidying undetectable.
+- *A tracked file in the worktree* — pollutes the tree the reviewer certifies and
+  the gate runs over.
+- *`/review` inheriting the fetch from the definition and stating nothing* — the
+  design's recommendation, and reversed at build time. `/review` step 1 only
+  *identifies* the ticket, so the command would have carried no fetch instruction
+  at all while the criterion requires every orchestrator to fetch.
+
+**Consequences.** The file depends on `.harness/` being gitignored, which
+`run.json` already depends on, so no new assumption and no change to
+`skills/build/references/run-state.md`: `git add -A` skips it, so it reaches
+neither `reviewed_tree` nor the gate. It is not carried across a resume and is
+recorded nowhere in `run.json` — it is re-derivable in one call, and a carried
+copy would be stale by construction. The Codex reviewer, which runs from the
+worktree in a read-only sandbox, reaches it unchanged. Neither command points at
+the other: both point at the definition.
+
+### Decision: The per-process credential clause is homed in `tracker`, and each transport qualifies its own no-key branch
+
+*Decided at the design stage of #680, 2026-09-17.*
+
+**Context.** `tracker` → *Shared rules* said to stop and ask when the variable a
+backend needs is missing, and `linear.md` and `github.md` said the same in their
+own words. That is the one instruction a background sub-agent cannot follow, and
+following it is how a run burns a cycle hunting a credential that was never
+missing.
+
+**Decision.** The clause is written once, in `tracker`'s *Shared rules*: an
+environment is per-process, *stop and ask* is the rule for the process the
+operator is talking to, and a sub-agent finding neither the variable nor a file
+entry is looking at an orchestrator-only credential rather than a missing one,
+which it reports and stops on. Each transport adds a one-clause qualifier at its
+own no-key branch, naming its own variable and deferring the consequence to that
+home.
+
+**Alternatives.**
+- *The full clause in both transports* — a second copy, in two files that have
+  drifted from each other before (#640 found `codex-review.md` drifted from the
+  reviewer's own list).
+- *The clause only in the transports* — leaves `tracker`'s unqualified "stop and
+  ask" standing against it, which is the contradiction the observed run met.
+- *A pointer in each transport with the wrong sentence left standing* — the
+  reader who reaches the transport file at 401 time reads the wrong instruction
+  first.
+
+**Consequences.** The transports name no consumer, so the repo's *a producer
+names no consumer* rule holds: they say nothing about packets, reviewers, or
+`/build`. Linear's half is unexercised on this host and is carried under the
+existing `specs/harness-assumptions.md` entry rather than as a new one.
+
+### What #655 stated, as built
+
+Five roles — `architect`, `dev`, `harness-audit`, `reviewer`, `steward` — gained
+one preamble sentence, added to both `agents/<role>.md` and
+`.codex/agents/<role>.toml` for each, above the `#` heading: a `skills/...`
+path in a role body resolves from the installed plugin's root, never the
+consumer workspace. The sentence names no directory count, because the
+mirrored body ships at two different depths — one level under the plugin root
+in `agents/`, two in `.codex/agents/` — and `/harness:hydrate` step 9 vendors
+the `.toml` copy into a consuming repo's own `.codex/agents/`, where the
+plugin root sits elsewhere again. `reviewer-feature` carries no such sentence:
+it references no `skills/...` path of its own and defers to
+`agents/reviewer.md` in full (`agents/reviewer-feature.md` — "Read
+`agents/reviewer.md` and follow it exactly"), so a second copy there would
+duplicate the operand #640 already ruled against at the same site.
+
+The decision is recorded in a new path-scoped rule, `.claude/rules/agents.md`,
+bound to `agents/**` and `.codex/agents/**` — the mechanism this repo already
+uses for guidance that matters in one part of the tree (spine, *Repo
+principles*), so it reaches whoever next opens a role file without being read
+by anyone else. It carries no Codex twin: this repo seeds a Codex-side twin
+only for the design layer's rule, which `/harness:hydrate` step 5 writes into
+the directory it scopes because Codex has no path-scoped rules of its own;
+`.claude/rules/scripts.md` has none.
+
+No new guard, per the ticket. `tests/unit/test_codex_agent_adapters.py::test_both_copies_of_a_role_carry_the_same_body`
+already holds the two copies of each role in correspondence, and does so
+live: splicing the sentence out of `agents/architect.md` alone (staged, then
+restored) fails that test at the same assertion the commit names, printing
+the two bodies' diff; restoring the file reproduces the original tree exactly
+(`git write-tree` unchanged before and after). Guard-to-change: 0 : 5.
+
+The plugin version stays at this cycle's `12.5.0`, raised at this cycle's
+first ticket: the change adds no command, argument or refusal reason — a role
+body reads differently, but nothing that dispatches it changes what it
+accepts or returns.
+
+### What #656 stated, as built
+
+`MIGRATION.md` (316 lines) is deleted. Its subject — a consumer's move from the
+pre-v5 lock-file install to the plugin — is complete: nano-erp adopted
+2026-08-18, calibrate 2026-08-19, both recorded in the file's own *Edges from
+performed migrations*, and no third consumer remains on the lock-file install.
+Two rules the file carried outlive it and are rehomed rather than lost.
+
+**The per-release rule** (formerly `## What a per-release section names`) moves
+to `skills/promote/SKILL.md`, Altitude 2, inside *The loop* step 4 — the release
+hop's "On green, publish" step, immediately after the sentence already stating
+that the PR body carries the commit range and the gate evidence. ADR 0014
+deleted the `changelog.d/` fragment system and derives the changelog from
+commits at release; this tree carries no `CHANGELOG.md`, so the release-hop PR
+body is, today, the only place a release's notes are authored, and the rule now
+sits with the act it governs rather than in a document about migrating away
+from a channel that no longer exists.
+
+**The exit-code idiom**, plus the quiet-machine clause the same bullet carried
+(*"gate the final run on a quiet machine: a contended run stacked a
+load-induced subprocess timeout on top of a genuine defect"*), moves to
+`skills/engineering/SKILL.md` → *Verification*, as one new paragraph ahead of
+the evidence table. Both clauses were general verification practice rather
+than migration-specific — three migrations hit the masked-red-gate failure,
+the third recorded on the improvement ledger — so the shipped home reaches
+every consuming repo rather than only whoever opened the migration guide. The
+adjacent hazard the ticket flagged is closed in the same diff: `AGENTS.md:78`
+and its `CLAUDE.md` copy read "capture to a file and read the tail" — one
+misreading away from the `verify.sh | tail` that caused the failure — and now
+name the trap explicitly ("never pipe the gate into `tail`, which reports
+tail's exit status and masks a red gate"). Both spine copies changed
+identically: `CLAUDE.md`'s first 88 lines remain a byte-exact copy of
+`AGENTS.md` in full, verified directly rather than assumed. `templates/spine.md`
+never carried the line — it lives in each repo's own section — so the template
+needed no matching edit.
+
+**`## Version pinning` is dropped**, not rehomed as a section. Its two standing
+facts already live elsewhere: the retired per-file `guidance:` pins at
+`specs/features/plugin-surface.md` → *One plugin, one version* (`:13`) and at
+ADR 0017 point 1. The one clause nothing else in the tree stated — that a repo
+diverging from a shipped skill forks it locally, and a repo-local fork shadows
+nothing, it is simply also present — goes to `README.md` → *Install*, next to
+where a consumer reads what they installed. `skills/engineering/evals/evals.json`'s
+non-obvious-home example is re-subjected from "README or MIGRATION" to "README
+or CONTRIBUTING" (`CONTRIBUTING.md` exists; the expectation keeps its point
+with a live file) rather than repointed at a path this same diff deletes.
+
+**Eight references are left as history and none is rewritten**, confirmed by
+grep against the shipped tree rather than the ticket's own count (which had
+drifted): five in `specs/features/plugin-surface.md` (`:1277`, `:1657`,
+`:1668`, `:2248`, `:2249`), two in the accepted `specs/proposals/operation-nuke.md`
+(`:170`, `:222`), and one in `assessments/2026-09-13-process.md` (`:99`). Each
+is a dated record of what was true when written; an as-built record and a dated
+assessment both say what was true then, not what is true now, so none of the
+eight changed. None of the three files carrying them appears in this diff.
+
+**Two residual notes, checked and left as found rather than folded into this
+change.** Reading the deleted file's *Edges from performed migrations* in full
+against the current tree turned up two more sentences that read as general
+practice rather than migration edges — "`paths.decisions` may point at a file"
+(a repo recording decisions in one document, e.g. its architecture-principles
+spec, points the configured path there instead of scaffolding an empty
+competing directory) and "a vendored or verbatim-snapshot tree is exempt from a
+reference sweep, because rewriting one corrupts it." Neither is stated anywhere
+else in the tree today (`skills/authoring/references/decisions.md` frames
+`paths.decisions` as naming "that directory" throughout, and
+`skills/engineering/SKILL.md`'s retirement-sweep guidance names no snapshot
+carve-out). Both are narrow, low-traffic nuances rather than a contradiction in
+the tree today, and this repo's own risk appetite treats a documentation
+completeness gap of this size as an improvement rather than a blocker; they are
+named here rather than silently dropped, for whoever next touches either
+document.
+
+**No new guard, per the ticket** (`0 : n`); the eval fixture is prose, verified
+by review rather than a wording predicate (law 2). The plugin version stays at
+this cycle's `12.5.0`: the change renames no command, changes no argument, and
+changes no refusal reason — guidance content moves between shipped documents,
+and nothing that dispatches a workflow changes what it accepts or returns.
+Verified: `bash scripts/verify.sh` — ruff, mypy, 614 tests passed, 85.47%
+coverage against the 85% floor, design-token drift guard clean.
+
+
+### What #680 completed, as built
+
+Seven files, guidance prose only, 40 lines added and 17 removed. The packet the
+reviewer works from now arrives as bytes the dispatching run fetched, and the
+reviewer holds no tracker credential at all.
+
+**The definition carries the contract, and only the definition.**
+`agents/reviewer.md` → *Your context is the packet, and only the packet* gains
+one sentence: "The description and the thread arrive as data, fetched by the run
+that dispatches you; read them where the packet points and make no tracker call
+of your own." `.codex/agents/reviewer.toml` carries the same body byte for byte,
+held by `tests/unit/test_codex_agent_adapters.py`, which reads both from the git
+index. `agents/reviewer-feature.md` gains nothing: it defers wholly to
+`agents/reviewer.md`, as #640 recorded, so the sentence binds the feature lane's
+reviewer through the file it already reads. Nothing was added obliging the
+reviewer to check its packet for completeness — a reviewer-side check would share
+its operand with the fetch, which is the backstop the ticket refused (P0).
+
+**Both dispatchers state a fetch and neither states a packet.** #640 collapsed
+two rival enumerations into one definition plus two pointers; this ticket's
+grounding found a third, `skills/review/SKILL.md` step 3, which #640 had missed
+and which the filing's own AC-1 would have left standing. Step 3 now dispatches
+"with the packet `agents/reviewer.md` → *Your context is the packet* defines" and
+fetches the description and every comment through `tracker`'s `open`, handing
+them over as a path outside the reviewed tree; its list of packet parts, and the
+`.evidence/<TICKET-ID>/` path the repo's own `.claude/rules/design-system.md`
+owns, are gone. `skills/build/SKILL.md` section 3 loses "the ticket goes over
+**with its comment thread**, because an objection or a scope amendment filed
+there is invisible in the body" — that rationale lives in the definition now —
+and gains the mechanics of its own fetch: `tracker`'s `open`, issue-level,
+redirected into `.harness/ticket.md`, re-fetched per review cycle, with a read
+that cannot run stopping the run rather than dispatching a reviewer against a
+restatement. Each dispatcher names the ticket as the object of an operation it
+performs; neither says what a reviewer is entitled to read, so deleting the
+definition's sentence would leave both silent on the packet's contents.
+`skills/build/references/codex-review.md` is unchanged, as the design predicted:
+the fetch is the orchestrator's, performed at stage 3 whichever engine reviews.
+
+**`/review` departed from the design, and the departure is why it works.** The
+design had `skills/review/SKILL.md` add nothing and inherit the fetch obligation
+from the definition. `/review` step 1 only *identifies* the ticket, so silence
+there would have left the command with no fetch instruction while the criterion
+requires every orchestrator to fetch — the regression the design itself warned
+about, arriving through the file it exempted. Step 3 therefore states the fetch
+and withholds only the path convention, which is the half the design's reasoning
+actually protected: `.harness/` is `/build`'s run area, and `/review` keeps none.
+
+**The credential rule is homed once.** `skills/tracker/SKILL.md` → *Shared rules*
+replaces "If the variable a backend needs is missing, stop and ask" with the
+per-process clause: a host injects a key into the process it started, a
+dispatched sub-agent inherits neither that variable nor an env-file entry, *stop
+and ask* belongs to the process the operator is talking to, and a sub-agent
+finding neither reports what it could not read and stops.
+`skills/tracker/references/github.md`'s credential line and
+`skills/tracker/references/linear.md`'s no-key blocker each gain a one-clause
+qualifier naming their own variable and pointing at that home. Linear's
+blast-radius bullet stops saying that sourcing "also reaches the reviewer a
+`/build` run dispatches, which is told to read the ticket fresh from the
+tracker": this diff makes that sentence false, and it named a consumer besides.
+It now reads "It also reaches the run's ticket **reads**, not only its writes."
+Neither transport mentions packets, reviewers, or `/build`.
+
+**One missing recipe, and it was load-bearing.** `github.md`'s REST `open` row
+mapped to `gh api repos/<owner>/<name>/issues/<n>`, whose payload carries a
+comment **count** rather than bodies, and every `gh issue view` form goes through
+GraphQL. On a GraphQL-refused host — the host this ticket's own evidence came
+from — the fetch this change requires had no instruction at all. The `open`
+section gains the paginated call, with `--paginate` marked as not optional
+because the endpoint returns 30 comments per page and a long thread truncates
+silently without it, and the REST table row points at it. Verified by execution
+at review against this ticket: the issue payload's `comments` field returned `4`
+while the added command returned four comment bodies with author and timestamp.
+
+**No test is authored, and the diff is entirely prose.** ADR 0019 assigns prose
+direct review or use in a representative scenario and refuses a predicate over
+meaning; ADR 0017 D5 refuses a guard over prose. Law 2 does not apply — no
+criterion here states a quantity about code. Guard-to-change is 0 : 57 lines
+changed. The one existing guard in scope,
+`tests/unit/test_codex_agent_adapters.py::test_both_copies_of_a_role_carry_the_same_body`,
+reaches `agents/reviewer.md` by a tracked-files walk rather than by name and
+holds the two reviewer bodies equal from the index; it passed over this tree.
+
+The strongest end-to-end evidence is this ticket's own review. The run that built
+#680 fetched the description and all four comments into `.harness/ticket.md` and
+dispatched two reviewers against that path; both read the tracker's own bytes,
+neither made a tracker call to obtain them, and the scope amendment that replaced
+AC-1 and added AC-4 lives in the thread rather than the body. It is recorded here
+rather than as a criterion, since a criterion whose evidence is the run observing
+itself cannot fail cleanly.
+
+The plugin version stays at this cycle's `12.5.0`, raised at this cycle's first
+ticket (`node scripts/plugin-version.js` reports `already-ahead` against the
+`12.4.0` on the release branch). The change renames no command, alters no
+argument, and changes no refusal reason: a dispatcher performs one more read and
+a role body reads differently, and nothing that dispatches a workflow changes
+what it accepts or returns. Verified at certification: `bash scripts/verify.sh` —
+ruff, mypy, 614 tests passed, 85.47% coverage against the 85% floor, design-token
+drift guard clean.
 
 
 ## Cross-references

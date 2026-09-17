@@ -14,7 +14,7 @@ github:
 
 **The queue is the board.** A GitHub board already scopes the queue, so `repo.project` is not consulted on this backend.
 
-**Credential.** `GITHUB_TOKEN`, with `repo` **and** `project` scopes — the second is easy to miss and is what every board mutation needs. `gh` uses it from the environment. Never echo it.
+**Credential.** `GITHUB_TOKEN`, with `repo` **and** `project` scopes — the second is easy to miss and is what every board mutation needs. `gh` uses it from the environment — the orchestrator's, so a sub-agent finding `GITHUB_TOKEN` unset is reading an orchestrator-only credential rather than a missing one (`tracker` → *Shared rules*). Never echo it.
 
 ## Two failures that look the same from the call site
 
@@ -36,7 +36,7 @@ gh api graphql -f query='query { viewer { login } }' # GraphQL
 
 | Operation | REST |
 |---|---|
-| `open` | `gh api repos/<owner>/<name>/issues/<n>` |
+| `open` | `gh api repos/<owner>/<name>/issues/<n>`, **plus the paginated comments call** under *`open`* below — the issue payload carries a comment *count*, not bodies |
 | `create` | `gh api -X POST repos/<owner>/<name>/issues -f title=... -F body=@<path> -f 'labels[]=assurance:<level>'` |
 | `comment` | `gh api -X POST repos/<owner>/<name>/issues/<n>/comments -F body=@<path>` |
 | `hold` | the `comment` POST above, then `gh api -X POST repos/<owner>/<name>/issues/<n>/labels -f 'labels[]=<input\|operator>'`, then `gh api -X POST repos/<owner>/<name>/issues/<n>/assignees -f 'assignees[]=<login>'`, then a read-back |
@@ -99,9 +99,22 @@ gh project field-list <number> --owner <owner> --format json
 
 ### `open` — read an issue
 
+**The thread is part of the read.**
+
 ```bash
 gh issue view <number> --repo <owner>/<name> \
   --json number,title,body,state,assignees,labels,url,comments
+```
+
+Where GraphQL is refused that form is unreachable, and the REST issue payload
+carries a comment **count** rather than bodies, so the thread needs its own
+call. **`--paginate` is not optional** — the endpoint returns 30 per page, and a
+long thread truncates silently without it:
+
+```bash
+gh api repos/<owner>/<name>/issues/<n>
+gh api --paginate repos/<owner>/<name>/issues/<n>/comments \
+  --jq '.[] | "## \(.user.login) \(.created_at)\n\n\(.body)\n"'
 ```
 
 ### `create` — file an issue **onto the board, with Status set**

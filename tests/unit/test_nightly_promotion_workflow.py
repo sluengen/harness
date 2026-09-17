@@ -187,7 +187,7 @@ def test_the_workflow_is_a_bounded_deterministic_nightly() -> None:
     assert WORKFLOW.is_file(), "the nightly dev-to-main promotion workflow must exist (#378)"
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
-    assert 'cron: "0 14 * * *"' in workflow, "14:00 UTC is midnight in Australia/Brisbane"
+    assert 'cron: "30 18 * * *"' in workflow, "18:30 UTC is 04:30 in Australia/Brisbane"
     assert "workflow_dispatch:" in workflow
     assert "nightly-dev-to-main" in workflow
     assert "cancel-in-progress: false" in workflow

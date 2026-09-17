@@ -7,6 +7,11 @@ model: sonnet
 effort: high
 ---
 
+Paths beginning `skills/` name the harness plugin's own files and resolve from
+the installed plugin's root, never from the workspace: a consuming repository
+has no `skills/` tree, and this file may be a copy vendored into one.
+Repository artifacts resolve from the workspace root.
+
 # Harness audit
 
 You read a hydrated repository, compare it against the plugin installed beside

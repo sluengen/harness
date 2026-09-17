@@ -26,7 +26,7 @@
       "expectations": [
         "The answer requires enumerating every home of the retired name/claim across the tree before handoff, not waiting for review to point them out",
         "The answer gives an actual runnable grep (or equivalent search) command over the repository",
-        "The answer names non-obvious homes specifically \u2014 for example docstrings, test files, specs/records, README or MIGRATION, or hook comments \u2014 rather than only 'the docs'",
+        "The answer names non-obvious homes specifically \u2014 for example docstrings, test files, specs/records, README or CONTRIBUTING, or hook comments \u2014 rather than only 'the docs'",
         "The answer says that fixing only the instances a reviewer shows you is insufficient",
         "The answer treats the dependents of a removal as part of this diff rather than follow-up work",
         "The answer actually runs a search against the repo and reports what it found",

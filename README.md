@@ -74,6 +74,10 @@ Run it again after a plugin update — one invocation, no flag. It re-derives th
 blocks and the plugin-marked Codex role adapters, leaves every repo-owned file alone,
 and reports each path with the reason it was written, rewritten, retained or blocked.
 
+The plugin carries **one** version and there are no per-file pins: a repo that
+needs to diverge from a shipped skill forks that skill locally, and a repo-local
+skill shadows nothing — it is simply also present.
+
 Codex installs a native `.codex-plugin/plugin.json` package. Its `skills/`
 directory contains every skill both hosts read, the nine lifecycle workflows
 among them — each ships once, not as a mirror of a command file. The

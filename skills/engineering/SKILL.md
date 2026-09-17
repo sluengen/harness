@@ -105,6 +105,8 @@ Load [`references/untrusted-fetch.md`](references/untrusted-fetch.md) when fetch
 
 No completion claim without fresh evidence. Identify the command that proves the claim, execute it *now* — "I ran it earlier" is not evidence, you have changed code since — read the full output, and confirm it supports the claim: "5 passed, 1 skipped" means explain the skip. Lint before types before tests.
 
+**Capture the gate's exit code directly; never pipe it.** A pipe reports the *last* command's status, so `verify.sh | tail` returns tail's — it masked a red gate three times across three consumer migrations. The idiom is `verify.sh > /tmp/gate.log 2>&1; echo EXIT=$?`, then read the log. And run the final gate on a quiet machine: a contended run stacked a load-induced subprocess timeout on top of a genuine defect, and separating the two cost five full gate runs.
+
 | Claim | Required evidence |
 |---|---|
 | Tests pass | Full suite run, output read |
