@@ -2221,6 +2221,112 @@ none of the four clauses renames a command, changes an argument, or changes
 what a call does or refuses.
 
 
+### #661: an empty cord answer must show coverage and completeness, as built
+
+The andon cord's read used to treat one empty result as proof of a clear line,
+and a truncated page, a wrong board scope and a clean queue all produce that
+result at exit 0. Five surfaces moved, all prose and its evals; nothing
+executes, so nothing was guarded.
+
+- `skills/work-discovery/SKILL.md` → *Andon* gains the judgment, beside the
+  pre-existing *A half you cannot read is itself a cord*: an empty answer is
+  trusted only where the read shows **coverage** — every open bug in the open
+  queue, read in every state, has a priority that reads back — and
+  **completeness** — no call the check made stopped at a limit it was given.
+  Coverage is written as a set difference over ticket identities with the
+  *issue* read as the denominator, and says in terms that equal counts prove
+  nothing; taking the priced read as the denominator is the vacuity the anchor
+  exists to prevent. One re-read precedes a stop, and an anchor that a re-read
+  clears only in part has failed. The disposition is **not** restated: an
+  answer that cannot show both anchors "stops the tick exactly as an unreadable
+  field does", inheriting the stop, the report contents and the
+  no-ranking rule from the sentences already there.
+- `skills/work-discovery/SKILL.md` → *What a stopped tick outputs* widens its
+  first of three things from "the field that failed to read" to include "the
+  anchor the read could not show", so the operator reads a repair rather than
+  "the tracker failed".
+- `skills/tracker/SKILL.md` → *The andon cord* gains the read shape, which is
+  the producer's half: **ask for the queue and its priorities, never for the
+  P1s**, because a server-side filter on the top priority answers a clear
+  queue, a spent limit, a renamed field and a wrong scope with one empty page.
+  The paragraph names the two facts that must travel with "no cord is open"
+  and stops short of what the loop does about them; the pre-existing
+  "`work-discovery` owns what the loop does about it" still stands after it
+  and is what keeps the disposition stated once.
+- `skills/tracker/references/github.md` gains *The cord read — the open queue
+  with its priorities*: the issue list joined to the board read by issue
+  number, with `field-list` for the Priority option ids, and the join stated as
+  what makes the answer about this queue. The same edit gives an explicit
+  `--limit` to the three recipes that carried none — `create` step 4,
+  `transition`, and the held pile — under one paragraph requiring it of every
+  read in the file. Those three are outside the cord path and are in this
+  change because the paragraph above them would otherwise be false where it
+  stands.
+- `skills/tracker/references/linear.md` replaces the `priority: { eq: 1 }`
+  query with a team-scoped open-queue read carrying `priority` and
+  `pageInfo.hasNextPage`. One query carries both halves there, so coverage is
+  met by any row that returns a priority and `hasNextPage` carries
+  completeness.
+- `skills/work-discovery/evals/evals.json` gains evals 6, 7 and 8 — a read
+  standing at its limit (completeness fails, the tick stops), an anchored empty
+  read (both hold, the tick proceeds and picks), and a read that priced only
+  part of the queue (coverage fails, the tick stops). Evals 1–5 are untouched.
+  Nothing under `evals/` is a test — `pyproject.toml` sets
+  `testpaths = ["tests"]` — and no test file changed in this ticket's commit.
+
+**The evidence is prose evidence, and that is the correct class.** Every
+criterion here is about what a document says, so law 2's measuring test does not
+attach and ADR 0017 D5 admits no guard over what prose means; the evidence is
+direct review plus the evals, which is the same form #664 shipped into this
+same evals file, for this same section, at 12.3.0.
+
+**The version class is major, decided at this review: `13.0.0`.** A tick that
+returned a pick now returns a stopped line for a reason no consumer has met,
+the rule keys on nothing declared, and it fires on every tick and every
+backend, so a consuming repo whose board read is capped or whose bugs are not
+all placed must act before its loop runs again. The grammar in
+`specs/architecture-principles.md` makes a changed refusal reason major and a
+major reaches a consumer as a decision rather than an auto-pull. The contrast
+is in this file: #664's claim mechanism stayed at the minor floor precisely
+because it is inert where a repo declares no `loop.cord_claim_minutes`, so an
+unchanged consumer met no new refusal. This one has no such switch. The
+counter-argument — that the stop already existed, so this is an implementation
+swap — reads the disposition rather than the reason, and the grammar names the
+reason. The raise was made by hand in the five version homes inside the
+candidate before the certifying gate, and it covers the whole branch, #659
+included.
+
+**Three residuals, named rather than fixed.**
+
+- **The empty queue is unnamed.** Coverage quantifies over the open bugs in the
+  queue, so a tracker holding none satisfies it vacuously and completeness
+  holds at zero rows below any limit; on the text alone the tick proceeds and
+  finds nothing to rank, which `skills/routine/SKILL.md` step 1 already calls a
+  clean outcome. A fresh-context probe run at this review, given the *Andon*
+  section alone and that scenario, stopped the line instead — on a misreading
+  of completeness as needing the row count confirmed from outside the read. Its
+  control, the same section and the same prompt shape with a 14-row result,
+  read completeness correctly, so the misreading is specific to a result with
+  nothing in it rather than a general stop-everything risk. The Decision block
+  below first recorded this case as a coverage failure and an accepted cost;
+  that sentence described the positive-control anchor the block rejects, and it
+  is corrected there.
+- **`tracker`'s half says "count" where `work-discovery` says identities.** The
+  producer clause reads "how much of the open queue the read priced" and "the
+  open queue's own count is part of the answer", then states the identity
+  argument in the clause after it. The operative instruction — read the open
+  queue as well as the priced rows — is right, and the consumer skill that owns
+  the judgment states the set difference twice and emphatically, so no run is
+  misdirected; the phrasing is the weaker of the two homes for the sentence the
+  design says a first draft got wrong.
+- **Linear's priority 0.** `priority` is a non-null integer there and `0` means
+  *No priority*, so an unprioritised open bug returns a priority and satisfies
+  coverage on Linear while the same state — a bug with no readable priority —
+  fails it on GitHub, where Priority is a board field that can be unset. The
+  two backends therefore disagree about one state that the shipped rule calls
+  "the cord's own uncertainty".
+
+
 ## Data model
 
 **No persistent state beyond the tree itself, since #621.** The gate marker under `<git-common-dir>/harness/gate/` and the `refs/harness/*` namespace #539 added — gate records, claims and the green pointer — are both deleted, and nothing writes either. The one file that survives is `.harness/run.json`, which is gitignored, records where a run is rather than what is true of the tree, and is read by exactly one hook. This was never a run ledger (ADR 0015) and it is less of one now.
@@ -2466,7 +2572,7 @@ For a consumer already hydrated, step 3 retains their `harness.yaml` whatever it
 - *Coverage as "at least one overlapping row"* — cheaper, and blind to the case that happens: a board holding some issues and not others returns rows, readable priorities and an overlap while leaving open bugs unpriced.
 - *A guard over the guidance* — refused by ADR 0017 D5 and law 2. The evidence is the evals, used.
 
-**Consequences.** A repo whose board read is capped or partial now gets a stopped tick where it used to get a pick, and no configuration exempts it: the rule keys on nothing declared and fires on every tick, on every backend. That is a refusal reason no consumer has met, which is what this cycle's version class turns on. Two costs are accepted rather than solved. A repo whose tracker holds zero open tickets fails the coverage floor and reports a stopped line on its first tick, cleared by filing anything. And an open bug left off the board stops the line until it is placed — the item-add-no-status trap made loud rather than a new failure. The claim read gains no obligation: it names one ticket that must resolve, and the non-optional `--paginate` on the comments call already holds its completeness, so the block above expecting the claim read to inherit this posture is met without a second rule. `/routine`'s report gains the anchor that failed, so an operator reads a repair rather than "the tracker failed".
+**Consequences.** A repo whose board read is capped or partial now gets a stopped tick where it used to get a pick, and no configuration exempts it: the rule keys on nothing declared and fires on every tick, on every backend. That is a refusal reason no consumer has met, which is what this cycle's version class turns on. One cost is accepted rather than solved: an open bug left off the board stops the line until it is placed — the item-add-no-status trap made loud rather than a new failure. *Corrected at review, 2026-09-18:* a second accepted cost stood here — a repo whose tracker holds zero open tickets failing the coverage floor on its first tick. Coverage quantifies over the open bugs in the queue, so a queue holding none satisfies it vacuously; that sentence described the positive-control anchor this block rejects rather than the one that shipped. What an empty queue actually does is a residual the shipped text does not name, and the as-built entry above records it with the probe that measured it. The claim read gains no obligation: it names one ticket that must resolve, and the non-optional `--paginate` on the comments call already holds its completeness, so the block above expecting the claim read to inherit this posture is met without a second rule. `/routine`'s report gains the anchor that failed, so an operator reads a repair rather than "the tracker failed".
 
 ### Decision: `/build` establishes ownership by ordering, and the host signal carries no clock
 
