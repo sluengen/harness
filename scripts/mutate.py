@@ -124,9 +124,9 @@ it would be a second, weaker copy of the trust decision the suite already is.
 Restoration reads **only** from byte-for-byte backups taken before the first
 write, held in memory and copied under the work dir; the path is printed so a
 hard kill is recoverable by hand. This module spawns no ``git`` of its own — no
-``git checkout``, no ``git stash``. ``git checkout -- .`` is the revert that cost
-#163 forty minutes of finished work, and ``tests/unit/test_mutate.py`` pins the
-one argv shape this module may build: its own interpreter. #621 retired the
+``git checkout``, no ``git stash``. ``git checkout -- .`` is the revert that
+discards every other change under it, and ``tests/unit/test_mutate.py`` pins
+the one argv shape this module may build: its own interpreter. #621 retired the
 second — a read-only ``node`` query for the gate lock — with the marker it
 asked about, so the ``node`` exemption that query earned is gone too, and the
 guard is now the simpler claim that this module spawns nothing but Python.
