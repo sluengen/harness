@@ -1771,18 +1771,18 @@ empty, verified at this review. So the guidance the exclusion rules out —
 shipped; what shipped only ever runs after a defect this ticket exists to
 surface.
 
-**The open decision the grounding comment raised stays open, correctly.**
+**The open decision the grounding comment raised stayed open, correctly, until #675 closed it.**
 `specs/features/plugin-surface.md`'s own *Decision: The design rule and its
 Codex twin join the created-where-absent set* (below) states that hydrate
 writes a missing twin "from the present one" and blocks a divergence between
-two existing files; `skills/hydrate/SKILL.md` step 5 does neither — it writes
-a missing side from the **template**, under that side's own preamble, and
-never blocks. The shipped bullet's remedy paragraph says the same thing step
-5 says — "step 5 writes the missing side's shared region from the template" —
-never the sibling, so it does not resolve the mismatch between the decision's
-text and the shipped skill and does not overstate what a re-hydration
-produces. Reconciling the two is the mechanism change this ticket's own body
-puts out of scope.
+two existing files; at this ticket's own tree, `skills/hydrate/SKILL.md`
+step 5 did neither — it wrote a missing side from the **template**, under
+that side's own preamble, and never blocked. The shipped bullet's remedy
+paragraph said the same thing step 5 said — "step 5 writes the missing side's
+shared region from the template" — never the sibling, so it did not resolve
+the mismatch between the decision's text and the shipped skill and did not
+overstate what a re-hydration produced. Reconciling the two was the mechanism change that ticket's own body put out
+of scope. **Closed 2026-09-19 by #675** -- see *#675: step 5 gains the Decision's three states* below.
 
 **A generic clause with one instance.** The bullet derives the twin's
 directory from `harness.yaml`'s `paths.<layer>` key and derives the `layers:`
@@ -2017,8 +2017,10 @@ renumbering and is corrected here, `skills/build/SKILL.md:25` → `:26`, still t
 `build/SKILL.md:69-70` and measures that file at 70 lines, both already false at
 `990156e`, where it stood at 63 lines with no line 69, and this change takes it
 to 64 — no closer to true and no further from it, so it is the ledger's rather
-than this ticket's. And neither skill names which hold label a red-base hold
-carries, which was equally true before this change.
+than this ticket's. And at this tree, neither skill named which hold label
+a red-base hold carries, which was equally true before this change.
+**Closed 2026-09-19 by #673** -- see *#673: the portable-dependency caveat
+and the red-base hold's label* below.
 
 
 ### #650: an asset can be copy-on-request, and the design layer ships one executable
@@ -3551,6 +3553,110 @@ unrelated change to `skills/worktree-isolation/SKILL.md`, reviewed separately.
 `4abf4d0a`: ruff clean, mypy clean over three source files, 631 tests passed,
 85.47% coverage against the 85% floor, design-token drift guard OK,
 `All checks passed`, exit 0.
+
+### #673: the portable-dependency caveat and the red-base hold's label
+
+`skills/worktree-isolation/SKILL.md` gains two clauses, closing the gap
+#660's own record named open (above) and the one filed independently at
+#450 comment 194 item 2. *Linking heavy local artifacts* gains a paragraph
+naming the failure a non-portable dependency produces — a virtualenv's
+absolute paths, a `node_modules` binary built against one interpreter, a
+build cache keyed to its own directory — and says plainly that it "arrives
+dressed as a red base," pointing forward at *Gating the base* rather than
+restating that section's disposition. *Gating the base*'s **Red** bullet
+gains a cross-reference to that paragraph ahead of the existing
+search-before-you-file instruction, and a label for the hold it already told
+a run to file: `operator` by default, because a red base is cleared by a
+repair rather than an answer and the neighbouring bullet already forbids
+this run making that repair; `input` for the narrower case where the run
+cannot tell a host-local failure from a defect in the base and the
+operator's own judgment decides what gets filed. The split mirrors
+`/build`'s own `operator`/`input` usage for a spent cycle budget versus a
+DEFER (`skills/build/SKILL.md:62,64`), so it extends an established pattern
+rather than inventing one.
+
+**Evidence.** Both criteria are about what a document says; law 2 does not
+attach and ADR 0017 D5 admits no guard over prose, so direct review is the
+whole of it, per the ticket's own AC-1 and AC-2. The label choice was
+checked against `AGENTS.md` → *The contract* → *Holds* at this review and
+matches it: `operator` names a hands-on session, `input` names an answer,
+credential or judgment only the operator can supply, and the Red bullet's
+own text states which applies and why for each.
+
+**The version class.** Neither clause renames a command, changes an
+argument, or changes what a call does or refuses: the Red bullet's
+disposition — remove the worktree, hold the task, stop — is exactly what it
+was, and the new sentences add a diagnosis and a label to a hold that
+already happened. No call that used to succeed now refuses and none that
+used to refuse now succeeds, so this stays at the cycle's minor.
+
+**Verification.** `bash scripts/verify.sh` was run and read by the reviewer
+over the full tree carrying this record at `188b09ca`: ruff clean, mypy
+clean over three source files, 647 passed, 85.47% coverage against the 85%
+floor, design-token drift guard OK, `All checks passed`, exit 0. This
+ticket's own change is one file, `skills/worktree-isolation/SKILL.md`, 4
+insertions and 2 deletions, on a branch that also carries #675's unrelated
+change to `skills/hydrate/SKILL.md`, reviewed and recorded separately below.
+
+### #675: step 5 gains the Decision's three states
+
+`skills/hydrate/SKILL.md` step 5 is rewritten to implement the split
+*Decision: The design rule and its Codex twin join the created-where-absent
+set* (`:2468-2476`) already specified and step 5 never carried, closing the
+gap the #645 entry above recorded as deliberately open. The pair — the
+Claude-side rule and its Codex twin — now takes three states rather than
+one: **neither present** writes both from
+`templates/rules/design-system.md`, unchanged from before; **one present**
+writes the missing side from the **present sibling** rather than the
+template, so a twin is never born diverged from a survivor the repo has
+since edited; **both present** writes nothing and compares the two shared
+regions, reporting the path `blocked` with the offset of the first
+differing byte where they diverge, or the pair `retained` where they agree.
+The frontmatter-from-`harness.yaml` clause and the no-glob-means-no-rule
+gate #643 shipped both survive all three states unchanged, and the
+repo-owned/never-overwritten bound (step 5's "Two bounds" sentence) still
+holds, since the one write the pair licenses is always to the missing side,
+never to a survivor.
+
+**Evidence.** The ticket's own grounding comment amended AC-1 and AC-2
+before the build began, on the ground that law 2's subject is code and this
+criterion is about what a document says: no measuring test is added, and
+review against the Decision's own quoted text is the evidence AC-1 names.
+AC-2 — the frontmatter gate and the repo-owned bound are unchanged — is
+confirmed at this review by direct reading of the surviving clauses beside
+the new one.
+
+**The version class.** This is major, not the cycle's existing minor. The
+shipped text names its own consequence: "a refresh that used to complete
+now waits on one" — for a repo whose design-rule pair is already both
+present and diverging, running `/harness:hydrate` used to complete with
+nothing reported for that pair (the once-seeded bound already refused to
+touch either file, and step 5 carried no instruction to compare them), and
+now reports `blocked`, obliging the operator to resolve a divergence before
+that path is done. That is the same shape `specs/architecture-principles.md`
+→ *Decision: A seeded rule's globs come from `harness.yaml` alone, and no
+glob means no rule* (`:2528`) turned its own major raise on: "no call...used
+to refuse now succeeds and none that used to succeed now refuses" is the
+discriminating test that record states, and this change fails it in the
+same direction #643 did — a case that used to complete now blocks. Raised
+at this review, inside the candidate, before the certifying gate
+(`review-discipline` → `references/certifying.md`): both plugin manifests
+and all three `spine:generated` markers move from `13.1.0` to `14.0.0`. The
+"one present" state's changed write source (template → present sibling) and
+the "both present, agreeing" state's new `retained` report are both
+ordinary minor material on their own — an implementation swap and an
+additive report row — and neither would have raised this alone; the class
+is judged over the whole diff, and the `blocked`-on-divergence state is
+what carries it.
+
+**Verification.** `bash scripts/verify.sh` was run and read by the reviewer
+over the full tree carrying this record at `188b09ca`: ruff clean, mypy
+clean over three source files, 647 passed, 85.47% coverage against the 85%
+floor, design-token drift guard OK, `All checks passed`, exit 0. This
+ticket's own change is one file, `skills/hydrate/SKILL.md`, 6 insertions and
+2 deletions, on a branch that also carries #673's unrelated change to
+`skills/worktree-isolation/SKILL.md`, reviewed and recorded separately
+above.
 
 ## Cross-references
 
