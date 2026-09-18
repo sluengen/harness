@@ -106,9 +106,16 @@ def _run(hook: str, payload: dict, fixture: Path, tmp_path: Path) -> tuple[int, 
 
 
 def _advisory_context(stdout: str) -> str:
-    """The ``additionalContext`` an advisory hook emits, or ``""``."""
+    """The ``additionalContext`` an advisory hook *delivers*, or ``""``.
+
+    Read from ``hookSpecificOutput``, the only position Claude Code honours on a
+    ``PreToolUse`` hook. Reading the top-level key here would make this module's
+    probes green against a hook whose warning the host discards — #688 — and the
+    whole point of them is that they observe the *work*, not the exit status.
+    """
     try:
-        return json.loads(stdout).get("additionalContext", "") or ""
+        nested = json.loads(stdout).get("hookSpecificOutput", {})
+        return nested.get("additionalContext", "") or ""
     except (json.JSONDecodeError, AttributeError):
         return ""
 
@@ -173,9 +180,10 @@ def _probe_push_target_guard(fixture: Path, tmp_path: Path) -> bool:
 
     The observable moved with the hook. It used to be a ``deny`` on an ungated
     tree; ADR 0022 point 3 retired the gate read and point 4 retired the refusal,
-    so what this asserts now is the advisory firing — ``continue`` with the branch
-    named in ``additionalContext``. Still an observable of the *work*, not of the
-    exit status: an ESM root that silently disarmed the hook would leave the
+    so what this asserts now is the advisory firing — the branch named in the
+    ``additionalContext`` the host is handed, which since #688 is the one inside
+    ``hookSpecificOutput``. Still an observable of the *work*, not of the exit
+    status: an ESM root that silently disarmed the hook would leave the
     pass-through object with no context on it, which is the #302 shape this
     module exists for.
     """
@@ -190,10 +198,7 @@ def _probe_push_target_guard(fixture: Path, tmp_path: Path) -> bool:
         fixture,
         tmp_path,
     )
-    try:
-        return "main" in json.loads(out).get("additionalContext", "")
-    except (json.JSONDecodeError, AttributeError):
-        return False
+    return "main" in _advisory_context(out)
 
 
 def _probe_test_lock_guard(fixture: Path, tmp_path: Path) -> bool:

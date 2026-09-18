@@ -71,9 +71,24 @@ function main() {
   done(null, codex);
 }
 
+/**
+ * Deliver the advisory, or the host's own empty answer (#688).
+ *
+ * The warning goes inside `hookSpecificOutput` for **both** hosts. That is the
+ * only position Claude Code honours on a `PreToolUse` hook, and it is what
+ * `test-lock-guard.js` — the one hook in this bundle measured to reach a live
+ * session — already writes its refusal into. This emitter used to reserve the
+ * nested shape for Codex and hand Claude Code a top-level `additionalContext`,
+ * which the host computes a warning into and then discards; all three advisories
+ * were therefore dead on Claude Code from the day they shipped.
+ *
+ * Only the empty case is per host, and it has to be: Codex's native contract is
+ * an empty stdout, while Claude Code wants a pass-through object rather than
+ * silence. `continue` is absent from the warning because it defaults to true,
+ * which keeps one warning shape rather than two.
+ */
 function done(additionalContext, codex) {
-  if (codex) {
-    if (!additionalContext) return;
+  if (additionalContext) {
     process.stdout.write(JSON.stringify({
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
@@ -82,9 +97,8 @@ function done(additionalContext, codex) {
     }));
     return;
   }
-  const out = { continue: true };
-  if (additionalContext) out.additionalContext = additionalContext;
-  process.stdout.write(JSON.stringify(out));
+  if (codex) return;
+  process.stdout.write(JSON.stringify({ continue: true }));
 }
 
 // Every hook wraps main() the same way (#303 AC-5): an exception raised after the
