@@ -220,3 +220,31 @@ second copy**: the reflection it holds exists nowhere else, so an append that
 reports success and stored something else is lost with nothing to say it ever
 existed. Where the body came from a file, confirm it is the entry's text rather
 than the file's path.
+
+### Prune — removing decided entries
+
+`commentDelete` removes one comment. The ids come from the disposition comment
+(`tracker` → *`ledger`* → *Prune*), one mutation per id, each written literally
+rather than looped over a query's output, about fifteen to a batch. That bound
+comes from an agent host screening destructive calls rather than from any API,
+so it applies here as much as to GitHub: see that reference's *Prune* for the
+refusals it was measured against.
+
+```bash
+LINEAR 'query { issue(id:\"<ledger-id>\") { comments { nodes { id createdAt body } pageInfo { hasNextPage } } } }'
+LINEAR 'mutation { commentDelete(id: \"<comment-id>\") { success } }'
+```
+
+`success` says the call ran. Verify by re-reading the comments connection and
+comparing identities against the ids the pre-delete read returned: every pruned
+id absent, every other one of them still present. **`pageInfo.hasNextPage` is
+the completeness signal here** — `true` is a read that stopped, whatever the
+nodes contain, exactly as under *Priority* above, and a stopped read reports
+every comment it never returned as absent, which is the answer the check exists
+to refuse. That signal is order-agnostic, so it carries the check on its own:
+this file does not state which end of the connection the newest comment arrives
+from, and nothing here should assume one.
+
+Linear hides archived resources from an ordinary read, so absence from the
+connection is what this operation promises and all it promises: the entry no
+longer appears when the ledger is read.

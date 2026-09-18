@@ -2,7 +2,6 @@
 layer: 03-tokens
 kind: naming
 status: active
-owner: sluengen
 last_updated: 2026-09-01
 ---
 
@@ -30,9 +29,10 @@ component.<domain>.<role>...          ← component tier is its own top-level na
 
 ## CSS custom-property names in the page
 
-`../build_design_tokens.py` maps each emitted semantic token to the
-existing custom property used by `docs/index.html`; it does not derive the
-property name from the token path:
+The builder maps each emitted semantic token to the custom property the page
+already uses; **it does not derive the property name from the token path.** That
+explicit map is what lets a design system land on a page whose CSS variables
+were named before it existed, without renaming every consumer:
 
 | Token path | CSS variable |
 |---|---|
@@ -40,11 +40,12 @@ property name from the token path:
 | `color.semantic.surface.card` | `--card` |
 | `shadow.semantic.elevation.default` | `--shadow` |
 
+Those rows are the shipped example's map, and rewriting it for your page's
+variables is one of the two edits the builder's own guidance calls for.
+
 Primitives (`*.primitive.*`) are not emitted as variables — they resolve to
-literals inside the semantic values that reference them. The explicit mapping
-preserves the page's existing CSS consumers (`--build`, `--build-soft`,
-`--build-ink`, and the other emitted properties) while keeping the generator's
-write confined to the marked `:root` region.
+literals inside the semantic values that reference them. Keeping the map
+explicit also keeps the write confined to the marked `:root` region.
 
 ## Rules
 
@@ -52,7 +53,7 @@ write confined to the marked `:root` region.
 2. **Singular roles.** `border`, not `borders`; `loop`, not `loops`.
 3. **State and variant trail the role.** `loop.build.accent`, never
    `accent.build.loop`.
-4. **Numbers count up with weight or step** where a scale exists. Not
-   exercised yet — the current ramps are named steps (`base`/`soft`/`ink`),
-   not numbered.
+4. **Numbers count up with weight or step** where a scale exists. Named steps
+   (`base`/`soft`/`ink`) and numbered ones are both fine; pick one per ramp and
+   do not mix them within it.
 5. **No abbreviations unless industry-standard.** `background`, not `bg`.

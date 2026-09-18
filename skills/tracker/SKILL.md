@@ -1,6 +1,6 @@
 ---
 name: tracker
-description: "Use whenever a run reads or writes a ticket — opening one, filing one with its lane, dependencies and priority, moving its state, placing it in Todo, holding it for a human, pulling the queue or the held pile, closing it, or appending to the improvement ledger. One set of ticket semantics over whichever backend harness.yaml declares; the recipes for that backend are this skill's references. Not for deciding whether work should exist, which lane it takes, or whether a finding is a bug or an improvement — that is the spine's lifecycle, `authoring`, and `review-discipline`."
+description: "Use whenever a run reads or writes a ticket — opening one, filing one with its lane, dependencies and priority, moving its state, placing it in Todo, holding it for a human, pulling the queue or the held pile, closing it, or appending to and pruning the improvement ledger. One set of ticket semantics over whichever backend harness.yaml declares; the recipes for that backend are this skill's references. Not for deciding whether work should exist, which lane it takes, or whether a finding is a bug or an improvement — that is the spine's lifecycle, `authoring`, and `review-discipline`."
 model: inherit
 ---
 # Tracker
@@ -167,7 +167,7 @@ ticket held for a reason nobody wrote down.
 The loop skips both labels alike (`work-discovery` owns that rule). Which label
 a given clearing pass selects is that pass's business, not this operation's.
 
-## `ledger` — appending to the improvement ledger
+## `ledger` — the improvement ledger
 
 Route before you append. File a **bug** when the tree contradicts its own
 contract today **and the contradiction names a user outcome or a consumer
@@ -198,9 +198,89 @@ Open the ledger held — assigned to the operator, carrying the `operator` label
 so no unattended tick can pick it, and say in its body that it is a record and
 is never built directly.
 
+### Prune — removing a decided entry
+
+A ledger nothing removes from grows until reading all of it costs more than
+deciding it, and the read is what fails first: a thread long enough to be read
+in windows eventually returns a window holding no live entry at all, and an
+accumulation nobody can see reads exactly like an accumulation that is not
+there. So a disposition is followed by a removal, and what the ledger holds is
+the entries still waiting plus the records of what was decided about the rest.
+Those records accumulate as well, and nothing retires them — but one per pass
+against many entries per pass is the trade this makes, not an oversight.
+
+**Prunable is a property of the record, not of the entry.** An entry comes off
+only where a row in a disposition already on the thread names its comment id
+**and** carries its case well enough to be read on its own — **the case is what
+licenses the removal, and the id only says where to apply it**. A row giving an
+id and an outcome alone authorises nothing: act on it and the entry is gone with
+its finding, which is the loss this operation is arranged to avoid. The test is
+whether the row reads without the entry, so that a reader who never saw the
+comment can still tell what was found and what was decided about it. That
+disposition is the authority and the only place the finding survives, so it is
+written, read back, and only then acted on. The caller that composed it supplies
+the ids; nothing infers one from an entry's wording, and a comment no
+disposition names is undecided rather than old — it stays, and it is the next
+pass's material.
+
+**A comment is the unit of removal, a case is the unit of decision, and they
+are not the same.** One comment often raises several distinct cases, and a pass
+often decides some and not others — measured on a working ledger, one comment
+had been disposed of across three separate rows, each answering a different case
+inside it, and a pass there counted its corpus in cases at roughly twice the
+comments carrying them. So a comment leaves the thread only when every case it
+raises is named by a row. One the rows cover in part stays whole — its decided
+cases are recorded in the disposition, and what is left is the next pass's
+material. A row names the case it decided and carries the comment id as where
+that case lives, which is not the same as disposing of the comment.
+
+**A comment that records a decision is never prunable.** A drop is a decision
+written down (spine P5), and after a prune that comment is the only place it is
+written; removing it turns a decided drop into an entry nobody can see was
+answered. What makes a comment one of these is its purpose — it disposes of
+other entries rather than raising a finding — never the words it happens to use,
+which is how a pass keyed on a heading reaches for a genuine disposition filed
+under an unexpected title. The issue itself is kept for the same reason, under
+*Shared rules* below: what this operation removes is an item inside the record,
+never the record.
+
+**Name every id literally, in small batches.** A scope assembled by a pipeline
+over a query's output is a scope nobody read, and a removal is not revertible,
+so the call carries the ids as written characters and the run can say, before it
+fires, exactly which entries it is about to lose. Read each one's body
+immediately beforehand: that read confirms the id is the entry the disposition
+says it is, and it is the last time anybody sees it. **A body that contradicts
+what its rows say about it stops the prune** — the disposition and the thread
+disagree about what was decided, and no removal is safe until that is resolved.
+A body merely raising a case no row reaches is not a contradiction but the
+coverage rule above: that comment stays whole, and the prune carries on.
+
+**The postcondition is an independent read with something in it that must
+survive.** There is nothing to re-read where the entry was, so verify the other
+direction — read the thread back and compare it against the id list the
+pre-delete read returned, which is the denominator and the reason that read is
+kept rather than discarded. Confirm that every pruned id is absent, every other
+id on that list is still present, and **the read reached the end of the thread
+rather than stopping short of it**. Quantified over the post-prune read instead,
+"everything else is present" is true by construction and says nothing, because a
+read that stops early reports every comment it never reached as absent — which
+is the answer this check exists to refuse.
+
+What shows the read got to the end is the backend's own signal, and the
+transport reference names which one it has. Where the read pages oldest-first,
+this pass's own disposition is the newest comment and comes back last, so its
+presence is the evidence — and only the newest serves, since an older
+disposition returns from every truncated read there is. A thread drained before
+holds several, and where a pass wrote a second one to complete its record that
+second is the newest. Where instead the connection reports that it stopped, that
+report is the signal and no comment's position carries it. Do not assume an
+order a reference has not stated. Compare identities, not a count. Exit status
+settles nothing here, as nowhere else in this skill.
+
 ## Shared rules, whichever backend
 
-- **Never delete an issue** — cancel it; the record stays.
+- **Never delete an issue** — cancel it; the record stays. Removing an entry
+  from inside the ledger is *Prune* above, and is not this.
 - A merged PR auto-closes or auto-transitions every ticket it names (an id in
   the branch, title, body, or a commit message). Put a ticket id on those
   surfaces only when the PR actually completes that ticket; a PR that merely

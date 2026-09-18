@@ -145,7 +145,11 @@ def _run_guard(repo: Path, edited: Path, *, tmpdir: Path | None = None) -> str:
         timeout=30,
     )
     assert proc.returncode == 0, f"hook errored: {proc.stderr}"
-    return json.loads(proc.stdout).get("additionalContext", "")
+    # The delivered position, not the computed one: ``hookSpecificOutput`` is the
+    # only place a ``PreToolUse`` hook's context reaches Claude Code, and reading
+    # the top-level key here is what let #688 sit green while no warning arrived.
+    # The shape is asserted in ``test_advisory_hook_delivery_shape``.
+    return json.loads(proc.stdout).get("hookSpecificOutput", {}).get("additionalContext", "")
 
 
 def test_guard_recognises_trunk_as_default(tmp_path: Path) -> None:

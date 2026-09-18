@@ -654,7 +654,7 @@ inventory guard holds names and counts to the tracked tree; reviewers, rather th
 prose predicate, hold narrative accuracy — and at this review that lede was the one
 place where #621 moved the guarded count and left the sentence beside it standing.
 
-The same `hooks/hooks.json` serves both hosts. The PreToolUse scripts normalize Claude Code's `tool_name` / `tool_input` and Codex's corresponding payload before evaluating the request. Claude decisions retain their existing output contract. A Codex advisory returns `hookSpecificOutput.additionalContext`; a benign Codex request and every Codex fail-open catch path exit successfully with no stdout, rather than emitting the unsupported `{continue:true}` response. `prompt-guard.js` and `workflow-guard.js` also read Codex `apply_patch` requests from `tool_input.command`.
+The same `hooks/hooks.json` serves both hosts. The PreToolUse scripts normalize Claude Code's `tool_name` / `tool_input` and Codex's corresponding payload before evaluating the request. **Every advisory's warning is delivered inside `hookSpecificOutput` on both hosts, unified at #688.** Before that fix, `prompt-guard.js`, `workflow-guard.js` and `push-target-guard.js` wrote the nested `hookSpecificOutput.additionalContext` envelope for Codex only and handed Claude Code a top-level `additionalContext` beside `continue: true` — a position Claude Code discards on a `PreToolUse` hook, so none of the three ever reached a live Claude Code session (measured at `13.0.0`/`43bc401`; `test-lock-guard.js`'s refusal was already immune to this, since its refusal always wrote the nested shape). The fix drops `continue` from the warning branch entirely, on both hosts — it defaults to true when absent, so the omission changes nothing a host reads — leaving one warning shape rather than two. `tests/unit/test_advisory_hook_delivery_shape.py` derives the expected envelope from `test-lock-guard.js`'s own refusal rather than asserting a remembered constant, so a future host change that moves the contract carries this module with it. A benign Codex request and every Codex fail-open catch path still exit successfully with no stdout, rather than emitting the unsupported `{continue:true}` response; a benign Claude Code request still gets a bare `{"continue": true}`. `prompt-guard.js` and `workflow-guard.js` also read Codex `apply_patch` requests from `tool_input.command`.
 
 `push-target-guard.js` and `plugin-version.js` resolve `branches:` through
 `scripts/harness-config.js`, and `test-lock-guard.js` resolves `paths.tests` and,
@@ -1307,10 +1307,12 @@ runs earlier in the same layer-on run and seeds the Codex twin `AGENTS.md` *into
 design directory*, so a copy gated on the destination **directory** being absent would
 find it present in every ordinary run, copy nothing, and report success over a consumer
 holding an `AGENTS.md` and no tiers. Asking per file is hydrate's own root rule — absence
-licenses creation — rather than an exception to it, and it makes `AGENTS.md` resolve
-itself: step 5 writes it first, so the per-file rule finds it present and skips it. A
-consumer that already owns a design system keeps every file of it and receives only the
-ones it lacks. The first cut of this change gated on the directory and was caught at
+licenses creation — rather than an exception to it. The reading this record shipped,
+that `AGENTS.md` resolves itself because step 5 writes it first and the per-file rule
+then finds it present, was an ordering rather than a rule and **#668 retired it**: the
+file is out because no row of the skill's table names it, in every run and whether or
+not step 5 wrote a twin. A consumer that already owns a design system keeps every file
+of it and receives only the ones it lacks. The first cut of this change gated on the directory and was caught at
 review; the per-file rule is stated in both `skills/design-system/SKILL.md` and step 11,
 and generalises to any later asset-carrying skill.
 
@@ -1769,18 +1771,18 @@ empty, verified at this review. So the guidance the exclusion rules out —
 shipped; what shipped only ever runs after a defect this ticket exists to
 surface.
 
-**The open decision the grounding comment raised stays open, correctly.**
+**The open decision the grounding comment raised stayed open, correctly, until #675 closed it.**
 `specs/features/plugin-surface.md`'s own *Decision: The design rule and its
 Codex twin join the created-where-absent set* (below) states that hydrate
 writes a missing twin "from the present one" and blocks a divergence between
-two existing files; `skills/hydrate/SKILL.md` step 5 does neither — it writes
-a missing side from the **template**, under that side's own preamble, and
-never blocks. The shipped bullet's remedy paragraph says the same thing step
-5 says — "step 5 writes the missing side's shared region from the template" —
-never the sibling, so it does not resolve the mismatch between the decision's
-text and the shipped skill and does not overstate what a re-hydration
-produces. Reconciling the two is the mechanism change this ticket's own body
-puts out of scope.
+two existing files; at this ticket's own tree, `skills/hydrate/SKILL.md`
+step 5 did neither — it wrote a missing side from the **template**, under
+that side's own preamble, and never blocked. The shipped bullet's remedy
+paragraph said the same thing step 5 said — "step 5 writes the missing side's
+shared region from the template" — never the sibling, so it did not resolve
+the mismatch between the decision's text and the shipped skill and did not
+overstate what a re-hydration produced. Reconciling the two was the mechanism change that ticket's own body put out
+of scope. **Closed 2026-09-19 by #675** -- see *#675: step 5 gains the Decision's three states* below.
 
 **A generic clause with one instance.** The bullet derives the twin's
 directory from `harness.yaml`'s `paths.<layer>` key and derives the `layers:`
@@ -2015,8 +2017,10 @@ renumbering and is corrected here, `skills/build/SKILL.md:25` → `:26`, still t
 `build/SKILL.md:69-70` and measures that file at 70 lines, both already false at
 `990156e`, where it stood at 63 lines with no line 69, and this change takes it
 to 64 — no closer to true and no further from it, so it is the ledger's rather
-than this ticket's. And neither skill names which hold label a red-base hold
-carries, which was equally true before this change.
+than this ticket's. And at this tree, neither skill named which hold label
+a red-base hold carries, which was equally true before this change.
+**Closed 2026-09-19 by #673** -- see *#673: the portable-dependency caveat
+and the red-base hold's label* below.
 
 
 ### #650: an asset can be copy-on-request, and the design layer ships one executable
@@ -3089,6 +3093,570 @@ this change modified, which gained the stderr assertion. The seven new controls
 and pins stay green there, each carrying its own entry in the table that kills
 it, which is what stops a green control being read as evidence.
 
+
+### #667: the design assets describe the repo that receives them
+
+**The scope was eighteen files, not two or three.** The ticket named the root
+`README.md`, `00-brand/README.md` and `03-tokens/tokens.json`. At the base
+`c49dd55e` every one of the eighteen tracked files under
+`skills/design-system/assets/` matched `harness`, `sluengen` or
+`docs/index.html`, and the widest instance was the least visible: `owner:
+sluengen` stood in fifteen frontmatter blocks, so a consumer hydrating the
+design layer received a personal username recorded as the owner of its own
+design system. Harness-as-subject prose was concentrated in the root
+`README.md`, `00-brand`, `03-tokens` and the archetype and flow tiers, with a
+sentence each in four more files. That distribution is what refuted the ticket's
+own first option: a per-file `never` disposition would have marked every asset
+and left the design layer delivering nothing.
+
+**Sixteen files rewritten, and no new value on the copy column.** The two
+tracked assets left alone are `build_design_tokens.py`, which #650 already
+marked `on request` and whose two non-portable constants the skill already
+names, and `AGENTS.md`, which the next commit takes out of the asset set
+entirely — so both sit outside AC-1 by a stated disposition rather than by
+having been missed. The sixteen are now scaffolds written about the repo that
+receives them: each tier states what belongs in it and what fills it, the root
+`README.md` is the tree's own portable account of itself, and `tokens.json`
+declares its values a placeholder palette. **No token value moved.** The
+`tokens.json` diff touches `_meta.system`, `_meta.note`, `_meta.capture` and two
+`_comment` strings and no leaf, so the drift guard compares the bytes it
+compared before — confirmed by its stage passing at the certifying run rather
+than asserted.
+
+**The decision and its alternatives, which AC-3 asked for.** No third copy
+disposition: the discriminator this repo recorded three days earlier
+(`specs/architecture-principles.md` → *An asset table carries a copy
+disposition, and absence is not consent*) says a mark is for an asset whose
+landing does something a deletion does not undo, and that surplus alone does not
+earn one. Harness-describing prose in a scaffold is surplus — a deletion undoes
+it completely — so the rule already on the books refuses the mark, and the fix
+is the files rather than the table. The three alternatives lost for reasons that
+were measured rather than preferred. A `never` value per file empties the set,
+as the eighteen-of-eighteen scan shows. Keeping a second, harness-only copy of
+the assets outside `assets/` is refused by a standing guard, not by judgment:
+`tests/unit/test_design_system_skill_assets.py`'s
+`test_this_repo_consumes_the_assets_where_it_declares_them` pins
+`paths.design_system` to the shipped tree precisely so there is one copy.
+Marking the instance-shaped files `on request` uses only the existing
+vocabulary and is therefore the cheapest option that exists, and it loses
+because it leaves a consumer a hole at `00-brand` — the tier every other tier
+depends on — and turns the report into a standing offer of a file nobody should
+accept.
+
+**This repo's own brand, voice and page rules moved; they were not deleted.**
+The spec's first read was that `00-brand/README.md` held one load-bearing rule
+already carried elsewhere. Re-derivation corrected it before the build: one of
+its four rules was a second copy (the page-states-what-is rule, whose inventory
+half `tests/unit/test_landing_page_inventory.py` holds), and the other three —
+one skin and no re-skinning mechanism, the four-hue domain table with the note
+that the names are inherited from the retired Four Loops model, and
+self-contained as a brand constraint — were carried nowhere else. Those, the
+whole of `01-voice`'s register and principles, and the whole of
+`02-principles`' density, interactivity, accessibility and motion laws are now
+`.claude/rules/design.md`, which is repo-owned, ships nowhere, and already loads
+on `skills/design-system/assets/**` and `docs/**` — the two trees an author of
+the landing page or the token source is working in. The move was checked against
+the base text rather than taken on trust: every rule in the three files survives,
+and what was dropped is the *Colour carries structure, not mood* paragraph, a
+restatement of the four-hue rule beside it, and `00-brand`'s *Where the detail
+lives* note, whose instruction to file a brand decision "here" would have been
+false the moment the directory became a scaffold. The page claims the moved text
+makes were re-derived against `docs/index.html` at this tree: two favicon link
+elements and no other `<link>`, no `<script>`, `<iframe>` or `<img>`, no `url()`
+or `@import`, no transition or keyframe, and one external anchor —
+`https://github.com/sluengen/harness` — which is the click the *self-contained*
+rule explicitly permits.
+
+**AC-1 and AC-2, re-derived over the shipping tree.** The sixteen files a
+consumer receives carry no match for `harness`, `sluengen`, `docs/index.html`,
+`spine`, `plugin`, `verify.sh`, `four loops`, `self-host`, `landing page`, a
+ticket reference or a `../../..` path. Every markdown link in the set resolves
+inside the design directory. The four `owner:` lines that remain are the
+`_template.md` scaffolds' own field, reading `owner: <who answers for it>`,
+which is the placeholder a consumer fills. AC-2 holds by absence: no shipped
+asset describes the token generator as unlanded, and the two claims that did —
+"once the generator lands (#242)" and "(once #243 lands) a lint that forbids raw
+values" — lived only in the root `README.md`, which was rewritten whole.
+
+**What stays repo-shaped, deliberately.** The placeholder palette keeps its
+`loop.*` semantic token paths, because those are this repo's live token source
+and the drift guard binds them to `docs/index.html`; `03-tokens/README.md`
+explains the shipped names as it finds them, and a consumer replacing the
+palette renames them. The root `README.md` still points at
+`templates/design-system.md` for the contract the tree implements — a plugin
+path, named the same way the rule seeded into every consumer at step 5 already
+names it, and none of the three subjects AC-1 enumerates.
+
+### #668: a table row is the membership, so an unlisted file never travels
+
+**Two documents asserted an exclusion that neither made.** `skills/hydrate/`
+step 11 called `AGENTS.md` "the file step 5 already owns", and
+`skills/design-system/SKILL.md` stated the mechanism honestly — step 5 writes it
+first, so the per-file rule finds it present and skips it — and then, four
+sentences into the same paragraph, stated the special case it had just denied
+having: "Nothing here may copy it ahead of step 5". What excluded the file was
+the destination being occupied, and the input where it is not occupied is
+reachable: a repo that declares a design directory it has not created
+contributes no glob at step 5, so step 5 writes no Codex twin there, and step
+11's own first copy is what brings the directory into being. The absence rule
+then licensed copying this skill's `AGENTS.md` — a preamble that opens "this
+repo's design directory" and cites `#547` and `.claude/rules/design.md` — into
+that consumer as its binding Codex instruction file. The second half of the same
+clause was that nothing bounded the asset set: neither document said tracked,
+committed or shipped, so a build artifact under `assets/` had an absent
+destination, no mark, and no clause excluding it.
+
+**One rule closes both halves.** A row reaches every file at or under what it
+names, and that reach is now both the membership and the extent of any mark it
+carries. Step 11 copies what the table names and nothing else; a skill that
+ships assets and names none copies nothing and is reported rather than having a
+set invented for it. The column's default is untouched — a table declaring no
+`Copy` column still has every row copy-if-absent — so what narrows is which
+*files* a table governs, never how a cell reads.
+
+**The membership was derived file by file at this tree, because the rule is a
+regression if any shipped asset falls outside it.** Eighteen files are tracked
+under `skills/design-system/assets/`. The first row, `00-brand` … `07-flows`,
+reaches the fifteen files under the eight tier directories; the `README.md` row
+reaches one; the `build_design_tokens.py` row reaches one and carries the only
+mark. That is seventeen, which is every tracked asset except `AGENTS.md`. The
+remaining three rows — `03-tokens/tokens.json`, the naming pair, and the four
+`_template.md` scaffolds — name files the first row already reaches, so they
+describe the set without extending it and no file's membership depends on
+reading their ellipses. The first row's ellipsis is the one that had to be
+unambiguous, and the sentence beneath the table now says "the first row carries
+its **eight** tier directories entire" against a skill body that enumerates all
+eight by name.
+
+**`AGENTS.md` gets no row, which is the point rather than an omission.** It is
+not this skill's asset: it is the Codex twin step 5 seeds from
+`templates/rules/design-system.md`, resident under `assets/` only because this
+repo's `paths.design_system` resolves to the tree the skill ships. A row would
+have recorded the false premise — that the file is one of the skill's assets —
+in the table, which is the more authoritative place to be wrong. The producing
+skill's paragraph now says so plainly, and the denial and the special case go
+together, which is AC-3.
+
+**What step 11 does in the reachable input, stated rather than inferred.**
+Where the gap is one this step's own copy creates — the repo declared a design
+directory it did not have, step 5's precondition failed, and this step's first
+file brings the directory into being — the run reports the twin's path
+`blocked`, naming `templates/rules/design-system.md` as what fills it, and names
+two remedies: hydrate again now that the directory exists, or write the twin by
+hand. `blocked` is the existing word and the discriminator it is chosen against
+is step 13's own — bytes untouched and something waiting on a decision — which
+is exactly the case, and the deliberate opposite of the `retained` a withheld
+`on request` row takes.
+
+**No third `Copy` value, and no `tracked` bound.** `never` on an `AGENTS.md`
+row answers half the defect and leaves the build artifact, because it keeps the
+directory as the membership list. Bounding that other half on the repository's
+index fails at the point of use: an installed plugin runs from a version-pinned
+copy of the tree at `~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/`,
+and none of the eleven such copies of this plugin on the machine the change was
+measured on carries a `.git` — nor does any of the eighteen cached plugin
+versions there — so `git ls-files` in that tree answers nothing or answers about
+some enclosing checkout. Membership by row is evaluable from the document alone,
+in every deployment. `on request` for the same file is worse than either: it
+converts a silent wrong copy into a standing offer of the harness's own
+instruction file at every hydration.
+
+**The artifact half is not hypothetical.** `tests/unit/test_build_design_tokens.py`
+loads the builder through `importlib.util.spec_from_file_location`, so CPython
+writes `skills/design-system/assets/__pycache__/` beside the source on every
+gate run — inside the tree hydration copies out. It is invisible today only
+because `tests/unit/test_seeded_assets_are_tracked.py` exempts `__pycache__` by
+name in its `_NEVER_SHIPPED` tuple, which holds the tree side of the property
+and never that step 11 reads only the index. Under the new rule no row reaches
+it: the builder's row names a file, and a sibling directory is not at or under
+it. Removing the pollution at the source is on the improvement ledger rather
+than in this change.
+
+**Recorded as an amendment, not a new block.** `specs/architecture-principles.md`
+→ *An asset table carries a copy disposition, and absence is not consent* gains
+three paragraphs: the membership rule and the one instance that forced it, the
+refused third value with its measurement, and a note that no row gains a mark
+here so the precedence question the original block left open is still
+unreachable. That last paragraph also records that the block's stated trigger
+for precedence — "the first skill to mark a second row" — is predicated on a
+count where the failure is containment, and sends the correction to the ledger
+rather than folding it in, because nothing in this change depends on it. Four
+further residuals went the same way: step 5's "declares *and has*" predicate is
+evaluated before the step that creates the directory; whether a second hydration
+seeds an absent twin is ambiguous in the shipped text, which is why step 11 names
+the by-hand remedy beside the re-hydration one rather than relying on either;
+step 11's trigger says "a skill this run *seeds*", which is undefined for a skill
+that ships with the plugin; and the `__pycache__` above.
+
+**The version stays at `13.0.0`, and the class was judged rather than
+inherited.** #668 reaches the grammar's major clause on its own terms: in the
+one reachable input, a hydration that used to write `<design>/AGENTS.md` now
+writes nothing there and reports `blocked`, and this record already calls that
+shape "#643's major" where #650 distinguished itself from it. What the class
+buys is that the release reaches a consuming repo as a decision rather than an
+auto-pull, and `13.0.0` against `origin/main`'s `12.5.0` already buys it: #661
+took the cycle's raise to major at its own review, and a cycle's version moves
+once per cycle rather than once per change. A second raise to `14.0.0` would
+change nothing about how the release is pulled and would break the
+one-move-per-cycle rule that gives `/build` step 1 its owner. #667 is minor on
+every point — no command, argument, output schema or refusal reason moves, and a
+consumer that already holds copied assets is never rewritten — so it asks for
+nothing above the floor either. All five homes read `13.0.0`: both plugin
+manifests and the three `spine:generated` markers.
+
+**Verification, over the branch rather than over either commit.** The two
+tickets share `667-668` on one branch with the commits kept separate, and #667
+lands first because #668 edits the same asset table; `AGENTS.md` is therefore
+still harness-shaped and still in the set at `bdd8737c`, and out of the set at
+`e0c1cfc7`, which is the tree the verdict and the landing cover. `bash
+scripts/verify.sh` was run and read by the reviewer at certification over the
+tree carrying this record: ruff clean, mypy clean over three source files, 631
+tests passed, 85.47% coverage against the 85% floor, design-token drift guard
+OK, `All checks passed`, exit 0. The base `c49dd55e` is `origin/dev` unmoved, so
+no reconciliation stood between the branch and the landing. No test and no
+executable changed in either commit — the twenty changed files are nineteen
+markdown and one JSON whose leaf values are untouched — so the evidence for both is the gate plus
+direct reading, which is what ADR 0017 D5 leaves for a change whose subject is
+what a document instructs.
+
+### #687: the ledger gains a removal, and a row in a disposition is what licenses it
+
+**The ledger only ever grew, and what fails first is a read rather than the
+length.** `skills/drain`'s pile-two procedure ended at *"Record the outcomes back
+on the ledger thread as a comment"*, and the operation it routed through was
+titled *"`ledger` — appending to the improvement ledger"*; neither transport
+reference carried a removal. So every pass made the thread longer, and the
+comments endpoint pages oldest-first, which means a reader capped at *N* returns
+the oldest *N* and drops the newest — exactly where the live entries sit. A drain
+reading that window then correctly reports nothing to drain while the
+accumulation grows behind it, and an accumulation nobody can see reads like an
+accumulation that is not there. Read at certification, harness's own ledger #450
+holds 13 comments; it had been hand-pruned to that the morning the ticket was
+filed, from 208 of which one was live — the figure the ticket was filed on, and
+one the prune itself put beyond re-measurement.
+
+**The selector is an enumeration, which replaced a design the first change spec
+had already recorded.** The filed approach was classify-and-sweep: prunable is an
+entry above the newest drain outcome that is not itself a decision record. What
+ships instead is that the drain's disposition lists each decided case by comment
+id with its case restated, and prunable is exactly that list — *"Prunable is a
+property of the record, not of the entry."* Three things decided it. It keeps an
+irreversible delete off a judgment about a comment's genre, and the near-miss
+that motivated the ticket is the argument: during the hand prune of 2026-09-18
+the comment `## Partial disposition — 2026-08-31, operator-directed` survived
+only on a second reading, a genuine decision record under a heading no keyword
+pass matches. It works on a ledger nobody has drained, where there is no boundary
+comment to read at all and a boundary selector fails open or closed with both
+wrong — the `**Boundary.**` paragraph #450's own drains grew is named nowhere in
+`skills/`, so it is superseded rather than retired and should not return as a
+selector. And nothing needs retroactive classification any more, because the
+207-comment pile a sweep would have cleaned was already gone. The genre
+classifier survives as a refusal floor keyed on a comment's purpose rather than
+its words, and it subtracts from the enumerated set.
+
+**A comment is the unit of removal, a case is the unit of decision, and both
+homes say so because they are not the same thing.** A ledger comment routinely
+raises several findings and a pass decides some of them, so a comment named by
+one row can still have undecided cases inside it — deleting it then takes a
+finding with the entry, which is the single loss the whole operation is arranged
+to avoid. Measured at certification on #450: comment `5626010176` is disposed of
+across three separate disposition rows, each answering a different case inside
+it, and the 2026-09-12 drain counted its own corpus as *"32 comments carrying 54
+distinct cases"*. So a comment leaves the thread only when every case it raises
+is named by a row; one the rows cover in part stays whole and is the next pass's
+material. `drain` states the producing half — one row per case, not one per
+comment — and `tracker` states the consuming half.
+
+**The case licenses the removal and the id only says where to apply it.** A row
+giving an id and an outcome alone authorises nothing, and the test is whether the
+row reads without the entry, so a reader who never saw the comment can still tell
+what was found and what was decided. That clause sits inside the sentence that
+licenses the act in both homes rather than arriving after it, which is the
+difference between a rule and a note: a run reading only as far as the act
+otherwise prunes on the id. `drain` carries the same shape for its own act
+instruction — *"Prune only the comment ids named by rows that carry the case"* —
+and adds that the ticket ids a fold's row also carries are never delete targets.
+Where the read-back is short of what the pass decided, the pass writes a second
+disposition completing its own record and prunes against both; a run holding no
+decisions of its own completes nothing, because from the thread alone an entry no
+row names is indistinguishable from one a pass deliberately left.
+
+**The postcondition is quantified over the pre-delete read, which is why that
+read is kept.** There is nothing to re-read where an entry was, so the check runs
+the other direction: against the id list the pre-delete read returned, every
+pruned id absent and every other one present, plus evidence the read reached the
+end of the thread. Quantified over the post-prune read instead it is true by
+construction, because a read that stops early reports every comment it never
+reached as absent — the answer the check exists to refuse. `tracker` names the
+completeness signal abstractly and each reference states the one its backend has:
+for GitHub the endpoint pages oldest-first, so this pass's own disposition is the
+last id returned and a read not ending there is truncated; for Linear it is
+`pageInfo.hasNextPage`, which is order-agnostic, and that file says in as many
+words that it does not state which end of the connection the newest comment
+arrives from. That split is a departure from the design, which had put the
+positional rule in `tracker` as backend-neutral: it holds for GitHub and is
+unverified for Linear, and an unmeasured platform fact in shipped guidance is a
+claim. The Linear recipe is honest about its other limit too — `commentDelete`
+returns `success`, Linear hides archived resources from an ordinary read, and the
+promise recorded is absence from the connection and nothing more.
+
+**The batch shape is guidance about what a host will actually run.** Every id is
+written out as literal characters, about fifteen to a call, never a pipeline over
+a query's output — a scope assembled by a pipeline is a scope nobody read, and
+the removal is not revertible. `references/github.md` carries the measurement
+that fixed the number: pruning #450 by hand on 2026-09-18, a piped id list was
+refused as an unverifiable deletion scope and a single batch of thirty as a bulk
+external write, while batches of about fifteen literal ids completed 195 removals
+with no refusal. `references/linear.md` cites that paragraph rather than copying
+it, and says the bound comes from a host screening destructive calls rather than
+from any API. Each target's body is read in full immediately before its delete —
+the last time anybody sees it — and a body contradicting what its rows say about
+it stops the prune, while a body merely raising a case no row reaches is the
+coverage rule instead and leaves that comment whole.
+
+**Two things the change deliberately did not do.** It licenses no issue
+deletion: *Shared rules*' "Never delete an issue" gains only the clause saying
+that removing an entry from inside the ledger is *Prune* and is not this, and the
+operation says the issue is kept for the reason a decision record is. And it adds
+nothing to make the prune operator-attended; `/drain` already runs with the
+operator at the keyboard and `/assess` unattended reports the ledger's size
+instead of draining it, so the confirmation an irreversible delete wants is
+supplied where it already existed rather than restated in the producer. `tracker`
+names no consumer anywhere in the new text, and "disposition" is the generic term
+precisely so the producer is not handed one caller's vocabulary.
+
+**The version stays at the floor, judged rather than inherited.** `13.1.0` over
+`origin/main`'s `13.0.0` in all five homes. No command or skill is renamed and no
+argument or output schema moves. The refusal-reason question is the live one,
+since a `/drain` that used to leave a ledger untouched now destroys tracker
+comments, and what a major buys is that the release reaches a consuming repo as a
+decision rather than an auto-pull. It is minor because that decision is supplied
+at run time by construction and not by the pull: nothing is removed except by
+rows an operator at the keyboard has just decided, read back off the thread
+first, with each id named literally in a batch the run states before it fires.
+The capability is an addition where the guidance previously had none, rather than
+a call that used to be refused and now succeeds.
+
+**Verification, over the tree this record is in.** Base `949bac0f` was
+`origin/dev` at the cut and was re-measured as `origin/dev` unmoved at
+certification, so no reconciliation stood between the branch and the landing. The
+change is four prose files and the five version homes, 167 insertions against 9
+deletions over `949bac0f..ddfa3e27`, with this record the tenth file in the
+certified tree. No test, script or executable changed, so the evidence is the
+gate plus direct reading and use, which is what ADR 0017 D5 leaves for a change
+whose subject is what a document instructs. The criteria
+naming a probe were closed by running one: three fresh contexts given only the
+shipped extract and a constructed ledger thread, two over a disposition carrying
+a caseless row and a row naming a decision record, one control differing from it
+in exactly two rows. All three refused an ordinary entry that contained a
+row-shaped table, refused the caseless row, refused the row naming the decision
+record, left whole the comment whose cases the rows covered only in part, and
+left every entry no row named; the control pruned the two comments the subject
+correctly refused and invented no record completion. `bash scripts/verify.sh` was
+run and read by the reviewer at certification over the tree carrying this record:
+ruff clean, mypy clean over three source files, 631 tests passed, 85.47% coverage
+against the 85% floor, design-token drift guard OK, `All checks passed`, exit 0.
+
+### #662: *Gating the base* names the run's two jobs and its empty-diff dependency
+
+`skills/worktree-isolation/SKILL.md` → *Gating the base* gains three paragraphs
+between the sequencing rationale and the "somebody else's green" note. The first
+names the two jobs the base gate run answers for — attribution, and the only
+routine detector of a red integration branch where nothing else runs on every
+push — and warns that a base command sized for one silently retires the other.
+`sluengen/calibrate` is the measured case: `.github/workflows/verify.yml` runs on
+pull requests and on pushes to `main` only, and its own header comment says most
+work lands on `dev` by direct push, which leaves the base gate as that repo's
+only routine watchdog. The second names the empty-diff dependency: a gate that
+derives its scope from a diff against the integration branch sees none at a
+base, and answers with whatever its author chose for the empty case. Calibrate's
+choice widens rather than narrows — `scripts/verify.sh:1257-1258` prints
+`No scoped changes detected` and sets `run_backend=1`, which pays for
+`docker compose up -d --wait db` and the full `backend_gate` pytest run on every
+worktree cut there. The third assigns resolution to the repo that owns its gate
+script, and states what this change adds none of: no configuration key, no
+scope-passing interface, no requirement that a repo run CI (ADR 0022 points 1
+and 2).
+
+*Creating the worktree*'s closing sentence — "the cost is one gate run per
+worktree, weighed and accepted" — is reconciled rather than left standing: it
+now defers what that run costs and proves to *Gating the base*, which restates
+the costing and says it does not carry unchanged to a gate whose empty case
+answers with its widest arm. The Green bullet's "what the minute buys" becomes
+"what the run buys" to match. No other shipped skill restates this costing, so
+no reconcile is owed outside this file.
+
+No configuration, contract, or test surface changed — prose only, and law 2
+excludes a criterion about what a document says from a measuring test; ADR 0019
+verifies it by review, done here. The version stays at `13.1.0`, this cycle's
+existing minor.
+
+**Verification.** Base `23c1ae66` was `origin/dev` at the cut and unmoved at
+this review. This ticket's own change is one file, 8 insertions and 2 deletions,
+on a branch that also carries #671's unrelated change to
+`skills/engineering/SKILL.md`, reviewed separately. `bash scripts/verify.sh` was
+run and read by the reviewer over the full tree carrying this record: ruff
+clean, mypy clean over three source files, 631 tests passed, 85.47% coverage
+against the 85% floor, design-token drift guard OK, `All checks passed`, exit 0.
+
+### #671: mutation practice gains its first precondition — commit first, restore by file
+
+`skills/engineering/SKILL.md` → *Verification* gains one paragraph, beside the
+two operational-hygiene rules already there (never pipe the gate; run the final
+gate on a quiet machine) and next to the guard-evidence pointer, since mutation
+is how a guard is proven. `engineering` carried no mutation guidance at all
+before this ticket — not a section, not the string — so the paragraph names
+what it is a precondition on rather than assuming surrounding context supplies
+it: commit (or a WIP commit, never a bare stash, since the stash stack is
+shared across every worktree on the clone) before running a mutation tool, and
+restore a mutated file by its own path rather than by reverting its directory,
+because a whole-directory revert discards every other uncommitted change under
+it. A closing clause names the macOS hazard beside it — the temp roots are
+symlinks, so a path written or compared unresolved is not the path that was
+read — and states what a repo whose own tool already backs up and restores per
+target, as this one's `scripts/mutate.py` does, still owes: the commit
+precondition, because the hazard survives in the recovery somebody performs by
+hand once a run is killed.
+
+The ticket's filed grounding held up (the incident is real, the habit is the
+fix) but two of its supporting citations did not, and both were corrected
+across the review cycles this ticket spent rather than in the build itself:
+cycle 1 found the paragraph's second calibrate incident cited as **CAL-1802**,
+which is calibrate's unrelated `AuthState.initialize()` work — the pair is
+**CAL-1409** and **CAL-1825**, the ticket's own filed text having carried the
+error in from a `CAL-1802/1825` typo. Cycle 2 found a `#163` citation for a
+`git checkout -- .` incident that does not resolve to any such story — issue
+#163 is a routine release PR — and the fix was to drop the citation rather than
+find a better one, since the mechanism it illustrates (a directory-level revert
+has a wider blast radius than the file it was aimed at) needs no incident
+number to stand. The same false `#163` citation has three pre-existing homes
+this ticket did not touch (`scripts/mutate.py`, `tests/unit/test_mutate.py`,
+`specs/decisions/0018-gate-marker-convention-is-node.md`); repairing another
+ticket's defect inside this one's tree would have been an unreviewed second
+change, so it went to the improvement ledger (#450) instead.
+
+This is `engineering`'s first shipped mutation guidance, and two of its three
+review cycles were spent on citations the paragraph inherited rather than
+introduced — one from the ticket as filed, one from a docstring already in the
+tree. Copying a cited sentence carries its citation's truth value unmeasured.
+
+No configuration, contract, or test surface changed — prose only, and law 2
+excludes a criterion about what a document says from a measuring test; ADR 0019
+verifies it by review, done here. The version stays at `13.1.0`, this cycle's
+existing minor.
+
+**Verification.** Base `23c1ae66` was `origin/dev` at the cut and unmoved at
+this review. This ticket's change is one file, `skills/engineering/SKILL.md`,
+net 2 lines added across three commits, on a branch that also carries #662's
+unrelated change to `skills/worktree-isolation/SKILL.md`, reviewed separately.
+`bash scripts/verify.sh` was run and read by the reviewer over the full tree at
+`4abf4d0a`: ruff clean, mypy clean over three source files, 631 tests passed,
+85.47% coverage against the 85% floor, design-token drift guard OK,
+`All checks passed`, exit 0.
+
+### #673: the portable-dependency caveat and the red-base hold's label
+
+`skills/worktree-isolation/SKILL.md` gains two clauses, closing the gap
+#660's own record named open (above) and the one filed independently at
+#450 comment 194 item 2. *Linking heavy local artifacts* gains a paragraph
+naming the failure a non-portable dependency produces — a virtualenv's
+absolute paths, a `node_modules` binary built against one interpreter, a
+build cache keyed to its own directory — and says plainly that it "arrives
+dressed as a red base," pointing forward at *Gating the base* rather than
+restating that section's disposition. *Gating the base*'s **Red** bullet
+gains a cross-reference to that paragraph ahead of the existing
+search-before-you-file instruction, and a label for the hold it already told
+a run to file: `operator` by default, because a red base is cleared by a
+repair rather than an answer and the neighbouring bullet already forbids
+this run making that repair; `input` for the narrower case where the run
+cannot tell a host-local failure from a defect in the base and the
+operator's own judgment decides what gets filed. The split mirrors
+`/build`'s own `operator`/`input` usage for a spent cycle budget versus a
+DEFER (`skills/build/SKILL.md:62,64`), so it extends an established pattern
+rather than inventing one.
+
+**Evidence.** Both criteria are about what a document says; law 2 does not
+attach and ADR 0017 D5 admits no guard over prose, so direct review is the
+whole of it, per the ticket's own AC-1 and AC-2. The label choice was
+checked against `AGENTS.md` → *The contract* → *Holds* at this review and
+matches it: `operator` names a hands-on session, `input` names an answer,
+credential or judgment only the operator can supply, and the Red bullet's
+own text states which applies and why for each.
+
+**The version class.** Neither clause renames a command, changes an
+argument, or changes what a call does or refuses: the Red bullet's
+disposition — remove the worktree, hold the task, stop — is exactly what it
+was, and the new sentences add a diagnosis and a label to a hold that
+already happened. No call that used to succeed now refuses and none that
+used to refuse now succeeds, so this stays at the cycle's minor.
+
+**Verification.** `bash scripts/verify.sh` was run and read by the reviewer
+over the full candidate at the implementation commit `68514b0f`: ruff
+clean, mypy clean over three source files, 647 passed, 85.47% coverage against
+the 85% floor, design-token drift guard OK, `All checks passed`, exit 0. This
+ticket's own change is one file, `skills/worktree-isolation/SKILL.md`, 3
+insertions and 1 deletion, on a branch that also carries #675's unrelated
+change to `skills/hydrate/SKILL.md`, reviewed and recorded separately below.
+
+### #675: step 5 gains the Decision's three states
+
+`skills/hydrate/SKILL.md` step 5 is rewritten to implement the split
+*Decision: The design rule and its Codex twin join the created-where-absent
+set* (`:2468-2476`) already specified and step 5 never carried, closing the
+gap the #645 entry above recorded as deliberately open. The pair — the
+Claude-side rule and its Codex twin — now takes three states rather than
+one: **neither present** writes both from
+`templates/rules/design-system.md`, unchanged from before; **one present**
+writes the missing side from the **present sibling** rather than the
+template, so a twin is never born diverged from a survivor the repo has
+since edited; **both present** writes nothing and compares the two shared
+regions, reporting the path `blocked` with the offset of the first
+differing byte where they diverge, or the pair `retained` where they agree.
+The frontmatter-from-`harness.yaml` clause and the no-glob-means-no-rule
+gate #643 shipped both survive all three states unchanged, and the
+repo-owned/never-overwritten bound (step 5's "Two bounds" sentence) still
+holds, since the one write the pair licenses is always to the missing side,
+never to a survivor.
+
+**Evidence.** The ticket's own grounding comment amended AC-1 and AC-2
+before the build began, on the ground that law 2's subject is code and this
+criterion is about what a document says: no measuring test is added, and
+review against the Decision's own quoted text is the evidence AC-1 names.
+AC-2 — the frontmatter gate and the repo-owned bound are unchanged — is
+confirmed at this review by direct reading of the surviving clauses beside
+the new one.
+
+**The version class.** This is major, not the cycle's existing minor. The
+shipped text names its own consequence: "a refresh that used to complete
+now waits on one" — for a repo whose design-rule pair is already both
+present and diverging, running `/harness:hydrate` used to complete with
+nothing reported for that pair (the once-seeded bound already refused to
+touch either file, and step 5 carried no instruction to compare them), and
+now reports `blocked`, obliging the operator to resolve a divergence before
+that path is done. That is the same shape `specs/architecture-principles.md`
+→ *Decision: A seeded rule's globs come from `harness.yaml` alone, and no
+glob means no rule* (`:2528`) turned its own major raise on: "no call...used
+to refuse now succeeds and none that used to succeed now refuses" is the
+discriminating test that record states, and this change fails it in the
+same direction #643 did — a case that used to complete now blocks. Raised
+at this review, inside the candidate, before the certifying gate
+(`review-discipline` → `references/certifying.md`): both plugin manifests
+and all three `spine:generated` markers move from `13.1.0` to `14.0.0`. The
+"one present" state's changed write source (template → present sibling) and
+the "both present, agreeing" state's new `retained` report are both
+ordinary minor material on their own — an implementation swap and an
+additive report row — and neither would have raised this alone; the class
+is judged over the whole diff, and the `blocked`-on-divergence state is
+what carries it.
+
+**Verification.** `bash scripts/verify.sh` was run and read by the reviewer
+over the full candidate at the implementation commit `1325036f`: ruff
+clean, mypy clean over three source files, 647 passed, 85.47% coverage
+against the 85% floor, design-token drift guard OK, `All checks passed`,
+exit 0. This ticket's own change is one file, `skills/hydrate/SKILL.md`, 5
+insertions and 1 deletion, on a branch that also carries #673's unrelated
+change to `skills/worktree-isolation/SKILL.md`, reviewed and recorded
+separately above.
 
 ## Cross-references
 

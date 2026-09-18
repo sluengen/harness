@@ -62,11 +62,15 @@ A bug noticed in actual use does not start from a blank change spec: `/capture` 
 
 Verify every fact the spec rests on that names a file, function, flag, version or decision against the code as it is *now* — a recalled fact reflects what was true when it was written.
 
-Record it as a **Grounding** section: verified facts each anchored to a `path:line` or a measured value, any decision the ticket assumed settled that is actually open, and the open questions. Three rules separate grounding from restating the ticket.
+**A feature-lane design artefact is bound by this section too, not the change spec alone.** A design asserts the same things a spec does: this decision is settled, this is the only caller, nothing else touches this surface. Re-derive each of its tree claims against the tree it will be built on, rather than against what the proposal assumed or an earlier decision recorded. #650's design instructed reverting a decision #649 had deliberately shipped, and nobody caught it at design time because no rule asked anyone to look.
+
+Record it as a **Grounding** section: verified facts each anchored to a `path:line` or a measured value, any decision the ticket assumed settled that is actually open, and the open questions. Four rules separate grounding from restating the ticket.
 
 *Use an instrument that can return the answer you are not expecting.* A comparison that follows a symlink cannot tell a copy from a link; a search matching only file paths cannot see a retired flag name. Choose the probe by what would falsify the claim, not by what would confirm it.
 
 *A completeness claim names the method that produced it and that method's blind spot.* "Every consumer", "the only home", "nothing else reads this" are claims about the whole call graph, so cite the enumeration — the grep, or the type followed to its readers. If it finds a second consumer, the invariant is not recorded: it *is* a finding. A scope claim without its enumeration launders an open violation into a documented invariant that later review trusts.
+
+*Verify a negative by grepping the primitive, not by recalling the surface.* The rule above fixes the shape a claim like "nothing does X" must take; this one is the search that makes it true. Name the call, import, type, decorator or field that anything doing X would have to reach for, grep that, and read every hit. Searching the vocabulary instead finds whatever named itself after X and misses the sibling doing the same work under another name, which is how a negative claim survives review: it was checked against the code its author already knew about.
 
 *Where the spec names a file the diff will touch, name the guards over it.* A test that mirrors or bounds that file is a fact about current reality in exactly the sense this section already requires, and a run that leaves it out spends a gate cycle discovering it.
 

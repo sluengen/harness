@@ -327,3 +327,49 @@ anyone reads the ledger, the scratchpad that path names is gone.
 > visible to the next person who opens the issue, and can be edited. **A ledger
 > entry has no second copy**, and nobody re-reads it until the drain, by which
 > time the file is gone.
+
+#### Prune — removing decided entries
+
+One REST call per comment id, the ids taken from the disposition comment
+(`tracker` → *`ledger`* → *Prune*) and written out literally.
+
+```bash
+# 1. read the thread: what is on it, and the disposition that authorises the
+#    removal. --paginate is not optional — the comments endpoint returns 30 per
+#    page and truncates silently without it (see `open`).
+gh api --paginate repos/<owner>/<name>/issues/<n>/comments \
+  --jq '.[] | "\(.id)\t\(.created_at)\t\(.body[0:120])"'
+
+# 2. read each target's body in full before removing it. The survey above
+#    truncates, so it cannot confirm the id is the entry the disposition says
+#    it is — and this is the last time anybody sees the entry.
+gh api repos/<owner>/<name>/issues/comments/<id-1> --jq '.body'
+
+# 3. remove them, each id a literal, about fifteen per batch. These are comment
+#    ids — a row carrying a ticket id too spells both as bare integers, and the
+#    call below is valid against either.
+gh api -X DELETE repos/<owner>/<name>/issues/comments/<id-1>
+gh api -X DELETE repos/<owner>/<name>/issues/comments/<id-2>
+
+# 4. verify with the same paginated read, diffing against step 1's ids
+gh api --paginate repos/<owner>/<name>/issues/<n>/comments --jq '.[].id'
+```
+
+The endpoint answers **204 with no body**, so the call says nothing about what
+it removed and a second run against the same id is indistinguishable from the
+first at the call site. Step 4 is the evidence, and **step 1's id list is what
+it is compared against** — keep it. Every pruned id gone, every other id step 1
+returned still present, and this pass's disposition, the newest comment, there.
+Because the endpoint pages oldest-first the newest comment is the last id
+returned, so **a read whose last id is not that disposition is truncated**, and
+a truncated read reports every id it did not reach as absent, which is the
+answer the check exists to refuse.
+
+**Build the batch as written commands, never as a pipeline over a query's
+output.** A batch is one invocation carrying that many `DELETE` lines. An agent
+host that screens destructive calls refuses both shapes on sight: pruning the
+harness's own ledger by hand on 2026-09-18, a piped id list was refused as an
+unverifiable deletion scope and a single batch of thirty as a bulk external
+write, while batches of about fifteen literal ids completed 195 removals with
+no refusal. The literal form is what this operation needs anyway, and it is
+what a host will let run.

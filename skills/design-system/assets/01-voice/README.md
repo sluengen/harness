@@ -1,43 +1,47 @@
 ---
 layer: 01-voice
 kind: readme
-status: active
-owner: sluengen
-last_updated: 2026-09-01
+status: scaffold
+last_updated: 2026-09-18
 ---
 
 # 01 · Voice
 
-How the page reads: headings, labels, and descriptions of the plugin surface.
-Captured from the page's existing prose, not invented.
+How the product reads: headings, labels, button text, errors, empty states.
+**Capture it from copy that already exists rather than inventing it** — a voice
+written from scratch describes a product nobody has shipped, and the surface
+then disagrees with it from the first change.
 
-**Register: plain, technical, unhurried.** The page describes an operating
-model to engineers and agents; it does not sell. Sentences state a mechanism,
-its evidence, or the role that carries it.
+Scaffold — this file states what belongs here and is otherwise empty.
 
-## Principles
+## What to write
 
-- **Name the mechanism, not the benefit.** "Ring size = cycle length" states
-  what the diagram encodes; it does not say the diagram is "intuitive" or
-  "powerful". A claim about how good something is, rather than what it does,
-  is a voice violation.
-- **Every section heading is a plain label** in the established small-caps
-  eyebrow style, never a slogan.
-- **Command names and syntax are never paraphrased.** `/build`, `/propose`,
-  `/harness:hydrate` appear verbatim, in `<code>`, exactly as a user would type them.
-- **Status describes the actual enforcement or advisory role.** Use the page's
-  `refuses` and `advises` labels, then name the evidence or condition behind it.
-- **Bold marks the one word that carries the sentence's point**, not for
-  emphasis generally — "Intent flows inward" is bolded on *inward*, because
-  the direction is the fact being stated.
+**One line of register**, in adjectives a reviewer can hold a sentence to:
+plain, technical, unhurried; or warm, brief, encouraging. Then say who the copy
+addresses and whether it sells. Everything below is downstream of that.
 
-Voice is distinct from **tokens** (layer 03): tokens govern what the page
-*looks* like, voice governs what it *says*. A copy change never needs a
-token change, and vice versa.
+Then the principles. Write them as rules a change can violate, each with a worked
+example taken from your own surface — a principle with no example is a preference:
+
+- **What a sentence is allowed to claim.** Naming a mechanism and naming a
+  benefit are different registers, and most products want one of them
+  consistently.
+- **What headings are.** Labels or slogans, and which style carries them.
+- **What is never paraphrased.** Command names, syntax, error codes, legal and
+  pricing terms, anything a user will retype or search for.
+- **How status is worded.** The vocabulary for enabled, blocked, pending,
+  failed — fixed here so that each state reads the same wherever it appears.
+- **What emphasis means.** What bold marks, and what it does not.
+
+## Voice is not tokens
+
+Voice governs what the surface *says*; tokens (layer 03) govern what it *looks*
+like. A copy change never needs a token change, and the reverse. Keeping them
+apart is what lets a writer work here without opening layer 03 at all.
 
 ## Terms that are fixed
 
-The page's skills, agents, and hooks are identified by `data-unit`
-tags. Their visible names and identifiers come from the tracked tree. The
-inventory test verifies that correspondence; reviewers check the surrounding
-narrative directly rather than pinning sentence wording.
+List the names that must appear verbatim, and say where each one's canonical
+spelling comes from — a config file, a database, the code. A visible name that
+drifts from its source is a defect rather than an edit, and naming the source
+here is what makes it checkable.

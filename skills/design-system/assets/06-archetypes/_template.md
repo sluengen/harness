@@ -2,7 +2,6 @@
 layer: 06-archetypes
 kind: template
 status: scaffold
-owner: sluengen
 last_updated: 2026-07-29
 ---
 

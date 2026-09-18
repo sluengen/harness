@@ -112,6 +112,17 @@ def _push_hook_output(command: str, cwd: Path) -> dict:
     return json.loads(proc.stdout)
 
 
+def _advisory(out: dict) -> str:
+    """The warning the host actually receives, or ``""``.
+
+    ``hookSpecificOutput.additionalContext`` is the only position Claude Code
+    reads on a ``PreToolUse`` hook. This module used to read the top-level key,
+    which the host discards — #688. The shape itself is asserted in
+    ``test_advisory_hook_delivery_shape``.
+    """
+    return str(out.get("hookSpecificOutput", {}).get("additionalContext", ""))
+
+
 # --------------------------------------------------------------------------
 # AC-4 — the reader narrows without disarming the guard that survives.
 # --------------------------------------------------------------------------
@@ -163,9 +174,13 @@ def test_a_push_to_a_declared_branch_warns_and_proceeds(tmp_path: Path) -> None:
     repo = _repo(tmp_path, "declared", "branches:\n  integration: dev\n  release: main\n")
     out = _push_hook_output("git push origin dev", repo)
 
-    assert out.get("continue") is True
+    # No ``continue`` on the warning branch since #688: the warning is delivered
+    # in the envelope the host reads, and ``continue`` defaults to true when
+    # absent. What this test is about is that the advisory *advises* and does not
+    # decide, which is the line below.
+    assert "permissionDecision" not in out.get("hookSpecificOutput", {})
     assert "permissionDecision" not in out
-    assert "dev" in out.get("additionalContext", "")
+    assert "dev" in _advisory(out)
 
 
 def test_a_push_to_an_undeclared_branch_says_nothing(tmp_path: Path) -> None:
@@ -174,8 +189,10 @@ def test_a_push_to_an_undeclared_branch_says_nothing(tmp_path: Path) -> None:
     repo = _repo(tmp_path, "undeclared", "branches:\n  integration: dev\n  release: main\n")
     out = _push_hook_output("git push origin scratch/experiment", repo)
 
-    assert out.get("continue") is True
-    assert "additionalContext" not in out
+    assert out == {"continue": True}, (
+        f"the silent case is a bare pass-through, not {out!r}: an advisory that "
+        "fires on everything is noise, and an empty envelope is still an envelope"
+    )
 
 
 def test_the_advisory_cannot_deny(tmp_path: Path) -> None:
@@ -193,7 +210,12 @@ def test_the_advisory_cannot_deny(tmp_path: Path) -> None:
         "git -C /elsewhere push origin main",
     ):
         out = _push_hook_output(command, repo)
-        assert out.get("continue") is True, command
+        # Both positions, because there are two: the hook's own envelope and the
+        # top level. Asserting `continue is True` here used to stand in for "it
+        # did not decide", and that was an incidental fact about the pre-#688
+        # output shape rather than the property this test is named for — the
+        # warning branch no longer carries `continue` at all, on either host.
+        assert "permissionDecision" not in out.get("hookSpecificOutput", {}), command
         assert "permissionDecision" not in out, command
 
 
@@ -227,8 +249,7 @@ def test_an_unreadable_declaration_is_loud_and_falls_back_conservatively(
     )
     assert proc.returncode == 0, proc.stderr
     out = json.loads(proc.stdout)
-    assert out.get("continue") is True
-    assert "main" in out.get("additionalContext", ""), (
+    assert "main" in _advisory(out), (
         "an unreadable declaration left the advisory protecting nothing rather "
         f"than the fallback set; stderr was {proc.stderr!r}"
     )

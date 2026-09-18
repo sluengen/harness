@@ -118,6 +118,18 @@ def _shipped_patterns() -> list[str]:
     return _patterns_in(_HOOK.read_text(encoding="utf-8"))
 
 
+def _advisory(stdout: str) -> str:
+    """The advisory the host actually receives, or ``""``.
+
+    ``hookSpecificOutput.additionalContext`` is the only place a ``PreToolUse``
+    hook's context reaches Claude Code; a top-level key is computed and then
+    discarded, which is what #688 fixed. Reading the delivered position is what
+    keeps this module from going green on output nobody sees. The shape itself is
+    asserted in ``test_advisory_hook_delivery_shape``.
+    """
+    return str(json.loads(stdout).get("hookSpecificOutput", {}).get("additionalContext", ""))
+
+
 def _scan(content: str, *, tool: str = "Write") -> str:
     """Run the hook over ``content`` and return the advisory it produced."""
     payload = {"tool_name": tool, "tool_input": {"content": content}}
@@ -129,7 +141,7 @@ def _scan(content: str, *, tool: str = "Write") -> str:
         timeout=30,
     )
     assert proc.returncode == 0, f"hook errored: {proc.stderr}"
-    return str(json.loads(proc.stdout).get("additionalContext", ""))
+    return _advisory(proc.stdout)
 
 
 # --- the corpus is derived from the hook --------------------------------------
@@ -232,7 +244,7 @@ def test_an_edit_is_scanned_as_well_as_a_write() -> None:
     )
 
     assert proc.returncode == 0, f"hook errored: {proc.stderr}"
-    advisory = str(json.loads(proc.stdout).get("additionalContext", ""))
+    advisory = _advisory(proc.stdout)
     assert source[:48] in advisory, (
         f"an Edit's new_string was not scanned; got {advisory!r}"
     )
