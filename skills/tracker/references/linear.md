@@ -220,3 +220,26 @@ second copy**: the reflection it holds exists nowhere else, so an append that
 reports success and stored something else is lost with nothing to say it ever
 existed. Where the body came from a file, confirm it is the entry's text rather
 than the file's path.
+
+### Prune — removing decided entries
+
+`commentDelete` removes one comment. The ids come from the disposition comment
+(`tracker` → *`ledger`* → *Prune*), one mutation per id, each written literally
+rather than looped over a query's output.
+
+```bash
+LINEAR 'query { issue(id:\"<ledger-id>\") { comments { nodes { id createdAt body } pageInfo { hasNextPage } } } }'
+LINEAR 'mutation { commentDelete(id: \"<comment-id>\") { success } }'
+```
+
+`success` says the call ran. Verify by re-reading the comments connection and
+comparing identities: every pruned id absent, every other entry present, and
+this pass's own disposition — the newest comment, not an older one — still
+returned. **A connection that never reaches the newest comment is not evidence**,
+because it reports every comment it failed to return as absent, which is the
+answer the check exists to refuse. `pageInfo.hasNextPage` is how the connection
+says it stopped, exactly as under *Priority* above.
+
+Linear hides archived resources from an ordinary read, so absence from the
+connection is what this operation promises and all it promises: the entry no
+longer appears when the ledger is read.
