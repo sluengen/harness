@@ -3591,9 +3591,9 @@ already happened. No call that used to succeed now refuses and none that
 used to refuse now succeeds, so this stays at the cycle's minor.
 
 **Verification.** `bash scripts/verify.sh` was run and read by the reviewer
-over the full tree carrying this record at `4534ba99`: ruff clean, mypy
-clean over three source files, 647 passed, 85.47% coverage against the 85%
-floor, design-token drift guard OK, `All checks passed`, exit 0. This
+over the full candidate at the implementation commit `68514b0f`: ruff
+clean, mypy clean over three source files, 647 passed, 85.47% coverage against
+the 85% floor, design-token drift guard OK, `All checks passed`, exit 0. This
 ticket's own change is one file, `skills/worktree-isolation/SKILL.md`, 3
 insertions and 1 deletion, on a branch that also carries #675's unrelated
 change to `skills/hydrate/SKILL.md`, reviewed and recorded separately below.
@@ -3650,13 +3650,13 @@ is judged over the whole diff, and the `blocked`-on-divergence state is
 what carries it.
 
 **Verification.** `bash scripts/verify.sh` was run and read by the reviewer
-over the full tree carrying this record at `4534ba99`: ruff clean, mypy
-clean over three source files, 647 passed, 85.47% coverage against the 85%
-floor, design-token drift guard OK, `All checks passed`, exit 0. This
-ticket's own change is one file, `skills/hydrate/SKILL.md`, 5 insertions and
-1 deletion, on a branch that also carries #673's unrelated change to
-`skills/worktree-isolation/SKILL.md`, reviewed and recorded separately
-above.
+over the full candidate at the implementation commit `1325036f`: ruff
+clean, mypy clean over three source files, 647 passed, 85.47% coverage
+against the 85% floor, design-token drift guard OK, `All checks passed`,
+exit 0. This ticket's own change is one file, `skills/hydrate/SKILL.md`, 5
+insertions and 1 deletion, on a branch that also carries #673's unrelated
+change to `skills/worktree-isolation/SKILL.md`, reviewed and recorded
+separately above.
 
 ## Cross-references
 
