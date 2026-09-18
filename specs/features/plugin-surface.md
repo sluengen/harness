@@ -3317,6 +3317,143 @@ markdown and one JSON whose leaf values are untouched — so the evidence for bo
 direct reading, which is what ADR 0017 D5 leaves for a change whose subject is
 what a document instructs.
 
+### #687: the ledger gains a removal, and a row in a disposition is what licenses it
+
+**The ledger only ever grew, and what fails first is a read rather than the
+length.** `skills/drain`'s pile-two procedure ended at *"Record the outcomes back
+on the ledger thread as a comment"*, and the operation it routed through was
+titled *"`ledger` — appending to the improvement ledger"*; neither transport
+reference carried a removal. So every pass made the thread longer, and the
+comments endpoint pages oldest-first, which means a reader capped at *N* returns
+the oldest *N* and drops the newest — exactly where the live entries sit. A drain
+reading that window then correctly reports nothing to drain while the
+accumulation grows behind it, and an accumulation nobody can see reads like an
+accumulation that is not there. Read at certification, harness's own ledger #450
+holds 13 comments; it had been hand-pruned to that the morning the ticket was
+filed, from 208 of which one was live — the figure the ticket was filed on, and
+one the prune itself put beyond re-measurement.
+
+**The selector is an enumeration, which replaced a design the first change spec
+had already recorded.** The filed approach was classify-and-sweep: prunable is an
+entry above the newest drain outcome that is not itself a decision record. What
+ships instead is that the drain's disposition lists each decided case by comment
+id with its case restated, and prunable is exactly that list — *"Prunable is a
+property of the record, not of the entry."* Three things decided it. It keeps an
+irreversible delete off a judgment about a comment's genre, and the near-miss
+that motivated the ticket is the argument: during the hand prune of 2026-09-18
+the comment `## Partial disposition — 2026-08-31, operator-directed` survived
+only on a second reading, a genuine decision record under a heading no keyword
+pass matches. It works on a ledger nobody has drained, where there is no boundary
+comment to read at all and a boundary selector fails open or closed with both
+wrong — the `**Boundary.**` paragraph #450's own drains grew is named nowhere in
+`skills/`, so it is superseded rather than retired and should not return as a
+selector. And nothing needs retroactive classification any more, because the
+207-comment pile a sweep would have cleaned was already gone. The genre
+classifier survives as a refusal floor keyed on a comment's purpose rather than
+its words, and it subtracts from the enumerated set.
+
+**A comment is the unit of removal, a case is the unit of decision, and both
+homes say so because they are not the same thing.** A ledger comment routinely
+raises several findings and a pass decides some of them, so a comment named by
+one row can still have undecided cases inside it — deleting it then takes a
+finding with the entry, which is the single loss the whole operation is arranged
+to avoid. Measured at certification on #450: comment `5626010176` is disposed of
+across three separate disposition rows, each answering a different case inside
+it, and the 2026-09-12 drain counted its own corpus as *"32 comments carrying 54
+distinct cases"*. So a comment leaves the thread only when every case it raises
+is named by a row; one the rows cover in part stays whole and is the next pass's
+material. `drain` states the producing half — one row per case, not one per
+comment — and `tracker` states the consuming half.
+
+**The case licenses the removal and the id only says where to apply it.** A row
+giving an id and an outcome alone authorises nothing, and the test is whether the
+row reads without the entry, so a reader who never saw the comment can still tell
+what was found and what was decided. That clause sits inside the sentence that
+licenses the act in both homes rather than arriving after it, which is the
+difference between a rule and a note: a run reading only as far as the act
+otherwise prunes on the id. `drain` carries the same shape for its own act
+instruction — *"Prune only the comment ids named by rows that carry the case"* —
+and adds that the ticket ids a fold's row also carries are never delete targets.
+Where the read-back is short of what the pass decided, the pass writes a second
+disposition completing its own record and prunes against both; a run holding no
+decisions of its own completes nothing, because from the thread alone an entry no
+row names is indistinguishable from one a pass deliberately left.
+
+**The postcondition is quantified over the pre-delete read, which is why that
+read is kept.** There is nothing to re-read where an entry was, so the check runs
+the other direction: against the id list the pre-delete read returned, every
+pruned id absent and every other one present, plus evidence the read reached the
+end of the thread. Quantified over the post-prune read instead it is true by
+construction, because a read that stops early reports every comment it never
+reached as absent — the answer the check exists to refuse. `tracker` names the
+completeness signal abstractly and each reference states the one its backend has:
+for GitHub the endpoint pages oldest-first, so this pass's own disposition is the
+last id returned and a read not ending there is truncated; for Linear it is
+`pageInfo.hasNextPage`, which is order-agnostic, and that file says in as many
+words that it does not state which end of the connection the newest comment
+arrives from. That split is a departure from the design, which had put the
+positional rule in `tracker` as backend-neutral: it holds for GitHub and is
+unverified for Linear, and an unmeasured platform fact in shipped guidance is a
+claim. The Linear recipe is honest about its other limit too — `commentDelete`
+returns `success`, Linear hides archived resources from an ordinary read, and the
+promise recorded is absence from the connection and nothing more.
+
+**The batch shape is guidance about what a host will actually run.** Every id is
+written out as literal characters, about fifteen to a call, never a pipeline over
+a query's output — a scope assembled by a pipeline is a scope nobody read, and
+the removal is not revertible. `references/github.md` carries the measurement
+that fixed the number: pruning #450 by hand on 2026-09-18, a piped id list was
+refused as an unverifiable deletion scope and a single batch of thirty as a bulk
+external write, while batches of about fifteen literal ids completed 195 removals
+with no refusal. `references/linear.md` cites that paragraph rather than copying
+it, and says the bound comes from a host screening destructive calls rather than
+from any API. Each target's body is read in full immediately before its delete —
+the last time anybody sees it — and a body contradicting what its rows say about
+it stops the prune, while a body merely raising a case no row reaches is the
+coverage rule instead and leaves that comment whole.
+
+**Two things the change deliberately did not do.** It licenses no issue
+deletion: *Shared rules*' "Never delete an issue" gains only the clause saying
+that removing an entry from inside the ledger is *Prune* and is not this, and the
+operation says the issue is kept for the reason a decision record is. And it adds
+nothing to make the prune operator-attended; `/drain` already runs with the
+operator at the keyboard and `/assess` unattended reports the ledger's size
+instead of draining it, so the confirmation an irreversible delete wants is
+supplied where it already existed rather than restated in the producer. `tracker`
+names no consumer anywhere in the new text, and "disposition" is the generic term
+precisely so the producer is not handed one caller's vocabulary.
+
+**The version stays at the floor, judged rather than inherited.** `13.1.0` over
+`origin/main`'s `13.0.0` in all five homes. No command or skill is renamed and no
+argument or output schema moves. The refusal-reason question is the live one,
+since a `/drain` that used to leave a ledger untouched now destroys tracker
+comments, and what a major buys is that the release reaches a consuming repo as a
+decision rather than an auto-pull. It is minor because that decision is supplied
+at run time by construction and not by the pull: nothing is removed except by
+rows an operator at the keyboard has just decided, read back off the thread
+first, with each id named literally in a batch the run states before it fires.
+The capability is an addition where the guidance previously had none, rather than
+a call that used to be refused and now succeeds.
+
+**Verification, over the tree this record is in.** Base `949bac0f` was
+`origin/dev` at the cut and was re-measured as `origin/dev` unmoved at
+certification, so no reconciliation stood between the branch and the landing. The
+change is four prose files and the five version homes, 167 insertions against 9
+deletions over `949bac0f..ddfa3e27`, with this record the tenth file in the
+certified tree. No test, script or executable changed, so the evidence is the
+gate plus direct reading and use, which is what ADR 0017 D5 leaves for a change
+whose subject is what a document instructs. The criteria
+naming a probe were closed by running one: three fresh contexts given only the
+shipped extract and a constructed ledger thread, two over a disposition carrying
+a caseless row and a row naming a decision record, one control differing from it
+in exactly two rows. All three refused an ordinary entry that contained a
+row-shaped table, refused the caseless row, refused the row naming the decision
+record, left whole the comment whose cases the rows covered only in part, and
+left every entry no row named; the control pruned the two comments the subject
+correctly refused and invented no record completion. `bash scripts/verify.sh` was
+run and read by the reviewer at certification over the tree carrying this record:
+ruff clean, mypy clean over three source files, 631 tests passed, 85.47% coverage
+against the 85% floor, design-token drift guard OK, `All checks passed`, exit 0.
 
 ## Cross-references
 
