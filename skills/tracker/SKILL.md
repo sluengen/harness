@@ -209,16 +209,17 @@ the entries still waiting plus the records of what was decided about the rest.
 Those records accumulate as well, and nothing retires them — but one per pass
 against many entries per pass is the trade this makes, not an oversight.
 
-**Prunable is a property of the record, not of the entry.** Remove an entry only
-where a comment already on the thread names it as decided and carries enough of
-its case to be read on its own. That comment is the authority for the removal
-and the only place the entry's finding survives, so it is written, read back,
-and only then acted on. A row naming an id but not the case is not an authority:
-act on it and the entry is gone with its finding, which is the loss this
-operation is arranged to avoid. **The test is whether the row reads without the
-entry** — a reader who never saw the comment can still tell what was found and
-what was decided about it. The caller that composed the disposition
-supplies the ids; nothing infers one from an entry's wording, and a comment no
+**Prunable is a property of the record, not of the entry.** An entry comes off
+only where a row in a disposition already on the thread names its comment id
+**and** carries its case well enough to be read on its own — **the case is what
+licenses the removal, and the id only says where to apply it**. A row giving an
+id and an outcome alone authorises nothing: act on it and the entry is gone with
+its finding, which is the loss this operation is arranged to avoid. The test is
+whether the row reads without the entry, so that a reader who never saw the
+comment can still tell what was found and what was decided about it. That
+disposition is the authority and the only place the finding survives, so it is
+written, read back, and only then acted on. The caller that composed it supplies
+the ids; nothing infers one from an entry's wording, and a comment no
 disposition names is undecided rather than old — it stays, and it is the next
 pass's material.
 
@@ -248,9 +249,11 @@ over a query's output is a scope nobody read, and a removal is not revertible,
 so the call carries the ids as written characters and the run can say, before it
 fires, exactly which entries it is about to lose. Read each one's body
 immediately beforehand: that read confirms the id is the entry the disposition
-says it is, and it is the last time anybody sees it. **A body that is not what
-its row describes stops the prune** — the disposition and the thread disagree
-about what was decided, and no removal is safe until that is resolved.
+says it is, and it is the last time anybody sees it. **A body that contradicts
+what its rows say about it stops the prune** — the disposition and the thread
+disagree about what was decided, and no removal is safe until that is resolved.
+A body merely raising a case no row reaches is not a contradiction but the
+coverage rule above: that comment stays whole, and the prune carries on.
 
 **The postcondition is an independent read with something in it that must
 survive.** There is nothing to re-read where the entry was, so verify the other
