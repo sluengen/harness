@@ -345,7 +345,9 @@ gh api --paginate repos/<owner>/<name>/issues/<n>/comments \
 #    it is — and this is the last time anybody sees the entry.
 gh api repos/<owner>/<name>/issues/comments/<id-1> --jq '.body'
 
-# 3. remove them, each id a literal, about fifteen per batch
+# 3. remove them, each id a literal, about fifteen per batch. These are comment
+#    ids — a row carrying a ticket id too spells both as bare integers, and the
+#    call below is valid against either.
 gh api -X DELETE repos/<owner>/<name>/issues/comments/<id-1>
 gh api -X DELETE repos/<owner>/<name>/issues/comments/<id-2>
 

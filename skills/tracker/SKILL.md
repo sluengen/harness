@@ -215,10 +215,23 @@ its case to be read on its own. That comment is the authority for the removal
 and the only place the entry's finding survives, so it is written, read back,
 and only then acted on. A row naming an id but not the case is not an authority:
 act on it and the entry is gone with its finding, which is the loss this
-operation is arranged to avoid. The caller that composed the disposition
+operation is arranged to avoid. **The test is whether the row reads without the
+entry** — a reader who never saw the comment can still tell what was found and
+what was decided about it. The caller that composed the disposition
 supplies the ids; nothing infers one from an entry's wording, and a comment no
 disposition names is undecided rather than old — it stays, and it is the next
 pass's material.
+
+**A comment is the unit of removal, a case is the unit of decision, and they
+are not the same.** One comment often raises several distinct cases, and a pass
+often decides some and not others — measured on a working ledger, one comment
+had been disposed of across three separate rows, each answering a different case
+inside it, and a pass there counted its corpus in cases at roughly twice the
+comments carrying them. So a comment leaves the thread only when every case it
+raises is named by a row. One the rows cover in part stays whole — its decided
+cases are recorded in the disposition, and what is left is the next pass's
+material. A row names the case it decided and carries the comment id as where
+that case lives, which is not the same as disposing of the comment.
 
 **A comment that records a decision is never prunable.** A drop is a decision
 written down (spine P5), and after a prune that comment is the only place it is
@@ -235,26 +248,31 @@ over a query's output is a scope nobody read, and a removal is not revertible,
 so the call carries the ids as written characters and the run can say, before it
 fires, exactly which entries it is about to lose. Read each one's body
 immediately beforehand: that read confirms the id is the entry the disposition
-says it is, and it is the last time anybody sees it.
+says it is, and it is the last time anybody sees it. **A body that is not what
+its row describes stops the prune** — the disposition and the thread disagree
+about what was decided, and no removal is safe until that is resolved.
 
 **The postcondition is an independent read with something in it that must
 survive.** There is nothing to re-read where the entry was, so verify the other
 direction — read the thread back and compare it against the id list the
 pre-delete read returned, which is the denominator and the reason that read is
 kept rather than discarded. Confirm that every pruned id is absent, every other
-id on that list is still present, and **this pass's own disposition, the newest
-comment on the thread, is still returned**. Quantified over the post-prune read
-instead, "everything else is present" is true by construction and says nothing.
-The disposition is the control, and what makes it one is its position rather
-than its role. A read that stops early loses the newest comments and reports
-every comment it never reached as absent, so a disposition returned from the end
-of the thread is evidence the read got to the end — while an older one, which
-comes back from every truncated read there is, would let the check read *pass*
-in exactly the case it exists to catch. A thread that has been drained before
-holds several dispositions, and where a pass wrote a second one to complete its
-record that is the newest: only the newest is ever the control. Compare
-identities, not a count. Exit status settles nothing here, as nowhere else in
-this skill.
+id on that list is still present, and **the read reached the end of the thread
+rather than stopping short of it**. Quantified over the post-prune read instead,
+"everything else is present" is true by construction and says nothing, because a
+read that stops early reports every comment it never reached as absent — which
+is the answer this check exists to refuse.
+
+What shows the read got to the end is the backend's own signal, and the
+transport reference names which one it has. Where the read pages oldest-first,
+this pass's own disposition is the newest comment and comes back last, so its
+presence is the evidence — and only the newest serves, since an older
+disposition returns from every truncated read there is. A thread drained before
+holds several, and where a pass wrote a second one to complete its record that
+second is the newest. Where instead the connection reports that it stopped, that
+report is the signal and no comment's position carries it. Do not assume an
+order a reference has not stated. Compare identities, not a count. Exit status
+settles nothing here, as nowhere else in this skill.
 
 ## Shared rules, whichever backend
 
