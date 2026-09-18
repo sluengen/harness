@@ -3455,6 +3455,48 @@ run and read by the reviewer at certification over the tree carrying this record
 ruff clean, mypy clean over three source files, 631 tests passed, 85.47% coverage
 against the 85% floor, design-token drift guard OK, `All checks passed`, exit 0.
 
+### #662: *Gating the base* names the run's two jobs and its empty-diff dependency
+
+`skills/worktree-isolation/SKILL.md` → *Gating the base* gains three paragraphs
+between the sequencing rationale and the "somebody else's green" note. The first
+names the two jobs the base gate run answers for — attribution, and the only
+routine detector of a red integration branch where nothing else runs on every
+push — and warns that a base command sized for one silently retires the other.
+`sluengen/calibrate` is the measured case: `.github/workflows/verify.yml` runs on
+pull requests and on pushes to `main` only, and its own header comment says most
+work lands on `dev` by direct push, which leaves the base gate as that repo's
+only routine watchdog. The second names the empty-diff dependency: a gate that
+derives its scope from a diff against the integration branch sees none at a
+base, and answers with whatever its author chose for the empty case. Calibrate's
+choice widens rather than narrows — `scripts/verify.sh:1257-1258` prints
+`No scoped changes detected` and sets `run_backend=1`, which pays for
+`docker compose up -d --wait db` and the full `backend_gate` pytest run on every
+worktree cut there. The third assigns resolution to the repo that owns its gate
+script, and states what this change adds none of: no configuration key, no
+scope-passing interface, no requirement that a repo run CI (ADR 0022 points 1
+and 2).
+
+*Creating the worktree*'s closing sentence — "the cost is one gate run per
+worktree, weighed and accepted" — is reconciled rather than left standing: it
+now defers what that run costs and proves to *Gating the base*, which restates
+the costing and says it does not carry unchanged to a gate whose empty case
+answers with its widest arm. The Green bullet's "what the minute buys" becomes
+"what the run buys" to match. No other shipped skill restates this costing, so
+no reconcile is owed outside this file.
+
+No configuration, contract, or test surface changed — prose only, and law 2
+excludes a criterion about what a document says from a measuring test; ADR 0019
+verifies it by review, done here. The version stays at `13.1.0`, this cycle's
+existing minor.
+
+**Verification.** Base `23c1ae66` was `origin/dev` at the cut and unmoved at
+this review. This ticket's own change is one file, 8 insertions and 2 deletions,
+on a branch that also carries #671's unrelated change to
+`skills/engineering/SKILL.md`, reviewed separately. `bash scripts/verify.sh` was
+run and read by the reviewer over the full tree carrying this record: ruff
+clean, mypy clean over three source files, 631 tests passed, 85.47% coverage
+against the 85% floor, design-token drift guard OK, `All checks passed`, exit 0.
+
 ## Cross-references
 
 - `specs/harness-assumptions.md` — one row per hook, script, skill and agent: what it assumes the model cannot do, and the test that would retire it. Read at every model or host release.
