@@ -3594,8 +3594,8 @@ used to refuse now succeeds, so this stays at the cycle's minor.
 over the full tree carrying this record at `4534ba99`: ruff clean, mypy
 clean over three source files, 647 passed, 85.47% coverage against the 85%
 floor, design-token drift guard OK, `All checks passed`, exit 0. This
-ticket's own change is one file, `skills/worktree-isolation/SKILL.md`, 4
-insertions and 2 deletions, on a branch that also carries #675's unrelated
+ticket's own change is one file, `skills/worktree-isolation/SKILL.md`, 3
+insertions and 1 deletion, on a branch that also carries #675's unrelated
 change to `skills/hydrate/SKILL.md`, reviewed and recorded separately below.
 
 ### #675: step 5 gains the Decision's three states
@@ -3653,8 +3653,8 @@ what carries it.
 over the full tree carrying this record at `4534ba99`: ruff clean, mypy
 clean over three source files, 647 passed, 85.47% coverage against the 85%
 floor, design-token drift guard OK, `All checks passed`, exit 0. This
-ticket's own change is one file, `skills/hydrate/SKILL.md`, 6 insertions and
-2 deletions, on a branch that also carries #673's unrelated change to
+ticket's own change is one file, `skills/hydrate/SKILL.md`, 5 insertions and
+1 deletion, on a branch that also carries #673's unrelated change to
 `skills/worktree-isolation/SKILL.md`, reviewed and recorded separately
 above.
 
