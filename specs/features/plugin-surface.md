@@ -3497,6 +3497,61 @@ run and read by the reviewer over the full tree carrying this record: ruff
 clean, mypy clean over three source files, 631 tests passed, 85.47% coverage
 against the 85% floor, design-token drift guard OK, `All checks passed`, exit 0.
 
+### #671: mutation practice gains its first precondition — commit first, restore by file
+
+`skills/engineering/SKILL.md` → *Verification* gains one paragraph, beside the
+two operational-hygiene rules already there (never pipe the gate; run the final
+gate on a quiet machine) and next to the guard-evidence pointer, since mutation
+is how a guard is proven. `engineering` carried no mutation guidance at all
+before this ticket — not a section, not the string — so the paragraph names
+what it is a precondition on rather than assuming surrounding context supplies
+it: commit (or a WIP commit, never a bare stash, since the stash stack is
+shared across every worktree on the clone) before running a mutation tool, and
+restore a mutated file by its own path rather than by reverting its directory,
+because a whole-directory revert discards every other uncommitted change under
+it. A closing clause names the macOS hazard beside it — the temp roots are
+symlinks, so a path written or compared unresolved is not the path that was
+read — and states what a repo whose own tool already backs up and restores per
+target, as this one's `scripts/mutate.py` does, still owes: the commit
+precondition, because the hazard survives in the recovery somebody performs by
+hand once a run is killed.
+
+The ticket's filed grounding held up (the incident is real, the habit is the
+fix) but two of its supporting citations did not, and both were corrected
+across the review cycles this ticket spent rather than in the build itself:
+cycle 1 found the paragraph's second calibrate incident cited as **CAL-1802**,
+which is calibrate's unrelated `AuthState.initialize()` work — the pair is
+**CAL-1409** and **CAL-1825**, the ticket's own filed text having carried the
+error in from a `CAL-1802/1825` typo. Cycle 2 found a `#163` citation for a
+`git checkout -- .` incident that does not resolve to any such story — issue
+#163 is a routine release PR — and the fix was to drop the citation rather than
+find a better one, since the mechanism it illustrates (a directory-level revert
+has a wider blast radius than the file it was aimed at) needs no incident
+number to stand. The same false `#163` citation has three pre-existing homes
+this ticket did not touch (`scripts/mutate.py`, `tests/unit/test_mutate.py`,
+`specs/decisions/0018-gate-marker-convention-is-node.md`); repairing another
+ticket's defect inside this one's tree would have been an unreviewed second
+change, so it went to the improvement ledger (#450) instead.
+
+This is `engineering`'s first shipped mutation guidance, and two of its three
+review cycles were spent on citations the paragraph inherited rather than
+introduced — one from the ticket as filed, one from a docstring already in the
+tree. Copying a cited sentence carries its citation's truth value unmeasured.
+
+No configuration, contract, or test surface changed — prose only, and law 2
+excludes a criterion about what a document says from a measuring test; ADR 0019
+verifies it by review, done here. The version stays at `13.1.0`, this cycle's
+existing minor.
+
+**Verification.** Base `23c1ae66` was `origin/dev` at the cut and unmoved at
+this review. This ticket's change is one file, `skills/engineering/SKILL.md`,
+net 2 lines added across three commits, on a branch that also carries #662's
+unrelated change to `skills/worktree-isolation/SKILL.md`, reviewed separately.
+`bash scripts/verify.sh` was run and read by the reviewer over the full tree at
+`4abf4d0a`: ruff clean, mypy clean over three source files, 631 tests passed,
+85.47% coverage against the 85% floor, design-token drift guard OK,
+`All checks passed`, exit 0.
+
 ## Cross-references
 
 - `specs/harness-assumptions.md` — one row per hook, script, skill and agent: what it assumes the model cannot do, and the test that would retire it. Read at every model or host release.
