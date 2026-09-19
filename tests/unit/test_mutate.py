@@ -713,8 +713,8 @@ def unpermitted_spawns(source: str, origin: str = "<source>") -> list[str]:
 def test_the_module_spawns_only_this_interpreter_and_one_read_only_query() -> None:
     """Restoration reads from backups; nothing here can reach git to revert.
 
-    ``git checkout -- .`` is the revert that cost #163 forty minutes of finished
-    work, and the rule against it only holds if no call that spawns through
+    ``git checkout -- .`` is the revert that discards every other change under
+    it, and the rule against it only holds if no call that spawns through
     ``subprocess`` under any name its own ``import`` statements bind — which is
     what :func:`subprocess_calls` derives — can build an argv that reaches git
     destructively.
