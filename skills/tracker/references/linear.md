@@ -176,8 +176,29 @@ one silently sees an unblocked ticket.
 
 ## Priority
 
-`priority` is a native integer field on the issue — `1` is Urgent, and that is
-the andon cord's P1. Set it in the same `issueCreate` input, or afterwards:
+`priority` is a native integer field on the issue, and Linear renders each value
+with a word of its own. The whole scale, because a run that knows only the cord
+has to guess at the rest:
+
+| `priority` | Linear renders | harness priority |
+|---|---|---|
+| `0` | No priority | unset — a filing that reaches Todo or Backlog without one is incomplete |
+| `1` | Urgent | **P1**, the andon cord |
+| `2` | High | **P2** |
+| `3` | Medium | **P3** |
+| `4` | Low | below P3; the harness scale stops at P3, so prefer `3` |
+
+Two consequences worth stating, because the mismatch is what misleads:
+
+- **The word is louder than the number.** A P2 filed here displays as "High" and
+  a P1 as "Urgent" — an operator reading the board sees Linear's vocabulary, not
+  the harness's. Say `P1`/`P2` in a slate or report and let the tracker render it;
+  never translate a harness priority into Linear's word in prose.
+- **The scale tops out at `1`.** There is no value above Urgent, which matches the
+  spine: P1 is the top and it is the cord. A run that wants a tier above P1 wants
+  a P1 and a sentence saying why it is the most urgent one.
+
+Set it in the same `issueCreate` input, or afterwards:
 
 ```bash
 LINEAR 'mutation { issueUpdate(id: \"<issue-id>\", input: { priority: 1 }) { success } }'
