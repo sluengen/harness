@@ -3782,6 +3782,151 @@ This ticket's own change is one file, `skills/build/SKILL.md`, one insertion,
 on a branch that also carries #677's unrelated change to
 `skills/drain/SKILL.md` and the plugin version raise, reviewed separately.
 
+### #681: the verification instrument is named — call the shipped code, not a model of it
+
+`skills/engineering/SKILL.md` → *Verification* gains one paragraph beside the
+four-row claim/evidence table, closing a gap the table never covered: a
+criterion measured *by a test* is in the table already, but a figure quoted
+into a comment, a spec, a review finding, or a corrected number on a ticket is
+none of those, and nothing named what may produce it. The new text: a figure
+published about what shipped code produces is measured by calling that code,
+because a second implementation of the same arithmetic agrees with whoever
+wrote it and its agreement confirms nothing — every freshness rule in the
+section can be satisfied while the instrument itself is wrong. Cross-language
+reimplementation is named as the case that gets through a spot check, since
+rounding, integer division and float formatting differ between languages over
+a thin slice of the input domain and agree everywhere else. The exception and
+its condition follow in the same paragraph: where the measurement cannot go
+through the shipped entry point — a floor has to vary, or the interface
+exposes no parameter — the reimplementation is validated against the real one
+across the shared input domain first, and that validation is reported beside
+the figure.
+
+**AC-1 asked this review to record a judgment: do the new text and its two
+named adjacent rules state distinct rules, or does one restate another.**
+They are distinct. `skills/review-discipline/references/craft.md` →
+*A positive control must exercise the predicate, not re-implement it* governs
+a **test's own control**: the sample fed to it must be judged by the
+production predicate itself, not by a second implementation of that
+predicate's judgment — the test side of the direction, where the defect is a
+control's *expected* value quietly re-deriving what the code under test was
+supposed to prove. `skills/authoring/SKILL.md` → *Grounding* governs
+**choosing a probe** for a spec's tree claim — a search that could return the
+answer that would falsify "nothing else reads this", not one that is
+guaranteed to agree with the author. The new paragraph governs neither a
+test's control nor a probe's choice; it governs a **published figure about
+what shipped code produces**, the case where a reimplementation and the claim
+share an author and a spot check over most of the input domain agrees for the
+wrong reason. All three refuse the same shape of self-agreement, but over
+three different subjects — a test control, a grounding probe, a published
+measurement — and the new paragraph names both others by section title and
+link rather than restating either's content, which is what P0 and the
+ticket's own *Out of scope* require. No duplication found.
+
+**AC-2** is the exception clause quoted above, present in the same paragraph
+with its condition (the measurement cannot go through the shipped entry
+point) stated before the validation it requires.
+
+**Evidence.** Prose only; law 2's subject is code, and a criterion about what
+a document states has no measuring test (ADR 0017 D5). Both criteria are
+confirmed by direct review against the cited sections, recorded above.
+
+**The version class.** Ordinary minor material on its own: an additive
+guidance paragraph, no command renamed, no argument changed, and no refusal
+reason changed for any shipped verb. It does not carry the branch's major
+raise; #684 below does, and the raise covers this ticket's change too, since
+the class is judged over the whole diff.
+
+### #684: the andon cord's coverage anchor means the same thing on every backend
+
+Five same-origin precision defects in the andon-cord mechanism #661 shipped,
+found by two independent reviewers after that ticket closed. Two of the five
+are exactly the residuals #661's own record named and left open.
+
+- `skills/work-discovery/SKILL.md` carried "the normalise-and-pull step below
+  does not run either" twice, verbatim — once in the cord paragraph, once in
+  the anchors paragraph. The second occurrence is replaced: the anchors
+  paragraph now says a failed-anchor stop "reaches as far as an open cord's
+  does" rather than repeating the cord paragraph's sentence. The consequence
+  survives by reference rather than restatement — the cord paragraph still
+  reads "the normalise-and-pull step below does not run either: a stopped
+  line moves no tickets" (`:24`, the sentence's only remaining home), and the
+  anchors paragraph now points at that scope instead of duplicating it.
+- `skills/tracker/SKILL.md` → *Ask for the queue and its priorities* reworded
+  "how much of the open queue the read priced" and "the open queue's own
+  count is part of the answer" into a set difference over ticket identities,
+  taken against the open queue read independently, matching the wording
+  `skills/work-discovery/SKILL.md`'s own anchors paragraph already used
+  correctly. This is the first residual #661's record named: "`tracker`'s
+  half says 'count' where `work-discovery` says identities" — the operative
+  instruction was already right, and the imprecise home is now corrected to
+  match the precise one rather than contradict it.
+- `skills/tracker/references/linear.md` states that a row whose `priority` is
+  `0` is unpriced for the coverage anchor. This is the second residual #661's
+  record named: Linear's `priority` field is a non-null integer, so a row
+  carrying `0` ("No priority") returns a priority and the prior text —
+  "coverage is met by any row that returns a priority" — read that row as
+  covered. An open, unprioritised bug on a Linear-backed tracker therefore
+  cleared the coverage anchor and let an unattended tick proceed, while the
+  identical state — an open bug with no readable priority — correctly fails
+  coverage on GitHub, where an unset Priority is a missing board field. The
+  new text closes the gap: a row priced `0` counts as unpriced, so that bug
+  now leaves the anchor unmet on Linear too, the same as it always has on
+  GitHub.
+- `skills/work-discovery/evals/evals.json` eval 7's prompt no longer claims
+  the four listed Todo tickets are all unblocked — one, `#96`, carries an
+  open `blocked-by` in the same listing. The prompt now says only "the four
+  Todo tickets among them", leaving the model to find the blocked one from
+  the data already given, which is what the eval's own expectations
+  ("it drops #96 as a candidate entirely, because it has an open
+  blocked-by") were already testing for. The prompt no longer contradicts
+  its own listing.
+- Eval 9, `equal-counts-do-not-establish-coverage`, is added: twelve open
+  tickets, twelve priced rows, one open ticket (`#51`) with no priced row and
+  one priced row (`#52`) belonging to a ticket the issue read does not show
+  as open. The totals agree and the identities do not; the correct answer
+  stops the tick on coverage, and an implementation that compares only the
+  two totals proceeds. Evals 6 and 8, and eval 7's expectations, are
+  unchanged.
+
+**Evidence.** Prose and a fixture; law 1 routes both to direct review and to
+use, the same disposition #661 recorded for this mechanism. AC-1 is confirmed
+by count — the duplicated sentence now has exactly one tracked occurrence
+(`grep -c` over `skills/work-discovery/SKILL.md`) — and by reading that the
+anchors paragraph still carries the "moves no tickets" consequence, by
+reference rather than restatement. AC-2 and AC-3 are confirmed by direct
+reading against the sibling texts they were corrected toward. AC-4 is
+confirmed by reading the prompt's own list against its own claim. AC-5 is
+confirmed by the fixture's stated arithmetic: 12 open, 12 priced, the sets
+disagree on `#51` and `#52`.
+
+**The version class is major, decided at this review: `15.0.0`.** Item 3 is a
+changed refusal reason: a Linear-backed tick that used to treat an
+unprioritised open bug as covered — and proceed to rank and pick — now stops
+on that same tracker state. That is the grammar's own test in
+`specs/architecture-principles.md` — "a call that used to complete now
+blocks" — the same shape #661 and #675 raised major for, and it reaches every
+Linear-backed consuming repo that has ever left a bug unprioritised, not a
+hypothetical case. Items 1, 2, 4 and 5 are each ordinary minor material on
+their own — a duplicated sentence removed, a passage reworded to match an
+already-correct sibling, a fixture prompt corrected, a fixture case added —
+and none independently reaches the floor; the class is a judgment over the
+whole diff (`review-discipline/references/certifying.md`), and item 3 is what
+carries it. The raise was made by hand, by this review, in the five version
+homes inside the candidate before the certifying gate: both plugin manifests
+and all three `spine:generated` markers move from `14.1.0` to `15.0.0`,
+covering the whole branch, #681 included.
+
+**Verification.** `bash scripts/verify.sh` was run and read by this reviewer
+over the full candidate at tree `__REVIEWED_TREE__` (commit `__COMMIT__`,
+which also carries #681's unrelated change to
+`skills/engineering/SKILL.md` and the version raise above): __GATE_SUMMARY__.
+This ticket's own change is four files —
+`skills/work-discovery/SKILL.md`, `skills/tracker/SKILL.md`,
+`skills/tracker/references/linear.md`, `skills/work-discovery/evals/evals.json`
+— reviewed together above.
+
+
 ## Cross-references
 
 - `specs/harness-assumptions.md` — one row per hook, script, skill and agent: what it assumes the model cannot do, and the test that would retire it. Read at every model or host release.
