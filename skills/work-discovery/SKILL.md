@@ -36,7 +36,7 @@ Read both halves from the tracker's own fields, through `tracker`: the kind (bug
 
 **Re-read once before you stop.** Both anchors fail in ways one more call clears — a higher limit, the tickets the priced read never saw — and a tick that re-reads has spent a call to avoid stopping the whole line. One re-read, not a loop: an anchor is all or nothing, so a re-read that clears part of the gap has failed, and a run that keeps calling until it likes the answer is the thing this rule exists to refuse.
 
-An answer that cannot show both anchors stops the tick exactly as an unreadable field does, whatever status the calls returned: a clean 200 with a gap in coverage lands in the same stop as a refusal. The normalise-and-pull step below does not run either. Name which anchor failed and what would clear it — a limit raised above the rows returned, or the unpriced tickets given a priority the read can see — because the repair differs for each, and "the tracker failed" names neither.
+An answer that cannot show both anchors stops the tick exactly as an unreadable field does, whatever status the calls returned: a clean 200 with a gap in coverage lands in the same stop as a refusal, and an unreadable half is itself a cord, so the stop reaches as far as an open cord's does. Name which anchor failed and what would clear it — a limit raised above the rows returned, or the unpriced tickets given a priority the read can see — because the repair differs for each, and "the tracker failed" names neither.
 
 ### A claimed cord is somebody's repair
 

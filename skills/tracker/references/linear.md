@@ -207,10 +207,22 @@ LINEAR 'query { issues(filter: { team: { key: { eq: \"<team-key>\" } }, state: {
 
 The read asks for the open queue with its priority rather than filtering on
 `priority: { eq: 1 }` (`tracker` → *The andon cord*). One query carries both
-halves here, since `priority` and the labels sit on the same issue, so coverage
-is met by any row that returns a priority. `pageInfo.hasNextPage` is how the
-connection reports that it stopped: `true` is a truncated read whatever the nodes
-contain, and a truncated read cannot support an empty cord answer.
+halves here, since `priority` and the labels sit on the same issue.
+
+**`0` is unpriced, and on this backend it arrives looking priced.** `priority` is
+a non-null integer, so every row returns one and a bug carrying `0` is indistinguishable
+from a bug carrying `3` to a check that asks only whether the field came back.
+The table above already calls `0` unset. Coverage is therefore met only by a row
+whose `priority` is `1` through `4`; a row priced `0` counts as unpriced, and an
+open bug among those leaves the anchor unmet exactly as an absent field does.
+The divergence is worth stating because GitHub has no equivalent trap: an unset
+Priority there is a missing board field, which already reads as absent. A check
+written against GitHub's behaviour and carried over unchanged lets a Linear-backed
+tick report a clear line over an unprioritised bug.
+
+`pageInfo.hasNextPage` is how the connection reports that it stopped: `true` is a
+truncated read whatever the nodes contain, and a truncated read cannot support an
+empty cord answer.
 
 ## `ledger`
 
