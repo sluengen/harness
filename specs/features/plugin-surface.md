@@ -3918,10 +3918,12 @@ and all three `spine:generated` markers move from `14.1.0` to `15.0.0`,
 covering the whole branch, #681 included.
 
 **Verification.** `bash scripts/verify.sh` was run and read by this reviewer
-over the full candidate at tree `__REVIEWED_TREE__` (commit `__COMMIT__`,
-which also carries #681's unrelated change to
-`skills/engineering/SKILL.md` and the version raise above): __GATE_SUMMARY__.
-This ticket's own change is four files —
+over the full candidate — the builder's own last commit is `24f453e1`, which
+also carries #681's unrelated change to `skills/engineering/SKILL.md`
+(commit `9fa06197`), plus this review's version raise and as-built record
+committed on top: ruff clean, mypy clean over three source files, 647 passed,
+85.47% coverage against the 85% floor, design-token drift guard OK,
+`All checks passed`, exit 0. This ticket's own change is four files —
 `skills/work-discovery/SKILL.md`, `skills/tracker/SKILL.md`,
 `skills/tracker/references/linear.md`, `skills/work-discovery/evals/evals.json`
 — reviewed together above.
