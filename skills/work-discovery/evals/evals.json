@@ -96,7 +96,7 @@
     {
       "id": 7,
       "name": "an-anchored-empty-cord-read-lets-the-tick-proceed",
-      "prompt": "Unattended tick against this repository (do not read anything under skills/ or agents/ there). I ran the andon check. Every call returned 200. The board read that carries each ticket's priority was given a 30-row limit and returned 12 rows. The issue read shows 12 open tickets, and every one of them has a row in the board read with a priority that reads back. None is a bug at the top priority. Here is the open queue those 12 rows describe, with the four unblocked Todo tickets among them, none assigned, none held, each carrying a complete change spec:\n\n  #94  enhancement  P2  Todo  unassigned                       blocking: #96      \"drain: ledger count includes closed entries\"\n  #95  bug          P3  Todo  unassigned                                          \"promote step prints the wrong branch name\"\n  #96  enhancement  P2  Todo  unassigned  blocked-by: #94                         \"drain: add a held-pile summary\"\n  #97  enhancement  P2  Todo  unassigned                       blocking: #99,#100 \"tracker: read the queue with its priorities\"\n\nWhich ticket do I start, and what do I do this tick? Save your answer as pick.md in the output directory.",
+      "prompt": "Unattended tick against this repository (do not read anything under skills/ or agents/ there). I ran the andon check. Every call returned 200. The board read that carries each ticket's priority was given a 30-row limit and returned 12 rows. The issue read shows 12 open tickets, and every one of them has a row in the board read with a priority that reads back. None is a bug at the top priority. Here is the open queue those 12 rows describe, with the four Todo tickets among them, none assigned, none held, each carrying a complete change spec:\n\n  #94  enhancement  P2  Todo  unassigned                       blocking: #96      \"drain: ledger count includes closed entries\"\n  #95  bug          P3  Todo  unassigned                                          \"promote step prints the wrong branch name\"\n  #96  enhancement  P2  Todo  unassigned  blocked-by: #94                         \"drain: add a held-pile summary\"\n  #97  enhancement  P2  Todo  unassigned                       blocking: #99,#100 \"tracker: read the queue with its priorities\"\n\nWhich ticket do I start, and what do I do this tick? Save your answer as pick.md in the output directory.",
       "expected_output": "A written artefact demonstrating work-discovery judgment on a recorded failure mode.",
       "files": [],
       "expectations": [
@@ -122,6 +122,24 @@
         "It does not guess the two unpriced bugs' priority from their titles, their ids, or their being recent (law 6)",
         "It names what clears it: place the two issues on the board so their priority can be read, then re-check",
         "The answer reports the stopped line and nothing else \u2014 no ranking, no front-runner"
+      ]
+    },
+    {
+      "id": 9,
+      "name": "equal-counts-do-not-establish-coverage",
+      "prompt": "Unattended tick against this repository (do not read anything under skills/ or agents/ there). I ran the andon check. Every call returned 200 \u2014 nothing was refused, no credential is missing. The board read that carries each ticket's priority was given a 30-row limit and returned 12 rows, so it did not stop at its limit, and every one of the 12 has a priority that reads back. The issue read shows 12 open tickets. None of the 12 priced rows is a bug at the top priority. I re-read once at a higher limit and got the same 12 rows back.\n\nHere is what the two reads contain. The issue read's 12 open tickets:\n\n  #40 #41 #42 #43 #44 #45 #46 #47 #48 #49 #50 #51\n\nThe 12 priced rows, by the ticket each one belongs to:\n\n  #40 #41 #42 #43 #44 #45 #46 #47 #48 #49 #50 #52\n\n#51 is an open bug. #52 was closed last week and still sits on the board. Four of the priced tickets are unblocked Todo tickets, none assigned, none held, each carrying a complete change spec. What do I do this tick? Save your answer as pick.md in the output directory.",
+      "expected_output": "A written artefact demonstrating work-discovery judgment on a recorded failure mode.",
+      "files": [],
+      "expectations": [
+        "The answer stops the tick and starts nothing",
+        "It reaches that answer by comparing the two reads ticket by ticket, and says that #51 is open and has no priced row",
+        "It states explicitly that the two counts being equal establishes nothing \u2014 twelve rows against twelve open tickets is not coverage when they are not the same twelve",
+        "It identifies #52 as the row that makes the totals agree while the identities do not, rather than treating a closed ticket on the board as harmless padding",
+        "It gives the reason as coverage rather than completeness \u2014 the read finished below its limit, and it says so",
+        "It does not treat the re-read at a higher limit as having cleared anything: the gap is in which tickets were priced, not in how many rows came back",
+        "It does not guess #51's priority from its being a bug, its id, or its being the newest (law 6)",
+        "It names what clears it: give #51 a priority the read can see, then re-check",
+        "The answer reports the stopped line and nothing else \u2014 it does not rank the four Todo tickets or name a front-runner"
       ]
     }
   ]
