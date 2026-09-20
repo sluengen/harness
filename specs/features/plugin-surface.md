@@ -3658,6 +3658,74 @@ insertions and 1 deletion, on a branch that also carries #673's unrelated
 change to `skills/worktree-isolation/SKILL.md`, reviewed and recorded
 separately above.
 
+### #677: an `ungrounded` re-validation verdict, and three checks before a fold is filed
+
+`skills/drain/SKILL.md`'s pile-two procedure gains two paragraphs, both
+inside the ledger pass, sourced from #663 costing a full sweep after two of
+its five folded items turned out false on arrival. First, between the
+re-validation paragraph and the grouping step: where re-validation cannot
+determine an entry's state at all — the file it names is gone, the surface
+it describes no longer exists in a checkable form — that result is now
+`ungrounded`, forbidden from being recorded `done` because a check that
+could not run establishes nothing, defaulting to **dropped** with the word
+and the unchecked fact on the row, and foldable only where the entry names
+an outcome that stands without the check that failed. Second, between
+*Search the queue before you fold* and the outcome-recording paragraph:
+three checks against the ticket a fold is about to file — the `assurance:`
+label against the lane the fold actually needs rather than the one the
+entry's size suggested; for a bundle, the title against the item count; and
+each acceptance criterion's evidence clause against the kind of artefact it
+names, code taking a measuring test and prose taking direct review or
+verification by use.
+
+**AC-1 was amended before the build**, on the ticket's own grounding
+comment. The ticket as filed asked for `ungrounded` as a fourth outcome
+alongside done/folded/dropped; the tree already refuses a fourth in two
+places the amendment cites and this review confirmed unchanged at the
+pre-diff tree — line 44's "there is no fourth" and line 46's "exactly one
+of three ways" (`skills/drain/SKILL.md`, pre-diff numbering). The amended
+AC-1 makes `ungrounded` a re-validation verdict rather than a disposition:
+it constrains which of the three outcomes may follow — forbidding `done` —
+and the entry still leaves by one of the three, so neither shipped sentence
+is touched. This review reads the amendment as solving the ticket's actual
+problem (an unverifiable entry silently misread as `done`) rather than as a
+narrowing to something easier: the new text names a concrete behaviour
+change — a run that would previously have had no vocabulary but `done` for
+a gone file now writes `ungrounded`/dropped instead — and does not merely
+restate a sentence the file already carried.
+
+**Evidence.** All three criteria (AC-1 amended, AC-2, AC-3) name direct
+review, and the ticket's own evidence section states why: this is a prose
+deliverable, law 2's subject is code and none of these criteria measure a
+quantity over it, and ADR 0017 D5 admits no guard over what prose means.
+No test is added, and none is owed. Read directly: the `ungrounded`
+paragraph does not contradict the surrounding "no fourth"/"exactly one of
+three" sentences or the outcome table beneath it, and the three fold-time
+checks sit at the point in the procedure where a fold is about to be
+filed — after the queue search that would extend an existing ticket
+instead, before the outcome is recorded — so they reach a fold whichever
+path produced it.
+
+**The version class.** Minor, not major. Both of this paragraph's checks
+and the `ungrounded` verdict are additive: no existing instruction is
+removed, no case that used to succeed now refuses, and the three
+outcomes and their table are unchanged. The branch's raise (`14.0.0` →
+`14.1.0`) also carries #679's unrelated addition to `skills/build/SKILL.md`,
+reviewed and recorded separately; that change is likewise additive
+(byte-identical existing paragraph, one new bullet for a case it did not
+previously name), so nothing on this branch discriminates for a major
+raise under the compatibility grammar's own test — no call that used to
+complete now blocks.
+
+**Verification.** `bash scripts/verify.sh` was run and read by this
+reviewer over the full candidate at tree `7d12c8140666285787f5ef76edb99eff6a4b80b4`
+(commit `ce9a5831`, which also carries #679): ruff clean, mypy clean over
+three source files, 647 passed, 85.47% coverage against the 85% floor,
+design-token drift guard OK, `All checks passed`, exit 0. This ticket's own
+change is `skills/drain/SKILL.md` (4 insertions) plus the cycle's version
+raise across five homes.
+
+
 ## Cross-references
 
 - `specs/harness-assumptions.md` — one row per hook, script, skill and agent: what it assumes the model cannot do, and the test that would retire it. Read at every model or host release.
