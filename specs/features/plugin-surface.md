@@ -3726,6 +3726,62 @@ change is `skills/drain/SKILL.md` (4 insertions) plus the cycle's version
 raise across five homes.
 
 
+### #679: a named path for a diff whose subject is the test tree
+
+`skills/build/SKILL.md` gains one bullet inside *2. Build*, immediately after
+*Tests first, checks, then lock*: *When the test tree is the subject, not the
+measure.* Confirmed at review, byte-identical to the diff: the ticket's own
+paragraph above it is untouched (`git show ce9a5831 -- skills/build/SKILL.md`
+is a single-hunk, one-line insertion), so the ordinary product-code path gains
+no new checkpoint (AC-3).
+
+**The ticket's own proposed rule needed a correction, and the builder made
+it.** The ticket proposed freezing the measuring test with the lock itself —
+"the implementation may live in the test tree provided something else,
+authored first and then frozen, can fail for it." That cannot work outside the
+fix lane: `hooks/test-lock-guard.js`'s `LANES` constant (`:52`) names `fix` as
+the only lane with a permissive branch, and `verdict()`'s `if (lane !== "fix")
+return rel;` refuses **every** edit under the governed roots once armed,
+including the implementation's own — confirmed by reading the function rather
+than the ticket's claim about it, and matching the refusal text at `:308` the
+grounding comment cites ("In the fix lane a NEW test file is allowed; one
+already in the run's base commit is not."). The shipped bullet substitutes a
+**commit boundary**: the run stays at stage `tests` for the whole build and
+the lock never arms; the measuring test is authored RED and committed first,
+and the implementation edit — which may not touch what that commit froze —
+lands after. Reverting the implementation commit alone reproduces the RED,
+which is what makes the two files distinguishable from the branch history
+rather than asserted (AC-2, AC-4). The bullet also requires the ticket record
+to name the two files, since a run that never armed the lock for this reason
+looks identical to one that skipped the posture for no reason at all.
+
+**No contradiction with the lock's own mechanism.** `test-lock-guard.js`
+"never reads `stage`" (its header comment, and confirmed by the function
+body), so a run that never transitions `stage` to `implement` is invisible to
+the hook rather than fighting it, and `skills/build/references/run-state.md`'s
+"the lock arms in the same write that sets `stage: implement`" describes the
+ordinary path — a run that never makes that write is a different path, not a
+violation of that sentence. No other shipped hook reads or gates on `stage`
+progression, so nothing enforces that a build must reach `implement` before
+`in_review`.
+
+**No guard, by design.** The change is prose stating a build posture; law 2's
+subject is code and ADR 0017 D5 admits no guard over what prose means. The
+evidence is direct review of the bullet against the ticket's four acceptance
+criteria and against the hook it describes, not a new test.
+
+**The version class.** Ordinary minor material — the addition names a branch
+reachable only by a diff whose implementation lands under the declared test
+roots, and no existing call's behaviour changes. The plugin version at this
+tree is `14.1.0`, raised inside this cycle by the sibling ticket (#677)
+sharing this branch; this ticket adds nothing that would raise it further.
+
+**Verification.** `bash scripts/verify.sh` was run and read by the reviewer
+over the full candidate at tree `7d12c8140666285787f5ef76edb99eff6a4b80b4`.
+This ticket's own change is one file, `skills/build/SKILL.md`, one insertion,
+on a branch that also carries #677's unrelated change to
+`skills/drain/SKILL.md` and the plugin version raise, reviewed separately.
+
 ## Cross-references
 
 - `specs/harness-assumptions.md` — one row per hook, script, skill and agent: what it assumes the model cannot do, and the test that would retire it. Read at every model or host release.
