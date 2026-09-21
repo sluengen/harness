@@ -1,6 +1,6 @@
 ---
 proposal: spine-delivery-after-native-agents-md
-status: under-decision
+status: accepted
 date: 2026-09-21
 related:
   - specs/decisions/0021-copy-or-bridge-by-failure-mode.md
@@ -69,6 +69,25 @@ ADR 0021 needs amending either way, and its own text says how: the discriminator
 
 **The counter-argument the operator should weigh before deciding.** If the consuming population is only repositories the operator controls, on current Claude Code, with default settings and no `CLAUDE.local.md` convention, Option B's residual risk reduces to a discipline — don't create one — and it costs one fewer file and one fewer concept. That is a legitimate call at this stage, and it is the operator's; it is the first open decision below.
 
+## Target outcome — decided 2026-09-21
+
+**Option C, with `CLAUDE.md` carrying host-specific content and nothing else.** Three bodies of content, and the file boundary is what separates them:
+
+| | Content | True on both hosts? | Lands in |
+|---|---|---|---|
+| 1 | The generated spine block — principles, laws, lifecycle, contract | yes | `AGENTS.md`, between the `spine:generated` markers |
+| 2 | Repo specifics — `## This repo`, *Repo principles*, *Where deeper truth lives* | yes | `AGENTS.md`, below the end marker |
+| 3 | Host deltas — `# Claude Code deltas` | **no** | `CLAUDE.md`, below the import |
+
+```
+AGENTS.md     <- 1 + 2.  The source, and the file Codex reads.
+CLAUDE.md     <- @AGENTS.md, then 3.  Nothing else.
+```
+
+**The split rule, which is what makes the boundary self-explaining:** a line belongs in `CLAUDE.md` if and only if it is **false or absent on the other host**. Nothing else earns a place there, and no guard is needed, because the rule is decidable by reading the line.
+
+Why row 3 does not move up into `AGENTS.md`, which would leave a pure one-line shim: Codex reads `AGENTS.md` as its only root instruction file — it has `.codex/agents/`, `.codex/rules/` and `.codex/config.toml`, but no markdown spine of its own — and several deltas are not merely irrelevant there but **false**: the `/harness:<name>` invocation prefix, the Artifact rendering in `/propose` step 3, and `agents/` as the role directory. Hoisting them would oblige a counter-section for Codex, leaving `AGENTS.md` carrying two host sections that every reader must filter — worse than letting the file boundary filter for free. A secondary consequence, recorded because it is the reason the shape survives a later reader: a one-line shim is a file whose purpose is invisible, and the deltas are what make `CLAUDE.md` visibly earn its place.
+
 ## Not doing
 
 - **A gate check that the host actually loaded the spine** (`InstructionsLoaded` in CI) — ADR 0021's clause of 2026-09-10 answered this: the instrument runs inside a session reading a file, not over the tree in `scripts/verify.sh`. Reopen if the gate gains a way to observe a load over the tree rather than inside a session.
@@ -81,19 +100,22 @@ ADR 0021 needs amending either way, and its own text says how: the discriminator
 
 ## Open decisions
 
-| Decision | Who decides | Recorded in |
-|---|---|---|
-| Option B or Option C — is the residual silent-failure surface of `AGENTS.md`-alone acceptable for the consuming population? | operator | ADR (amends 0021) |
-| Does the spine's own *This repo* guidance gain a line about the host-file shape, or does it stay in `plugin-surface.md`? | architect | `specs/features/plugin-surface.md` |
-| Under B only: what, if anything, the plugin says about `CLAUDE.local.md` to consumers, given nothing can enforce it | operator | ADR (amends 0021) |
+| Decision | Who decides | Resolution | Recorded in |
+|---|---|---|---|
+| Option B or Option C — is the residual silent-failure surface of `AGENTS.md`-alone acceptable for the consuming population? | operator | **Option C**, 2026-09-21. The measured `CLAUDE.local.md` suppression is not accepted. | ADR (amends 0021), item 1 |
+| Do the host deltas sit below the import in `CLAUDE.md`, or hoist into `AGENTS.md` as a `## Claude Code` section, leaving a pure shim? | operator | **Below the import**, 2026-09-21, under the split rule in *Target outcome*. Raised at hand-over; several deltas are false on Codex, which reads `AGENTS.md`. | ADR (amends 0021), item 1 |
+| Does the spine's own *This repo* guidance gain a line about the host-file shape, or does it stay in `plugin-surface.md`? | architect | open — not blocking; item 1 settles it at design time | `specs/features/plugin-surface.md` |
+| Under B only: what, if anything, the plugin says about `CLAUDE.local.md` to consumers | operator | **moot** — B was not chosen | — |
 
 ## Breakdown
 
 The four-dimension test fires on **blast** (the shape reaches hydration, the audit agent, the version script, two test modules and the config reader) and **comprehension** (the operator cannot steer items 2 and 3 without the shape settled). So item 1 carries the decision and lands the shape, and is held for the operator.
 
-1. **Record the decision and land the shape** — amend ADR 0021 with the new option set, the probe evidence and the chosen delivery; land this repo's own `CLAUDE.md` in the decided form and move the *Claude Code deltas* accordingly; update the *Repo principles* bullet that counts three `spine:generated` markers. `assurance:complex` (a contract change and a consequential decision). **Held with `input`.**
-2. **Retire the derivation from the shipped surface** — `skills/hydrate/SKILL.md` step 12 collapses to write-once-if-absent-never-rewrite; `agents/harness-audit.md` loses *The derived copy*; the `<!-- spine:copy:end -->` marker retires with it. `assurance:simple`. Depends on 1.
-3. **Retire the guard and the version home** — delete the second correspondence in `tests/unit/test_spine_template_parity.py` (lines 755–1201), the `CLAUDE.md` candidate in `scripts/plugin-version.js` and its three tests, and the `SOURCES` entry in `scripts/harness-config.js`; five version homes become four. `assurance:simple`. Depends on 1; independent of 2, so the two run in parallel.
+Filed 2026-09-21. Issues created, lanes labelled, dependencies declared (#706 and #707 both blocked by #705) and #705 held with `input`. **Board placement and priority are unset**: Projects v2 is GraphQL-only and every `gh project` write from this session returned `unknown owner type`, so the three filings are incomplete under `tracker` → *`create`* until a session with GraphQL sets Status and Priority.
+
+1. **[#705](https://github.com/sluengen/harness/issues/705) — Record the decision and land the shape** — amend ADR 0021 with the new option set, the probe evidence, the chosen delivery and the split rule from *Target outcome*; land this repo's own `CLAUDE.md` as `@AGENTS.md` plus the *Claude Code deltas* and nothing else; update the *Repo principles* bullet that counts three `spine:generated` markers. `assurance:complex` (a contract change and a consequential decision). **Held with `input`.**
+2. **[#706](https://github.com/sluengen/harness/issues/706) — Retire the derivation from the shipped surface** — `skills/hydrate/SKILL.md` step 12 collapses to write-once-if-absent-never-rewrite; `agents/harness-audit.md` loses *The derived copy*; the `<!-- spine:copy:end -->` marker retires with it. `assurance:simple`. Depends on 1.
+3. **[#707](https://github.com/sluengen/harness/issues/707) — Retire the guard and the version home** — delete the second correspondence in `tests/unit/test_spine_template_parity.py` (lines 755–1201), the `CLAUDE.md` candidate in `scripts/plugin-version.js` and its three tests, and the `SOURCES` entry in `scripts/harness-config.js`; five version homes become four. `assurance:simple`. Depends on 1; independent of 2, so the two run in parallel.
 
 ## Risks / unknowns
 
