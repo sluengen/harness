@@ -1,7 +1,7 @@
 ---
 feature: plugin-surface
 status: implemented
-last_updated: 2026-09-17
+last_updated: 2026-09-21
 ---
 
 # The plugin surface
@@ -4330,6 +4330,75 @@ source files, 647 passed, 85.47% coverage against the 85% floor, design-token
 drift guard OK, `All checks passed`, exit 0. This branch's own change is one
 file reviewed above — `skills/build/SKILL.md` (#696, two edits) — plus this
 record.
+
+
+### #704: a proposal breakdown parents under one umbrella issue on Linear
+
+One `simple`-lane ticket, two files. `/propose` step 4 filed a breakdown as a
+flat set of sibling issues; on Linear the spawned tickets carried no
+board-visible relationship to the proposal that produced them or to one
+another. Linear already modeled parent/sub-issue via `parentId` on
+`issueCreate` (`references/linear.md`), documented for a deferred-finding
+follow-up but unused for a breakdown.
+
+`skills/tracker/references/linear.md` gains *A breakdown files under one
+umbrella issue*: the umbrella's title (the proposal's own), description
+(problem, recommendation, a link to the proposal spec, the breakdown list),
+mandatory `projectId`, the `operator` label paired with the operator's
+assignment — stated as the half the loop actually acts on, per
+`work-discovery`'s assignment-is-authoritative rule — `assurance:trivial` as
+the placeholder the *Filing* contract's one-label requirement leaves for a
+ticket nobody builds, and placement in Todo (a held ticket costs no queue
+slot, so Todo groups the umbrella beside the children it groups rather than
+reading as Backlog's not-yet-pulled). Each child then passes `parentId` on
+its own `issueCreate`; its own placement, dependencies, priority and
+assurance are unchanged. The umbrella borrows the label-and-assignment
+"never built directly" shape `tracker`'s `ledger` operation already uses for
+the standing ledger issue — explicitly not a `hold`, since no comment or
+question is written.
+
+`skills/propose/SKILL.md` step 4 gains one clause: where the tracker backend
+models the relationship, file the breakdown under an umbrella and every item
+as its sub-issue; where it does not, file flat as before. The clause names
+the condition and the operation and states none of Linear's mechanics — no
+sentence in it is a copy of a sentence in `linear.md` — keeping the workflow
+step backend-agnostic and the transport reference the one home for the shape
+(the spine's *Tracker dispatch* contract, this repo's *reduce fan-out*
+principle). `skills/tracker/SKILL.md` and `references/github.md` are
+untouched, confirmed by the diff: GitHub's board has no parent/sub-issue
+relationship and nothing here reaches it.
+
+**Evidence.** `Evidence: direct review (ADR 0019, prose)` on both edits — a
+guidance change with no predicate over meaning, and ADR 0017 D5 already
+retired this repo's prose-guard suite; no test names either changed file and
+none was edited. Reviewed the four acceptance criteria against the shipped
+text: the umbrella's shape is complete without a second source (AC-1), the
+`/propose` clause restates none of `linear.md`'s mechanics (AC-2), the
+umbrella is described as never built and its WIP exclusion follows from the
+existing hold rule rather than a new exemption (AC-3), and
+`references/github.md` / `tracker/SKILL.md` carry no diff (AC-4).
+
+**The umbrella's assurance label is a documented placeholder, not a
+misfiling.** None of `trivial`/`simple`/`complex` describes a container that
+is filed, held, and never built; the ticket weighs a documented exception to
+the *Filing* contract against reusing the cheapest existing label and takes
+the label, spending against P0 by one held issue per accepted proposal — a
+cost the ticket prices openly rather than hiding. Taken as the change's own
+tradeoff, not a defect.
+
+**The version class is minor, already carried.** No command is renamed, no
+argument changes shape, and no refusal reason flips: a backend that models
+the relationship gains a capability, one that does not is unaffected. The
+raise already in this diff (17.0.0 → 17.1.0, five homes) satisfies the floor
+and nothing here exceeds it.
+
+**Verification.** `bash scripts/verify.sh` was run and read by this reviewer
+over the full candidate — the builder's staged changes plus this record
+committed on top: ruff clean, mypy clean over three source files, 647
+passed, 85.47% coverage against the 85% floor, design-token drift guard OK,
+`All checks passed`, exit 0. This branch's own change is two files reviewed
+above — `skills/propose/SKILL.md` and `skills/tracker/references/linear.md`
+(#704) — plus this record.
 
 
 ## Cross-references
