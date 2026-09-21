@@ -4156,6 +4156,99 @@ above — `skills/build/SKILL.md` (#690, one sentence) and
 homes and this record.
 
 
+### #692/#693: probe construction gains its vocabulary, and the pre-lock sweep gains its operand
+
+Two independent `simple`-lane tickets, filed together from the improvement
+ledger (#450, drain 2026-09-19) — the same drain #690/#691 above were filed
+from — built as two commits on one branch.
+
+**#692.** `skills/review-discipline/references/craft.md`'s *Unmeasured
+claims* family gains two entries: *A by-use probe whose prompt restates the
+obligation measures obedience* (the construction rule — a by-use probe's
+prompt may not restate the obligation under test, and its fixture may not
+presuppose the scope the clause extends) and *A non-discriminating control is
+a result, and the two results differ* (the vocabulary — a 0-for-N result is
+either a contaminated or too-easy probe, calling for a re-probe over the
+shipped text, or the subject already carrying the property unprompted, which
+is a P0 finding against the addition under review, not the probe). Both cite
+#672 (three rounds, six agents, zero discrimination) as the falsifying
+example, matching the ticket's *Approach*. AC-1 and AC-2 are each met by the
+respective entry, confirmed by reading both against the ticket's wording.
+
+Checked for restatement, the ticket's own P0 concern: `skills/authoring/SKILL.md`
+→ *Grounding* → "Use an instrument that can return the answer you are not
+expecting" governs **choosing** a probe for a spec's tree claim — the
+falsifiability of the instrument itself. The new entries govern a different
+act, **constructing the pair** once a by-use probe has been chosen — the
+prompt and fixture that must not leak or presuppose the answer — and the
+vocabulary for reading its result. #692's second entry cross-references
+`authoring` → *Grounding* by name rather than restating it. Craft.md's
+existing *A declined action is not a prevented one* governs a different
+distinction again (observed-declining versus measured-prevented), not probe
+construction or a null result's meaning. No restatement found; both entries
+buy something `authoring`'s instrument-choice rule and craft.md's existing
+entry do not state.
+
+**#693.** `skills/build/SKILL.md`'s test-lock step now states the pre-lock
+sweep is over the change's **operands** — "an emitter has as many operands as
+it writes keys, and the one the ticket is about is rarely the only one that
+moves" — rather than over the file or path that motivated the change, and
+names why running the declared checks cannot substitute for the enumeration:
+the assertion over an unenumerated operand is green before the change and red
+only after, so no amount of running finds it. #688 (a two-key emitter, one
+key swept, the other missed, returning the run from `implement` to `tests`)
+is named as the worked example, alongside the pre-existing #569 citation. AC-1
+and AC-2 are each met, confirmed by reading the amended sentence against the
+ticket's wording.
+
+Operand enumeration applied reflexively, the subject of #693 turned on its
+own diff: two operands moved — the family body in `craft.md` and its
+`## Contents` list, both updated (append, not insertion, so the existing
+*An ordinal reference into an enumeration is invalidated by a correct
+insertion* entry is not tripped) — confirmed independently by this review, not
+merely accepted from the builder's own grounding comment. No twin found:
+`.codex/agents`, `.codex/config.toml` and `.codex/rules` carry no skill
+bodies for either changed file, and `grep -rl` for both changed sentences
+across the tree returns only the two changed files themselves.
+`tests/unit/test_build_lifecycle_order.py` reads only the `build-lifecycle`
+marker block (`skills/build/SKILL.md:43-52`), which sits after the edited
+bullet and is untouched. The `## Contents` header's "Fifty-odd entries in six
+families" (line 31) still reads true at the new count — 50 entries at the
+base commit (`git show 6d8519bd:… | grep -c '^### '`), 52 now, still fairly
+described as "fifty-odd," and still six families, since both new entries join
+an existing one rather than opening a seventh.
+
+**Evidence.** Both tickets carry `Evidence: direct review (ADR 0019, prose)`;
+law 2's subject is code, and a criterion about what a document says has no
+measuring test. Confirmed by the diff — no file under `tests/` is touched —
+and by `.harness/run.json`'s `tests_locked: false` with its stated rationale,
+which this review finds correctly reasoned rather than merely asserted.
+
+**The version class is already carried; nothing further is owed.** Read
+individually, #693 plausibly reaches major under the same test #691 above
+was raised for — "a call that used to complete now blocks": before this
+change, a pre-lock sweep that ran the declared checks over the file the
+ticket named could be read as having discharged the step, #688 being exactly
+that case caught only downstream, mid-build; after it, the same sweep is
+explicitly insufficient until every operand is enumerated. #692 is weaker —
+its second entry hands a reviewer grounds for a P0 finding it did not
+previously have a name for, but names no new refusal in any shipped
+mechanism. Neither point needs deciding to the last word, because the branch
+they land on is already major: `/build` step 1 reported `already-ahead`
+(the integration branch already carries `17.0.0`, one major raise above the
+release branch's `16.0.0`, from #690/#691's own review). `certifying.md`'s
+raise-to-next-major is computed against the release branch, not by stacking
+one increment per major-class ticket inside a single unreleased cycle — the
+released branch is still `16.0.0`, so `17.0.0` already *is* the next major a
+consuming repo has not yet pulled, and a second major-class change landing
+before that release cuts is still announced by the one bump, exactly as
+ordinary semver practice bundles every breaking change in an unreleased
+series under one leading-component increment rather than one per change. No
+version home is edited by this review.
+
+**Verification.** __VERIFICATION_PLACEHOLDER__
+
+
 ## Cross-references
 
 - `specs/harness-assumptions.md` — one row per hook, script, skill and agent: what it assumes the model cannot do, and the test that would retire it. Read at every model or host release.
