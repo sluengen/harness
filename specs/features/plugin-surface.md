@@ -4056,6 +4056,282 @@ above — `skills/build/SKILL.md` (#685, one insertion) and
 plus the five version homes and this record.
 
 
+### #690/#691: the fix-lane record contradiction resolves, and grounding gains a ticket-identifier check
+
+Two independent `simple`-lane tickets, filed together from the improvement
+ledger (#450, drain 2026-09-19), built as two commits on one branch.
+
+**#690.** `AGENTS.md:48`'s Lanes contract already said the fix lane owes no
+as-built record; `skills/build/SKILL.md`'s own record-obligation bullet said
+the record "is owed on a documented-behaviour change in any lane, or a
+deferral names why" — unqualified, so read against the same document's own
+"the fix lane dispatches no reviewer at all" two sentences earlier, a
+fix-lane diff reaching the trigger was told by one sentence that it owed a
+record and by the next that no reviewer existed to write one. The direction
+was already decided and already shipped, in
+`skills/review-discipline/references/certifying.md` → *Record reality*
+("The fix lane never should [reach the trigger], and a fix whose diff does
+reach it is not a fix: upgrade the lane rather than writing the record under
+it") and in the accepted `lifecycle-reset` proposal it derives from — the gap
+was that neither document a *builder* reads carried it, and `certifying.md`
+loads only for the reviewer, the one agent the fix lane never dispatches.
+The shipped fix drops `build`'s "in any lane" and states the raise in its
+place, naming `certifying.md` as the cross-reference. `AGENTS.md` (and its
+mirrors, `CLAUDE.md` and `templates/spine.md`) is untouched, deliberately: it
+was already correct under the standing decision, and leaving it alone keeps
+the three-copy parity test and `authoring`'s admission table out of a change
+that does not need them (P0).
+
+Confirmed the twin sweep the ticket's own grounding comment ran still holds
+against the shipped tree: `skills/review/SKILL.md:25` ("The fix lane has no
+reviewer at all; a diff that outgrows its lane is upgraded rather than
+shipped under it") already states the escape before its own step 4 restates
+"in any lane", so that file's "any lane" ranges only over lanes `/review`
+ever reaches and needed no edit; `templates/change.md:42` ("the fix lane
+ships on the gate and the push guard alone, with no reviewer and no as-built
+record") stays true under the resolution and needed no edit;
+`skills/authoring/SKILL.md`'s *Choosing assurance* table states only
+admission criteria, never the record obligation, so it carries nothing to
+contradict. AC-1 is met: `AGENTS.md` and `skills/build/SKILL.md` now agree
+that a fix-lane change never owes a record, because a diff that would owe one
+is, by that same fact, not fix-lane — and no second contradiction was found
+standing elsewhere in scope.
+
+**#691.** `skills/authoring/SKILL.md`'s Grounding section named "a file,
+function, flag, version or decision" as the things a citation must resolve
+against current reality, and not a ticket identifier. #671's own as-built
+record (above, `:3521-3541`) priced the gap at two of its three review
+cycles: a citation's *story* was checked and found to hold while its
+*identifier* was not, twice — `CAL-1802` for calibrate's unrelated
+`AuthState.initialize()` work rather than the incident claimed (the real pair
+is `CAL-1409`/`CAL-1825`), and a `#163` citation for a `git checkout -- .`
+story that resolves to a routine release PR. The shipped fix extends the
+section's opening sentence — not a fifth italic rule, which would falsify the
+line beneath it that reads "Four rules separate grounding from restating the
+ticket" — with the ticket-identifier case, the instrument (`tracker` →
+`open`), and the failure mode by name: confirming that the mechanism a
+citation describes is real does not confirm that the number points at it.
+AC-1 is met by reading the shipped sentence against the two things it names
+and the count of italic rules below it, unchanged at four.
+
+**Evidence.** Both tickets carry `Evidence: direct review (ADR 0019, prose)`;
+law 2 excludes a claim about what a document says from a measuring test, and
+neither change touches a test file — confirmed by the diff and by
+`.harness/run.json`'s `tests_locked: true` covering the whole run. No twin of
+either changed sentence was missed: the sweep above is this review's own,
+independent of the grounding comment that first ran it.
+
+**The version class is major, raised at this review: `16.1.0` → `17.0.0`.**
+The two points are independent. #690 is minor on its own: the fix-lane
+escape it now states in `build`'s prose was already the standing, shipped
+decision, reachable by every reviewer through `certifying.md` regardless of
+what `build` said — a fix-lane diff reaching the trigger was already upgraded
+rather than shipped under it before this ticket, so no call's accept, produce
+or decline moves; the change only repairs a contradiction in the document a
+*builder* (not a reviewer) reads, matching the shape #685 raised minor for
+("it does not change what any call accepts, produces, or declines"). #691 is
+major: it adds a check that did not previously exist to a gate every
+consuming repo's `/build` and `/review` already run on every ticket-citing
+spec or design — the common case, not a hypothetical one — and it changes
+the accept/decline outcome for a spec whose citation's identifier does not
+resolve. Before this ticket, such a spec's grounding could complete (pass)
+on the strength of a checked story; after it, the same spec now blocks
+(fails as ungrounded) until the identifier is corrected or dropped — exactly
+`certifying.md`'s own worked test, "a call that used to complete now blocks",
+the same shape #684 and #686 raised major for. #690 stays minor on its own;
+the class is a judgment over the whole diff, and #691 carries it. Raised by
+hand, by this review, across the five version homes inside the candidate
+before the certifying gate: both plugin manifests and all three
+`spine:generated` markers move from `/build` step 1's minor floor, `16.1.0`,
+to `17.0.0`.
+
+**Verification.** `bash scripts/verify.sh` was run and read by this reviewer
+over the full candidate — the builder's own commits are `67836a12` (#690) and
+`6870b8ed` (#691) — plus this review's version raise and as-built record
+committed on top: ruff clean, mypy clean over three source files, 647
+passed, 85.47% coverage against the 85% floor, design-token drift guard OK,
+`All checks passed`, exit 0. This branch's own change is two files reviewed
+above — `skills/build/SKILL.md` (#690, one sentence) and
+`skills/authoring/SKILL.md` (#691, one sentence) — plus the five version
+homes and this record.
+
+
+### #692/#693: probe construction gains its vocabulary, and the pre-lock sweep gains its operand
+
+Two independent `simple`-lane tickets, filed together from the improvement
+ledger (#450, drain 2026-09-19) — the same drain #690/#691 above were filed
+from — built as two commits on one branch.
+
+**#692.** `skills/review-discipline/references/craft.md`'s *Unmeasured
+claims* family gains two entries: *A by-use probe whose prompt restates the
+obligation measures obedience* (the construction rule — a by-use probe's
+prompt may not restate the obligation under test, and its fixture may not
+presuppose the scope the clause extends) and *A non-discriminating control is
+a result, and the two results differ* (the vocabulary — a 0-for-N result is
+either a contaminated or too-easy probe, calling for a re-probe over the
+shipped text, or the subject already carrying the property unprompted, which
+is a P0 finding against the addition under review, not the probe). Both cite
+#672 (three rounds, six agents, zero discrimination) as the falsifying
+example, matching the ticket's *Approach*. AC-1 and AC-2 are each met by the
+respective entry, confirmed by reading both against the ticket's wording.
+
+Checked for restatement, the ticket's own P0 concern: `skills/authoring/SKILL.md`
+→ *Grounding* → "Use an instrument that can return the answer you are not
+expecting" governs **choosing** a probe for a spec's tree claim — the
+falsifiability of the instrument itself. The new entries govern a different
+act, **constructing the pair** once a by-use probe has been chosen — the
+prompt and fixture that must not leak or presuppose the answer — and the
+vocabulary for reading its result. #692's second entry cross-references
+`authoring` → *Grounding* by name rather than restating it. Craft.md's
+existing *A declined action is not a prevented one* governs a different
+distinction again (observed-declining versus measured-prevented), not probe
+construction or a null result's meaning. No restatement found; both entries
+buy something `authoring`'s instrument-choice rule and craft.md's existing
+entry do not state.
+
+**#693.** `skills/build/SKILL.md`'s test-lock step now states the pre-lock
+sweep is over the change's **operands** — "an emitter has as many operands as
+it writes keys, and the one the ticket is about is rarely the only one that
+moves" — rather than over the file or path that motivated the change, and
+names why running the declared checks cannot substitute for the enumeration:
+the assertion over an unenumerated operand is green before the change and red
+only after, so no amount of running finds it. #688 (a two-key emitter, one
+key swept, the other missed, returning the run from `implement` to `tests`)
+is named as the worked example, alongside the pre-existing #569 citation. AC-1
+and AC-2 are each met, confirmed by reading the amended sentence against the
+ticket's wording.
+
+Operand enumeration applied reflexively, the subject of #693 turned on its
+own diff: two operands moved — the family body in `craft.md` and its
+`## Contents` list, both updated (append, not insertion, so the existing
+*An ordinal reference into an enumeration is invalidated by a correct
+insertion* entry is not tripped) — confirmed independently by this review, not
+merely accepted from the builder's own grounding comment. No twin found:
+`.codex/agents`, `.codex/config.toml` and `.codex/rules` carry no skill
+bodies for either changed file, and `grep -rl` for both changed sentences
+across the tree returns only the two changed files themselves.
+`tests/unit/test_build_lifecycle_order.py` reads only the `build-lifecycle`
+marker block (`skills/build/SKILL.md:43-52`), which sits after the edited
+bullet and is untouched. The `## Contents` header's "Fifty-odd entries in six
+families" (line 31) still reads true at the new count — 50 entries at the
+base commit (`git show 6d8519bd:… | grep -c '^### '`), 52 now, still fairly
+described as "fifty-odd," and still six families, since both new entries join
+an existing one rather than opening a seventh.
+
+**Evidence.** Both tickets carry `Evidence: direct review (ADR 0019, prose)`;
+law 2's subject is code, and a criterion about what a document says has no
+measuring test. Confirmed by the diff — no file under `tests/` is touched —
+and by `.harness/run.json`'s `tests_locked: false` with its stated rationale,
+which this review finds correctly reasoned rather than merely asserted.
+
+**The version class is already carried; nothing further is owed.** Read
+individually, #693 plausibly reaches major under the same test #691 above
+was raised for — "a call that used to complete now blocks": before this
+change, a pre-lock sweep that ran the declared checks over the file the
+ticket named could be read as having discharged the step, #688 being exactly
+that case caught only downstream, mid-build; after it, the same sweep is
+explicitly insufficient until every operand is enumerated. #692 is weaker —
+its second entry hands a reviewer grounds for a P0 finding it did not
+previously have a name for, but names no new refusal in any shipped
+mechanism. Neither point needs deciding to the last word, because the branch
+they land on is already major: `/build` step 1 reported `already-ahead`
+(the integration branch already carries `17.0.0`, one major raise above the
+release branch's `16.0.0`, from #690/#691's own review). `certifying.md`'s
+raise-to-next-major is computed against the release branch, not by stacking
+one increment per major-class ticket inside a single unreleased cycle — the
+released branch is still `16.0.0`, so `17.0.0` already *is* the next major a
+consuming repo has not yet pulled, and a second major-class change landing
+before that release cuts is still announced by the one bump, exactly as
+ordinary semver practice bundles every breaking change in an unreleased
+series under one leading-component increment rather than one per change. No
+version home is edited by this review.
+
+**Verification.** `bash scripts/verify.sh` was run and read by this reviewer over the full candidate — the builder's own commits are `f243aa45` (#692) and `08bc2e0d` (#693), plus this review's as-built record committed on top (`99c49a00`, no version raise): ruff clean, mypy clean over three source files, 647 passed, 85.47% coverage against the 85% floor, design-token drift guard OK, `All checks passed`, exit 0. This branch's own change is two files reviewed above — `skills/review-discipline/references/craft.md` (#692, two entries) and `skills/build/SKILL.md` (#693, one sentence) — plus this record.
+
+
+### #696: the grounding brief separates measured from carried-forward, and the handoff reads its own git state before reporting it
+
+One `simple`-lane ticket, filed from the improvement ledger (#450), built
+alongside #697 on one branch — #697 was deferred and held after its own
+clauses failed their probes, and carries nothing here.
+
+`skills/build/SKILL.md` step 5 dispatched a read-only grounding sub-agent and
+admitted its whole brief as grounding, with no distinction between a claim
+the sub-agent read against the tree and one it restated from the ticket, a
+docstring or its own prior context. The step now requires the brief to mark
+each claim **measured** or **carried forward**, and admits only the measured
+half as grounding; a mark this run cannot trace to a `path:line` or a
+re-derivable value is carried forward whatever the brief calls it, so the
+mark is itself a claim under test rather than a label taken on faith. Section
+4's PASS bullet reported the branch and commit this context remembered
+writing rather than the ones on disk; it now names three reads —
+`git rev-parse --abbrev-ref HEAD`, `git rev-parse HEAD`, and the push's own
+confirmation of the remote ref — and binds them to every place those names
+are reported: the ticket, the handoff, and the summary alike.
+
+Confirmed both edits land exactly where the ticket's own grounding comment
+anchored them, `skills/build/SKILL.md:24` (step 5) and `:61` (the PASS
+bullet), and that neither sentence is restated anywhere else in the tree:
+`skills/build/SKILL.md` is the workflow's one shipped copy (`CLAUDE.md`'s
+Claude Code deltas — "each of the nine lifecycle workflows ships once"), so
+it carries no `.codex/` twin, and `grep` for both changed sentences across
+the tree returns only this file. `skills/build/references/run-state.md:108`
+and `:113` already carry the same idiom for a different claim ("a remembered
+RED is not evidence", "a remembered green is not evidence") — the PASS
+bullet's edit extends an existing discipline to a third claim (branch and
+commit identity) rather than introducing a new one, and duplicates neither.
+
+Checked the PASS-bullet edit against the two laws it could overlap and found
+neither: law 3 binds gate evidence read this session over the tree the
+builder authored, a different claim than branch/commit identity; law 6 binds
+external text (ticket bodies, fetched pages, tool output), and a remembered
+commit is this run's own memory of an action it took, not external text
+arriving in data. `/promote`'s own tree-compare (`skills/promote/SKILL.md:104`)
+checks that the gate ran over the tree about to push, a distinct question
+from whether the commit `/build` names actually exists — the CAL-1732 failure
+this edit closes (a commit reported that was never made, work stranded on a
+shared checkout) is invisible to that compare, since there was no rebase-able
+tree to find in the first place. Its operand — branch and commit, read back
+before naming them in the ticket, the handoff and the summary — matches the
+failure named rather than a narrower slice of it.
+
+**Evidence.** `Evidence: direct review (ADR 0019, prose)` on both edits; law
+2's subject is code, and neither change touches a test file, confirmed by the
+diff and by `.harness/run.json`. The step-5 edit is additionally measured by
+use: a by-use probe pair over the shipped text, two clean worktrees off
+`8154f1c1`, byte-identical prompts, arms differing only in the step-5 clause,
+run against a six-claim brief carrying two planted false claims and one claim
+unverifiable from the tree. Both arms caught both plants — the existing step
+5 language plus law 6 already drive that re-derivation — and split only on
+the unverifiable claim: the control admitted it as fact and rested a P0
+recommendation on it, the treatment quarantined it as carried forward and
+named the dependency. That is a genuine discrimination on the one clause that
+differed, over an identical fixture and prompt, not a split on some narrower
+property the old text already carried. The handoff edit was **not** probed —
+measuring it needs a full build run reaching a real push, which this
+review's own scope does not reach either — and ships on direct review alone,
+per ADR 0019's prose route; this report flags it as the weaker-evidenced half
+of the pair, as the ticket itself does.
+
+**The version class is minor, already carried.** Neither edit renames a
+command, changes an argument, or changes a refusal reason: nothing that used
+to complete now blocks, and nothing that used to block now completes. Both
+add work inside `/build`'s own procedure — a brief's claims get labelled, a
+handoff re-reads state it already produced — without changing what a
+consuming repo's invocation of `/build` accepts, produces, or declines. `/build`
+step 1 reported `already-ahead` at `17.0.0`, one major above the `16.0.0`
+release branch from an earlier ticket in this cycle; this change does not
+independently reach major, so no version home is touched by this review.
+
+**Verification.** `bash scripts/verify.sh` was run and read by this reviewer
+over the full candidate — the builder's own commit is `603c7c46`, plus this
+review's as-built record committed on top: ruff clean, mypy clean over three
+source files, 647 passed, 85.47% coverage against the 85% floor, design-token
+drift guard OK, `All checks passed`, exit 0. This branch's own change is one
+file reviewed above — `skills/build/SKILL.md` (#696, two edits) — plus this
+record.
+
+
 ## Cross-references
 
 - `specs/harness-assumptions.md` — one row per hook, script, skill and agent: what it assumes the model cannot do, and the test that would retire it. Read at every model or host release.

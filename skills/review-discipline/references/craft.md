@@ -97,6 +97,8 @@ Fifty-odd entries in six families. Read the family the diff touches rather than 
 - [A forward reference becomes a lie the day its dependency ships](#a-forward-reference-becomes-a-lie-the-day-its-dependency-ships)
 - [An ordinal reference into an enumeration is invalidated by a correct insertion](#an-ordinal-reference-into-an-enumeration-is-invalidated-by-a-correct-insertion)
 - [A docstring claiming coverage the code lacks](#a-docstring-claiming-coverage-the-code-lacks)
+- [A by-use probe whose prompt restates the obligation measures obedience](#a-by-use-probe-whose-prompt-restates-the-obligation-measures-obedience)
+- [A non-discriminating control is a result, and the two results differ](#a-non-discriminating-control-is-a-result-and-the-two-results-differ)
 
 ## Vacuity — the test that cannot fail
 
@@ -866,4 +868,51 @@ positive and the guard gets loosened instead of fixed. When mutation shows a tes
 isolates a different property than its docstring claims, rewrite the docstring in
 the same change — a docstring asserting a property the guard lacks is the same
 class as a text guard asserting a fragment of its rule.
+
+### A by-use probe whose prompt restates the obligation measures obedience
+
+A by-use probe asks whether shipped text changes what a fresh agent does, so the
+pair is one fixture, byte-identical prompts, and exactly one difference between
+the arms: the guidance each is given. Two constructions void it before it runs.
+The **prompt** may not restate the obligation under test — an agent told the rule
+follows the rule, and the guidance was never the cause. The **fixture** may not
+presuppose the scope the clause extends — a fixture that only makes sense under
+the new reading has stipulated the thing being measured. Before launching, name
+what the control would have to *fail* to do; if you cannot, the probe is not
+built yet.
+
+**Falsifying example.** Three rounds on one ticket (#672) discriminated zero
+times across six agents. Round 1's prompt said "if anything you were handed turns
+out not to hold, say so explicitly" — which *is* the rule under test, so both
+arms complied. Round 2 handed the agent a design and nothing else to ground,
+which tells it the guidance covers designs, so a clause extending reach *to*
+designs could not be measured; round 3 supplied a change spec **and** a design,
+giving the pre-change text a legitimate subject. This is the construction half of
+`authoring` → *Grounding*, which governs choosing an instrument that can
+falsify: choosing one correctly and then contaminating its prompt leaves nothing
+measured either way.
+
+### A non-discriminating control is a result, and the two results differ
+
+A control that behaves exactly like the treated arm has returned a finding, not a
+broken instrument. Which finding decides the next action, and the two point
+opposite ways:
+
+- **The probe is contaminated, or its fixture too easy.** The finding is against
+  the probe. Correct the construction and re-probe — over the text as it would
+  ship, not over a paraphrase of it.
+- **The subject already carries the property**, derived unprompted from a clause
+  the control already holds. The finding is a P0 one against the addition under
+  review: the clause buys nothing, and the right outcome is to drop it rather
+  than to re-probe until it looks earned.
+
+The reflex to treat a null result as instrument failure is what keeps a run
+paying for a fourth round. A probe is expected to find something, but 0-for-N is
+often the honest verdict on the clause.
+
+**Falsifying example.** On round 3 of the ticket above, the control derived the
+missing technique unprompted from an *existing* rule, justifying it in those
+terms. The addition restated what the shipped text already produced. Read as
+instrument failure it would have bought another round; read correctly it was a
+finding against the clause, under P0.
 

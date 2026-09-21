@@ -60,7 +60,7 @@ A bug noticed in actual use does not start from a blank change spec: `/capture` 
 
 ### Grounding — measure it, do not recall it
 
-Verify every fact the spec rests on that names a file, function, flag, version or decision against the code as it is *now* — a recalled fact reflects what was true when it was written.
+Verify every fact the spec rests on that names a file, function, flag, version or decision against the code as it is *now*, and every ticket identifier it cites against the tracker (`tracker` → `open`) — a recalled fact reflects what was true when it was written. **Confirming that the mechanism a citation describes is real does not confirm that the number points at it**: #671 spent two of its three review cycles correcting citations whose story held while their identifiers did not.
 
 **A feature-lane design artefact is bound by this section too, not the change spec alone.** A design asserts the same things a spec does: this decision is settled, this is the only caller, nothing else touches this surface. Re-derive each of its tree claims against the tree it will be built on, rather than against what the proposal assumed or an earlier decision recorded. #650's design instructed reverting a decision #649 had deliberately shipped, and nobody caught it at design time because no rule asked anyone to look.
 
