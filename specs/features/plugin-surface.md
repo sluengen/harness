@@ -4056,6 +4056,106 @@ above — `skills/build/SKILL.md` (#685, one insertion) and
 plus the five version homes and this record.
 
 
+### #690/#691: the fix-lane record contradiction resolves, and grounding gains a ticket-identifier check
+
+Two independent `simple`-lane tickets, filed together from the improvement
+ledger (#450, drain 2026-09-19), built as two commits on one branch.
+
+**#690.** `AGENTS.md:48`'s Lanes contract already said the fix lane owes no
+as-built record; `skills/build/SKILL.md`'s own record-obligation bullet said
+the record "is owed on a documented-behaviour change in any lane, or a
+deferral names why" — unqualified, so read against the same document's own
+"the fix lane dispatches no reviewer at all" two sentences earlier, a
+fix-lane diff reaching the trigger was told by one sentence that it owed a
+record and by the next that no reviewer existed to write one. The direction
+was already decided and already shipped, in
+`skills/review-discipline/references/certifying.md` → *Record reality*
+("The fix lane never should [reach the trigger], and a fix whose diff does
+reach it is not a fix: upgrade the lane rather than writing the record under
+it") and in the accepted `lifecycle-reset` proposal it derives from — the gap
+was that neither document a *builder* reads carried it, and `certifying.md`
+loads only for the reviewer, the one agent the fix lane never dispatches.
+The shipped fix drops `build`'s "in any lane" and states the raise in its
+place, naming `certifying.md` as the cross-reference. `AGENTS.md` (and its
+mirrors, `CLAUDE.md` and `templates/spine.md`) is untouched, deliberately: it
+was already correct under the standing decision, and leaving it alone keeps
+the three-copy parity test and `authoring`'s admission table out of a change
+that does not need them (P0).
+
+Confirmed the twin sweep the ticket's own grounding comment ran still holds
+against the shipped tree: `skills/review/SKILL.md:25` ("The fix lane has no
+reviewer at all; a diff that outgrows its lane is upgraded rather than
+shipped under it") already states the escape before its own step 4 restates
+"in any lane", so that file's "any lane" ranges only over lanes `/review`
+ever reaches and needed no edit; `templates/change.md:42` ("the fix lane
+ships on the gate and the push guard alone, with no reviewer and no as-built
+record") stays true under the resolution and needed no edit;
+`skills/authoring/SKILL.md`'s *Choosing assurance* table states only
+admission criteria, never the record obligation, so it carries nothing to
+contradict. AC-1 is met: `AGENTS.md` and `skills/build/SKILL.md` now agree
+that a fix-lane change never owes a record, because a diff that would owe one
+is, by that same fact, not fix-lane — and no second contradiction was found
+standing elsewhere in scope.
+
+**#691.** `skills/authoring/SKILL.md`'s Grounding section named "a file,
+function, flag, version or decision" as the things a citation must resolve
+against current reality, and not a ticket identifier. #671's own as-built
+record (above, `:3521-3541`) priced the gap at two of its three review
+cycles: a citation's *story* was checked and found to hold while its
+*identifier* was not, twice — `CAL-1802` for calibrate's unrelated
+`AuthState.initialize()` work rather than the incident claimed (the real pair
+is `CAL-1409`/`CAL-1825`), and a `#163` citation for a `git checkout -- .`
+story that resolves to a routine release PR. The shipped fix extends the
+section's opening sentence — not a fifth italic rule, which would falsify the
+line beneath it that reads "Four rules separate grounding from restating the
+ticket" — with the ticket-identifier case, the instrument (`tracker` →
+`open`), and the failure mode by name: confirming that the mechanism a
+citation describes is real does not confirm that the number points at it.
+AC-1 is met by reading the shipped sentence against the two things it names
+and the count of italic rules below it, unchanged at four.
+
+**Evidence.** Both tickets carry `Evidence: direct review (ADR 0019, prose)`;
+law 2 excludes a claim about what a document says from a measuring test, and
+neither change touches a test file — confirmed by the diff and by
+`.harness/run.json`'s `tests_locked: true` covering the whole run. No twin of
+either changed sentence was missed: the sweep above is this review's own,
+independent of the grounding comment that first ran it.
+
+**The version class is major, raised at this review: `16.1.0` → `17.0.0`.**
+The two points are independent. #690 is minor on its own: the fix-lane
+escape it now states in `build`'s prose was already the standing, shipped
+decision, reachable by every reviewer through `certifying.md` regardless of
+what `build` said — a fix-lane diff reaching the trigger was already upgraded
+rather than shipped under it before this ticket, so no call's accept, produce
+or decline moves; the change only repairs a contradiction in the document a
+*builder* (not a reviewer) reads, matching the shape #685 raised minor for
+("it does not change what any call accepts, produces, or declines"). #691 is
+major: it adds a check that did not previously exist to a gate every
+consuming repo's `/build` and `/review` already run on every ticket-citing
+spec or design — the common case, not a hypothetical one — and it changes
+the accept/decline outcome for a spec whose citation's identifier does not
+resolve. Before this ticket, such a spec's grounding could complete (pass)
+on the strength of a checked story; after it, the same spec now blocks
+(fails as ungrounded) until the identifier is corrected or dropped — exactly
+`certifying.md`'s own worked test, "a call that used to complete now blocks",
+the same shape #684 and #686 raised major for. #690 stays minor on its own;
+the class is a judgment over the whole diff, and #691 carries it. Raised by
+hand, by this review, across the five version homes inside the candidate
+before the certifying gate: both plugin manifests and all three
+`spine:generated` markers move from `/build` step 1's minor floor, `16.1.0`,
+to `17.0.0`.
+
+**Verification.** `bash scripts/verify.sh` was run and read by this reviewer
+over the full candidate — the builder's own commits are `67836a12` (#690) and
+`6870b8ed` (#691) — plus this review's version raise and as-built record
+committed on top: ruff clean, mypy clean over three source files, 647
+passed, 85.47% coverage against the 85% floor, design-token drift guard OK,
+`All checks passed`, exit 0. This branch's own change is two files reviewed
+above — `skills/build/SKILL.md` (#690, one sentence) and
+`skills/authoring/SKILL.md` (#691, one sentence) — plus the five version
+homes and this record.
+
+
 ## Cross-references
 
 - `specs/harness-assumptions.md` — one row per hook, script, skill and agent: what it assumes the model cannot do, and the test that would retire it. Read at every model or host release.
