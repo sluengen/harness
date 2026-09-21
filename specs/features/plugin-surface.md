@@ -4246,7 +4246,7 @@ ordinary semver practice bundles every breaking change in an unreleased
 series under one leading-component increment rather than one per change. No
 version home is edited by this review.
 
-**Verification.** __VERIFICATION_PLACEHOLDER__
+**Verification.** `bash scripts/verify.sh` was run and read by this reviewer over the full candidate — the builder's own commits are `f243aa45` (#692) and `08bc2e0d` (#693), plus this review's as-built record committed on top (`99c49a00`, no version raise): ruff clean, mypy clean over three source files, 647 passed, 85.47% coverage against the 85% floor, design-token drift guard OK, `All checks passed`, exit 0. This branch's own change is two files reviewed above — `skills/review-discipline/references/craft.md` (#692, two entries) and `skills/build/SKILL.md` (#693, one sentence) — plus this record.
 
 
 ## Cross-references
