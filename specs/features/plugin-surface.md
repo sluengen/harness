@@ -4249,6 +4249,89 @@ version home is edited by this review.
 **Verification.** `bash scripts/verify.sh` was run and read by this reviewer over the full candidate — the builder's own commits are `f243aa45` (#692) and `08bc2e0d` (#693), plus this review's as-built record committed on top (`99c49a00`, no version raise): ruff clean, mypy clean over three source files, 647 passed, 85.47% coverage against the 85% floor, design-token drift guard OK, `All checks passed`, exit 0. This branch's own change is two files reviewed above — `skills/review-discipline/references/craft.md` (#692, two entries) and `skills/build/SKILL.md` (#693, one sentence) — plus this record.
 
 
+### #696: the grounding brief separates measured from carried-forward, and the handoff reads its own git state before reporting it
+
+One `simple`-lane ticket, filed from the improvement ledger (#450), built
+alongside #697 on one branch — #697 was deferred and held after its own
+clauses failed their probes, and carries nothing here.
+
+`skills/build/SKILL.md` step 5 dispatched a read-only grounding sub-agent and
+admitted its whole brief as grounding, with no distinction between a claim
+the sub-agent read against the tree and one it restated from the ticket, a
+docstring or its own prior context. The step now requires the brief to mark
+each claim **measured** or **carried forward**, and admits only the measured
+half as grounding; a mark this run cannot trace to a `path:line` or a
+re-derivable value is carried forward whatever the brief calls it, so the
+mark is itself a claim under test rather than a label taken on faith. Section
+4's PASS bullet reported the branch and commit this context remembered
+writing rather than the ones on disk; it now names three reads —
+`git rev-parse --abbrev-ref HEAD`, `git rev-parse HEAD`, and the push's own
+confirmation of the remote ref — and binds them to every place those names
+are reported: the ticket, the handoff, and the summary alike.
+
+Confirmed both edits land exactly where the ticket's own grounding comment
+anchored them, `skills/build/SKILL.md:24` (step 5) and `:61` (the PASS
+bullet), and that neither sentence is restated anywhere else in the tree:
+`skills/build/SKILL.md` is the workflow's one shipped copy (`CLAUDE.md`'s
+Claude Code deltas — "each of the nine lifecycle workflows ships once"), so
+it carries no `.codex/` twin, and `grep` for both changed sentences across
+the tree returns only this file. `skills/build/references/run-state.md:108`
+and `:113` already carry the same idiom for a different claim ("a remembered
+RED is not evidence", "a remembered green is not evidence") — the PASS
+bullet's edit extends an existing discipline to a third claim (branch and
+commit identity) rather than introducing a new one, and duplicates neither.
+
+Checked the PASS-bullet edit against the two laws it could overlap and found
+neither: law 3 binds gate evidence read this session over the tree the
+builder authored, a different claim than branch/commit identity; law 6 binds
+external text (ticket bodies, fetched pages, tool output), and a remembered
+commit is this run's own memory of an action it took, not external text
+arriving in data. `/promote`'s own tree-compare (`skills/promote/SKILL.md:104`)
+checks that the gate ran over the tree about to push, a distinct question
+from whether the commit `/build` names actually exists — the CAL-1732 failure
+this edit closes (a commit reported that was never made, work stranded on a
+shared checkout) is invisible to that compare, since there was no rebase-able
+tree to find in the first place. Its operand — branch and commit, read back
+before naming them in the ticket, the handoff and the summary — matches the
+failure named rather than a narrower slice of it.
+
+**Evidence.** `Evidence: direct review (ADR 0019, prose)` on both edits; law
+2's subject is code, and neither change touches a test file, confirmed by the
+diff and by `.harness/run.json`. The step-5 edit is additionally measured by
+use: a by-use probe pair over the shipped text, two clean worktrees off
+`8154f1c1`, byte-identical prompts, arms differing only in the step-5 clause,
+run against a six-claim brief carrying two planted false claims and one claim
+unverifiable from the tree. Both arms caught both plants — the existing step
+5 language plus law 6 already drive that re-derivation — and split only on
+the unverifiable claim: the control admitted it as fact and rested a P0
+recommendation on it, the treatment quarantined it as carried forward and
+named the dependency. That is a genuine discrimination on the one clause that
+differed, over an identical fixture and prompt, not a split on some narrower
+property the old text already carried. The handoff edit was **not** probed —
+measuring it needs a full build run reaching a real push, which this
+review's own scope does not reach either — and ships on direct review alone,
+per ADR 0019's prose route; this report flags it as the weaker-evidenced half
+of the pair, as the ticket itself does.
+
+**The version class is minor, already carried.** Neither edit renames a
+command, changes an argument, or changes a refusal reason: nothing that used
+to complete now blocks, and nothing that used to block now completes. Both
+add work inside `/build`'s own procedure — a brief's claims get labelled, a
+handoff re-reads state it already produced — without changing what a
+consuming repo's invocation of `/build` accepts, produces, or declines. `/build`
+step 1 reported `already-ahead` at `17.0.0`, one major above the `16.0.0`
+release branch from an earlier ticket in this cycle; this change does not
+independently reach major, so no version home is touched by this review.
+
+**Verification.** `bash scripts/verify.sh` was run and read by this reviewer
+over the full candidate — the builder's own commit is `603c7c46`, plus this
+review's as-built record committed on top: ruff clean, mypy clean over three
+source files, 647 passed, 85.47% coverage against the 85% floor, design-token
+drift guard OK, `All checks passed`, exit 0. This branch's own change is one
+file reviewed above — `skills/build/SKILL.md` (#696, two edits) — plus this
+record.
+
+
 ## Cross-references
 
 - `specs/harness-assumptions.md` — one row per hook, script, skill and agent: what it assumes the model cannot do, and the test that would retire it. Read at every model or host release.
