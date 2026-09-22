@@ -4508,6 +4508,108 @@ above — `skills/authoring/SKILL.md`, `skills/authoring/references/prose.md`,
 `templates/change.md` (#698), and `skills/build/SKILL.md` (#699) — plus the
 four version homes and this record.
 
+### #670/#701: a citation is anchored on an identifier, and a decision names the roles it binds
+
+Two independent `simple`-lane tickets, filed together deliberately since both
+land in `skills/authoring/`, built as two commits on one branch.
+
+**#670.** `skills/authoring/references/prose.md` → *Sentence-level rules*
+gains one bullet: anchor a citation on an identifier — a function name, a
+section heading, a symbol, or a `git grep`-able string — never a line number,
+because an earlier hunk in the same diff can move the line a citation names
+before the commit that writes it ever lands. #660 corrected three such
+citations in one build (its own as-built record's commit message: "the three
+citations decided explicitly"); #568 hit the same class once before that
+(its own review thread: "the rewritten justification is still false, and its
+line citations went stale inside their own commit"). The rule lands beside
+the numeral-versus-enumeration rule already there, the same class: a value
+derived from something that moves, written as fixed. AC-1 is met by reading
+the shipped sentence against the two things it must carry — the rule and the
+reason.
+
+The reader-side half of this already shipped, in
+`skills/review-discipline/references/craft.md` → *A ticket's grounding is its
+least reliable part* ("verify cited tests exist rather than cited line
+numbers"), which the reviewer loads; and a narrower, feature-spec-only
+instance sits in this file's own *Feature spec* section ("Nor may it cite a
+line number within its own file"). Neither reaches a writer composing a
+change spec, ticket body, or handoff outside this file, so the general
+writer-side rule #670 adds was genuinely absent — confirmed here by
+re-derivation, not by trusting the ticket's own grounding.
+
+**#701.** `skills/authoring/SKILL.md` → *Decisions live in the spec they
+govern* and `skills/authoring/references/decisions.md` both gain one clause:
+recording a decision is not the whole obligation — name the roles it binds
+and confirm each one's own entry document reaches the record, because a rule
+filed where only one role reads it is invisible to every other role it
+governs. The worked case is #690: the fix-lane rule was recorded in
+`skills/review-discipline/references/certifying.md` → *Record reality*,
+loaded by the reviewer at PASS, while the fix lane dispatches no reviewer at
+all — so the rule sat in the one document nobody in that lane opens, and the
+spine plus `/build`, which the builder reads, kept the pre-decision text
+until #690/#691 corrected it (`67836a12`, `6870b8ed`, recorded `6d8519bd` —
+each re-verified here to resolve to exactly that pair). The new clause states
+reachability as a pointer, not a copy: a bound role's own entry document
+cites the canonical record and stops, which keeps *Supersede in place* — the
+same section, above — true (one record per choice) and keeps the direction
+this repo's own *Reduce fan-out* principle names (a consumer cites its
+producer; the record never enumerates its readers). The clause ships in both
+places it binds — the reference, for whoever is writing a decision, and the
+`SKILL.md` section, for a reader who has not loaded it — which is the rule
+applied to itself.
+
+**A citation on #701's own thread was wrong and is corrected here rather
+than repeated.** The ticket's Case section originally cited `8154f1c1` as
+where #690/#691 landed; that commit is the #692/#693 as-built entry, not
+#690/#691's. The builder caught this before implementation and posted a
+grounding-correction comment naming the right three shas, re-verified
+independently by this review. The ticket's `nano-erp` ERP-571 citation is
+outside this repo's tree and this review's reach to verify; nothing in the
+correction comment or the diff revisits it, and it carries no weight the
+shipped clause depends on — the in-tree case, #690, stands on its own.
+
+**Evidence.** Both tickets carry `Evidence: direct review (ADR 0019,
+prose)`; law 2 excludes a claim about what a document says from a measuring
+test, and neither commit touches a test file. No twin was missed: `prose.md`'s
+new bullet has no second copy anywhere in the tree, and `decisions.md`'s new
+section is the only place the role-binding obligation now lives outside its
+one-sentence echo in `SKILL.md`, which the clause itself calls for.
+
+**The version class is major, raised at this review: `18.0.0` → `19.0.0`.**
+#670 alone would not have cleared the floor: it adds one bullet to
+`prose.md`'s existing style-rules list, the same shape as #698's
+numeral-versus-enumeration bullet in the same file, which that review's own
+major reasoning did not name as a ground — a Stage-2 style rule, not a check
+with an accept/decline outcome. #701 clears it: it adds a precondition to
+what "recording a decision" means, in the core section every consuming
+repo's builder and reviewer both read — before this ticket, writing the
+Decision block was the whole obligation; after it, the same block is not the
+finished obligation until the bound roles' own entry documents are confirmed
+to reach it. That is the #691 shape from the other side: a decision-recording
+action that previously completed on the strength of the block alone now does
+not, until the propagation check is done. The class is a judgment over the
+whole diff, so #701 carries the whole branch to major. `/build` step 1
+reported `already-ahead` at `18.0.0`, so this cycle's minor floor was already
+met before either ticket; this raise is the review's, by hand, across the
+four version homes this repo currently carries — `.claude-plugin/plugin.json`,
+`.codex-plugin/plugin.json`, `AGENTS.md`, and `templates/spine.md` — inside
+the candidate, before the certifying gate. `CLAUDE.md` is not a fifth home:
+ADR 0021's amendment retired its own `spine:generated` marker, and
+`scripts/plugin-version.js`'s `CANDIDATES` list does not carry it — confirmed
+by reading the script rather than assuming the prior cycle's file count
+still holds.
+
+**Verification.** `bash scripts/verify.sh` was run and read by this reviewer
+over the full candidate — the builder's own commits `62173bca` (#670) and
+`7cec4cbf` (#701) plus this review's version raise and as-built record
+committed on top: ruff clean, mypy clean over three source files, 629
+passed, 85.47% coverage against the 85% floor, design-token drift guard OK,
+`All checks passed`, exit 0. This branch's own change is three files
+reviewed above — `skills/authoring/SKILL.md` and
+`skills/authoring/references/decisions.md` (#701), and
+`skills/authoring/references/prose.md` (#670) — plus the four version homes
+and this record.
+
 ## Cross-references
 
 - `specs/harness-assumptions.md` — one row per hook, script, skill and agent: what it assumes the model cannot do, and the test that would retire it. Read at every model or host release.
