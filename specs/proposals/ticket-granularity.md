@@ -119,24 +119,38 @@ Four items. Item 1 fires the comprehension and blast dimensions — it changes t
 
 ## Spawn record
 
-**Accepted 2026-09-22. The four tickets are not yet filed**, and this section is the record of why and of what changed at filing time. It is superseded by the ticket ids once they exist.
+**Accepted 2026-09-22.** Two of the four items landed as extensions to existing tickets; three filings remain blocked on the board. This section is superseded once those three have ids.
 
-**Placement is unreachable from this session.** `create` requires an explicit Status on the board (`tracker` → *`create`*, step 3), the board is Projects v2, and Projects v2 has no REST surface. The board write was attempted rather than inferred from a probe, as `skills/tracker/references/github.md` requires: `gh project item-add 2 --owner sluengen --url .../issues/702` returned `unknown owner type`, which that reference names as a 403 underneath. REST is healthy — `gh api repos/sluengen/harness` succeeds — so issue-level work is reachable and board-level work is not. Filing now would create four issues with Status unset, invisible to every Todo-scoped queue read: the item-add-no-status trap the operation exists to refuse. The filing is therefore incomplete and stopped, per that rule.
+### Landed
 
-**The twin search changed the breakdown, and this proposal's own rule is what changed it.** Two open, unstarted tickets are on the surfaces items 3 and 4 touch:
-
-| Item | Open ticket on the same surface | Disposition |
+| Item | Where it went | What it carries |
 |---|---|---|
-| 3 (grounding half) | **#698** — *State a cross-repo grounding convention for numbers, deferrals, mechanisms, negatives*, whose suggested home is `skills/authoring/SKILL.md` | Extend, and **resolve a conflict**: #698's convention 2 states *"a deferral names its ticket"*, which is the rule D3's sibling change retires. One of the two is wrong and the ticket cannot be extended without settling which. |
-| 4 | **#700** — *Pull step: parent/container eligibility and free-slot project ranking*, whose suggested home is `skills/work-discovery/SKILL.md` → *The limit*, step 3 | Extend. Same skill, same pull path, one sitting. |
+| 3, convention half | **#698** extended — [body amended](https://github.com/sluengen/harness/issues/698), [rationale](https://github.com/sluengen/harness/issues/698#issuecomment-5777017488) | AC-2 restates the deferral rule as P5's; **AC-2a retires `templates/change.md:81`**; AC-6 adds the citation-grounding obligation. AC-5, which a drain had left in a comment, was carried into the body at the same time. |
+| 4 | **#700** extended — [body amended](https://github.com/sluengen/harness/issues/700), [rationale](https://github.com/sluengen/harness/issues/700#issuecomment-5777026898) | AC-3 the premise re-check, AC-4 the size question. AC-4's dependency on item 1's run-cost figure is recorded in the body; the native blocked-by is set once item 1 exists. |
 
-So the four items file as **two new tickets (1 and 2) plus two extensions**, not four new ones — which is the spine's *Filing* rule as it already stands, reached by the search this proposal is trying to make routine.
+Both were verified by re-reading the issue, not by exit status: criteria present in the body, exactly one `assurance:` label surviving the edit, comment on the thread.
 
-**#698's conflict is the operator's to settle**, because amending another ticket's approach is a scope change on work this proposal does not own (`authoring` → *The same obligation binds whoever amends someone else's ticket*). The substance: P5 already says "the ledger by default, a ticket only where its fix is already decided and sized", and `templates/change.md:81` says the opposite. #698 codifies line 81. Retiring line 81 and extending #698 to match P5 is the coherent outcome; leaving both would ship two contradicting conventions into every consuming repo.
+**#698's conflict was settled by the operator on 2026-09-22: retire line 81, and extend #698 to match P5.** Its convention 2 had codified line 81 (*"Substantial deferrals become their own change spec"*) against P5's *"the ledger by default, a ticket only where its fix is already decided and sized"*. Shipping both would hydrate two opposing conventions into every consuming repo.
 
-**Queue state at acceptance:** 11 open issues, 3 of them held (#697, #674, #450), leaving 8 unheld against `queue.wip_limit: 6`. The project is over its limit before anything is filed, so every item here lands in **Backlog** when the board becomes writable — item 1 excepted only in that a held ticket is excluded from the count, not from needing a placement.
+### Item 3 split, and the split is the point
 
-**#698 also shows the D3 obligation already working informally:** its body carries an `Absorbs:` list naming seven ledger entries across two repos. D3 makes that list a requirement and turns each entry into a criterion. The practice exists; what is missing is the obligation and the criteria.
+Item 3 bundled three obligations on the premise that they were one sitting. Two of them — the deferral rule and the citation-grounding convention — belong with #698's existing conventions about what a written claim must carry. The third, **the materiality floor at `skills/assess/references/finding-bar.md`**, answers a different question in a different file: whether a finding should become a ticket at all, rather than what a claim must carry. Folding it into #698 would have made one sitting into two and pushed a ticket that already holds seven criteria further toward the context bound.
+
+So the co-change test cut the other way here, and it should: the test is *one builder, one worktree, one sitting*, not *one theme*. A bundle assembled by theme is the over-large ticket this proposal's own risk section names.
+
+### Blocked on placement
+
+Three filings remain, and none can be made from a session without board access. `create` requires an explicit board Status, Projects v2 has no REST surface, and the board write was attempted rather than inferred from a probe, as `skills/tracker/references/github.md` requires: `gh project item-add 2 --owner sluengen --url .../issues/702` returned `unknown owner type`, a 403 underneath. Filing without placement produces issues invisible to every Todo-scoped queue read — the item-add-no-status trap that operation exists to refuse.
+
+1. **State run overhead and the co-change test in the spine's *Filing* contract** — `complex`, held for the operator with the `input` label. Blocks nothing already filed; #700's AC-4 reads its figure.
+2. **Apply the batch pass at the four filing surfaces** — `complex`, carrying the absorbed-findings obligation (D3) and the separable-or-sequential declaration (D2). Depends on 1.
+3. **A materiality floor at the finding bar** — `simple`, the residual of the original item 3. Depends on 1.
+
+**Queue at acceptance:** 11 open issues, 3 held (#697, #674, #450), leaving 8 unheld against `queue.wip_limit: 6`. The project is over its limit before anything is filed, so all three land in **Backlog** when the board becomes writable.
+
+### One observation the filing produced
+
+**#698 already carried an `Absorbs:` list** naming seven ledger entries across two repos, and **its AC-5 lived only in a comment** — added by a drain and never written into the criteria a reviewer certifies against. The first is D3's obligation already being practised informally; the second is the defect `authoring` → *The same obligation binds whoever amends someone else's ticket* describes, found in the wild while acting on this proposal. Both were corrected in the amendment.
 
 ## Risks / unknowns
 
