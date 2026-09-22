@@ -1,7 +1,7 @@
 ---
 feature: plugin-surface
 status: implemented
-last_updated: 2026-09-22
+last_updated: 2026-09-23
 ---
 
 # The plugin surface
@@ -4412,6 +4412,101 @@ passed, 85.47% coverage against the 85% floor, design-token drift guard OK,
 above — `skills/propose/SKILL.md` and `skills/tracker/references/linear.md`
 (#704) — plus this record.
 
+
+### #698/#699: cross-repo grounding conventions for numbers, mechanisms, negatives and citations; a design that overturns the posted spec amends the ticket first
+
+Two `simple`-lane tickets, one branch, one commit each.
+
+**#698.** `skills/authoring/SKILL.md`'s Grounding section gains new rules,
+named as they were: a stated number names the test that would falsify it,
+distinct from `engineering`'s instrument rule because its subject is a figure
+in a spec rather than a figure about shipped code; a mechanism claim names
+the behaviour somebody watched, because reading a guard's source is not
+watching it refuse; negative verification is per claim rather than per set,
+and a negative about what has been *decided* has no primitive to grep, so it
+reads `paths.decisions` directly (#685's own miss, generalised); and a
+filing resting on a decision, proposal or ADR names the artefact and the
+commit carrying it, verified by opening it. `skills/authoring/references/prose.md`
+gains the numeral-beside-an-enumeration rule (AC-5, folded from the ledger at
+the 2026-09-22 drain): name the enumeration a stated count could be derived
+from, or give way to it. The same edit corrects two instances of exactly that
+pattern inside the Grounding and Acceptance-criteria sections it touches —
+"Four rules separate/decide…" both become "The rules below…" — because the
+new bullets would otherwise have made the stated count wrong the moment they
+landed. `templates/change.md`'s *Out of scope* sentence, "Substantial
+deferrals become their own change spec (or a proposal, if unconfirmed)," is
+retired and replaced with P5's rule: a deferral goes to the improvement
+ledger by default, and becomes a ticket only where its fix is already decided
+and sized. The two had shipped contradicting conventions to every consuming
+repo; the operator settled which stands on 2026-09-22, on the ticket thread.
+
+**#699.** `skills/build/SKILL.md` section 2's feature-lane bullet gains one
+sentence: a design that contradicts the posted spec amends the ticket before
+implementation begins, naming which criterion it overturned, rather than
+carrying the correction only in the sub-agent's context, which is torn down
+on return. The Approach asked for a second clause restating where the design
+goes once written; that sentence already shipped verbatim from #650, and the
+build correctly did not restate it.
+
+**A citation on #698's own thread does not hold up, and the record corrects
+it rather than repeating it.** The ticket's 2026-09-22 amending comment and
+its *Out of scope* section cite `specs/proposals/ticket-granularity.md`,
+"accepted on 2026-09-22." The builder's grounding comment found
+`git log --all -- specs/proposals/ticket-granularity.md` empty in its
+worktree and recorded the citation as false, proceeding anyway because AC-2a
+and AC-6 each already had an independent in-tree ground. Re-run here with
+every remote fetched, that file exists: `origin/claude/compassionate-noether-2csqcd`
+carries it, accepted 2026-09-22T13:05:33Z, and its *Spawn record* section
+names the exact edits that landed on this ticket — the AC-2/AC-2a/AC-6
+wording and the AC-5 comment-to-body move, matching this diff. The proposal
+was real and correctly reasoned; it was never merged to `dev`, so a
+worktree whose remotes are not fully fetched reads it as never having
+existed. The practical conclusion does not move: neither AC-2a nor AC-6
+rests on the proposal's existence, both stand on the grounds already in the
+ticket body, and the build was right to proceed. What is wrong is the
+specific sentence "has never existed in any branch," now corrected here
+rather than on the immutable thread; the deeper gap — an accepted proposal
+that never lands because Projects v2 has no REST surface to place its
+spawned tickets on — is process, not this ticket's surface, and is not
+carried forward as a finding of this review.
+
+**Evidence.** All six criteria on #698 and the one on #699 carry
+`Evidence: direct review (ADR 0019, prose)`. Law 2 excludes a claim about
+what a document says from a measuring test, and ADR 0017 D5 forbids a guard
+asserting what prose means; no test names any of the four changed files, and
+`.harness/run.json` records `tests_locked: false` with the reason stated
+inline — a deliberate non-arming, not an oversight. No twin was missed: the
+retired *Out of scope* sentence has no second copy anywhere in the tree, no
+other file states or restates the numeral-beside-enumeration rule, and no
+other file duplicates the feature-lane design-overturn clause.
+
+**The version class is major, raised at this review: `17.1.0` → `18.0.0`.**
+Two independent grounds, either sufficient alone. AC-1, AC-3, AC-4 and AC-6
+add checks that did not previously exist to the same Grounding section every
+consuming repo's `/build` and `/review` already read on every change spec and
+design — the #691 shape exactly: a spec whose stated number named no test,
+whose mechanism claim named no behavioural verification, whose negative
+covered only the claims its author happened to check, or whose citation was
+never opened could complete grounding before this ticket, and now blocks
+until corrected. AC-2a is the same test from the other side: a consuming
+repo's change spec that filed a deferral as its own ticket, following the
+sentence the old template stated, was compliant with the shipped guidance
+before this ticket and is not after it — the shape of what the template
+obliges a filer to do reverses. `/build` step 1 reported `already-ahead` at
+`17.1.0` against release `17.0.0`, so this cycle's minor floor was already
+met before either ticket; this raise is the review's, by hand, across the
+four version homes — both plugin manifests and the two `spine:generated`
+markers — inside the candidate, before the certifying gate.
+
+**Verification.** `bash scripts/verify.sh` was run and read by this reviewer
+over the full candidate — the builder's own commits `0e49af72` (#698) and
+`69b783eb` (#699) plus this review's version raise and as-built record
+committed on top: ruff clean, mypy clean over three source files, 629
+passed, 85.47% coverage against the 85% floor, design-token drift guard OK,
+`All checks passed`, exit 0. This branch's own change is four files reviewed
+above — `skills/authoring/SKILL.md`, `skills/authoring/references/prose.md`,
+`templates/change.md` (#698), and `skills/build/SKILL.md` (#699) — plus the
+four version homes and this record.
 
 ## Cross-references
 
