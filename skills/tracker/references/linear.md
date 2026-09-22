@@ -24,6 +24,30 @@ Keep the taxonomy flat and small. The hold labels and what they mean are the spi
 
 `projectId` is **mandatory** — a project-less issue is invisible to the Build queue. And a new issue lands in the team's **default state, which is often neither Todo nor Backlog**, so resolve the target state by `type` — `unstarted` for Todo, `backlog` for Backlog — and move it explicitly as its own step ([recipes below](#accessing-linear-graphql-via-curl)). This is Linear's form of the spine contract's placement rule (*Filing*).
 
+## A breakdown files under one umbrella issue
+
+An accepted proposal spawns several tickets that share one decision, and on a flat board nothing says so. Linear models the grouping natively — `parentId` on `issueCreate` ([Create an issue](#accessing-linear-graphql-via-curl)) — so a breakdown files **one umbrella issue and every item as its sub-issue**. The board then shows what goes together without anyone opening the proposal spec, and the umbrella is a standing place to audit the initiative against what the proposal decided, which a set of closed siblings does not give anybody.
+
+The umbrella is a container. Nothing builds it, and it carries no change spec: reaching for `templates/change.md` here writes acceptance criteria for work that lives in the children.
+
+| What it carries | Value | Why |
+|---|---|---|
+| Title | the proposal's own title | It names an initiative rather than a change, so the *verb + where* convention does not reach it |
+| Description | the problem in brief, the recommendation, a link to the proposal spec, and the breakdown list | What an auditor needs in order to judge the children against the decision |
+| `projectId` | the children's project | Mandatory on this backend (*Placement on create* above), and it is the initiative's own queue |
+| Label | `operator` | Says why a human holds it: this one is never built |
+| `assigneeId` | the operator | **The half the loop acts on.** `work-discovery` skips a ticket because it is *assigned*, and reads the label only for why — so an umbrella carrying the label alone sits in Todo until an unattended tick takes a container it cannot build |
+| Assurance | `assurance:trivial` | The spine's *Filing* contract requires exactly one on every created ticket, and no lane describes a ticket nobody builds. The cheapest lane is the honest placeholder |
+| State | Todo | Placement is mandatory and a held ticket is excluded from the queue count, so Todo costs no slot. It sits beside the children it groups, where Backlog would claim it is waiting to be pulled |
+
+**This is not a `hold`.** That operation is three writes including a question for the operator, and nothing is being asked here. What the umbrella borrows is the label-and-assignment shape the standing ledger issue already uses as a never-built-directly marker (`tracker` → *`ledger`*).
+
+**The operator closes it**, whenever the audit is done. Nothing rolls up, checks completeness, or closes it on the last child.
+
+Each child then passes `parentId` on its own `issueCreate`. Placement, dependencies, priority and assurance are unchanged: the first `wip_limit` children into Todo, the rest into Backlog.
+
+**Keep the umbrella's id off a PR.** An id in a branch, title, body or commit auto-transitions that issue to Done on merge (*A merged PR auto-transitions every ticket it names* below), and a child's PR that names its parent closes the audit point while the initiative is still running.
+
 ## A merged PR auto-transitions every ticket it names
 
 Linear's GitHub integration links an issue to a PR when the ticket id appears in the PR **branch**, **title**, **body**, or a **commit** message, and moves it to **Done** automatically on merge. This is integration behaviour, not a lifecycle step: the landing stage transitions state on purpose; the integration does it on sight of an id. The deliberate-linking rule is in *Shared rules* below.
@@ -118,7 +142,7 @@ LINEAR 'query { issueLabels { nodes { id name } } }'
 LINEAR 'mutation { issueUpdate(id: \"<issue-id>\", input: { stateId: \"<state-id>\" }) { success } }'
 ```
 
-**Create an issue** (returns its identifier + url). `projectId` is **mandatory** — a project-less issue is invisible to the Build queue ([Placement on create](#placement-on-create)). `assigneeId` holds the ticket for a human (set it when filing held/deferred work). `parentId` is optional — omit it for a top-level issue, set it to the parent's id to create a sub-issue (e.g. a deferred-finding follow-up):
+**Create an issue** (returns its identifier + url). `projectId` is **mandatory** — a project-less issue is invisible to the Build queue ([Placement on create](#placement-on-create)). `assigneeId` holds the ticket for a human (set it when filing held/deferred work). `parentId` is optional — omit it for a top-level issue, set it to the parent's id to create a sub-issue — a deferred-finding follow-up, or every item of a breakdown under its umbrella ([A breakdown files under one umbrella issue](#a-breakdown-files-under-one-umbrella-issue)):
 ```bash
 LINEAR 'mutation { issueCreate(input: { teamId: \"<team-uuid>\", projectId: \"<project-uuid>\", title: \"...\", description: \"...\", labelIds: [\"<label-uuid>\"], assigneeId: \"<user-uuid>\", parentId: \"<parent-id>\" }) { issue { identifier url } } }'
 ```

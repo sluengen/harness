@@ -78,4 +78,4 @@ Specific outcomes. For each, name what it protects and state the evidence select
 
 ## Out of scope
 
-What this change explicitly does not do. Substantial deferrals become their own change spec (or a proposal, if unconfirmed).
+What this change explicitly does not do. **A deferral goes to the improvement ledger by default, and becomes a ticket only where its fix is already decided and sized** (`AGENTS.md` P5). A deferral whose fix is still an open question is an entry, whatever its size: the queue is bounded and the ledger is not, and a drain decides entries in one sitting where the queue carries each one separately. Unconfirmed work large enough to need a decision is a proposal.

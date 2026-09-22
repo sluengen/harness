@@ -95,19 +95,19 @@ const CLAUDE_MANIFEST = ".claude-plugin/plugin.json";
 //: The candidate homes, in the order a payload reports them. Each is a *candidate*
 //: — a file becomes a home only by naming the plugin the manifest above names.
 //:
-//: `CLAUDE.md` sits beside `AGENTS.md` because #558 made it the whole of the spine
-//: copied verbatim — marker included — rather than an `@AGENTS.md` pointer. The
-//: two files are held byte-equal over the copied region by
-//: `tests/unit/test_spine_template_parity.py`, and the version line is the one
-//: line every raise touches, so a bump that skipped the copy would red the gate on
-//: the cycle's very next build. It earns membership the same way every other
-//: marker does: a pre-#558 pointer carries no marker and is skipped, and a repo
-//: with no `CLAUDE.md` has one fewer home rather than a missing one.
+//: `CLAUDE.md` was a fifth candidate between #558 and #707: #558 made the host
+//: file the whole of the spine copied verbatim, marker included, rather than an
+//: `@AGENTS.md` pointer, and a raise that skipped the copy would have gone stale
+//: at the one line every raise touches. #705 retired the copy — the file is now
+//: `@AGENTS.md` plus the host deltas — so it carries no marker, can no longer
+//: identify as a home, and the candidate was configuration nothing read. Removing
+//: it changes no rule: membership is still earned by carrying the marker, so a
+//: repo that keeps a byte copy of its own simply has a file this script does not
+//: look at.
 const CANDIDATES = [
   { path: CLAUDE_MANIFEST, kind: "manifest" },
   { path: ".codex-plugin/plugin.json", kind: "manifest" },
   { path: "AGENTS.md", kind: "marker" },
-  { path: "CLAUDE.md", kind: "marker" },
   { path: "templates/spine.md", kind: "marker" },
 ];
 

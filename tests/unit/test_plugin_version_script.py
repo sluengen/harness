@@ -66,22 +66,30 @@ from tests.unit._prose import REPO_ROOT
 SCRIPT = REPO_ROOT / "scripts" / "plugin-version.js"
 
 #: The homes, repo-relative, in the order the script reports them. ``CLAUDE.md``
-#: joined them at #558: the host file stopped being an ``@AGENTS.md`` pointer and
-#: became the whole of the spine copied verbatim, marker included. A copy that the
-#: bump does not reach goes stale on the cycle's first raise, and
-#: ``tests/unit/test_spine_template_parity.py``'s prefix guard then reds the gate
-#: for every later build — the change would ship its own andon pull.
+#: joined them at #558, when the host file stopped being an ``@AGENTS.md`` pointer
+#: and became the whole of the spine copied verbatim, marker included — and left
+#: again at #707 with that copy. #705 rewrote it as ``@AGENTS.md`` plus the host
+#: deltas, so it carries no marker and therefore no version, and a candidate that
+#: can never identify as a home is configuration nothing reads.
+#:
+#: **Nothing asserts the count off this tuple.** A list an assertion derives from
+#: cannot fail for the reason the assertion exists, so
+#: :func:`test_a_raise_reports_every_home_it_wrote` spells the four out. What this
+#: tuple is for is the fixtures and the value assertions, which are about the
+#: version each home carries rather than about which files are homes.
 HOMES = (
     ".claude-plugin/plugin.json",
     ".codex-plugin/plugin.json",
     "AGENTS.md",
-    "CLAUDE.md",
     "templates/spine.md",
 )
 
-#: What ``CLAUDE.md`` carries below the copied spine. Any non-empty tail does; the
-#: fixtures use one so the file is a *derived copy* rather than a bare duplicate,
-#: which is the shape the parity guard admits.
+#: What the fixture's ``CLAUDE.md`` carries below its marker-bearing spine region.
+#: The fixture keeps the pre-#705 copied shape for one reason:
+#: :func:`test_a_marker_carrying_host_file_is_no_longer_a_home` needs a file that
+#: *would* have been a home under the old candidate list, so #707's deletion has a
+#: subject to be measured against. Every other test's fixture simply carries a
+#: ``CLAUDE.md`` the script does not look at.
 DELTAS = "\n# Claude Code deltas\n\nOne delta.\n"
 
 
@@ -277,75 +285,61 @@ def test_the_raise_zeroes_the_patch_rather_than_carrying_it(tmp_path: Path) -> N
 
 
 def test_a_raise_reports_every_home_it_wrote(tmp_path: Path) -> None:
+    """The four homes, spelled out rather than derived from :data:`HOMES`.
+
+    #707 removed the ``CLAUDE.md`` candidate, and a list this test derived from
+    could not fail for the reason it exists — the same objection the deleted
+    ``test_the_derived_host_copy_is_raised_with_the_spine_it_copies`` recorded
+    when the candidate was *added*. Written out, the assertion reds on a
+    candidate re-added and on one silently dropped alike.
+    """
     repo = _make_repo(tmp_path, homes="1.2.3", release="1.2.3")
 
     _, payload, _ = _run(repo)
 
-    assert payload["homes"] == list(HOMES), payload
+    assert payload["homes"] == [
+        ".claude-plugin/plugin.json",
+        ".codex-plugin/plugin.json",
+        "AGENTS.md",
+        "templates/spine.md",
+    ], payload
 
 
-def test_the_derived_host_copy_is_raised_with_the_spine_it_copies(
-    tmp_path: Path,
-) -> None:
-    """#558: ``CLAUDE.md`` carries the spine verbatim, so it carries the marker too.
+def test_a_marker_carrying_host_file_is_no_longer_a_home(tmp_path: Path) -> None:
+    """#707: the candidate went with the copy that earned it.
 
-    The two files are held byte-equal over the copied region by
-    ``tests/unit/test_spine_template_parity.py``. A bump that moved ``AGENTS.md``
-    and left ``CLAUDE.md`` behind would break that equality *at the version line*
-    — the one line the bump is guaranteed to touch — so the next gate run after
-    every cycle's first build would go red. Asserted on the bytes rather than on
-    membership of :data:`HOMES`, because a list this test derived from could not
-    fail for the reason it exists.
+    The fixture's ``CLAUDE.md`` carries the plugin's own ``spine:generated``
+    marker at the homes' version — the pre-#705 copied shape, and the one a
+    consumer that kept a byte copy of its own still has on disk. Under the old
+    candidate list that file was a home and the raise rewrote it. It is now a
+    file the script does not look at, so the raise must leave it byte-identical.
+
+    This replaces the three tests the candidate brought with it. Two were
+    *controls* on its membership — a repo carrying no ``CLAUDE.md``, and one
+    carrying a marker-less pointer — and with no candidate to over-fire there is
+    nothing left for them to control: both files are then indistinguishable from
+    any other file in the tree, and a test that cannot fail is not evidence.
+
+    Asserted on the bytes **and** on the payload because the two can disagree: a
+    partly reverted deletion could report four homes and still write a fifth
+    file.
     """
     repo = _make_repo(tmp_path, homes="1.2.3", release="1.2.3")
-
-    code, payload, err = _run(repo)
-
-    assert code == 0, f"exit {code}, stderr={err}, payload={payload}"
-    spine = (repo / "AGENTS.md").read_text(encoding="utf-8")
-    derived = (repo / "CLAUDE.md").read_text(encoding="utf-8")
-    assert derived.startswith(spine), (
-        "CLAUDE.md no longer carries AGENTS.md verbatim after the raise: "
-        f"spine marker {_versions(repo)['AGENTS.md']!r}, "
-        f"derived marker {_versions(repo)['CLAUDE.md']!r}"
+    before = (repo / "CLAUDE.md").read_text(encoding="utf-8")
+    #: Guards the fixture rather than the script. Were ``_write_homes`` to stop
+    #: writing the marker, every assertion below would pass for the wrong reason.
+    assert "spine:generated:begin acme@1.2.3" in before, (
+        "the fixture no longer carries the marker, so this test has no subject"
     )
-    assert derived[len(spine) :] == DELTAS, "the raise disturbed the repo-owned tail"
-
-
-def test_a_repo_with_no_derived_copy_raises_the_homes_it_has(tmp_path: Path) -> None:
-    """Absence is not a fault — the control that keeps the addition from over-firing.
-
-    Membership is positive identification (#589): a repo that carries no
-    ``CLAUDE.md`` at all — a Codex-only consumer — is not missing a home, it has
-    one fewer. Without this control, adding the candidate could have been
-    satisfied by a version that refuses such a repo outright, which would refuse
-    correct work.
-    """
-    repo = _make_repo(tmp_path, homes="1.2.3", release="1.2.3")
-    (repo / "CLAUDE.md").unlink()
 
     code, payload, err = _run(repo)
 
     assert code == 0, f"exit {code}, stderr={err}, payload={payload}"
     assert payload["case"] == "raised", payload
-    assert payload["homes"] == [h for h in HOMES if h != "CLAUDE.md"], payload
-
-
-def test_a_host_file_carrying_no_marker_is_not_a_home(tmp_path: Path) -> None:
-    """The second control: a pre-#558 pointer is skipped, not rewritten.
-
-    ``@AGENTS.md`` carries no ``spine:generated`` marker, so a consumer that has
-    not migrated keeps a file this script leaves alone. The marker is what makes
-    a file a home, exactly as it is for every other candidate.
-    """
-    repo = _make_repo(tmp_path, homes="1.2.3", release="1.2.3")
-    (repo / "CLAUDE.md").write_text("@AGENTS.md\n\n# Deltas\n", encoding="utf-8")
-
-    code, payload, err = _run(repo)
-
-    assert code == 0, f"exit {code}, stderr={err}, payload={payload}"
-    assert payload["homes"] == [h for h in HOMES if h != "CLAUDE.md"], payload
-    assert (repo / "CLAUDE.md").read_text(encoding="utf-8") == "@AGENTS.md\n\n# Deltas\n"
+    assert "CLAUDE.md" not in payload["homes"], payload
+    assert (repo / "CLAUDE.md").read_text(encoding="utf-8") == before, (
+        "the raise rewrote a file that is no longer a candidate"
+    )
 
 
 # --- AC-2: one bump per cycle -------------------------------------------------
