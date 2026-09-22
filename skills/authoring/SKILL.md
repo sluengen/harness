@@ -31,7 +31,7 @@ Some specs are not tied to a task. They document a stable part of the system, ar
 
 ## Decisions live in the spec they govern
 
-A consequential decision is recorded in the spec it governs — a Decision block in the feature spec, or the architecture-principles spec when it is cross-cutting — and superseded in place rather than in a second file. A repo that declares `paths.decisions` in `harness.yaml` keeps standalone records there instead, and that declaration is the only switch. Load [`references/decisions.md`](references/decisions.md) when you are writing or superseding one; `architecture` decides whether a choice rises to a decision at all.
+A consequential decision is recorded in the spec it governs — a Decision block in the feature spec, or the architecture-principles spec when it is cross-cutting — and superseded in place rather than in a second file. A repo that declares `paths.decisions` in `harness.yaml` keeps standalone records there instead, and that declaration is the only switch. Recording it is not the whole obligation: name the roles the decision binds and confirm each one's own entry document reaches the record, because a rule filed where only one role reads it is invisible to the others it governs. Load [`references/decisions.md`](references/decisions.md) when you are writing or superseding one; `architecture` decides whether a choice rises to a decision at all.
 
 ## Proposal spec
 
