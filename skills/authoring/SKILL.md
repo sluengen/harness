@@ -64,7 +64,7 @@ Verify every fact the spec rests on that names a file, function, flag, version o
 
 **A feature-lane design artefact is bound by this section too, not the change spec alone.** A design asserts the same things a spec does: this decision is settled, this is the only caller, nothing else touches this surface. Re-derive each of its tree claims against the tree it will be built on, rather than against what the proposal assumed or an earlier decision recorded. #650's design instructed reverting a decision #649 had deliberately shipped, and nobody caught it at design time because no rule asked anyone to look.
 
-Record it as a **Grounding** section: verified facts each anchored to a `path:line` or a measured value, any decision the ticket assumed settled that is actually open, and the open questions. Four rules separate grounding from restating the ticket.
+Record it as a **Grounding** section: verified facts each anchored to a `path:line` or a measured value, any decision the ticket assumed settled that is actually open, and the open questions. The rules below separate grounding from restating the ticket.
 
 *Use an instrument that can return the answer you are not expecting.* A comparison that follows a symlink cannot tell a copy from a link; a search matching only file paths cannot see a retired flag name. Choose the probe by what would falsify the claim, not by what would confirm it.
 
@@ -74,11 +74,19 @@ Record it as a **Grounding** section: verified facts each anchored to a `path:li
 
 *Where the spec names a file the diff will touch, name the guards over it.* A test that mirrors or bounds that file is a fact about current reality in exactly the sense this section already requires, and a run that leaves it out spends a gate cycle discovering it.
 
+*A stated number names the test that would falsify it.* A count of call sites, a guard-to-change ratio, a coverage figure: each is a claim about something that moves, and `templates/change.md`'s Cost line and acceptance criteria are where they cluster. Give the command or the enumeration that recomputes it, so a later reader runs the number instead of trusting it. A figure that names no test goes stale in silence the first time the thing it counted changes, and nothing in the gate is watching. Distinct from `engineering` → *Name the instrument*, which governs a figure published about what shipped code produces; this one governs a number asserted in a spec, whose subject may never have run.
+
+*A mechanism claim names the behaviour somebody watched.* Reading a guard's source is not watching it refuse. Where the spec says a hook fires, a script writes, or a check rejects, name the run behind it — the input, the output read, and where that happened. Source read alone yields what the code appears to do, and a defect looks identical from there.
+
+*Negative verification is per claim, not per set.* The primitive-grep rule above answers one negative, so a spec asserting several owes one search each: a set cleared in a single pass is a set where every claim but one was assumed. **A negative about what has been *decided* has no primitive to grep** — no call, import, type or field, only prose in a decision record — so read `paths.decisions` directly rather than letting the rule degrade into a keyword scan. #685 grepped `paths\.(designs|proposals|…)` to establish that nothing said where a design artefact goes; `specs/decisions/0007-design-verb.md:129-131` had said it in prose, which that grep could have matched only if the decision had gone the other way.
+
+*A filing resting on a decision names the artefact and the commit carrying it, and whoever writes it opens that artefact.* A proposal, ADR or settled decision cited from recall is a premise nobody has checked. `/capture` and `/propose` leave Grounding empty by design, so a filing-time citation stays unverified until build, which is late: five Calibrate tickets cited a proposal accepted on a stated date that has never existed in any branch — two were correctly held, three sat in Todo for six more days, and a routine tick began building one.
+
 Grounding scales to size: a one-line fix gets a one-line grounding. Where a sub-agent host is available, a read-only sub-agent produces the brief and the executor records it verbatim; otherwise the executor self-grounds inline.
 
 ### Acceptance criteria
 
-Each criterion names what it protects and uses ADR 0019's evidence. Four rules decide whether one is writable at all.
+Each criterion names what it protects and uses ADR 0019's evidence. The rules below decide whether one is writable at all.
 
 **A criterion names evidence the building session can produce, or it names who produces it and when — and a criterion of the second kind does not block a PASS.** Evidence needing a credential the run has not got, a second backend, a board it cannot write, or an operator at a keyboard cannot be closed by building, so a criterion naming one holds the verdict hostage to something no work supplies. Marking it operator-supplied at filing turns a review-time discovery into a known precondition. Measured: a feature-lane ticket shipped with three criteria short of their stated evidence for exactly this reason, unnoticed until the binding.
 

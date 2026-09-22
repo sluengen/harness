@@ -38,6 +38,7 @@ really, just, literally, genuinely, honestly, simply, actually, deeply, truly, f
 - Vary sentence and paragraph length. Two items often beat a forced three.
 - No weak starters. Restructure sentences leaning on What/When/Which/How as a crutch; lead with subject or verb.
 - Minimise em-dashes; a comma or period usually serves.
+- **A numeral beside an enumeration it could be derived from names that enumeration, or gives way to it.** "Four rules follow" above a list of four is a count and a list authored from separate sources, and the next edit moves one of them. Write "the rules below", or name what produces the figure. Where the number carries weight the list does not — a total spanning several documents — keep it and cite the enumeration it came from.
 
 ## When to apply
 
