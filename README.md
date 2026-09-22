@@ -19,10 +19,11 @@ depend on an agent remembering them:
   evidence a completion claim may cite; one more edit invalidates it.
 - **The spine.** A repo-owned `AGENTS.md` carries the five principles, the laws
   derived from them, and the lifecycle contract — always loaded, never optional.
-  `CLAUDE.md` carries `AGENTS.md` verbatim, then a `<!-- spine:copy:end -->`
-  line, then the deltas that apply on that host alone — derived from the spine,
-  not a pointer to it, and re-derived by `/harness:hydrate` from that boundary line
-  whatever has drifted above it — and the repo's configuration is `harness.yaml`. Skills carry the
+  `CLAUDE.md` is `@AGENTS.md` on its first non-empty line, then the deltas that
+  apply on that host alone — a line earns a place below the import only where it
+  is false or absent on Codex, which reads `AGENTS.md` as its one root
+  instruction file. Nothing generates either file from the other, and no guard
+  compares them. The repo's configuration is `harness.yaml`. Skills carry the
   depth and load by task; path-scoped rules under `.claude/rules/` load with the
   files they scope.
 - **Builder / recorder separation.** The agent that promises delivery is not the
@@ -65,13 +66,13 @@ Then ask Codex to hydrate Harness in the repository. Both hosts read the same
 `hydrate` workflow from `skills/hydrate/`.
 
 `hydrate` interviews for the repo's values and writes the files that must be
-repo-owned: `harness.yaml`, the spine (`AGENTS.md`) and the `CLAUDE.md` derived from it,
+repo-owned: `harness.yaml`, the spine (`AGENTS.md`) and a `CLAUDE.md` importing it,
 the path-scoped rules and the sub-directory instruction files that carry them to Codex,
 Codex role adapters, the specs scaffold, and the infrastructure record. **It writes no
 gate and nothing under `scripts/`:** the gate is the repository's own, at whatever path
 `commands.verify` names, and hydration reports that it wrote none.
-Run it again after a plugin update — one invocation, no flag. It re-derives the marked
-blocks and the plugin-marked Codex role adapters, leaves every repo-owned file alone,
+Run it again after a plugin update — one invocation, no flag. It refreshes the marked
+spine block and the plugin-marked Codex role adapters, leaves every repo-owned file alone,
 and reports each path with the reason it was written, rewritten, retained or blocked.
 
 The plugin carries **one** version and there are no per-file pins: a repo that
