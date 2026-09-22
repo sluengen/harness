@@ -1,7 +1,8 @@
 ---
 proposal: ticket-granularity
-status: under-decision   # draft | under-decision | accepted | shipped | rejected | split | superseded
+status: accepted         # draft | under-decision | accepted | shipped | rejected | split | superseded
 date: 2026-09-22
+decided: 2026-09-22
 related: [do-less-at-ingestion]
 ---
 
@@ -115,6 +116,27 @@ Four items. Item 1 fires the comprehension and blast dimensions — it changes t
 4. **Add premise and size questions to pull-time actionability** — `work-discovery` → *Actionability* gains two: has anything landed on this ticket's surface since it was filed (if so, re-state the premise in one line and cancel if it has dissolved), and is this ticket smaller than the run that would carry it, with an adjacent unstarted ticket it should absorb. The size question is where D2's sizing happens, and it reads item 1's overhead figure to answer it. Depends on 1. `simple`.
 
 **The measure, carried by item 1 and read at every later assessment: findings in versus tickets out, per filing run.** A run that files one ticket per finding did not run the consolidation pass, whatever the quality of each ticket. It is recorded at the moment of filing, needs no sweep to observe, and belongs as a fourth row on `/assess process`'s baseline table. D3 is what keeps it honest: without the absorbed-findings obligation the ratio improves fastest by building less.
+
+## Spawn record
+
+**Accepted 2026-09-22. The four tickets are not yet filed**, and this section is the record of why and of what changed at filing time. It is superseded by the ticket ids once they exist.
+
+**Placement is unreachable from this session.** `create` requires an explicit Status on the board (`tracker` → *`create`*, step 3), the board is Projects v2, and Projects v2 has no REST surface. The board write was attempted rather than inferred from a probe, as `skills/tracker/references/github.md` requires: `gh project item-add 2 --owner sluengen --url .../issues/702` returned `unknown owner type`, which that reference names as a 403 underneath. REST is healthy — `gh api repos/sluengen/harness` succeeds — so issue-level work is reachable and board-level work is not. Filing now would create four issues with Status unset, invisible to every Todo-scoped queue read: the item-add-no-status trap the operation exists to refuse. The filing is therefore incomplete and stopped, per that rule.
+
+**The twin search changed the breakdown, and this proposal's own rule is what changed it.** Two open, unstarted tickets are on the surfaces items 3 and 4 touch:
+
+| Item | Open ticket on the same surface | Disposition |
+|---|---|---|
+| 3 (grounding half) | **#698** — *State a cross-repo grounding convention for numbers, deferrals, mechanisms, negatives*, whose suggested home is `skills/authoring/SKILL.md` | Extend, and **resolve a conflict**: #698's convention 2 states *"a deferral names its ticket"*, which is the rule D3's sibling change retires. One of the two is wrong and the ticket cannot be extended without settling which. |
+| 4 | **#700** — *Pull step: parent/container eligibility and free-slot project ranking*, whose suggested home is `skills/work-discovery/SKILL.md` → *The limit*, step 3 | Extend. Same skill, same pull path, one sitting. |
+
+So the four items file as **two new tickets (1 and 2) plus two extensions**, not four new ones — which is the spine's *Filing* rule as it already stands, reached by the search this proposal is trying to make routine.
+
+**#698's conflict is the operator's to settle**, because amending another ticket's approach is a scope change on work this proposal does not own (`authoring` → *The same obligation binds whoever amends someone else's ticket*). The substance: P5 already says "the ledger by default, a ticket only where its fix is already decided and sized", and `templates/change.md:81` says the opposite. #698 codifies line 81. Retiring line 81 and extending #698 to match P5 is the coherent outcome; leaving both would ship two contradicting conventions into every consuming repo.
+
+**Queue state at acceptance:** 11 open issues, 3 of them held (#697, #674, #450), leaving 8 unheld against `queue.wip_limit: 6`. The project is over its limit before anything is filed, so every item here lands in **Backlog** when the board becomes writable — item 1 excepted only in that a held ticket is excluded from the count, not from needing a placement.
+
+**#698 also shows the D3 obligation already working informally:** its body carries an `Absorbs:` list naming seven ledger entries across two repos. D3 makes that list a requirement and turns each entry into a criterion. The practice exists; what is missing is the obligation and the criteria.
 
 ## Risks / unknowns
 
