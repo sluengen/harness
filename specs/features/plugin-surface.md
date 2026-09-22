@@ -4610,6 +4610,107 @@ reviewed above — `skills/authoring/SKILL.md` and
 `skills/authoring/references/prose.md` (#670) — plus the four version homes
 and this record.
 
+### #700/#676: the pull step gains container, premise and ranking checks; hydrate's step 11 and step 13 stop contradicting themselves
+
+Two independent `simple`-lane tickets, built as two commits on one branch.
+
+**#700.** `skills/work-discovery/SKILL.md` → *The limit* step 3 and
+*Actionability* gain three of the ticket's four criteria.
+
+- AC-1: a container ticket (an epic, a parent, the head of a breakdown) is
+  stated non-eligible as a buildable unit; the named alternative is to pull
+  its first actionable child instead, or skip it where none qualifies. The
+  relationship is read from the tracker's own field, never from a title (law
+  6) — confirmed against the live file: `grep -rn -i
+  "parent\|epic\|sub-issue\|container"` over `skills/work-discovery/SKILL.md`
+  returned zero hits before this change, so no prior text carried this rule
+  under another name.
+- AC-2: a ranking rule decides which closed project to open when a slot is
+  free and more than one could open — rank each project's own best Backlog
+  candidate by the same steps already used to rank tickets, and open the
+  project whose candidate wins. One ordering, reused rather than invented a
+  second time (P0).
+- AC-3: *Actionability* gains a premise re-check — has anything landed on
+  this ticket's surface since it was filed — narrowly triggered (something
+  landed, not a re-ground of every ticket at every pull) and, where the
+  premise has dissolved, the ticket is cancelled rather than built.
+- AC-4 is carved out and shipped as **not met**, on record with its reason.
+  The ticket's own *Blocked by* clause named the dependency at filing: AC-4
+  reads a run-cost figure that `specs/proposals/ticket-granularity.md` item 1
+  was to state in the spine beside the lane table. Re-derived independently
+  at this review: `git ls-tree origin/dev specs/proposals/` returns seven
+  files and that proposal is not among them; `git branch -a --contains
+  71a1b612` (after `git fetch --all`) returns exactly one ref, the unmerged
+  `remotes/origin/claude/compassionate-noether-2csqcd`; and `grep -rn "gate
+  runs\|run-cost\|run cost\|30 to 60 minutes" AGENTS.md CLAUDE.md skills/`
+  finds no run-cost figure beside `AGENTS.md:48`'s lane table. The dependency
+  is genuinely unmet, so AC-4's omission is not a gap in this branch.
+
+**#676.** `skills/hydrate/SKILL.md` step 11 and step 13 each get one
+correction, both departing from the ticket's own named approach for reasons
+the live tree forced.
+
+- AC-1, the referent fix. The ticket's approach offered two options — point
+  step 11 at step 5, or at "a skill-seeding step elsewhere" — and both are
+  false against the live file: step 5 seeds a path-scoped *rule* (`:37`), not
+  a skill, and none of the workflow's thirteen steps seeds a skill at all —
+  the plugin's skills are read from the plugin and never copied into a
+  consumer (ADR 0022 point 1). The shipped fix states the real precondition
+  instead: a skill *the plugin ships* carries assets, and the repo's own
+  configuration puts them in scope (`layers.design_system` for
+  `design-system`'s rows). The same wrong referent stood at two sites — the
+  step's opening sentence and its closing sentence — and both are corrected.
+- AC-2, the report-granularity fix. By the time this ticket was picked up,
+  step 13's granularity was no longer the "unspecified" state the ticket was
+  filed against — it was specified twice, inconsistently: `:96` said "one
+  row per artefact" and `:105` said "a path takes one row per region a step
+  acts on." The fix makes the opening line agree with the per-region rule
+  rather than reverting to the ticket's "per-file" approach, because the
+  per-region rule is the more general of the two (a single-region path is
+  one row under it as well) and the sentence immediately below it already
+  depends on the per-region reading.
+
+**Evidence.** Both tickets carry `Evidence: direct review` (ADR 0019, prose);
+law 2 excludes a claim about what a document says from a measuring test, and
+neither commit touches a test file.
+
+**The version class is major, raised at this review: `19.0.0` → `20.0.0`.**
+#700's AC-1 and AC-3 each independently exceed the floor. Before this
+ticket, `work-discovery`'s pull step treated a container ticket as an
+ordinary Backlog candidate and moved it to Todo when it ranked highest;
+after it, that same ticket is excluded and its first actionable child is
+pulled instead, or the container is skipped — a call that used to succeed
+now refuses, the reverse of `certifying.md`'s own version-class test, the
+same shape #684 and #675 raised major for in this same mechanism, and it
+reaches every consuming repo that has ever filed a container ticket
+(Nano-ERP and Calibrate both do, per the ticket's own Cost section), not a
+hypothetical case. AC-3 is the same shape a second way: an actionability
+check that used to pass a ticket whose premise had dissolved since filing —
+and hand it to build — now cancels it instead, measured at three of nine
+tickets in one real backlog review, not a hypothetical one either. AC-2's
+project-ranking rule and both of #676's points stay minor on their own: AC-2
+disambiguates among already-permitted choices without changing any
+accept/decline outcome, and #676's two fixes are prose corrections — a
+referent, and a contradiction resolved toward the rule the surrounding text
+already depended on — that no consuming repo's own behaviour turns on, the
+#690 shape rather than the #691/#684 one. The class is a judgment over the
+whole diff (`review-discipline/references/certifying.md`), and #700's
+AC-1/AC-3 carry it. `/build` step 1 reported `already-ahead` at `19.0.0`,
+itself the prior cycle's own major raise (#701); this raise is the review's,
+by hand, across the four version homes this repo currently carries — both
+plugin manifests, `AGENTS.md`, and `templates/spine.md` — inside the
+candidate, before the certifying gate.
+
+**Verification.** `bash scripts/verify.sh` was run and read by this reviewer
+over the full candidate — the builder's own commits `90a38409` (#700) and
+`1d67403f` (#676) — plus this review's version raise and as-built record
+committed on top: ruff clean, mypy clean over three source files, 629
+passed, 85.47% coverage against the 85% floor, design-token drift guard OK,
+`All checks passed`, exit 0. This branch's own change is two files reviewed
+above — `skills/work-discovery/SKILL.md` (#700) and
+`skills/hydrate/SKILL.md` (#676) — plus the four version homes and this
+record.
+
 ## Cross-references
 
 - `specs/harness-assumptions.md` — one row per hook, script, skill and agent: what it assumes the model cannot do, and the test that would retire it. Read at every model or host release.
