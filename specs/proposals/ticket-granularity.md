@@ -1,8 +1,9 @@
 ---
 proposal: ticket-granularity
-status: accepted         # draft | under-decision | accepted | shipped | rejected | split | superseded
+status: shipped          # draft | under-decision | accepted | shipped | rejected | split | superseded
 date: 2026-09-22
 decided: 2026-09-22
+shipped: 2026-09-23
 related: [do-less-at-ingestion]
 ---
 
@@ -10,9 +11,11 @@ related: [do-less-at-ingestion]
 
 > Every filing decision in the harness is made about one ticket, at the moment of discovery, and is never revisited. Two consuming repos measured the result in the same week: 28 tickets absorbed by four hand-run consolidation passes in eight days, and nine tickets where five would do in a single assessment. Four changes — a co-change test at filing, a materiality floor, a batch pass at the four surfaces that file more than one ticket, and a premise-and-size re-check at pull.
 
+> **Shipped 2026-09-23.** Every change spec this proposal spawned has landed on the integration branch: #698, #700, #708, #711, #712, #713. The as-built records are the canonical account of what each delivered; this file is the record of the decision, not of the behaviour. One piece it named was never carried by a spawned ticket — the consolidation ratio, now **#715** — and *Shipped* below says so. Everything before that section describes the tree as it was on 2026-09-22 and is history.
+
 ## Grounding
 
-Verified against `497f416` (merge of #703), 2026-09-22. Every anchor below was read this session.
+**Historical — this section records the tree on 2026-09-22 and is superseded by the banner above.** Every gap it names is closed except the one #715 carries. Verified against `497f416` (merge of #703), 2026-09-22; every anchor below was read that session.
 
 - **The spine's *Filing* rule is keyed to surface** (`AGENTS.md:54`): "search the open queue and extend an unstarted ticket **on the same surface** instead of creating a twin." It catches duplicates. Nothing in it reaches a *co-change* — findings on different surfaces that one builder would fix in one sitting.
 - **`/assess` files one ticket per finding and says so** (`skills/assess/SKILL.md:57`): "For every finding, create an issue … Triage happens in the tracker, not at report time." An assessment walks a tree and emits one finding per site, so the instrument's granularity becomes the queue's.
@@ -125,26 +128,26 @@ Four items. Item 1 fires the comprehension and blast dimensions — it changes t
 
 ## Spawn record
 
-**Accepted 2026-09-22; state re-verified against `origin/dev` and the tracker on 2026-09-23.** This proposal sat on an unmerged branch for a day, which is the cause behind most of the fragmentation below: builders worked from the tickets alone, and the two items that had no ticket had no other carrier. It lands with the commit carrying this section.
+**Closed 2026-09-23.** Six tickets carried this proposal, and all six have landed. Each change was verified in `origin/dev` at `2118db1` rather than read off a closed ticket.
 
-### Shipped
-
-| Item | Ticket | What landed |
+| Item | Ticket | Landed |
 |---|---|---|
-| 3, convention half | **#698**, closed completed | AC-2a retired `templates/change.md:81` and replaced it with P5's deferral rule; AC-6 put the citation obligation at `skills/authoring/SKILL.md:83`. Commit `0e49af7`, as-built `732cd3d`, plugin major raised to 18.0.0. The reviewer treated AC-2a's template edit as the rule's one home rather than duplicating the convention into the skill, which is P2's call and correct. |
-| 4, AC-1 to AC-3 | **#700**, closed completed | Container tickets stated non-eligible, free-slot project ranking, and the premise re-check at *Actionability*. Commit `90a3840`, as-built `5470cea`, major raised to 20.0.0. |
+| 3, convention half | **#698** | `0e49af7` — AC-2a retired `templates/change.md:81` for P5's deferral rule; AC-6 put the citation obligation in `authoring` → *Grounding*. As-built `732cd3d`, major to 18.0.0 |
+| 4, AC-1 to AC-3 | **#700** | `90a3840` — container tickets non-eligible, free-slot ranking, the premise re-check. As-built `5470cea`, major to 20.0.0 |
+| 1, the co-change test | **#711** | `628c3e0` — the spine's *Filing* rule reads twin **or co-change**, carrying the one-builder-one-worktree-one-sitting question. As-built `c11b9c5`, major to 21.0.0 |
+| 3's residual | **#713** | `b03ca2a` — the materiality floor at the finding bar. As-built `64f32df` |
+| 2 | **#712** | `17e84c8` — `create` consolidates a multi-ticket filing, and element 6 requires what a merge absorbed with each item as its own acceptance criterion. As-built `a6f2a07` |
+| 1's figure + 4's AC-4 | **#708** | `952a9d1` — the run-cost figure beside the *Lanes* bullet and the size question at *Actionability*. As-built `2118db1` |
 
-### In flight
+**Two places the build improved on the ticket.** #712's element 6 reaches *"a ticket the queue search extended rather than filed"*, which no acceptance criterion asked for and which is the #698 case — the extension path was the obvious hole and the builder closed it. And #711 added *"Never merge two items of one breakdown this way; their proposal already cut them"*, which correctly routes breakdown merging through D2's separable-or-sequential declaration at filing rather than through the co-change test at consolidation. Neither was specified; both are right.
 
-**#708**, open — carved out of #700 at build time because AC-4 reads a number that was not in the tree. It carries item 1's run-cost figure and item 4's size question. Its own body diagnosed the stranding: `specs/proposals/ticket-granularity.md` was not on the integration branch, so the figure item 1 was to state had no source a builder could cite.
+### The one piece no spawned ticket carried
 
-### Still unfiled
+**The consolidation ratio — findings in versus tickets out, per filing run — is #715, filed 2026-09-23 after the other six had closed.** This proposal named it as its own signal in the *Breakdown* and attached it to item 1; item 1 became #711, whose acceptance criteria do not include it, and nothing downstream picked it up.
 
-Three pieces, and between them they are every mechanism in this proposal that reduces ticket count. What shipped is the conventions half — what a written claim must carry. Nothing yet cuts the queue.
+That matters more than a missing metric. *Risks* below names the co-change test's judgment character as this proposal's weakest joint and names this ratio as the compensating control. So the judgment shipped and its control did not, which is the wrong half to ship first, and it was avoidable: the gap was identified before the three tickets were placed and recorded only as advice.
 
-1. **The co-change test in the spine's *Filing* contract.** `AGENTS.md:54` still reads "extend an unstarted ticket on the same surface instead of creating a twin", unchanged. This is the proposal's central change, it is `complex` because every hydrated consumer carries that contract, and #708 scopes only the figure beside it — so the contract change is scoped nowhere. **It is the piece most likely to be lost a second time**, and if #708 lands first the spine gets the number without the test.
-2. **The batch pass at the four filing surfaces** — item 2 entire, carrying the absorbed-findings obligation (D3) and the separable-or-sequential declaration (D2). `complex`. Nothing on the tracker, nothing in `tracker` → `create` or `authoring` on `dev`.
-3. **The materiality floor at `skills/assess/references/finding-bar.md`** — item 3's residual. `simple`.
+**The lesson is about where a measure lives.** A signal stated in a proposal's own *Breakdown* prose, rather than as an acceptance criterion on a named ticket, is not carried by anything. Six tickets each honoured their criteria exactly; none of them owed this, so none delivered it.
 
 ### What the fragmentation cost, recorded because the proposal is about exactly this
 
