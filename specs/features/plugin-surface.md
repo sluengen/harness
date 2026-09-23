@@ -4829,6 +4829,91 @@ branch's own change is the five files the builder touched — `AGENTS.md`,
 `specs/decisions/0015-harness-v4-thin-verification-layer.md` — plus the four
 version homes and this record.
 
+### #712: `create` consolidates a multi-ticket filing, and a merge lists what it absorbed
+
+`complex`, since it changes `tracker`'s `create` contract. It ships
+`specs/proposals/ticket-granularity.md` item 2 and carries that proposal's D2
+and D3.
+
+**`create`.** `skills/tracker/SKILL.md` → *`create`* no longer opens on a
+count: a filing missing any element that applies to it is incomplete. Element
+6, *what it absorbed*, applies wherever one ticket carries more than one
+finding, ledger entry or breakdown step, and that includes a ticket the queue
+search extended instead of filing a new one. Each absorbed item is listed on
+the ticket and written as an acceptance criterion of its own, so Stage 1 marks
+each one met, partial or missing, and a merge that delivers part of its set
+fails review. A new subsection, *More than one ticket in one run — consolidate,
+then file*, obliges a run producing several tickets to hold the set, merge
+what the spine's co-change test joins, run the queue search once per
+surviving ticket, and file the result as one batch in dependency order. Over
+a breakdown the pass makes no co-change judgment and reads each item's
+declaration instead, which is how it honours the spine's *Filing* clause
+against merging two items of one breakdown. Placement and the limit are
+unchanged. The subsection names no caller.
+
+**The declaration (D2).** `skills/authoring/SKILL.md` → *Proposal spec* makes
+each breakdown item declare itself **separable** (a checkable outcome of its
+own, whether or not later items depend on it) or a **sequential step** (a
+step of one change whose interim state nothing pulls but the next step). A
+run of sequential steps files as one ticket. An item the four-dimension test
+fires is separable by construction, so a held foundation never merges into
+the item built on it. `templates/proposal.md` → *Breakdown* carries the
+declaration in its placeholder items and points to `authoring` for the
+definitions.
+
+**The definition departs from D2's wording, and the departure is recorded on
+the ticket.** The proposal's D2 defines separable as "another item could
+proceed without it". Read literally, that makes a depended-on foundation
+non-separable and would merge a held item 1 into item 2, which is the hazard
+D2's own body says the rule avoids. The design stage amended the ticket's
+Approach (3) on 2026-09-23, before implementation, and shipped the
+outcome-based definition above. The proposal file still carries the original
+wording as its dated decision text. Where the two differ, `authoring` is the
+live rule.
+
+**Callers.** `/assess` step 2 files the pass's findings as one set through
+`create`, and "Triage happens in the tracker, not at report time" is retired.
+`git grep` finds that sentence only under `specs/proposals/`, where it is
+quoted as dated grounding. `/propose` step 4 files the breakdown as one batch
+through `create`. `/drain` pile two groups survivors the way `create`
+consolidates a set, replacing its same-file rule. Its *Then ask what produced
+them* premise now keys on the sitting a fix takes rather than the file it
+lands in, and its fold check reads a bundle's title against the
+absorbed-findings list. None of the three restates the pass. Co-changes kept
+current: `templates/assessment.md`'s closing line, `skills/drain/evals/evals.json`
+expectation 1 (grouping by the co-change test, replacing grouping by suggested
+home), and `skills/tracker/references/linear.md`'s umbrella paragraph
+("every ticket as its sub-issue"). Two earlier entries in this record are
+now superseded on those points. #704's "every item as its sub-issue" now
+reads per ticket, and #677's fold check compares the title against the
+absorbed-findings list instead of the item count.
+
+**Evidence.** Every criterion is prose, reviewed directly under ADR 0019.
+AC-2 was also tested by applying it to #698's `**Absorbs:**` list, re-read
+through the REST API at this review. That list names seven ledger entries
+across two repos, the AC-5 ledger entry and a proposal half, and several of
+them (`assess-step4-retention-gap`, `assessment-fold-line-verifiability`)
+have no acceptance criterion of their own. Element 6 therefore reads #698 as
+an incomplete filing, which is the under-delivery it exists to surface. AC-3's
+test case, CAL-1735's six slices of one migration, is carried forward from
+the proposal's *Problem* because `sluengen/calibrate` could not be read from
+this session. Under the shipped definition, migration slices are the named
+example of sequential steps and file as one ticket. No test was added or
+edited. The one eval expectation that changed follows `/drain`'s changed
+grouping rule, as the ticket's *Design* specified.
+
+**The version class is major, and no raise is owed.** A merged filing that
+lacks the absorbed-findings list was complete before this ticket and is
+incomplete after it. That is a changed refusal reason in the contract every
+filing surface reaches, so the change exceeds the minor floor. This cycle's
+version already carries a major: `21.0.0` in all four homes against release
+`20.0.0` (`origin/main` at `303528b`), raised by #711's review. The semver
+moves once per release cycle, so the class holds at `21.0.0`.
+
+**Verification.** This reviewer ran `bash scripts/verify.sh` and read its
+output over the builder's commit `17e84c8` plus this record, uncommitted in
+the candidate. Results are in the review report for #712.
+
 ## Cross-references
 
 - `specs/harness-assumptions.md` — one row per hook, script, skill and agent: what it assumes the model cannot do, and the test that would retire it. Read at every model or host release.
