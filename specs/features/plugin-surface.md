@@ -4765,6 +4765,68 @@ above — `skills/work-discovery/SKILL.md` (#700) and
 `skills/hydrate/SKILL.md` (#676) — plus the four version homes and this
 record.
 
+### #711: the spine's *Filing* rule widens from twin to twin-or-co-change
+
+`complex` — a spine contract change, `specs/proposals/ticket-granularity.md`
+item 1 (the co-change half; item 1's run-cost figure was already carved into
+#708 before this ticket was filed, per that proposal's own *Still unfiled*
+record).
+
+**The bullet.** `AGENTS.md` and `templates/spine.md`'s *Filing* bullet, inside
+the byte-identical `spine:generated` block, now obliges a search for a twin
+**or a co-change** before filing, and states the co-change test as a
+question rather than a predicate: would one builder, in one worktree, do all
+of this in one sitting? A clause added alongside it — never merge two items
+of one breakdown this way, since their proposal already cut them — is what
+keeps the widened search from swallowing a breakdown's own separable-vs-
+sequential cut (D2 in the proposal), the exact hazard D2's body names.
+
+**Twin sweep.** `skills/drain/SKILL.md`'s *Search the queue before you fold*
+drops its inline restatement of the old same-surface-only wording, pointing
+at the spine rule instead of half-copying it. `skills/capture/SKILL.md`'s
+filing step renames "the twin search" to "the queue search," since it now
+names both halves. `specs/decisions/0015-harness-v4-thin-verification-layer.md`
+→ *Bundle before you file* is superseded in place with a dated note: its
+recorded bound, "same surface, same kind of change," is what the widened
+rule contradicts, and a decision record left stating a retired bound is the
+stale twin `certifying.md` forbids. Left alone, each still true:
+`skills/authoring/SKILL.md` (a twin is still refused), `skills/drain/evals/evals.json`
+(the twin half of the search still happens), and the research note and the
+`operation-nuke` proposal that quote the old sentence as dated, historical
+citations rather than live restatements of the rule.
+
+**Evidence.** AC-1 by direct review against
+`specs/proposals/ticket-granularity.md` → *Decisions taken* D2 and the item 1
+row of its breakdown, confirmed above. AC-2 by the existing
+`tests/unit/test_spine_template_parity.py`, which reads the index and passes
+over the byte-identical block in both files; no new test, per law 2 (the
+criteria are about what the documents say). No test was added or edited.
+
+**The version class is major, raised at this review: `20.1.0` → `21.0.0`.**
+The same shape #698's AC-2a was raised for: filing a co-change as its own,
+independent ticket — the only thing the old bullet's same-surface-only search
+refused was a twin — was compliant with the shipped spine before this
+ticket, and is refused after it, because the filer is now obliged to search
+for and extend a co-change rather than create another ticket for it. The
+shape of what the spine obliges a filer to do reverses, exactly the test
+`certifying.md` names for a changed refusal reason, and it reaches every
+consuming repo's next filing decision, not a hypothetical one. `/build`
+step 1 reported `already-ahead` at `20.1.0` against release `20.0.0`, so
+this cycle's minor floor was already met before this ticket; this raise is
+the review's, by hand, across the four version homes this repo carries —
+both plugin manifests, `AGENTS.md`, and `templates/spine.md` — inside the
+candidate, before the certifying gate.
+
+**Verification.** `bash scripts/verify.sh` was run and read by this reviewer
+over the full candidate — the builder's own commit `628c3e0` plus this
+review's version raise and as-built record committed on top: ruff clean,
+mypy clean over three source files, 626 passed, 85.47% coverage against the
+85% floor, design-token drift guard OK, `All checks passed`, exit 0. This
+branch's own change is the five files the builder touched — `AGENTS.md`,
+`templates/spine.md`, `skills/drain/SKILL.md`, `skills/capture/SKILL.md`, and
+`specs/decisions/0015-harness-v4-thin-verification-layer.md` — plus the four
+version homes and this record.
+
 ## Cross-references
 
 - `specs/harness-assumptions.md` — one row per hook, script, skill and agent: what it assumes the model cannot do, and the test that would retire it. Read at every model or host release.
