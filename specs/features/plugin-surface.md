@@ -4974,6 +4974,86 @@ drift guard OK, `All checks passed`, exit 0. This branch's own change is
 the three files the builder touched — `AGENTS.md`, `templates/spine.md`,
 `skills/work-discovery/SKILL.md` — plus this record.
 
+### #715: the consolidation ratio joins the `process` baseline as its fourth row
+
+`simple` — the one signal `specs/proposals/ticket-granularity.md` named as the
+compensating control for the co-change test (#711) and that none of its six
+spawned tickets carried. Built as `6ce3f31` on branch `work-678-715`, beside
+#678.
+
+**AC-1, with its home corrected on the ticket before the build.** The filing
+put the command in `skills/assess/references/process-economy.md`; the change
+spec (ticket comment, grounded at `74e070f8`) moved it to
+`skills/assess/SKILL.md` → step 1b, because that is where the other three
+rows' commands live and `process-economy.md` points there for them. So the row
+is declared in three places, each matching its neighbours' form:
+`templates/assessment.md`'s Baseline table gains *Tickets filed per finding
+emitted* as its fourth row; `process-economy.md` → *The baseline* gains item 4,
+what the ratio measures and how to read it; step 1b's derivation table gains
+the command. The command lists every `/assess` report added since the commit
+that added the previous `process` report
+(`git log <that commit>..HEAD --diff-filter=A --name-only --format=%H -- assessments/`)
+and reads each report's *Filed* line with `git show <commit>:<path>`, from
+history because retention may already have folded the file away; the `/drain`
+half reads the ledger dispositions dated after the previous report through
+`tracker` → *`ledger`*. Every sentence that counted the standing measurements
+as three now says four: step 1b's opening and its fold sentence, *The
+baseline*'s opening and its retention paragraph, and the template's *Baseline*
+bullet.
+
+**AC-2.** The fold field in `templates/assessment.md` → *Retention* and in
+`assessments/LOG.md`'s header carries a fourth value, `<tickets per finding>`,
+and both say a three-value line folded before the row existed is not
+rewritten. No fold line in `LOG.md` was edited.
+
+**AC-3.** The two filing surfaces record the two numbers and neither computes
+the ratio. `/assess` step 2 writes them on a new *Filed* line the template
+places under the report's header, after filing; `/drain` pile two heads its
+ledger disposition comment with *entries faced* and *tickets its folds filed*,
+because that comment — not the session output — is what a later `process` pass
+can read, and its *Output* leads with the same counts. Both say a finding or
+entry the queue search extended into an existing ticket counts in the
+denominator and files nothing. **`/propose` step 4 is excluded, by decision on
+the ticket:** `tracker` → *More than one ticket in one run* says a breakdown's
+filing makes no co-change judgment of its own, so its items-to-tickets figure
+measures the proposal's cut, not consolidation. The ticket's own AC-3 figure is
+the counter-example, and `process-economy.md` item 4 names it as one: six
+tickets from four breakdown items reads above 1.0 while measuring nothing about
+consolidation.
+
+**AC-4.** Step 1b's *Previous column* paragraph now covers a row the previous
+report did not carry: the first pass to record the ratio writes `first recorded
+baseline` in Previous and leaves Δ empty, beside the existing *One observation
+is not a distribution*.
+
+**Evidence.** Direct review of all four criteria, plus representative use for
+AC-3 and AC-1's command: run in Nano-ERP from the commit that added its
+`2026-09-13-process.md` (`1711ccf`), the command returns exactly its two later
+reports, `2026-09-21-code.md` under `58ffecb` and `2026-09-23-code.md` under
+`09cc8ed`, each readable by `git show`. Neither carries a *Filed* line, since
+both predate this change. No test was added or edited, per law 2: every
+criterion is about what a document says.
+
+**One twin left as it was, by deferral.** `skills/assess/evals/evals.json`
+eval 1 expects "all three standing measurements: gate duration, module count,
+and the guard-to-deliverable ratio". It was already false before this branch,
+naming two measures the baseline no longer carries, so this diff did not make
+it false; recalibrating an eval's expectations is its own change.
+
+**The version class is minor, and no raise is owed.** A report gains a line, a
+disposition gains a heading, and a fold line gains a value the template tells a
+reader how to take when it is missing. No call that used to complete now
+refuses, or the reverse, and nothing in the tree parses the fold field.
+`/build` step 1 reported `already-ahead` at `21.0.0` (`origin/main` at
+`20.0.0`), so this cycle's minor floor was already met.
+
+**Verification.** `bash scripts/verify.sh` was run and read by this reviewer
+over the full candidate: `6ce3f31` and `642e412` on `origin/dev` @ `74e070f8`,
+plus this record and one reviewer repair to `skills/build/SKILL.md`'s #650
+citation, which belongs to #678 and leaves every #715 file untouched. Ruff clean,
+mypy clean over three source files, 632 passed, 85.47% coverage against the 85%
+floor, design-token drift guard OK, `All checks passed`, exit 0.
+
 ## Cross-references
 
 - `specs/harness-assumptions.md` — one row per hook, script, skill and agent: what it assumes the model cannot do, and the test that would retire it. Read at every model or host release.
