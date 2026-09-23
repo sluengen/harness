@@ -5107,6 +5107,67 @@ reviewer over the full candidate — `origin/dev` @ `74e070f8` plus `642e412`,
 Ruff clean, mypy clean over three source files, 632 passed, 85.47% coverage
 against the 85% floor, design-token drift guard OK, `All checks passed`, exit 0.
 
+### #702: board item ids join the once-per-run resolve; REST fallback names reads and quota exhaustion
+
+`simple` — filed from the improvement ledger (#450), grounded at `origin/dev`
+`ba04f105`, built as `bad2640e` on branch `work-702`. Prose-only edit to
+`skills/tracker/references/github.md`, five insertions and three deletions.
+
+**What ships.** Two independent mechanics gaps closed in one file. *No id
+here is stable* now names board item ids alongside project, status-field and
+option ids, and changes the rule from resolve-every-time to resolve-once-and-
+reuse for the run, never carried into another run or a file; `transition`
+tells the run to resolve an already-filed ticket's item id once per ticket
+per run and reuse it for every later write in that run, re-listing only where
+an edit comes back naming the missing item. *What is reachable when GraphQL
+is refused* gains a head paragraph naming a second trigger, an exhausted
+GraphQL quota, licensed the same way as a refused transport — the call you
+ran returning the error — and the REST table's introduction now says
+explicitly that it is the read path as well as the write path.
+
+**AC-1.** Confirmed by reading `:104`: *"Resolve each one once per run and
+reuse it for the rest of that run… never carry one into another run or into a
+file."* The forbidding clause that stood against caching within a run is
+gone; the clause against carrying one across runs stands.
+
+**AC-2.** Confirmed by reading `transition` at `:175`: *"Resolve the item id
+for an already-filed issue from the board once per ticket per run, and reuse
+it for every later write to that ticket in the run… Re-list only when an edit
+returns an error naming the item."*
+
+**AC-3.** Confirmed by reading `:47`: *"A refused transport is not the only
+way here. An exhausted GraphQL quota takes `gh issue` and `gh project` down
+together and leaves REST working. The licence is the same: the call you ran
+returned the error."* And `:49`: *"Issue-level work has a full REST surface,
+for reads as much as writes — a run whose own ticket read fails reaches its
+state through the `open` and `queue` rows."*
+
+**AC-4.** Below.
+
+**No twin.** `references/linear.md` carries no board-item-id concept — a
+Linear issue id is itself the mutable identifier, with no separate
+Projects-v2-style board wrapper — and no REST/GraphQL split to extend, since
+Linear is one GraphQL endpoint for every operation. Read in full; neither gap
+this ticket closes has a Linear-side counterpart to update or defer.
+
+**Evidence.** Prose only; ADR 0017 D5 refuses a guard over what prose means
+(law 2). No test or script reads `github.md` (`grep` over `tests/` and
+`scripts/` returns nothing). No test was added or edited.
+
+**The version class is minor, and no raise is owed.** No command, argument or
+output schema changes, and no external call's refusal reason moves in either
+direction — the change is advice to the agent about when to re-resolve an
+internal identifier and which table a read may fall back to, not a change to
+what any interface accepts, produces or declines. `/build` step 1 reported
+`already-ahead` at `21.0.0` (`origin/main` at `20.0.0`), so this cycle's minor
+floor was already met before this ticket touched a byte.
+
+**Verification.** `bash scripts/verify.sh` was run and read by this reviewer
+over the full candidate — the builder's own commit `bad2640e` plus this
+record, uncommitted in the worktree: ruff clean, mypy clean, 632 passed,
+85.47% coverage against the 85% floor, design-token drift guard OK, `All
+checks passed`, exit 0.
+
 ## Cross-references
 
 - `specs/harness-assumptions.md` — one row per hook, script, skill and agent: what it assumes the model cannot do, and the test that would retire it. Read at every model or host release.
