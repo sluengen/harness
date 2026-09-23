@@ -4914,6 +4914,64 @@ moves once per release cycle, so the class holds at `21.0.0`.
 output over the builder's commit `17e84c8` plus this record, uncommitted in
 the candidate. Results are in the review report for #712.
 
+### #708: the run-cost figure joins the spine's *Lanes* bullet, and *Actionability* gains a size/absorb question
+
+`simple` — #700's AC-4, held until `specs/proposals/ticket-granularity.md`
+landed (`b48c18e`); item 1's run-cost half plus item 4, both from the same
+proposal.
+
+**AC-1.** `AGENTS.md`/`templates/spine.md`'s *Lanes* bullet (`:48`, inside
+the byte-identical `spine:generated` block) gains one sentence: "A build run
+costs three gate runs — the base gate, the reviewer's own, and the landing
+gate — fixed per ticket and independent of diff size, so a ticket's upper
+bound is context rather than time." Sourced from the proposal's *Decisions
+taken* D1 and its two stated consequences (the gate half fixed per ticket,
+context as the upper bound), carrying D1's count but not its "30 to 60
+minutes" wall-clock figure — D1's own next paragraph says the count is what
+should be recorded, since a wall-clock figure is false in the next repo and
+`templates/spine.md` ships to every one of them.
+
+**AC-2.** `skills/work-discovery/SKILL.md` → *Actionability* gains a third
+question, after the container and premise checks #700 shipped: is the
+ticket smaller than the run that would carry it, with an adjacent unstarted
+ticket on the same surface it should absorb — citing the spine's figure
+(`AGENTS.md` → *The contract* → *Lanes*) rather than repeating it, and
+resolving by the same extend-and-cancel move the spine's *Filing* rule
+already makes for a co-change found before either ticket is built (#711).
+
+**Evidence.** AC-1 by direct review against D1 and against the
+byte-identical-block invariant `tests/unit/test_spine_template_parity.py`
+already holds (unchanged by this ticket, still reads the index, still
+green). AC-2 by direct review plus representative use against CAL-1735's
+shape, the proposal's own motivating case: a six-slice breakdown left
+CAL-1869 and CAL-1736 as two full build runs sharing one `npm run
+typecheck`. Each is the adjacent-unstarted-ticket-on-the-same-surface the
+new question asks after; applying it at pull returns *absorb one into the
+other* rather than *run both*, the outcome the proposal's own Problem
+section says did not happen. No test was added or edited, per law 2 — both
+criteria are about what two documents say.
+
+**No overlap with #711.** #711 (`628c3e0`) touched only the *Filing* bullet
+(`:54`); this ticket touches only the *Lanes* bullet (`:48`) and
+`work-discovery`, confirmed by re-reading #711's diff at this review.
+
+**The version class is minor, and no raise is owed.** Neither half changes
+a call's refusal reason: the *Lanes* sentence is descriptive prose behind no
+predicate, and the *Actionability* question is a new step in a
+routine an agent performs, not a hook or a contract any caller invokes —
+nothing that used to succeed now fails, or the reverse. `/build` step 1
+reported `already-ahead` at `21.0.0`, so this cycle's minor floor was
+already met before this ticket touched a byte, and this diff does not move
+it further.
+
+**Verification.** `bash scripts/verify.sh` was run and read by this
+reviewer over the full candidate — the builder's own commit `952a9d1` plus
+this record, committed on top: ruff clean, mypy clean over three source
+files, 626 passed, 85.47% coverage against the 85% floor, design-token
+drift guard OK, `All checks passed`, exit 0. This branch's own change is
+the three files the builder touched — `AGENTS.md`, `templates/spine.md`,
+`skills/work-discovery/SKILL.md` — plus this record.
+
 ## Cross-references
 
 - `specs/harness-assumptions.md` — one row per hook, script, skill and agent: what it assumes the model cannot do, and the test that would retire it. Read at every model or host release.
