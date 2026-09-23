@@ -38,6 +38,8 @@ really, just, literally, genuinely, honestly, simply, actually, deeply, truly, f
 - Vary sentence and paragraph length. Two items often beat a forced three.
 - No weak starters. Restructure sentences leaning on What/When/Which/How as a crutch; lead with subject or verb.
 - Minimise em-dashes; a comma or period usually serves.
+- **Anchor a citation on an identifier, never a line number.** A function name, a section heading, a symbol, or a string a reader can `git grep` survives editing; a line number is true only until an earlier hunk shifts the file, so a citation written that way can go stale inside the commit that writes it — and the sentence that is now wrong is one nobody edited. #660 corrected three such citations in a single build and #568 one before it. Where the position is genuinely useful, lead with the identifier and put the line beside it, so the reader has something to search when the number has moved.
+- **A numeral beside an enumeration it could be derived from names that enumeration, or gives way to it.** "Four rules follow" above a list of four is a count and a list authored from separate sources, and the next edit moves one of them. Write "the rules below", or name what produces the figure. Where the number carries weight the list does not — a total spanning several documents — keep it and cite the enumeration it came from.
 
 ## When to apply
 

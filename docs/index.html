@@ -213,8 +213,8 @@
         <p>
           A repo-owned <code>AGENTS.md</code> carries the five principles, the laws derived from
           them, and the lifecycle contract — always loaded, never optional. <code>CLAUDE.md</code>
-          carries it verbatim plus that host's deltas — derived, not a pointer, and re-derived by
-          <code>/harness:hydrate</code> — and the repo's configuration is
+          imports it on its first line and adds that host's deltas, seeded once by
+          <code>/harness:hydrate</code> and repo-owned after — and the repo's configuration is
           <code>harness.yaml</code>. Skills carry the depth and load by task.
         </p>
       </article>
@@ -258,7 +258,7 @@ Codex: ask to hydrate Harness</pre>
         <p>
           Interviews for the repo's values and writes the files that must be repo-owned:
           <code>harness.yaml</code>, the spine (<code>AGENTS.md</code>) and the
-          <code>CLAUDE.md</code> derived from it, the path-scoped rules, Codex role adapters, the specs
+          <code>CLAUDE.md</code> importing it, the path-scoped rules, Codex role adapters, the specs
           scaffold and the infrastructure record. It writes no gate: where there is none yet it says
           what the gate must do and leaves the bytes to the repo, because a gate is what every later
           claim of green is read off. After a plugin update, refresh migrates the configuration into

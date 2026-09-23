@@ -62,10 +62,6 @@ what a hydration writes and under which rule, then compare artefact by artefact.
   plugin's `templates/spine.md`? Does the `harness@<version>` stamp in the begin
   marker match the version in the plugin's manifest? A stamp behind the
   installed plugin is the commonest drift there is.
-- **The derived copy.** Does `CLAUDE.md` carry exactly one boundary marker line,
-  and does the region above it match `AGENTS.md` byte for byte? The plugin ships
-  no guard for this, so drift here survives until somebody looks — which is you.
-  Report the lines that differ, not that they differ.
 - **Codex role adapters.** Does `.codex/agents/` carry a `.toml` for every role
   in the plugin's `agents/`? Do the plugin-marked ones match the plugin's
   current bytes? A role the plugin ships and the repository lacks is a silent
