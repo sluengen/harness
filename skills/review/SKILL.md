@@ -22,7 +22,7 @@ Identify the branch, its ticket, the change spec, and the canonical spec(s) in `
 Reflect the handoff on the board, through `tracker`.
 
 ### 3. Run the reviewer
-Dispatch the lane's reviewer agent in a fresh context — `reviewer` in the change lane, `reviewer-feature` in the feature lane, which differ only in the model and effort their frontmatter sets — with the packet `agents/reviewer.md` → *Your context is the packet* defines, and never the implementer's conversation. Fetch the ticket's description and every comment through `tracker`'s `open` and hand the bytes over as a path the reviewer can read: this command keeps no run area of its own, so any location outside the reviewed tree serves. It performs the two-stage review, runs the verification gate independently (it does not trust the build's claim), and returns a verdict with findings. The fix lane has no reviewer at all; a diff that outgrows its lane is upgraded rather than shipped under it.
+Dispatch the `reviewer` agent in a fresh context, in the change and feature lanes alike, with the packet `agents/reviewer.md` → *Your context is the packet* defines, and never the implementer's conversation. Fetch the ticket's description and every comment through `tracker`'s `open` and hand the bytes over as a path the reviewer can read: this command keeps no run area of its own, so any location outside the reviewed tree serves. It performs the two-stage review, runs the verification gate independently (it does not trust the build's claim), and returns a verdict with findings. The fix lane has no reviewer at all; a diff that outgrows its lane is upgraded rather than shipped under it.
 
 ### 4. Act on the verdict
 The three verdicts are the spine's, and this step handles all three.

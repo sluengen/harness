@@ -115,7 +115,9 @@ Since #538 that lane has a name the rest of the contract uses. The spine's **Lan
 
 **The clause had four homes at #597, and the spine names the fourth.** Three were the `spine:generated` block — `templates/spine.md`, `AGENTS.md`, and the `CLAUDE.md` derived from it — held byte-identical over the index by `tests/unit/test_spine_template_parity.py` on every gate run; #705 retired the copy, so the block's homes are the two that remain and the count is three. The fourth is `skills/authoring/SKILL.md`'s *Choosing assurance* table, which the spine's own sentence delegates the operative choice to ("`authoring` chooses the lane") and whose `complex` row closes with "the spine's three, and no fourth". Leaving that row on the old wording would have made its own closing clause false and left the mechanism a filer actually consults on the retired rule, so moving it is the twin sweep discharged, not scope widened; the edit changes that clause and no other cell. Both filing paths make that concrete: `/capture` and `/propose` each choose the level per `authoring` → *Choosing assurance*, the first adding "never restated here", so nothing reads the spine's bullet to price a lane and a spine-only edit would have shipped inert. The evidence is ADR 0019's for prose — direct review of the four files, plus representative use over the tickets the source proposal spawned: priced against the new rubric #596 is `simple`, which is the label it was filed under and the one the old clause contradicted; #595 stays `complex` on its contract change, so the narrowing does not lower every proposal-spawned filing; and #597 itself is the discriminating case, a ticket whose design D3 settled, where the narrowed clause does not fire and a different trigger holds the lane at `complex` anyway.
 
-**One twin was deferred, and naming it is the deferral (#597).** `agents/reviewer-feature.md` and `.codex/agents/reviewer-feature.toml` still carry the retired wording twice each: the `description` frontmatter reads "a contract change, a protected area, or anything a proposal spawned", and the body repeats the same three-item list in its own words a few lines further down. Neither is a dispatch predicate — `/build` and `/review` choose between `reviewer` and `reviewer-feature` from the ticket's lane label, and that sentence explains why the deeper model is paid for — so the staleness changes no consumer behaviour and is an improvement rather than a bug (`review-discipline` → *Bugs are filed; improvements are proposed*). It is left to the next change that opens those two files.
+**~~One twin was deferred, and naming it is the deferral (#597).~~** Retired at
+#714: both files are deleted rather than reworded, so the deferred twin
+resolves by removal, not the edit this note waited on. It read: `agents/reviewer-feature.md` and `.codex/agents/reviewer-feature.toml` still carry the retired wording twice each: the `description` frontmatter reads "a contract change, a protected area, or anything a proposal spawned", and the body repeats the same three-item list in its own words a few lines further down. Neither is a dispatch predicate — `/build` and `/review` choose between `reviewer` and `reviewer-feature` from the ticket's lane label, and that sentence explains why the deeper model is paid for — so the staleness changes no consumer behaviour and is an improvement rather than a bug (`review-discipline` → *Bugs are filed; improvements are proposed*). It is left to the next change that opens those two files.
 
 Intake carries the upstream half. `/capture` gains a **clarification loop with a stop condition rather than a cap**: keep asking while any question remains whose answer would change the architecture, a contract, the data model, the test design, or what the change will explicitly not do; rank by impact; integrate each answer into the spec as it arrives, replacing the sentence it supersedes. Attended that is `AskUserQuestion`; unattended an unanswerable question is a hold, and a material question that should not block the filing becomes an inline `[NEEDS CLARIFICATION: …]` marker, which `/build` refuses to start on. It also gains the workflow's **one refusal**: a filing without a **cost line** — what it costs, what it buys, which principle it serves and which it spends against, and which waste it removes or adds — is incomplete and is filed as nothing until it can state one, because cost is uncomputable later, when the spend is sunk. `templates/change.md` carries the matching sections: **Cost** with its one-line shape, **Assumptions** (decisions taken without the authority to take them, `none` where there are none), **Protected areas** (never omitted — a blank section and an absent one read the same, and only one of them means the question was asked), the **Assurance** heading renamed **Lane**, the verb-plus-where title convention, and the marker's meaning.
 
@@ -2344,6 +2346,58 @@ included.
   two backends therefore disagree about one state that the shipped rule calls
   "the cord's own uncertainty".
 
+
+### #714: `dev` and `reviewer` move to Opus, and `reviewer-feature` retires, as built
+
+`agents/dev.md` and `agents/reviewer.md` move from `model: sonnet` to `model:
+opus`, keeping the `opus` alias rather than a pinned point release so the
+frontmatter follows whatever Opus resolves to at dispatch time; `effort: high`
+and the other four agents' lines are untouched — `architect` and `steward`
+stay `opus`, `harness-audit` stays `sonnet`. `agents/reviewer-feature.md` and
+its Codex mirror `.codex/agents/reviewer-feature.toml` are deleted outright:
+with the reviewer itself on Opus, the file's only distinguishing content — two
+frontmatter lines — has nothing left to buy over `agents/reviewer.md`, which it
+deferred to in full. `skills/build/SKILL.md` step 3 and `skills/review/SKILL.md`
+step 3 now dispatch `reviewer` in both the change and feature lanes; the
+feature lane still buys its design stage and as-built record, not a second
+reviewer definition. `.claude/rules/agents.md:34` drops the retired name from
+its own example, `CLAUDE.md:22` moves "six roles" to "five roles", and
+`docs/index.html`'s hero count and agent-list entry drop to five, all held by
+`tests/unit/test_codex_agent_adapters.py` and
+`tests/unit/test_landing_page_inventory.py`, which the diff turned red before
+the deletion and green after. `specs/harness-assumptions.md` restates ADR
+0005's finding in full — fail rates at parity (18.4% vs 17.3%) but
+first-attempt pass down (76% → 64%) and cycles up (1.38 → 1.52) on Sonnet, each
+extra cycle costing a builder rework plus a fresh review — and drops the
+now-nonexistent `agents/reviewer-feature` row; ADR 0005 itself gains a dated
+amendment recording the reversal and why.
+
+**The version class is minor, at the floor `/build` step 1 raised (`20.0.0` →
+`20.1.0`).** The compatibility grammar's contract is a command's name, its
+arguments, and its refusal reasons (`specs/architecture-principles.md` → *The
+installed surface is a versioned interface*); an agent role file is none of
+those, and the two commands that dispatch it, `/build` and `/review`, keep
+their own name, arguments and refusal reasons unchanged, both moving to
+`reviewer` in this same diff. Nothing exceeds the floor.
+
+**One deferred twin resolves by deletion, not edit.** The #597 note above
+(*One twin was deferred...*) waited on "the next change that opens those two
+files" to fix their stale lane-trigger wording; this change deletes both
+files instead, which discharges the deferral without ever performing the
+rewrite it named.
+
+**Evidence.** AC-1 (the model lines) and AC-2 (the deletion plus a green gate)
+by direct review of the diff and `bash scripts/verify.sh`, 626 passed at tree
+`89d6fe44b1e3d60353286e224ebf30b5576bf11a`, including
+`test_codex_agent_adapters.py`'s correspondence check and
+`test_landing_page_inventory.py`'s inventory count. AC-3 by `grep -rn
+reviewer-feature skills/ agents/ .codex/ .claude/ CLAUDE.md AGENTS.md docs/
+templates/`, empty. AC-4 by direct review of
+`specs/harness-assumptions.md`'s `agents/reviewer` row against ADR 0005's
+retirement note. Law 2 does not attach: every criterion here is about what a
+document says or a `model:` value the host resolves, not a quantity code
+computes, so the evidence is review plus the existing producer checks rather
+than a new measuring test.
 
 ## Data model
 

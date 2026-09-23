@@ -77,8 +77,7 @@ test: a host that scopes both fields to the skill rather than the turn.
 | Component | Assumes | Retirement test |
 |---|---|---|
 | `agents/dev` | A builder holding the whole run's context confuses what it planned with what it built. | A model that separates the two reliably in one context. |
-| `agents/reviewer` | A reviewer that saw the work being built cannot review it independently; and per ADR 0005, the cheaper model reviews as well as the dearer one (18.4% vs 17.3% fail rate, under the noise floor). | Self-review measured at parity with fresh-context review. |
-| `agents/reviewer-feature` | ADR 0005's measurement was over ordinary changes, and does not extend to a contract change or a protected area. | A measurement over feature-lane work showing the same parity. Retire this file the day it does — it exists only for the two lines of frontmatter. |
+| `agents/reviewer` | A reviewer that saw the work being built cannot review it independently. It runs on Opus in every lane (#714): ADR 0005's ledger put the two models' fail rates at parity (18.4% vs 17.3%), but on Sonnet the first-attempt pass fell from 76% to 64% and review cycles rose from 1.38 to 1.52, and each cycle costs a builder rework. | Self-review measured at parity with fresh-context review. The model choice reverses if cycles and first-attempt pass on Opus do not improve on that Sonnet baseline. |
 | `agents/architect` | Design produced inside an implementation context follows the implementation rather than leading it. | T5's delta. |
 | `agents/steward` | Cross-file cumulative patterns are invisible to per-change review, whatever the reviewer's quality. | A per-change review that surfaces accumulation. |
 
