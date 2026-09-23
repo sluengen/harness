@@ -44,7 +44,9 @@ they left as prose sat invisible to `/routine` for a day. **Attempt the field wr
 first, every time, and let its own error be the thing you report.** Degrading costs a
 board nobody can read; attempting costs one call.
 
-**Every `gh issue` subcommand goes through GraphQL** — `gh issue view`, `gh issue list`, with or without `--json` — so the recipes below fail wholesale on such a host even though the underlying data is fine. **Issue-level work has a full REST surface**; reach it with `gh api` and the operations are complete:
+**A refused transport is not the only way here.** An exhausted GraphQL quota takes `gh issue` and `gh project` down together and leaves REST working. The licence is the same: the call you ran returned the error. Everything below applies to both cases.
+
+**Every `gh issue` subcommand goes through GraphQL** — `gh issue view`, `gh issue list`, with or without `--json` — so the recipes below fail wholesale on such a host even though the underlying data is fine. **Issue-level work has a full REST surface, for reads as much as writes** — a run whose own ticket read fails reaches its state through the `open` and `queue` rows; reach it with `gh api` and the operations are complete:
 
 | Operation | REST |
 |---|---|
@@ -99,7 +101,7 @@ another route; the refusal is the carry recorded in
 
 ## No id here is stable — resolve at runtime
 
-Project ids, status field ids, and single-select option ids differ per board and change when a field is renamed. Resolve them each time; never hard-code or cache one.
+Project ids, status field ids, single-select option ids and board item ids differ per board and change when a field is renamed. **Resolve each one once per run and reuse it for the rest of that run**; never hard-code one, and never carry one into another run or into a file. Nothing inside one run renames a field or rebuilds the board, so re-resolving before every write buys nothing. One `/routine` tick on a 259-item board recorded ~20 whole-board `item-list` calls to perform 4 `item-edit`s.
 
 ```bash
 # the board's node id
@@ -170,7 +172,7 @@ gh project item-list <number> --owner <owner> --format json --limit <n>
 
 ### `transition` — move an issue's Status
 
-The same `gh project item-edit` call as step 3 above, with the option id of the target state. Resolve the item id for an already-filed issue from the board:
+The same `gh project item-edit` call as step 3 above, with the option id of the target state. Resolve the item id for an already-filed issue from the board **once per ticket per run**, and reuse it for every later write to that ticket in the run, including In Progress, In Review and Done. Re-list only when an edit returns an error naming the item:
 
 ```bash
 gh project item-list <number> --owner <owner> --format json --limit <n>
