@@ -5054,6 +5054,59 @@ citation, which belongs to #678 and leaves every #715 file untouched. Ruff clean
 mypy clean over three source files, 632 passed, 85.47% coverage against the 85%
 floor, design-token drift guard OK, `All checks passed`, exit 0.
 
+### #678: a probe round that returns findings owes another round
+
+`simple` — filed from the improvement ledger at the 2026-09-17 drain, and built
+as `642e412` on branch `work-678-715`, beside #715, with one reviewer repair,
+`c05d17c`, made at review cycle 1 and certified here by a second reviewer.
+
+**What ships.** `skills/build/SKILL.md` §2 gains one bullet, placed directly after
+*Run the evidence each criterion names*, which is the section's verification
+obligation; `build` has no heading called a verification step, and before this
+change said nothing about probes at all. The bullet obliges a further round
+whenever a probe round returns findings, and names the round's subject: the
+artefact as corrected, because a round over the draft already probed measures
+nothing new (AC-1, AC-2). It names its stopping condition positively, a round
+over the corrected text that returns nothing, rather than a count, which the
+ticket's *Out of scope* refuses.
+
+**The case it cites, as this record's #650 section gives it.** #650's first two
+use-probes were a subject/control pair and returned nine findings between them,
+five the change absorbed and four it did not; the third, run over the shipped
+text once the pair's findings had landed, returned three more, one of them the
+`Per asset` phrase the change's own new `Copy` column had turned into licensing
+the directory test it exists to refuse. The filing's own figure, nine findings
+across three rounds, miscounted that sequence, and so did the first draft of the
+bullet; `c05d17c` restated it from the #650 section above. #645, which the filing
+also cited, carries no round data and is not named.
+
+**It stops short of the shipped opposite half on purpose.**
+`skills/review-discipline/references/craft.md` → *A non-discriminating control is
+a result, and the two results differ* says a null result is often the honest
+verdict and that reading it as instrument failure is what pays for a further
+round. The bullet speaks only to a round with findings, ends the sequence on a
+clean round, and routes a pair whose arms behave alike to that entry by name, so
+the two do not disagree. The filing's Approach sentence that a clean first round
+is not by itself evidence of completeness was left out for the same reason: no
+criterion asks for it, and it would argue with that entry.
+
+**Evidence.** Direct review of both criteria against the bullet and against the
+two sections it leans on, per law 2: both criteria are about what a document
+says. No test was added or edited. No twin: the bullet's neighbouring text
+occurs in `skills/build/SKILL.md` alone.
+
+**The version class is minor, and no raise is owed.** The bullet obliges one
+more act of the builder inside a step it already performs; `/build` keeps its
+name and its arguments, and no call that used to complete now refuses, or the
+reverse. `/build` step 1 reported `already-ahead` at `21.0.0` (`origin/main` at
+`20.0.0`), so this cycle's minor floor was already met.
+
+**Verification.** `bash scripts/verify.sh` was run and read by the cycle-2
+reviewer over the full candidate — `origin/dev` @ `74e070f8` plus `642e412`,
+`6ce3f31`, `c05d17c`, `f2fde95` and this record, uncommitted in the worktree.
+Ruff clean, mypy clean over three source files, 632 passed, 85.47% coverage
+against the 85% floor, design-token drift guard OK, `All checks passed`, exit 0.
+
 ## Cross-references
 
 - `specs/harness-assumptions.md` — one row per hook, script, skill and agent: what it assumes the model cannot do, and the test that would retire it. Read at every model or host release.
