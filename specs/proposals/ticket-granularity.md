@@ -25,6 +25,12 @@ Verified against `497f416` (merge of #703), 2026-09-22. Every anchor below was r
 - **The lane table prices blast radius, not overhead** (`skills/authoring/SKILL.md:105-110`). It is the right axis for how much verification a change needs, and it is the only axis stated. Nothing in the repo states what a build run costs.
 - **`do-less-at-ingestion` (accepted, 2026-09-07) settled the adjacent question and not this one.** It gave a proposal somewhere to record what it decided against, and re-ordered the breakdown by cost of being wrong. Both act on *which* work exists and in *what order*; neither acts on how the work is cut.
 
+**Anchors that have moved since, recorded 2026-09-23.** Two of this section's citations described a tree that #698 and #700 have changed, and an accepted proposal asserting a superseded state is the defect its own AC-6 names.
+
+- `templates/change.md:81` **no longer says what is quoted above.** #698's AC-2a retired "Substantial deferrals become their own change spec" and replaced it with P5's rule (`0e49af7`, as-built `732cd3d`). The quotation stands as the record of what was found; it is not current.
+- **`authoring` → *Grounding* now carries the citation obligation** at `skills/authoring/SKILL.md:83`, shipped by #698's AC-6. The gap this proposal named there is closed.
+- The remaining anchors — `AGENTS.md:54`'s surface-keyed *Filing* rule, `skills/assess/SKILL.md:57`'s per-finding filing, `finding-bar.md`'s missing materiality test, `work-discovery`'s untested premise, the lane table's silence on run cost — were re-verified against `origin/dev` on 2026-09-23 and all still hold, except that `work-discovery` gained the premise re-check via #700 (`90a3840`).
+
 ## Problem / motivation
 
 The queue grows faster than the work, and consolidation is running as a periodic hand-sweep. Two consuming repos measured it independently in the same week.
@@ -119,38 +125,42 @@ Four items. Item 1 fires the comprehension and blast dimensions — it changes t
 
 ## Spawn record
 
-**Accepted 2026-09-22.** Two of the four items landed as extensions to existing tickets; three filings remain blocked on the board. This section is superseded once those three have ids.
+**Accepted 2026-09-22; state re-verified against `origin/dev` and the tracker on 2026-09-23.** This proposal sat on an unmerged branch for a day, which is the cause behind most of the fragmentation below: builders worked from the tickets alone, and the two items that had no ticket had no other carrier. It lands with the commit carrying this section.
 
-### Landed
+### Shipped
 
-| Item | Where it went | What it carries |
+| Item | Ticket | What landed |
 |---|---|---|
-| 3, convention half | **#698** extended — [body amended](https://github.com/sluengen/harness/issues/698), [rationale](https://github.com/sluengen/harness/issues/698#issuecomment-5777017488) | AC-2 restates the deferral rule as P5's; **AC-2a retires `templates/change.md:81`**; AC-6 adds the citation-grounding obligation. AC-5, which a drain had left in a comment, was carried into the body at the same time. |
-| 4 | **#700** extended — [body amended](https://github.com/sluengen/harness/issues/700), [rationale](https://github.com/sluengen/harness/issues/700#issuecomment-5777026898) | AC-3 the premise re-check, AC-4 the size question. AC-4's dependency on item 1's run-cost figure is recorded in the body; the native blocked-by is set once item 1 exists. |
+| 3, convention half | **#698**, closed completed | AC-2a retired `templates/change.md:81` and replaced it with P5's deferral rule; AC-6 put the citation obligation at `skills/authoring/SKILL.md:83`. Commit `0e49af7`, as-built `732cd3d`, plugin major raised to 18.0.0. The reviewer treated AC-2a's template edit as the rule's one home rather than duplicating the convention into the skill, which is P2's call and correct. |
+| 4, AC-1 to AC-3 | **#700**, closed completed | Container tickets stated non-eligible, free-slot project ranking, and the premise re-check at *Actionability*. Commit `90a3840`, as-built `5470cea`, major raised to 20.0.0. |
 
-Both were verified by re-reading the issue, not by exit status: criteria present in the body, exactly one `assurance:` label surviving the edit, comment on the thread.
+### In flight
 
-**#698's conflict was settled by the operator on 2026-09-22: retire line 81, and extend #698 to match P5.** Its convention 2 had codified line 81 (*"Substantial deferrals become their own change spec"*) against P5's *"the ledger by default, a ticket only where its fix is already decided and sized"*. Shipping both would hydrate two opposing conventions into every consuming repo.
+**#708**, open — carved out of #700 at build time because AC-4 reads a number that was not in the tree. It carries item 1's run-cost figure and item 4's size question. Its own body diagnosed the stranding: `specs/proposals/ticket-granularity.md` was not on the integration branch, so the figure item 1 was to state had no source a builder could cite.
+
+### Still unfiled
+
+Three pieces, and between them they are every mechanism in this proposal that reduces ticket count. What shipped is the conventions half — what a written claim must carry. Nothing yet cuts the queue.
+
+1. **The co-change test in the spine's *Filing* contract.** `AGENTS.md:54` still reads "extend an unstarted ticket on the same surface instead of creating a twin", unchanged. This is the proposal's central change, it is `complex` because every hydrated consumer carries that contract, and #708 scopes only the figure beside it — so the contract change is scoped nowhere. **It is the piece most likely to be lost a second time**, and if #708 lands first the spine gets the number without the test.
+2. **The batch pass at the four filing surfaces** — item 2 entire, carrying the absorbed-findings obligation (D3) and the separable-or-sequential declaration (D2). `complex`. Nothing on the tracker, nothing in `tracker` → `create` or `authoring` on `dev`.
+3. **The materiality floor at `skills/assess/references/finding-bar.md`** — item 3's residual. `simple`.
+
+### What the fragmentation cost, recorded because the proposal is about exactly this
+
+Four items and three decisions became: two extensions built, one carve-out in flight, three pieces unfiled. Item 3 split in two — correctly, and *Item 3 split* below says why. Item 4 split in two, which was forced rather than chosen: #700's AC-4 could not be built against a figure no tree stated, so a ticket that should have shipped whole spent a build run and left a remainder. Items 1 and 2 were never filed at all.
+
+The proposal's own measure would score this badly, and should: what matters is not how many tickets exist but whether the work arrived intact, and here half of it did not.
 
 ### Item 3 split, and the split is the point
 
-Item 3 bundled three obligations on the premise that they were one sitting. Two of them — the deferral rule and the citation-grounding convention — belong with #698's existing conventions about what a written claim must carry. The third, **the materiality floor at `skills/assess/references/finding-bar.md`**, answers a different question in a different file: whether a finding should become a ticket at all, rather than what a claim must carry. Folding it into #698 would have made one sitting into two and pushed a ticket that already holds seven criteria further toward the context bound.
+Item 3 bundled three obligations on the premise that they were one sitting. Two of them — the deferral rule and the citation convention — belonged with #698's existing conventions about what a written claim must carry, and shipped there. The third, the materiality floor, answers a different question in a different file: whether a finding should become a ticket at all. Folding it into #698 would have made one sitting into two and pushed a ticket already holding seven criteria further toward the context bound.
 
-So the co-change test cut the other way here, and it should: the test is *one builder, one worktree, one sitting*, not *one theme*. A bundle assembled by theme is the over-large ticket this proposal's own risk section names.
-
-### Blocked on placement
-
-Three filings remain, and none can be made from a session without board access. `create` requires an explicit board Status, Projects v2 has no REST surface, and the board write was attempted rather than inferred from a probe, as `skills/tracker/references/github.md` requires: `gh project item-add 2 --owner sluengen --url .../issues/702` returned `unknown owner type`, a 403 underneath. Filing without placement produces issues invisible to every Todo-scoped queue read — the item-add-no-status trap that operation exists to refuse.
-
-1. **State run overhead and the co-change test in the spine's *Filing* contract** — `complex`, held for the operator with the `input` label. Blocks nothing already filed; #700's AC-4 reads its figure.
-2. **Apply the batch pass at the four filing surfaces** — `complex`, carrying the absorbed-findings obligation (D3) and the separable-or-sequential declaration (D2). Depends on 1.
-3. **A materiality floor at the finding bar** — `simple`, the residual of the original item 3. Depends on 1.
-
-**Queue at acceptance:** 11 open issues, 3 held (#697, #674, #450), leaving 8 unheld against `queue.wip_limit: 6`. The project is over its limit before anything is filed, so all three land in **Backlog** when the board becomes writable.
+So the co-change test cut *against* merging here, and it should: the test is *one builder, one worktree, one sitting*, not *one theme*. A bundle assembled by theme is the over-large ticket this proposal's own risk section names.
 
 ### One observation the filing produced
 
-**#698 already carried an `Absorbs:` list** naming seven ledger entries across two repos, and **its AC-5 lived only in a comment** — added by a drain and never written into the criteria a reviewer certifies against. The first is D3's obligation already being practised informally; the second is the defect `authoring` → *The same obligation binds whoever amends someone else's ticket* describes, found in the wild while acting on this proposal. Both were corrected in the amendment.
+**#698 already carried an `Absorbs:` list** naming seven ledger entries across two repos, and **its AC-5 lived only in a comment** — added by a drain and never written into the criteria a reviewer certifies against. The first is D3's obligation already being practised informally, which is the best evidence the obligation is worth having. The second is the defect `authoring` → *The same obligation binds whoever amends someone else's ticket* describes, found on a live board while acting on this proposal, and corrected in the amendment.
 
 ## Risks / unknowns
 
