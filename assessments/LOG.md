@@ -12,8 +12,10 @@ Entries are chronological (oldest first); each new fold appends below. Format:
 `- <YYYY-MM-DD> · <scope> · <one-clause verdict> · findings: <resolved / ticketed>`
 
 A `process` entry carries a fourth field — `· baseline: <assurance:product ratio> /
-<gate wall-clock> / <unjustified checks>` — so that scope's tracked quantities
-survive the fold (`templates/assessment.md`). A pass that refuted a lever carries a
+<gate wall-clock> / <unjustified checks> / <tickets per finding>` — so that scope's tracked quantities
+survive the fold (`templates/assessment.md`). The field held three values until
+the fourth baseline row was added; lines folded before then keep three and are
+not rewritten. A pass that refuted a lever carries a
 fifth — `· refuted: <lever> (<the measurement that killed it>)`, one per dead lever — so the
 next pass does not buy the same measurement twice. The first process pass did not record an unjustified-check count; its fold preserves that absence rather than inventing a value.
 
