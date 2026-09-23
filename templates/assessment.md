@@ -28,10 +28,14 @@ Each finding is a level-3 heading carrying its ID, a one-line title, and (when d
 
 **What:** the specific issue.
 **Where:** `file:line` (code) or the section (docs) — a real, clickable reference.
-**Why:** the rule, principle, or contract it violates.
+**Why:** the rule, principle, or contract it violates, and the user outcome or consumer behaviour that breaks.
 **How:** a concrete fix, not "this is wrong".
 
 (Repeat per finding. **Zero findings is a legitimate, stated outcome** — say so plainly and do not invent findings to fill the report.)
+
+## Below the floor
+
+Contradictions that name no user outcome or consumer behaviour they break (`skills/assess/references/finding-bar.md` → *Material or ledger*). One line each: what, where, and the fix. They are improvements, so they are **not filed as tickets**: each is appended to the improvement ledger and decided at the drain. Drop the section when it is empty.
 
 ## Systemic insights
 
@@ -84,4 +88,4 @@ An `/assess process` pass writes the same dated file (`assessments/<YYYY-MM-DD>-
 
 ---
 
-After the report is written, the `/assess` command files each finding as a tracker issue, appends each insight to the improvement ledger, and commits the dated report (`skills/assess/SKILL.md`). For the `architecture` scope it files **only** the actionable risks and recommendations — never the narrative sections. For the `process` scope it files **only** the findings; every deletion and efficiency candidate is a ledger entry decided at the drain.
+After the report is written, the `/assess` command files each finding as a tracker issue, appends each insight and each below-floor entry to the improvement ledger, and commits the dated report (`skills/assess/SKILL.md`). For the `architecture` scope it files **only** the actionable risks and recommendations — never the narrative sections. For the `process` scope it files **only** the findings; every deletion and efficiency candidate is a ledger entry decided at the drain.
