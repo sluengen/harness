@@ -33,7 +33,7 @@ the identifier and the URL, say it is incomplete, and stop.
 
 ## `create` — what a filing must carry
 
-Five things; a filing missing any of them is incomplete.
+A filing missing any element below that applies to it is incomplete.
 
 1. **Exactly one `assurance:` label** — the lane chosen at filing per
    `authoring`. This skill maps the value; it never selects one.
@@ -50,6 +50,32 @@ Five things; a filing missing any of them is incomplete.
    work that belongs to no initiative. Where the field is declared absent the repo
    is its own single project: every ticket belongs to it, and the limit is read
    over the whole repo.
+6. **What it absorbed**, wherever one ticket carries more than one finding,
+   ledger entry or breakdown step — including a ticket the queue search
+   extended rather than filed. List each on the ticket and write each as an
+   acceptance criterion of its own, so review marks every one met, partial or
+   missing, and a merged ticket delivering part of its set fails rather than
+   passes. A merged filing without the list is incomplete: without it,
+   consolidation is quiet under-delivery, a title naming the first finding and
+   a build that fixed only that one.
+
+### More than one ticket in one run — consolidate, then file
+
+A run producing several tickets in one act holds the whole set before it files
+any of them. It merges what the spine's co-change test joins (`AGENTS.md` →
+*Filing*), runs the queue search once for each ticket that survives, and only
+then files the result as one batch. A twin search run one filing at a time
+cannot see the set: each candidate clears it against a board the same run is
+still filling, so the instrument's granularity becomes the queue's.
+
+Over a breakdown the pass makes no co-change judgment of its own. The proposal
+already cut the work, and each item's separable-or-sequential declaration
+(`authoring` → *Proposal spec*) is that cut written down: a run of sequential
+steps is one ticket, and each separable item is its own. Over findings and
+ledger entries, the co-change question is the filer's to answer.
+
+Placement and the limit are unchanged. The batch files in dependency order, and
+*The limit* places each ticket as it lands.
 
 ### Dependencies and priority
 

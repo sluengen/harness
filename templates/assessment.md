@@ -88,4 +88,4 @@ An `/assess process` pass writes the same dated file (`assessments/<YYYY-MM-DD>-
 
 ---
 
-After the report is written, the `/assess` command files each finding as a tracker issue, appends each insight and each below-floor entry to the improvement ledger, and commits the dated report (`skills/assess/SKILL.md`). For the `architecture` scope it files **only** the actionable risks and recommendations — never the narrative sections. For the `process` scope it files **only** the findings; every deletion and efficiency candidate is a ledger entry decided at the drain.
+After the report is written, the `/assess` command files the findings through `tracker` → `create`, consolidated, appends each insight and each below-floor entry to the improvement ledger, and commits the dated report (`skills/assess/SKILL.md`). For the `architecture` scope it files **only** the actionable risks and recommendations — never the narrative sections. For the `process` scope it files **only** the findings; every deletion and efficiency candidate is a ledger entry decided at the drain.
