@@ -56,7 +56,7 @@ Immediately before authoring the change spec, load `authoring` → `references/p
 
 ### 6 — file it
 
-The title is **verb + where**. Then the UTF-8 body file and exactly one assurance level — chosen per `authoring` → *Choosing assurance*, never restated here — through `tracker`'s `create` operation, with the twin search and the explicit placement the spine's *Filing* contract requires. If the provider reports a partial creation, surface the identifier and URL and stop; never retry by creating a duplicate.
+The title is **verb + where**. Then the UTF-8 body file and exactly one assurance level — chosen per `authoring` → *Choosing assurance*, never restated here — through `tracker`'s `create` operation, with the queue search and the explicit placement the spine's *Filing* contract requires. If the provider reports a partial creation, surface the identifier and URL and stop; never retry by creating a duplicate.
 
 ## Report
 

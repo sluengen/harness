@@ -11,7 +11,7 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const crypto = require("crypto");
-const { execSync } = require("child_process");
+const { execFileSync } = require("child_process");
 
 /**
  * A temp-directory path scoped to the repository this hook is running in.
@@ -51,7 +51,47 @@ function recentlyWarned() {
   try { return Date.now() - fs.statSync(DEBOUNCE).mtimeMs < TTL_MS; } catch { return false; }
 }
 function markWarned() { try { fs.writeFileSync(DEBOUNCE, String(Date.now())); } catch { /* best-effort: advisory debounce marker, ignore write failures */ } }
-function git(cmd) { try { return execSync(`git ${cmd}`, { stdio: ["ignore", "pipe", "ignore"] }).toString().trim(); } catch { return ""; } }
+/**
+ * Ask git about ``dir``, never about this process's working directory (#710).
+ *
+ * The hook runs where the session stands, and the session usually stands in the
+ * main checkout while every edit lands in a task worktree beside it. A probe
+ * without a directory therefore answered for the wrong checkout in both
+ * directions: an isolated edit drew "you are on 'main'", and an edit to the
+ * shared checkout from inside a worktree drew nothing. Taking the directory as a
+ * parameter is what makes a later caller inherit the fix rather than repeat it.
+ * `test-lock-guard.js` resolves the same way, from the edited file.
+ */
+function git(dir, args) {
+  try {
+    return execFileSync("git", args, { cwd: dir, stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
+  } catch { return ""; }
+}
+
+/** The nearest directory at or above ``dir`` that exists; a `Write` may create
+ * the directories it names, and git cannot run in one that is not there yet. */
+function existingAncestor(dir) {
+  let current = dir;
+  for (;;) {
+    try { if (fs.statSync(current).isDirectory()) return current; } catch { /* absent: climb */ }
+    const parent = path.dirname(current);
+    if (parent === current) return current;
+    current = parent;
+  }
+}
+
+/** Why editing source under ``dir`` is off-pipeline, or null when it is not.
+ *
+ * A directory in no repository is null: the guard's subject is repository
+ * source, and before #710 that case was silent from any task worktree. */
+function offPipeline(dir) {
+  if (git(dir, ["rev-parse", "--is-inside-work-tree"]) !== "true") return null;
+  const branch = git(dir, ["rev-parse", "--abbrev-ref", "HEAD"]);
+  if (SHARED_BRANCH.test(branch)) return `you are on '${branch}'`;
+  const common = path.resolve(dir, git(dir, ["rev-parse", "--git-common-dir"]));
+  const own = path.resolve(dir, git(dir, ["rev-parse", "--git-dir"]));
+  return common === own ? "you are not in a task worktree" : null;
+}
 
 function editedPaths(input) {
   const tool = input.tool_name || "";
@@ -78,20 +118,18 @@ function main() {
   const codex = codexRuntime;
   if (tool !== "Write" && tool !== "Edit" && tool !== "apply_patch") return done(null, codex);
 
-  const files = editedPaths(input);
-  if (!files.length || files.every((file) => NON_SOURCE.some((p) => p.test(file)))) {
-    return done(null, codex);
-  }
+  const source = editedPaths(input).filter((file) => !NON_SOURCE.some((p) => p.test(file)));
+  if (!source.length) return done(null, codex);
   if (recentlyWarned()) return done(null, codex);
 
-  const branch = git("rev-parse --abbrev-ref HEAD");
-  const isWorktree = git("rev-parse --is-inside-work-tree") === "true" &&
-    git("rev-parse --git-common-dir") !== git("rev-parse --git-dir");
-  const onDefault = SHARED_BRANCH.test(branch);
+  // A relative path (an `apply_patch` names them so) is relative to the payload's
+  // directory, which both hosts send; the process's own is the fallback.
+  const base = (typeof input.cwd === "string" && input.cwd) || process.cwd();
+  const dirs = new Set(source.map((file) => existingAncestor(path.dirname(path.resolve(base, file)))));
+  const why = Array.from(dirs).map(offPipeline).find(Boolean);
 
-  if (onDefault || !isWorktree) {
+  if (why) {
     markWarned();
-    const why = onDefault ? `you are on '${branch}'` : "you are not in a task worktree";
     return done(
       `[WORKFLOW-GUARD] Editing source while ${why}. Per 'worktree-isolation', task work belongs ` +
       `on a feature branch in its own worktree, not on the default branch. If this is a deliberate ` +

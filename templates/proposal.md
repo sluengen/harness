@@ -40,10 +40,10 @@ What must be decided before this becomes work, and by whom. A cross-cutting deci
 
 ## Breakdown
 
-The change specs this proposal would spawn once accepted, each becoming a tracker issue (`authoring` → change spec). Order them by dependency, not by what ships alone. Where the work introduces a shape that is expensive to unpick, that shape is item 1, held for the operator, and the items building on it declare a dependency on it. `authoring` → *Proposal spec* carries the four-dimension test that decides whether a shape earns that position.
+The change specs this proposal would spawn once accepted, each declared separable or a sequential step (`authoring` → *Proposal spec*): a separable item becomes a tracker issue of its own, a run of sequential steps becomes one (`authoring` → change spec). Order them by dependency, not by what ships alone. Where the work introduces a shape that is expensive to unpick, that shape is item 1, held for the operator, and the items building on it declare a dependency on it. `authoring` → *Proposal spec* carries the four-dimension test that decides whether a shape earns that position.
 
-1. {change} — {one-line scope}
-2. {change} — {one-line scope}
+1. {change} — {one-line scope} · {separable | sequential with N}
+2. {change} — {one-line scope} · {separable | sequential with N}
 
 ## Risks / unknowns
 

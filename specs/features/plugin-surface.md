@@ -115,7 +115,9 @@ Since #538 that lane has a name the rest of the contract uses. The spine's **Lan
 
 **The clause had four homes at #597, and the spine names the fourth.** Three were the `spine:generated` block — `templates/spine.md`, `AGENTS.md`, and the `CLAUDE.md` derived from it — held byte-identical over the index by `tests/unit/test_spine_template_parity.py` on every gate run; #705 retired the copy, so the block's homes are the two that remain and the count is three. The fourth is `skills/authoring/SKILL.md`'s *Choosing assurance* table, which the spine's own sentence delegates the operative choice to ("`authoring` chooses the lane") and whose `complex` row closes with "the spine's three, and no fourth". Leaving that row on the old wording would have made its own closing clause false and left the mechanism a filer actually consults on the retired rule, so moving it is the twin sweep discharged, not scope widened; the edit changes that clause and no other cell. Both filing paths make that concrete: `/capture` and `/propose` each choose the level per `authoring` → *Choosing assurance*, the first adding "never restated here", so nothing reads the spine's bullet to price a lane and a spine-only edit would have shipped inert. The evidence is ADR 0019's for prose — direct review of the four files, plus representative use over the tickets the source proposal spawned: priced against the new rubric #596 is `simple`, which is the label it was filed under and the one the old clause contradicted; #595 stays `complex` on its contract change, so the narrowing does not lower every proposal-spawned filing; and #597 itself is the discriminating case, a ticket whose design D3 settled, where the narrowed clause does not fire and a different trigger holds the lane at `complex` anyway.
 
-**One twin was deferred, and naming it is the deferral (#597).** `agents/reviewer-feature.md` and `.codex/agents/reviewer-feature.toml` still carry the retired wording twice each: the `description` frontmatter reads "a contract change, a protected area, or anything a proposal spawned", and the body repeats the same three-item list in its own words a few lines further down. Neither is a dispatch predicate — `/build` and `/review` choose between `reviewer` and `reviewer-feature` from the ticket's lane label, and that sentence explains why the deeper model is paid for — so the staleness changes no consumer behaviour and is an improvement rather than a bug (`review-discipline` → *Bugs are filed; improvements are proposed*). It is left to the next change that opens those two files.
+**~~One twin was deferred, and naming it is the deferral (#597).~~** Retired at
+#714: both files are deleted rather than reworded, so the deferred twin
+resolves by removal, not the edit this note waited on. It read: `agents/reviewer-feature.md` and `.codex/agents/reviewer-feature.toml` still carry the retired wording twice each: the `description` frontmatter reads "a contract change, a protected area, or anything a proposal spawned", and the body repeats the same three-item list in its own words a few lines further down. Neither is a dispatch predicate — `/build` and `/review` choose between `reviewer` and `reviewer-feature` from the ticket's lane label, and that sentence explains why the deeper model is paid for — so the staleness changes no consumer behaviour and is an improvement rather than a bug (`review-discipline` → *Bugs are filed; improvements are proposed*). It is left to the next change that opens those two files.
 
 Intake carries the upstream half. `/capture` gains a **clarification loop with a stop condition rather than a cap**: keep asking while any question remains whose answer would change the architecture, a contract, the data model, the test design, or what the change will explicitly not do; rank by impact; integrate each answer into the spec as it arrives, replacing the sentence it supersedes. Attended that is `AskUserQuestion`; unattended an unanswerable question is a hold, and a material question that should not block the filing becomes an inline `[NEEDS CLARIFICATION: …]` marker, which `/build` refuses to start on. It also gains the workflow's **one refusal**: a filing without a **cost line** — what it costs, what it buys, which principle it serves and which it spends against, and which waste it removes or adds — is incomplete and is filed as nothing until it can state one, because cost is uncomputable later, when the spend is sunk. `templates/change.md` carries the matching sections: **Cost** with its one-line shape, **Assumptions** (decisions taken without the authority to take them, `none` where there are none), **Protected areas** (never omitted — a blank section and an absent one read the same, and only one of them means the question was asked), the **Assurance** heading renamed **Lane**, the verb-plus-where title convention, and the marker's meaning.
 
@@ -667,6 +669,8 @@ prose predicate, hold narrative accuracy — and at this review that lede was th
 place where #621 moved the guarded count and left the sentence beside it standing.
 
 The same `hooks/hooks.json` serves both hosts. The PreToolUse scripts normalize Claude Code's `tool_name` / `tool_input` and Codex's corresponding payload before evaluating the request. **Every advisory's warning is delivered inside `hookSpecificOutput` on both hosts, unified at #688.** Before that fix, `prompt-guard.js`, `workflow-guard.js` and `push-target-guard.js` wrote the nested `hookSpecificOutput.additionalContext` envelope for Codex only and handed Claude Code a top-level `additionalContext` beside `continue: true` — a position Claude Code discards on a `PreToolUse` hook, so none of the three ever reached a live Claude Code session (measured at `13.0.0`/`43bc401`; `test-lock-guard.js`'s refusal was already immune to this, since its refusal always wrote the nested shape). The fix drops `continue` from the warning branch entirely, on both hosts — it defaults to true when absent, so the omission changes nothing a host reads — leaving one warning shape rather than two. `tests/unit/test_advisory_hook_delivery_shape.py` derives the expected envelope from `test-lock-guard.js`'s own refusal rather than asserting a remembered constant, so a future host change that moves the contract carries this module with it. A benign Codex request and every Codex fail-open catch path still exit successfully with no stdout, rather than emitting the unsupported `{continue:true}` response; a benign Claude Code request still gets a bare `{"continue": true}`. `prompt-guard.js` and `workflow-guard.js` also read Codex `apply_patch` requests from `tool_input.command`.
+
+`workflow-guard.js`'s own probes carried a second, unrelated bug past the same envelope fix: until #710 (`2039289a`), its `git()` helper ran `execSync` with no `cwd`, so `rev-parse --abbrev-ref HEAD` and the worktree probes answered for the hook process's own working directory — the session's checkout — never for the edited file's. The ordinary shape here is a session standing in the main checkout while every edit lands in a task worktree beside it, so an isolated edit drew "you are on 'main'" on the first edit of every run, and the reverse — an edit to the shared checkout from a session standing in a worktree — drew nothing. The fix takes the directory as a parameter (`git(dir, args)`, `execFileSync`) and resolves it per edited path: the file's nearest existing ancestor, since a `Write` may name directories that do not exist yet, the same rule `test-lock-guard.js` already used. One call site computes it and every probe (`offPipeline`) reads through that parameter, so a caller added later inherits the fix rather than repeating it. `push-target-guard.js` needed no matching change — its subject is a `Bash` command, whose location is the payload's own `cwd` already. One case the old code decided by the session's checkout is now decided by the edited file's: a file outside any git repository draws no advisory, whatever checkout the session stands in. `tests/unit/test_workflow_guard_hook.py` exercises both directions, a new directory in each checkout, a relative `apply_patch` path resolved against the payload's `cwd`, and the outside-any-repository case.
 
 `push-target-guard.js` and `plugin-version.js` resolve `branches:` through
 `scripts/harness-config.js`, and `test-lock-guard.js` resolves `paths.tests` and,
@@ -1257,6 +1261,8 @@ A refuted lever earns its own fold field rather than joining the baseline one. T
 No version raise: no command, skill, argument or refusal changed, so the change stays at the cycle's already-raised `12.3.0` floor.
 
 Why `process` is a scope rather than a lens inside `code` is recorded once, in `specs/architecture-principles.md` → *Assessment layering*: **a scope is admitted by its report contract, not by its subject.** `code` is a finding engine, `architecture` a holistic judgement, `process` a subtractive slate — three contracts, three scopes. A fourth needs a fourth contract; a subject that fits an existing one is a lens inside it, and the single genuine exception, a codebase too large for one run, is about size and is handled per-repo in `skills/assess/SKILL.md`. The workflow defers to that spec instead of re-arguing the split.
+
+**#713 adds a materiality floor to the finding bar, with a ledger route for what fails it.** `skills/assess/references/finding-bar.md`'s posture rules (`Specific or silent`, `Evidence leads`, `No hypotheticals`) gain a fourth, *Material or ledger*: a finding must name the user outcome or consumer behaviour its contradiction breaks, or it is an improvement rather than a finding. The rule cites `review-discipline` → *Bugs are filed; improvements are proposed* as its home rather than restating that section's reasoning, matching the split `tracker` → *`ledger`* already states for the append operation. The four-part finding format's **Why** (`finding-bar.md` and `templates/assessment.md`) now also names the outcome that breaks, so a finding meeting the format already meets the floor. `templates/assessment.md` gains a *Below the floor* section between *Findings* and *Systemic insights*: one line each — what, where, the fix — dropped when empty, and its own text and the template's closing paragraph both state that an entry there is appended to the improvement ledger rather than filed, the same door an insight already uses. `skills/assess/SKILL.md` step 2 gains one sentence routing each *Below the floor* entry to the ledger the same way. Out of scope by the ticket's own line: what `/assess` files for a finding that clears the bar is unchanged, as is the three-insight cap and the `process` scope's exemption from it. No version raise: the change adds a routing rule read by the steward and the command, not a renamed command, argument, or refusal, so it stays at the cycle's already-raised `21.0.0` floor.
 
 ### The native Codex package and compatibility surface
 
@@ -2344,6 +2350,58 @@ included.
   two backends therefore disagree about one state that the shipped rule calls
   "the cord's own uncertainty".
 
+
+### #714: `dev` and `reviewer` move to Opus, and `reviewer-feature` retires, as built
+
+`agents/dev.md` and `agents/reviewer.md` move from `model: sonnet` to `model:
+opus`, keeping the `opus` alias rather than a pinned point release so the
+frontmatter follows whatever Opus resolves to at dispatch time; `effort: high`
+and the other four agents' lines are untouched — `architect` and `steward`
+stay `opus`, `harness-audit` stays `sonnet`. `agents/reviewer-feature.md` and
+its Codex mirror `.codex/agents/reviewer-feature.toml` are deleted outright:
+with the reviewer itself on Opus, the file's only distinguishing content — two
+frontmatter lines — has nothing left to buy over `agents/reviewer.md`, which it
+deferred to in full. `skills/build/SKILL.md` step 3 and `skills/review/SKILL.md`
+step 3 now dispatch `reviewer` in both the change and feature lanes; the
+feature lane still buys its design stage and as-built record, not a second
+reviewer definition. `.claude/rules/agents.md:34` drops the retired name from
+its own example, `CLAUDE.md:22` moves "six roles" to "five roles", and
+`docs/index.html`'s hero count and agent-list entry drop to five, all held by
+`tests/unit/test_codex_agent_adapters.py` and
+`tests/unit/test_landing_page_inventory.py`, which the diff turned red before
+the deletion and green after. `specs/harness-assumptions.md` restates ADR
+0005's finding in full — fail rates at parity (18.4% vs 17.3%) but
+first-attempt pass down (76% → 64%) and cycles up (1.38 → 1.52) on Sonnet, each
+extra cycle costing a builder rework plus a fresh review — and drops the
+now-nonexistent `agents/reviewer-feature` row; ADR 0005 itself gains a dated
+amendment recording the reversal and why.
+
+**The version class is minor, at the floor `/build` step 1 raised (`20.0.0` →
+`20.1.0`).** The compatibility grammar's contract is a command's name, its
+arguments, and its refusal reasons (`specs/architecture-principles.md` → *The
+installed surface is a versioned interface*); an agent role file is none of
+those, and the two commands that dispatch it, `/build` and `/review`, keep
+their own name, arguments and refusal reasons unchanged, both moving to
+`reviewer` in this same diff. Nothing exceeds the floor.
+
+**One deferred twin resolves by deletion, not edit.** The #597 note above
+(*One twin was deferred...*) waited on "the next change that opens those two
+files" to fix their stale lane-trigger wording; this change deletes both
+files instead, which discharges the deferral without ever performing the
+rewrite it named.
+
+**Evidence.** AC-1 (the model lines) and AC-2 (the deletion plus a green gate)
+by direct review of the diff and `bash scripts/verify.sh`, 626 passed at tree
+`89d6fe44b1e3d60353286e224ebf30b5576bf11a`, including
+`test_codex_agent_adapters.py`'s correspondence check and
+`test_landing_page_inventory.py`'s inventory count. AC-3 by `grep -rn
+reviewer-feature skills/ agents/ .codex/ .claude/ CLAUDE.md AGENTS.md docs/
+templates/`, empty. AC-4 by direct review of
+`specs/harness-assumptions.md`'s `agents/reviewer` row against ADR 0005's
+retirement note. Law 2 does not attach: every criterion here is about what a
+document says or a `model:` value the host resolves, not a quantity code
+computes, so the evidence is review plus the existing producer checks rather
+than a new measuring test.
 
 ## Data model
 
@@ -4710,6 +4768,405 @@ passed, 85.47% coverage against the 85% floor, design-token drift guard OK,
 above — `skills/work-discovery/SKILL.md` (#700) and
 `skills/hydrate/SKILL.md` (#676) — plus the four version homes and this
 record.
+
+### #711: the spine's *Filing* rule widens from twin to twin-or-co-change
+
+`complex` — a spine contract change, `specs/proposals/ticket-granularity.md`
+item 1 (the co-change half; item 1's run-cost figure was already carved into
+#708 before this ticket was filed, per that proposal's own *Still unfiled*
+record).
+
+**The bullet.** `AGENTS.md` and `templates/spine.md`'s *Filing* bullet, inside
+the byte-identical `spine:generated` block, now obliges a search for a twin
+**or a co-change** before filing, and states the co-change test as a
+question rather than a predicate: would one builder, in one worktree, do all
+of this in one sitting? A clause added alongside it — never merge two items
+of one breakdown this way, since their proposal already cut them — is what
+keeps the widened search from swallowing a breakdown's own separable-vs-
+sequential cut (D2 in the proposal), the exact hazard D2's body names.
+
+**Twin sweep.** `skills/drain/SKILL.md`'s *Search the queue before you fold*
+drops its inline restatement of the old same-surface-only wording, pointing
+at the spine rule instead of half-copying it. `skills/capture/SKILL.md`'s
+filing step renames "the twin search" to "the queue search," since it now
+names both halves. `specs/decisions/0015-harness-v4-thin-verification-layer.md`
+→ *Bundle before you file* is superseded in place with a dated note: its
+recorded bound, "same surface, same kind of change," is what the widened
+rule contradicts, and a decision record left stating a retired bound is the
+stale twin `certifying.md` forbids. Left alone, each still true:
+`skills/authoring/SKILL.md` (a twin is still refused), `skills/drain/evals/evals.json`
+(the twin half of the search still happens), and the research note and the
+`operation-nuke` proposal that quote the old sentence as dated, historical
+citations rather than live restatements of the rule.
+
+**Evidence.** AC-1 by direct review against
+`specs/proposals/ticket-granularity.md` → *Decisions taken* D2 and the item 1
+row of its breakdown, confirmed above. AC-2 by the existing
+`tests/unit/test_spine_template_parity.py`, which reads the index and passes
+over the byte-identical block in both files; no new test, per law 2 (the
+criteria are about what the documents say). No test was added or edited.
+
+**The version class is major, raised at this review: `20.1.0` → `21.0.0`.**
+The same shape #698's AC-2a was raised for: filing a co-change as its own,
+independent ticket — the only thing the old bullet's same-surface-only search
+refused was a twin — was compliant with the shipped spine before this
+ticket, and is refused after it, because the filer is now obliged to search
+for and extend a co-change rather than create another ticket for it. The
+shape of what the spine obliges a filer to do reverses, exactly the test
+`certifying.md` names for a changed refusal reason, and it reaches every
+consuming repo's next filing decision, not a hypothetical one. `/build`
+step 1 reported `already-ahead` at `20.1.0` against release `20.0.0`, so
+this cycle's minor floor was already met before this ticket; this raise is
+the review's, by hand, across the four version homes this repo carries —
+both plugin manifests, `AGENTS.md`, and `templates/spine.md` — inside the
+candidate, before the certifying gate.
+
+**Verification.** `bash scripts/verify.sh` was run and read by this reviewer
+over the full candidate — the builder's own commit `628c3e0` plus this
+review's version raise and as-built record committed on top: ruff clean,
+mypy clean over three source files, 626 passed, 85.47% coverage against the
+85% floor, design-token drift guard OK, `All checks passed`, exit 0. This
+branch's own change is the five files the builder touched — `AGENTS.md`,
+`templates/spine.md`, `skills/drain/SKILL.md`, `skills/capture/SKILL.md`, and
+`specs/decisions/0015-harness-v4-thin-verification-layer.md` — plus the four
+version homes and this record.
+
+### #712: `create` consolidates a multi-ticket filing, and a merge lists what it absorbed
+
+`complex`, since it changes `tracker`'s `create` contract. It ships
+`specs/proposals/ticket-granularity.md` item 2 and carries that proposal's D2
+and D3.
+
+**`create`.** `skills/tracker/SKILL.md` → *`create`* no longer opens on a
+count: a filing missing any element that applies to it is incomplete. Element
+6, *what it absorbed*, applies wherever one ticket carries more than one
+finding, ledger entry or breakdown step, and that includes a ticket the queue
+search extended instead of filing a new one. Each absorbed item is listed on
+the ticket and written as an acceptance criterion of its own, so Stage 1 marks
+each one met, partial or missing, and a merge that delivers part of its set
+fails review. A new subsection, *More than one ticket in one run — consolidate,
+then file*, obliges a run producing several tickets to hold the set, merge
+what the spine's co-change test joins, run the queue search once per
+surviving ticket, and file the result as one batch in dependency order. Over
+a breakdown the pass makes no co-change judgment and reads each item's
+declaration instead, which is how it honours the spine's *Filing* clause
+against merging two items of one breakdown. Placement and the limit are
+unchanged. The subsection names no caller.
+
+**The declaration (D2).** `skills/authoring/SKILL.md` → *Proposal spec* makes
+each breakdown item declare itself **separable** (a checkable outcome of its
+own, whether or not later items depend on it) or a **sequential step** (a
+step of one change whose interim state nothing pulls but the next step). A
+run of sequential steps files as one ticket. An item the four-dimension test
+fires is separable by construction, so a held foundation never merges into
+the item built on it. `templates/proposal.md` → *Breakdown* carries the
+declaration in its placeholder items and points to `authoring` for the
+definitions.
+
+**The definition departs from D2's wording, and the departure is recorded on
+the ticket.** The proposal's D2 defines separable as "another item could
+proceed without it". Read literally, that makes a depended-on foundation
+non-separable and would merge a held item 1 into item 2, which is the hazard
+D2's own body says the rule avoids. The design stage amended the ticket's
+Approach (3) on 2026-09-23, before implementation, and shipped the
+outcome-based definition above. The proposal file still carries the original
+wording as its dated decision text. Where the two differ, `authoring` is the
+live rule.
+
+**Callers.** `/assess` step 2 files the pass's findings as one set through
+`create`, and "Triage happens in the tracker, not at report time" is retired.
+`git grep` finds that sentence only under `specs/proposals/`, where it is
+quoted as dated grounding. `/propose` step 4 files the breakdown as one batch
+through `create`. `/drain` pile two groups survivors the way `create`
+consolidates a set, replacing its same-file rule. Its *Then ask what produced
+them* premise now keys on the sitting a fix takes rather than the file it
+lands in, and its fold check reads a bundle's title against the
+absorbed-findings list. None of the three restates the pass. Co-changes kept
+current: `templates/assessment.md`'s closing line, `skills/drain/evals/evals.json`
+expectation 1 (grouping by the co-change test, replacing grouping by suggested
+home), and `skills/tracker/references/linear.md`'s umbrella paragraph
+("every ticket as its sub-issue"). Two earlier entries in this record are
+now superseded on those points. #704's "every item as its sub-issue" now
+reads per ticket, and #677's fold check compares the title against the
+absorbed-findings list instead of the item count.
+
+**Evidence.** Every criterion is prose, reviewed directly under ADR 0019.
+AC-2 was also tested by applying it to #698's `**Absorbs:**` list, re-read
+through the REST API at this review. That list names seven ledger entries
+across two repos, the AC-5 ledger entry and a proposal half, and several of
+them (`assess-step4-retention-gap`, `assessment-fold-line-verifiability`)
+have no acceptance criterion of their own. Element 6 therefore reads #698 as
+an incomplete filing, which is the under-delivery it exists to surface. AC-3's
+test case, CAL-1735's six slices of one migration, is carried forward from
+the proposal's *Problem* because `sluengen/calibrate` could not be read from
+this session. Under the shipped definition, migration slices are the named
+example of sequential steps and file as one ticket. No test was added or
+edited. The one eval expectation that changed follows `/drain`'s changed
+grouping rule, as the ticket's *Design* specified.
+
+**The version class is major, and no raise is owed.** A merged filing that
+lacks the absorbed-findings list was complete before this ticket and is
+incomplete after it. That is a changed refusal reason in the contract every
+filing surface reaches, so the change exceeds the minor floor. This cycle's
+version already carries a major: `21.0.0` in all four homes against release
+`20.0.0` (`origin/main` at `303528b`), raised by #711's review. The semver
+moves once per release cycle, so the class holds at `21.0.0`.
+
+**Verification.** This reviewer ran `bash scripts/verify.sh` and read its
+output over the builder's commit `17e84c8` plus this record, uncommitted in
+the candidate. Results are in the review report for #712.
+
+### #708: the run-cost figure joins the spine's *Lanes* bullet, and *Actionability* gains a size/absorb question
+
+`simple` — #700's AC-4, held until `specs/proposals/ticket-granularity.md`
+landed (`b48c18e`); item 1's run-cost half plus item 4, both from the same
+proposal.
+
+**AC-1.** `AGENTS.md`/`templates/spine.md`'s *Lanes* bullet (`:48`, inside
+the byte-identical `spine:generated` block) gains one sentence: "A build run
+costs three gate runs — the base gate, the reviewer's own, and the landing
+gate — fixed per ticket and independent of diff size, so a ticket's upper
+bound is context rather than time." Sourced from the proposal's *Decisions
+taken* D1 and its two stated consequences (the gate half fixed per ticket,
+context as the upper bound), carrying D1's count but not its "30 to 60
+minutes" wall-clock figure — D1's own next paragraph says the count is what
+should be recorded, since a wall-clock figure is false in the next repo and
+`templates/spine.md` ships to every one of them.
+
+**AC-2.** `skills/work-discovery/SKILL.md` → *Actionability* gains a third
+question, after the container and premise checks #700 shipped: is the
+ticket smaller than the run that would carry it, with an adjacent unstarted
+ticket on the same surface it should absorb — citing the spine's figure
+(`AGENTS.md` → *The contract* → *Lanes*) rather than repeating it, and
+resolving by the same extend-and-cancel move the spine's *Filing* rule
+already makes for a co-change found before either ticket is built (#711).
+
+**Evidence.** AC-1 by direct review against D1 and against the
+byte-identical-block invariant `tests/unit/test_spine_template_parity.py`
+already holds (unchanged by this ticket, still reads the index, still
+green). AC-2 by direct review plus representative use against CAL-1735's
+shape, the proposal's own motivating case: a six-slice breakdown left
+CAL-1869 and CAL-1736 as two full build runs sharing one `npm run
+typecheck`. Each is the adjacent-unstarted-ticket-on-the-same-surface the
+new question asks after; applying it at pull returns *absorb one into the
+other* rather than *run both*, the outcome the proposal's own Problem
+section says did not happen. No test was added or edited, per law 2 — both
+criteria are about what two documents say.
+
+**No overlap with #711.** #711 (`628c3e0`) touched only the *Filing* bullet
+(`:54`); this ticket touches only the *Lanes* bullet (`:48`) and
+`work-discovery`, confirmed by re-reading #711's diff at this review.
+
+**The version class is minor, and no raise is owed.** Neither half changes
+a call's refusal reason: the *Lanes* sentence is descriptive prose behind no
+predicate, and the *Actionability* question is a new step in a
+routine an agent performs, not a hook or a contract any caller invokes —
+nothing that used to succeed now fails, or the reverse. `/build` step 1
+reported `already-ahead` at `21.0.0`, so this cycle's minor floor was
+already met before this ticket touched a byte, and this diff does not move
+it further.
+
+**Verification.** `bash scripts/verify.sh` was run and read by this
+reviewer over the full candidate — the builder's own commit `952a9d1` plus
+this record, committed on top: ruff clean, mypy clean over three source
+files, 626 passed, 85.47% coverage against the 85% floor, design-token
+drift guard OK, `All checks passed`, exit 0. This branch's own change is
+the three files the builder touched — `AGENTS.md`, `templates/spine.md`,
+`skills/work-discovery/SKILL.md` — plus this record.
+
+### #715: the consolidation ratio joins the `process` baseline as its fourth row
+
+`simple` — the one signal `specs/proposals/ticket-granularity.md` named as the
+compensating control for the co-change test (#711) and that none of its six
+spawned tickets carried. Built as `6ce3f31` on branch `work-678-715`, beside
+#678.
+
+**AC-1, with its home corrected on the ticket before the build.** The filing
+put the command in `skills/assess/references/process-economy.md`; the change
+spec (ticket comment, grounded at `74e070f8`) moved it to
+`skills/assess/SKILL.md` → step 1b, because that is where the other three
+rows' commands live and `process-economy.md` points there for them. So the row
+is declared in three places, each matching its neighbours' form:
+`templates/assessment.md`'s Baseline table gains *Tickets filed per finding
+emitted* as its fourth row; `process-economy.md` → *The baseline* gains item 4,
+what the ratio measures and how to read it; step 1b's derivation table gains
+the command. The command lists every `/assess` report added since the commit
+that added the previous `process` report
+(`git log <that commit>..HEAD --diff-filter=A --name-only --format=%H -- assessments/`)
+and reads each report's *Filed* line with `git show <commit>:<path>`, from
+history because retention may already have folded the file away; the `/drain`
+half reads the ledger dispositions dated after the previous report through
+`tracker` → *`ledger`*. Every sentence that counted the standing measurements
+as three now says four: step 1b's opening and its fold sentence, *The
+baseline*'s opening and its retention paragraph, and the template's *Baseline*
+bullet.
+
+**AC-2.** The fold field in `templates/assessment.md` → *Retention* and in
+`assessments/LOG.md`'s header carries a fourth value, `<tickets per finding>`,
+and both say a three-value line folded before the row existed is not
+rewritten. No fold line in `LOG.md` was edited.
+
+**AC-3.** The two filing surfaces record the two numbers and neither computes
+the ratio. `/assess` step 2 writes them on a new *Filed* line the template
+places under the report's header, after filing; `/drain` pile two heads its
+ledger disposition comment with *entries faced* and *tickets its folds filed*,
+because that comment — not the session output — is what a later `process` pass
+can read, and its *Output* leads with the same counts. Both say a finding or
+entry the queue search extended into an existing ticket counts in the
+denominator and files nothing. **`/propose` step 4 is excluded, by decision on
+the ticket:** `tracker` → *More than one ticket in one run* says a breakdown's
+filing makes no co-change judgment of its own, so its items-to-tickets figure
+measures the proposal's cut, not consolidation. The ticket's own AC-3 figure is
+the counter-example, and `process-economy.md` item 4 names it as one: six
+tickets from four breakdown items reads above 1.0 while measuring nothing about
+consolidation.
+
+**AC-4.** Step 1b's *Previous column* paragraph now covers a row the previous
+report did not carry: the first pass to record the ratio writes `first recorded
+baseline` in Previous and leaves Δ empty, beside the existing *One observation
+is not a distribution*.
+
+**Evidence.** Direct review of all four criteria, plus representative use for
+AC-3 and AC-1's command: run in Nano-ERP from the commit that added its
+`2026-09-13-process.md` (`1711ccf`), the command returns exactly its two later
+reports, `2026-09-21-code.md` under `58ffecb` and `2026-09-23-code.md` under
+`09cc8ed`, each readable by `git show`. Neither carries a *Filed* line, since
+both predate this change. No test was added or edited, per law 2: every
+criterion is about what a document says.
+
+**One twin left as it was, by deferral.** `skills/assess/evals/evals.json`
+eval 1 expects "all three standing measurements: gate duration, module count,
+and the guard-to-deliverable ratio". It was already false before this branch,
+naming two measures the baseline no longer carries, so this diff did not make
+it false; recalibrating an eval's expectations is its own change.
+
+**The version class is minor, and no raise is owed.** A report gains a line, a
+disposition gains a heading, and a fold line gains a value the template tells a
+reader how to take when it is missing. No call that used to complete now
+refuses, or the reverse, and nothing in the tree parses the fold field.
+`/build` step 1 reported `already-ahead` at `21.0.0` (`origin/main` at
+`20.0.0`), so this cycle's minor floor was already met.
+
+**Verification.** `bash scripts/verify.sh` was run and read by this reviewer
+over the full candidate: `6ce3f31` and `642e412` on `origin/dev` @ `74e070f8`,
+plus this record and one reviewer repair to `skills/build/SKILL.md`'s #650
+citation, which belongs to #678 and leaves every #715 file untouched. Ruff clean,
+mypy clean over three source files, 632 passed, 85.47% coverage against the 85%
+floor, design-token drift guard OK, `All checks passed`, exit 0.
+
+### #678: a probe round that returns findings owes another round
+
+`simple` — filed from the improvement ledger at the 2026-09-17 drain, and built
+as `642e412` on branch `work-678-715`, beside #715, with one reviewer repair,
+`c05d17c`, made at review cycle 1 and certified here by a second reviewer.
+
+**What ships.** `skills/build/SKILL.md` §2 gains one bullet, placed directly after
+*Run the evidence each criterion names*, which is the section's verification
+obligation; `build` has no heading called a verification step, and before this
+change said nothing about probes at all. The bullet obliges a further round
+whenever a probe round returns findings, and names the round's subject: the
+artefact as corrected, because a round over the draft already probed measures
+nothing new (AC-1, AC-2). It names its stopping condition positively, a round
+over the corrected text that returns nothing, rather than a count, which the
+ticket's *Out of scope* refuses.
+
+**The case it cites, as this record's #650 section gives it.** #650's first two
+use-probes were a subject/control pair and returned nine findings between them,
+five the change absorbed and four it did not; the third, run over the shipped
+text once the pair's findings had landed, returned three more, one of them the
+`Per asset` phrase the change's own new `Copy` column had turned into licensing
+the directory test it exists to refuse. The filing's own figure, nine findings
+across three rounds, miscounted that sequence, and so did the first draft of the
+bullet; `c05d17c` restated it from the #650 section above. #645, which the filing
+also cited, carries no round data and is not named.
+
+**It stops short of the shipped opposite half on purpose.**
+`skills/review-discipline/references/craft.md` → *A non-discriminating control is
+a result, and the two results differ* says a null result is often the honest
+verdict and that reading it as instrument failure is what pays for a further
+round. The bullet speaks only to a round with findings, ends the sequence on a
+clean round, and routes a pair whose arms behave alike to that entry by name, so
+the two do not disagree. The filing's Approach sentence that a clean first round
+is not by itself evidence of completeness was left out for the same reason: no
+criterion asks for it, and it would argue with that entry.
+
+**Evidence.** Direct review of both criteria against the bullet and against the
+two sections it leans on, per law 2: both criteria are about what a document
+says. No test was added or edited. No twin: the bullet's neighbouring text
+occurs in `skills/build/SKILL.md` alone.
+
+**The version class is minor, and no raise is owed.** The bullet obliges one
+more act of the builder inside a step it already performs; `/build` keeps its
+name and its arguments, and no call that used to complete now refuses, or the
+reverse. `/build` step 1 reported `already-ahead` at `21.0.0` (`origin/main` at
+`20.0.0`), so this cycle's minor floor was already met.
+
+**Verification.** `bash scripts/verify.sh` was run and read by the cycle-2
+reviewer over the full candidate — `origin/dev` @ `74e070f8` plus `642e412`,
+`6ce3f31`, `c05d17c`, `f2fde95` and this record, uncommitted in the worktree.
+Ruff clean, mypy clean over three source files, 632 passed, 85.47% coverage
+against the 85% floor, design-token drift guard OK, `All checks passed`, exit 0.
+
+### #702: board item ids join the once-per-run resolve; REST fallback names reads and quota exhaustion
+
+`simple` — filed from the improvement ledger (#450), grounded at `origin/dev`
+`ba04f105`, built as `bad2640e` on branch `work-702`. Prose-only edit to
+`skills/tracker/references/github.md`, five insertions and three deletions.
+
+**What ships.** Two independent mechanics gaps closed in one file. *No id
+here is stable* now names board item ids alongside project, status-field and
+option ids, and changes the rule from resolve-every-time to resolve-once-and-
+reuse for the run, never carried into another run or a file; `transition`
+tells the run to resolve an already-filed ticket's item id once per ticket
+per run and reuse it for every later write in that run, re-listing only where
+an edit comes back naming the missing item. *What is reachable when GraphQL
+is refused* gains a head paragraph naming a second trigger, an exhausted
+GraphQL quota, licensed the same way as a refused transport — the call you
+ran returning the error — and the REST table's introduction now says
+explicitly that it is the read path as well as the write path.
+
+**AC-1.** Confirmed by reading `:104`: *"Resolve each one once per run and
+reuse it for the rest of that run… never carry one into another run or into a
+file."* The forbidding clause that stood against caching within a run is
+gone; the clause against carrying one across runs stands.
+
+**AC-2.** Confirmed by reading `transition` at `:175`: *"Resolve the item id
+for an already-filed issue from the board once per ticket per run, and reuse
+it for every later write to that ticket in the run… Re-list only when an edit
+returns an error naming the item."*
+
+**AC-3.** Confirmed by reading `:47`: *"A refused transport is not the only
+way here. An exhausted GraphQL quota takes `gh issue` and `gh project` down
+together and leaves REST working. The licence is the same: the call you ran
+returned the error."* And `:49`: *"Issue-level work has a full REST surface,
+for reads as much as writes — a run whose own ticket read fails reaches its
+state through the `open` and `queue` rows."*
+
+**AC-4.** Below.
+
+**No twin.** `references/linear.md` carries no board-item-id concept — a
+Linear issue id is itself the mutable identifier, with no separate
+Projects-v2-style board wrapper — and no REST/GraphQL split to extend, since
+Linear is one GraphQL endpoint for every operation. Read in full; neither gap
+this ticket closes has a Linear-side counterpart to update or defer.
+
+**Evidence.** Prose only; ADR 0017 D5 refuses a guard over what prose means
+(law 2). No test or script reads `github.md` (`grep` over `tests/` and
+`scripts/` returns nothing). No test was added or edited.
+
+**The version class is minor, and no raise is owed.** No command, argument or
+output schema changes, and no external call's refusal reason moves in either
+direction — the change is advice to the agent about when to re-resolve an
+internal identifier and which table a read may fall back to, not a change to
+what any interface accepts, produces or declines. `/build` step 1 reported
+`already-ahead` at `21.0.0` (`origin/main` at `20.0.0`), so this cycle's minor
+floor was already met before this ticket touched a byte.
+
+**Verification.** `bash scripts/verify.sh` was run and read by this reviewer
+over the full candidate — the builder's own commit `bad2640e` plus this
+record, uncommitted in the worktree: ruff clean, mypy clean, 632 passed,
+85.47% coverage against the 85% floor, design-token drift guard OK, `All
+checks passed`, exit 0.
 
 ## Cross-references
 

@@ -35,7 +35,7 @@ A consequential decision is recorded in the spec it governs — a Decision block
 
 ## Proposal spec
 
-For an idea that is not yet confirmed work. Sections, per `templates/proposal.md`: Problem, Options (approaches with trade-offs, not one blessed answer dressed as inevitable), Recommendation, Not doing (the capabilities cut, why each is out, and what would reopen it), Open decisions (what, and by whom), Breakdown (the change specs this would spawn, ordered by dependency and foundations first), Risks. The outcome is explicit — accepted, rejected, or split. It does not sit half-decided.
+For an idea that is not yet confirmed work. Sections, per `templates/proposal.md`: Problem, Options (approaches with trade-offs, not one blessed answer dressed as inevitable), Recommendation, Not doing (the capabilities cut, why each is out, and what would reopen it), Open decisions (what, and by whom), Breakdown (the change specs this would spawn, ordered by dependency and foundations first, each declaring whether it is separable or a sequential step), Risks. The outcome is explicit — accepted, rejected, or split. It does not sit half-decided.
 
 *Not doing binds the tickets it spawns.* Nothing named there enters a spawned ticket without amending the proposal first, which is the mirror of the no-silent-descoping rule: a builder may not quietly shrink a criterion, and may not quietly widen one either. Options records the alternatives considered and Not doing records the capabilities cut. Those are different sets, and the second is the one that leaks, because a boundary reconstructed one ticket at a time is a boundary widened.
 
@@ -49,6 +49,8 @@ For an idea that is not yet confirmed work. Sections, per `templates/proposal.md
 | **Comprehension** | The operator cannot steer the work without seeing the shape first, and would otherwise reconstruct the model from a diff to hold an opinion | The shape is evident from the ticket |
 
 Adding a column fires none of them and is ordered by dependency like anything else; restructuring tables and keys fires the first three; a new entity's primary shape usually fires access and comprehension. Three of the four are stage-independent — only migration softens before a product has users, and only partly, because seed data and dev state are still data — so this test fires regularly rather than seldom. The stage line calibrates how much gets built; it does not calibrate whether the shape gets decided.
+
+*Declare each breakdown item separable or sequential.* An item is **separable** when it has a checkable outcome of its own, whether or not later items depend on it; an item the four-dimension test fires is separable by construction, which is what keeps a held foundation out of the item built on it. It is a **sequential step** when it is one step of a change whose interim state nothing pulls but the next step — a slice of a migration, an annotation whose only reader is the edit that follows it. A run of sequential steps files as one ticket and each separable item as its own (`tracker` → *`create`*). Describe as many slices as the work needs: the declaration decides how they file, not how finely the proposal may think. Dependency between separable items stays in the tracker's native fields.
 
 ## Change spec
 

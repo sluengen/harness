@@ -4,6 +4,13 @@
 - **Date:** 2026-07-22 (#177); retired 2026-08-05 (#321)
 - **Source:** #177
 
+> **Amended 2026-09-23 (#714).** The Sonnet review default below is reversed:
+> `dev` and `reviewer` run on `opus`, and `reviewer-feature` is retired because it
+> differed from `reviewer` only in its model line. The table's fail rates stayed at
+> parity, but its first-attempt pass and cycle figures moved against Sonnet, and
+> Opus 5.5 narrowed the per-token gap. `specs/harness-assumptions.md` carries the
+> reversal test.
+
 > **Retired 2026-08-05 (#321).** Previously: the claude review engine's model was
 > resolved per ticket from a `review:<tier>` label, and a sibling `build:<tier>`
 > label recorded judged build difficulty. Changed to: one configured value,

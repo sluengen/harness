@@ -26,7 +26,7 @@ Keep the taxonomy flat and small. The hold labels and what they mean are the spi
 
 ## A breakdown files under one umbrella issue
 
-An accepted proposal spawns several tickets that share one decision, and on a flat board nothing says so. Linear models the grouping natively — `parentId` on `issueCreate` ([Create an issue](#accessing-linear-graphql-via-curl)) — so a breakdown files **one umbrella issue and every item as its sub-issue**. The board then shows what goes together without anyone opening the proposal spec, and the umbrella is a standing place to audit the initiative against what the proposal decided, which a set of closed siblings does not give anybody.
+An accepted proposal spawns several tickets that share one decision, and on a flat board nothing says so. Linear models the grouping natively — `parentId` on `issueCreate` ([Create an issue](#accessing-linear-graphql-via-curl)) — so a breakdown files **one umbrella issue and every ticket as its sub-issue**. The board then shows what goes together without anyone opening the proposal spec, and the umbrella is a standing place to audit the initiative against what the proposal decided, which a set of closed siblings does not give anybody.
 
 The umbrella is a container. Nothing builds it, and it carries no change spec: reaching for `templates/change.md` here writes acceptance criteria for work that lives in the children.
 

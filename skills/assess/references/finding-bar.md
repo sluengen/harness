@@ -11,6 +11,7 @@ Your report becomes work items. Every finding is a unit of someone's future time
 - **Specific or silent.** Every finding names a file, line, or concrete pattern. "Could be improved" is not a finding.
 - **Evidence leads.** State what you found before proposing a fix.
 - **No hypotheticals.** If it might not be a problem under normal conditions, do not file it.
+- **Material or ledger.** Every finding names the user outcome or consumer behaviour its contradiction breaks. One that cannot is an improvement: write it under the report's *Below the floor*, apart from the findings, and `/assess` appends it to the improvement ledger instead of filing it. The floor is `review-discipline` → *Bugs are filed; improvements are proposed*, applied here where a finding becomes an issue; its reasoning lives there. The consequence is the point of the rule: a stale comment, a wording mismatch, or a defect no user reaches becomes no ticket, however specific its evidence.
 
 If you write "could benefit from", "might be worth considering", or "it would be nice to" — delete the finding.
 
@@ -18,7 +19,7 @@ If you write "could benefit from", "might be worth considering", or "it would be
 
 1. **What** — the specific issue.
 2. **Where** — file:line (code) or section (docs).
-3. **Why** — the rule, principle, or standard it violates.
+3. **Why** — the rule, principle, or standard it violates, and the user outcome or consumer behaviour that breaks.
 4. **How** — a concrete fix, not "this is wrong".
 
 Missing any of these means it is not a finding yet.
@@ -59,4 +60,4 @@ When unjustified complexity *is* a finding, the `code` scope names it with the `
 
 ## Output
 
-Write a dated report in the `templates/assessment.md` format. The `assess` command files the **findings** and nothing else — an insight is an improvement, so it is appended to the improvement ledger instead of being filed (above). For each finding use an ID prefixed by the steward's domain (`CODE-`, `ARCH-`, `PROC-`); insights append `-INSIGHT`. Zero findings is a legitimate, stated outcome — do not invent findings to fill the report.
+Write a dated report in the `templates/assessment.md` format. The `assess` command files the **findings** and nothing else — an insight and a below-floor entry are improvements, so each is appended to the improvement ledger instead of being filed (above). For each finding use an ID prefixed by the steward's domain (`CODE-`, `ARCH-`, `PROC-`); insights append `-INSIGHT`. Zero findings is a legitimate, stated outcome — do not invent findings to fill the report.

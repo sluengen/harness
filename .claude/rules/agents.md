@@ -31,6 +31,6 @@ into a *consuming* repo's `.codex/agents/`, where the plugin root is somewhere
 else entirely and there is no `skills/` tree at all. Write the root by name, not
 by position.
 
-**A role that names no such path gets no sentence.** `reviewer-feature`
-references nothing under `skills/`, and adding the line there would be a second
-copy guarding nothing (P0; the duplicated-operand refusal #640 ruled on).
+**A role that names no such path gets no sentence.** Adding the line to a body
+that references nothing under `skills/` would be a second copy guarding nothing
+(P0; the duplicated-operand refusal #640 ruled on).
