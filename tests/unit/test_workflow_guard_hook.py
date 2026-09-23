@@ -346,3 +346,163 @@ def test_the_debounce_still_holds_within_one_checkout(tmp_path: Path) -> None:
         "debounced once per session by design — a nudge that repeats on every "
         "edit is one that gets uninstalled."
     )
+
+
+# --- #710: the guard answers for the edited file, not the session's checkout --
+
+
+def _linked_worktree(repo: Path, branch: str) -> Path:
+    """A ``git worktree add`` of ``repo`` on a new ``branch``, beside it."""
+    tree = repo.parent / f"{repo.name}-{branch.replace('/', '-')}"
+    _git(repo, "worktree", "add", "-q", "-b", branch, str(tree))
+    return tree
+
+
+def _run_from(session: Path, payload: dict[str, object], *, tmpdir: Path) -> str:
+    """Run the guard with the session standing in ``session``.
+
+    The session's directory is both the process CWD and the payload's ``cwd``,
+    which is how both hosts invoke a hook. What varies between cases is where the
+    edited file is, and that is the whole subject of #710: before it, the guard
+    asked git about ``session`` and never about the file.
+    """
+    tmpdir.mkdir(exist_ok=True)
+    proc = subprocess.run(
+        [_node(), str(_HOOK)],
+        input=json.dumps({"cwd": str(session), **payload}),
+        text=True,
+        capture_output=True,
+        cwd=str(session),
+        env={**os.environ, "TMPDIR": str(tmpdir)},
+        timeout=30,
+    )
+    assert proc.returncode == 0, f"hook errored: {proc.stderr}"
+    assert not proc.stderr.strip(), f"hook wrote to stderr: {proc.stderr!r}"
+    return json.loads(proc.stdout).get("hookSpecificOutput", {}).get("additionalContext", "")
+
+
+def _write(path: Path) -> dict[str, object]:
+    return {"tool_name": "Write", "tool_input": {"file_path": str(path)}}
+
+
+def test_an_isolated_worktree_edit_is_silent_from_a_shared_checkout(tmp_path: Path) -> None:
+    """AC-1: the session stands on ``main``; the edit lands in a task worktree.
+
+    This is the ordinary shape of a build here — the session opens in the main
+    checkout and every edit goes to ``../<repo>-work-<n>`` — and before #710 it
+    drew "you are on 'main'" on the first edit of every run.
+    """
+    repo = _repo_on(tmp_path, "main")
+    tree = _linked_worktree(repo, "work/710")
+
+    ctx = _run_from(repo, _write(tree / "app.py"), tmpdir=tmp_path / "markers")
+
+    assert ctx == "", (
+        "an edit inside a task worktree on a feature branch drew an advisory "
+        f"because the session stands on 'main': {ctx!r}. The guard must answer "
+        "for the checkout holding the edited file."
+    )
+
+
+def test_a_new_directory_inside_a_worktree_is_still_that_worktree(tmp_path: Path) -> None:
+    """AC-1, for a ``Write`` creating a directory: its parent does not exist yet.
+
+    git cannot run in a directory that is not there, so the guard resolves from
+    the nearest ancestor that is — the same rule ``test-lock-guard.js`` uses.
+    """
+    repo = _repo_on(tmp_path, "main")
+    tree = _linked_worktree(repo, "work/710")
+
+    ctx = _run_from(repo, _write(tree / "src" / "new" / "app.py"), tmpdir=tmp_path / "markers")
+
+    assert ctx == "", f"a new file under a new directory in a worktree drew {ctx!r}"
+
+
+def test_a_new_directory_in_a_shared_checkout_still_warns(tmp_path: Path) -> None:
+    """The control that makes the case above discriminate.
+
+    A probe run in a directory that does not exist fails, and a failed probe
+    reads as "no repository", which is silent — so the worktree case passes
+    whether or not the guard climbs to an existing ancestor. Here the climb is
+    the only route to the warning: the new directory is in the main checkout.
+    """
+    repo = _repo_on(tmp_path, "main")
+    tree = _linked_worktree(repo, "work/710")
+
+    ctx = _run_from(tree, _write(repo / "src" / "new" / "app.py"), tmpdir=tmp_path / "markers")
+
+    assert "WORKFLOW-GUARD" in ctx and "'main'" in ctx, (
+        f"a new file under a new directory in the main checkout drew {ctx!r}; "
+        "the guard must resolve from the nearest directory that exists"
+    )
+
+
+def test_a_shared_checkout_edit_warns_from_inside_a_worktree(tmp_path: Path) -> None:
+    """AC-2: the reverse — the session stands in a worktree, the edit does not.
+
+    Before #710 this was silent, because the session's own checkout was a
+    worktree on a feature branch. It is the edit the guard exists to catch.
+    """
+    repo = _repo_on(tmp_path, "main")
+    tree = _linked_worktree(repo, "work/710")
+
+    ctx = _run_from(tree, _write(repo / "app.py"), tmpdir=tmp_path / "markers")
+
+    assert "WORKFLOW-GUARD" in ctx, (
+        "an edit to the main checkout on 'main' drew no advisory because the "
+        f"session stands in a task worktree; got {ctx!r}"
+    )
+    assert "'main'" in ctx, f"the advisory must name the edited file's branch; got {ctx!r}"
+
+
+def test_a_relative_patch_path_resolves_against_the_payload_cwd(tmp_path: Path) -> None:
+    """AC-3, through the second caller: an ``apply_patch`` names paths relative.
+
+    The payload's ``cwd`` is where those paths are relative to, and the helper's
+    directory is derived from it the same way as for an absolute ``Write`` path.
+    Here the process stands in a worktree and the payload names the main
+    checkout, so only a guard reading the payload's ``cwd`` warns.
+    """
+    repo = _repo_on(tmp_path, "main")
+    tree = _linked_worktree(repo, "work/710")
+    tmpdir = tmp_path / "markers"
+    tmpdir.mkdir()
+    payload = {
+        "cwd": str(repo),
+        "turn_id": "turn-710",
+        "tool_name": "apply_patch",
+        "tool_input": {
+            "command": "*** Begin Patch\n*** Add File: app.py\n+print('hi')\n*** End Patch"
+        },
+    }
+    proc = subprocess.run(
+        [_node(), str(_HOOK)],
+        input=json.dumps(payload),
+        text=True,
+        capture_output=True,
+        cwd=str(tree),
+        env={**os.environ, "TMPDIR": str(tmpdir)},
+        timeout=30,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    ctx = json.loads(proc.stdout or "{}").get("hookSpecificOutput", {}).get("additionalContext", "")
+    assert "WORKFLOW-GUARD" in ctx and "'main'" in ctx, (
+        f"a relative patch path in the main checkout on 'main' drew {ctx!r}"
+    )
+
+
+def test_a_file_outside_any_repository_draws_no_advisory(tmp_path: Path) -> None:
+    """AC-4: the guard's subject is repository source.
+
+    Before #710 this case was decided by the session's checkout, so from a
+    worktree it was silent. Resolving from the file must not turn every
+    non-markdown edit outside a repository into "you are not in a task worktree".
+    """
+    repo = _repo_on(tmp_path, "main")
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+
+    ctx = _run_from(repo, _write(outside / "settings.json"), tmpdir=tmp_path / "markers")
+
+    assert ctx == "", f"a file in no repository drew an advisory: {ctx!r}"
