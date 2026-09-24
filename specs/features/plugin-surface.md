@@ -5168,6 +5168,97 @@ record, uncommitted in the worktree: ruff clean, mypy clean, 632 passed,
 85.47% coverage against the 85% floor, design-token drift guard OK, `All
 checks passed`, exit 0.
 
+### #717: the record commit holds only the record; the candidate is committed before review; host-refusal hand-backs
+
+`simple`. Consolidated from three improvement-ledger entries (#450) by the
+2026-09-24 drain, grounded at `origin/dev` `89df260e`, built as `4570c208` on
+branch `717-reviewer-commit-boundary`. A prose-only edit to
+`skills/review-discipline/references/certifying.md` and `skills/build/SKILL.md`,
+plus `/build` step 1's version raise.
+
+**Cause, as grounded.** `/build` §3 staged the candidate with `git add -A &&
+git write-tree` and dispatched the reviewer with the candidate still
+uncommitted, so the reviewer's first commit carried the builder's diff inside
+it under a record's label. Case 3's "guard" is the host's own worktree
+isolation (`agents/reviewer.md` declares `isolation: worktree`). No harness
+hook caused it, and #710 changed only `workflow-guard.js`'s cwd resolution,
+so it neither closes nor narrows the case.
+
+**What ships.** `certifying.md` → *Close the candidate before you certify it*
+gains three paragraphs:
+
+- *The record commit holds what you wrote and nothing else*: the record, plus
+  a version raise where the version class calls for one. The reviewer stages
+  by path and reads what is staged before committing. Anything else in the
+  index or working tree belongs to the builder and goes back as a finding,
+  never into the reviewer's commit.
+- *Where the host will not let you write to the candidate*, two hand-backs.
+  When the reviewer's git cannot reach the builder's worktree, it checks out
+  the candidate commit the packet names, commits the record on a branch of
+  its own, runs the gate there, and reports branch and commit beside the
+  `reviewed_tree`. The driving run fast-forwards the ticket branch to that
+  commit and refuses anything but a fast-forward. When the write itself is
+  refused (a classifier calling it self-approval, or no usable git), the
+  reviewer reports the verdict with the record's complete bytes and path
+  inline. The driving run writes those bytes verbatim, commits, and runs the
+  complete gate, and edits nothing: a red there, or a needed record change,
+  goes to a fresh reviewer.
+- Law 4 in both paths: the reviewer authored every byte of the record, and
+  the driving run only moves a ref or copies bytes it did not write.
+
+`/build` §3's dispatch bullet now opens *Commit the candidate onto the
+ticket's branch before the reviewer starts*, then takes `git write-tree` →
+`reviewed_tree`, names that commit in the packet, and lands a handed-back
+record by pointing at `certifying.md`: fast-forward only, or the bytes
+verbatim followed by the complete gate. `agents/reviewer.md` is unchanged,
+because it already routes the reviewer to `certifying.md` before it touches
+the candidate.
+
+**AC-1.** Met. Read under the bold lead *The record commit holds what you
+wrote and nothing else*: "Stage by path… Anything else in the index or the
+working tree… goes back to the builder as a finding rather than into your
+commit."
+
+**AC-2.** Met. The bullet *The write itself is refused* names the classifier
+case, the inline bytes, the verbatim write, commit and complete gate, the
+driving run editing nothing, and a red going to a fresh reviewer.
+
+**AC-3.** Met. The bullet *Your git cannot reach the builder's worktree* gives
+the own-branch commit and the ff-only landing. The no-usable-git case falls to
+the inline bullet, and the closing sentence of the section states how law 4
+holds in both. This record was itself landed by the first path: the host
+refused this reviewer's writes into the builder's worktree, so it was
+committed on top of `4570c208` on a branch of the reviewer's own.
+
+**AC-4.** Met. Read at `/build` §3, the bullet beginning *Commit the candidate
+onto the ticket's branch*.
+
+**Twins.** `.codex/agents/reviewer.toml` mirrors `agents/reviewer.md`, which
+did not change, so it owes nothing. `/review` (`skills/review/SKILL.md` step
+4) dispatches the same reviewer and lands its PASS through a pointer to
+`certifying.md` → *Close the candidate before you certify it*, so the
+hand-back instructions reach its driving run through the section this change
+edited. No eval or template restates the section.
+
+**Evidence.** Prose only. ADR 0017 D5 refuses a guard over what prose means
+(law 2), and every criterion names direct review. No test was added or edited.
+
+**The version class is minor.** `/build` step 1 raised the four homes from
+`21.0.0` to `21.1.0` (`origin/main` and `origin/dev` both at `21.0.0`). No
+command is renamed, no argument or output of `/build` or `/review` changes,
+and no refusal reason moves. The counter-argument: the reviewer's report may
+now carry a branch and commit, or inline record bytes, and a run that stalled
+on a host refusal now completes. Both are hand-backs between two units shipped
+in the same plugin version, not a change to what a consuming repo invokes or
+receives. The stall was the host refusing and the guidance saying nothing; no
+harness refusal existed there to change.
+
+**Verification.** This reviewer ran and read `bash scripts/verify.sh` over
+the full candidate: the builder's commit `4570c208` plus this record,
+committed on top. Ruff clean, mypy clean over three source files, 632 passed,
+85.47% coverage against the 85% floor, design-token drift guard OK, `All
+checks passed`, exit 0.
+
 ## Cross-references
 
 - `specs/harness-assumptions.md` — one row per hook, script, skill and agent: what it assumes the model cannot do, and the test that would retire it. Read at every model or host release.
