@@ -83,6 +83,34 @@ attempts, then FAIL carrying the gate output — never the implementation, which
 would make you the builder. And a deferral is ordering-neutral: it lands in the
 report and on the ticket, not in the tree.
 
+**The record commit holds what you wrote and nothing else**: the record, and a
+version raise where the class above calls for one. Stage by path, and read what
+is staged before you commit. Anything else in the index or the working tree — a
+builder edit, a stray file — is the builder's, and it goes back to the builder
+as a finding rather than into your commit. A record
+commit that carries other bytes puts your name on work you did not review as
+work, and labels it as a record.
+
+**Where the host will not let you write to the candidate**, the record still
+comes from you, and law 4 is kept by who authors the bytes rather than by whose
+hand moves them:
+
+- *Your git cannot reach the builder's worktree* — a host that runs you in an
+  isolated worktree of your own. Check out the candidate commit the packet
+  names, commit the record on top of it on a branch of your own, run the gate
+  there, and report the branch and its commit beside the `reviewed_tree`. The
+  driving run fast-forwards the ticket branch to that commit and refuses
+  anything but a fast-forward, so the tree it lands is the tree you certified.
+- *The write itself is refused* — a host classifier reading your record commit
+  as self-approval, or no usable git at all. Report the verdict with the
+  record's complete bytes and its path inline. The driving run writes those
+  bytes verbatim, commits them, and runs the complete gate over the result. It
+  edits nothing: a red there, or any change the record needs, goes to a fresh
+  reviewer, because a driving run that fixes the record has written it.
+
+In both, you authored every byte of the record and the driving run only moves a
+ref or copies bytes it did not write.
+
 **The verdict covers a tree, not a commit.** Report the `reviewed_tree` —
 git's tree object for the certified candidate, which `git write-tree` prints
 over a staged tree. It is what a resumed run compares against before trusting
