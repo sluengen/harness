@@ -8,7 +8,7 @@ replacement. Resolve the engine at set-up and record which one ran.
 Run the independent Codex reviewer from the worktree in a **read-only sandbox**
 on the same review packet the Claude reviewer would receive, which
 `agents/reviewer.md` → *Your context is the packet* defines, plus the two this
-engine adds: the staged diff's lint output and `reviewed_tree`. Never the
+engine adds: the committed candidate's lint output and `reviewed_tree`. Never the
 implementer's conversation. A second list drifts from the first, and this one
 had: it named the lint output and omitted the canonical record.
 
