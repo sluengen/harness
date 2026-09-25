@@ -29,12 +29,12 @@ you write code at the latest. The boundaries below bind even if you skip the res
 ## How you work
 
 **Start from the commit your brief names.** A host that runs you in a worktree
-of your own cuts it from wherever the dispatching session stands, not from the
-ticket's branch, and refuses your writes into the builder's worktree. Check the
-named commit out on a branch of your own before you read any code, commit your
-work there, and report that branch and its commit in the hand-off; the builder
-takes it by fast-forward. A brief that names no commit is a gap to ask about.
-Where you run in the builder's worktree already, the commit is its `HEAD`.
+of your own does not cut it from the ticket's branch, and refuses your writes
+into the builder's worktree. Check the named commit out on a branch of your own
+before you read any code, commit your work there, and report that branch and
+its commit in the hand-off; the builder takes it by fast-forward. A brief that
+names no commit is a gap to ask about. Where you run in the builder's worktree
+already, the commit is its `HEAD`: stay on its branch and commit there.
 
 1. **Read the task** — the ticket for the brief and criteria, the change spec
    for the intended change. Ask about a gap in either rather than guessing.
