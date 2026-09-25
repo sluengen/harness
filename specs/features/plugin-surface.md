@@ -5259,6 +5259,99 @@ committed on top. Ruff clean, mypy clean over three source files, 632 passed,
 85.47% coverage against the 85% floor, design-token drift guard OK, `All
 checks passed`, exit 0.
 
+### #719: a worktree-isolated `dev` starts from a named commit and hands back by fast-forward
+
+`simple`. Filed from two calibrate ledger entries (#450: CAL-1899, CAL-1896),
+grounded at `origin/dev` `5b5cce60`, built as `a62acbb1` on branch
+`719-dev-worktree-handoff` with a cycle-1 review repair `10dc0299`. A
+prose-only edit to `skills/build/SKILL.md`, `agents/dev.md` and
+`.codex/agents/dev.toml`, plus `/build` step 1's version raise.
+
+**Cause, as grounded.** `agents/dev.md` declares `isolation: worktree`, so
+Claude Code runs a dispatched `dev` in a worktree of its own, and
+`/build` → *2. Build* → *You are the builder* said nothing about where that
+worktree stands. The host does not cut it from the ticket's branch: this
+reviewer's own isolated worktree was cut at `origin/main` while the session's
+checkout stood on `dev`. So the dev held neither the ticket's commits nor its
+tests, and the host refused its writes into the builder's worktree. CAL-1899
+returned DEFER after every write was refused; CAL-1896 spent about twenty
+minutes on a test it could not write. #717 had closed the same gap on the
+reviewer side (`certifying.md` → *Where the host will not let you write to
+the candidate*).
+
+**What ships.** One mechanism, the #717 shape, on both sides of the hand-off.
+
+- `/build` → *You are the builder* gains a paragraph under the bold lead
+  *A dispatched `dev` may not start in this worktree.* The builder commits
+  what the build holds onto the ticket's branch before dispatch, locked tests
+  included, and names that commit in the brief. The dev checks it out on a
+  branch of its own, commits there, and reports branch and commit. The builder
+  takes the result with `git merge --ff-only` and nothing else.
+- The same paragraph states that **the test lock does not reach the dev's
+  worktree**. `hooks/test-lock-guard.js` `runState()` reads `.harness/run.json`
+  from the edited file's worktree top level and returns `null`, lock off, when
+  the file is absent; `.harness/` sits in `.gitignore`'s gate-ignore block and
+  `run-state.md` → *Fields* lets no implementer write it. The dispatched commit
+  stands in for the lock: `git diff --name-only <dispatched> <returned>`
+  naming any test file that commit froze refuses the hand-back and returns the
+  run to `tests`.
+- `agents/dev.md` and `.codex/agents/dev.toml` open *How you work* with a
+  paragraph under the bold lead *Start from the commit your brief names.*:
+  check the named commit out on a branch of your own before reading code,
+  commit there, report branch and commit, and treat a brief naming no commit as
+  a gap to ask about. Where the dev already runs in the builder's worktree (the
+  Codex dev declares no isolation), the commit is that worktree's `HEAD` and the
+  dev stays on its branch. The frontmatter is unchanged.
+
+**AC-1.** Met. Read at `/build` → *You are the builder*, the sentences from
+*Commit what the build holds onto the ticket's branch* through *Take the
+result with `git merge --ff-only` and nothing else*.
+
+**AC-2.** Met. The paragraph *Start from the commit your brief names* reads
+identically in `agents/dev.md` and in `.codex/agents/dev.toml`'s
+`developer_instructions`, and
+`test_codex_agent_adapters.py::test_both_copies_of_a_role_carry_the_same_body`
+passes in the certifying gate. Its wording holds on both hosts because each
+clause is conditioned on where the host runs the dev.
+
+**AC-3, as amended on the ticket.** Met. The amendment (same run, before
+implementation) replaced the dev writing its own `run.json`, which
+`run-state.md` refuses, with the commit boundary the build already uses under
+*When the test tree is the subject, not the measure*. The `/build` paragraph
+carries that boundary and its refusal back to `tests`, and the dev-side
+paragraph says nothing about `run.json`.
+
+**AC-4.** Met. Both cases are one failure, a dev starting outside the
+candidate and unable to write into it. Under the mechanism the dev writes only
+in its own worktree, on a branch cut from the candidate, and the builder moves
+a ref. That closes CAL-1899's refused writes and CAL-1896's unwritable test.
+
+**Twins.** `.codex/agents/dev.toml` is the byte-identical body and moved with
+`agents/dev.md`. `worktree-isolation` → *Parallel sub-agents* already allows a
+lone sub-agent to share the orchestrator's worktree, which the dev paragraph's
+last sentence covers. No template, eval or other skill restates the
+*You are the builder* bullet (`git grep "exactly two conditions"` finds it
+once).
+
+**Evidence.** Prose only. ADR 0017 D5 refuses a guard over what prose means
+(law 2); the adapter body-parity test is the one executable check the change
+moves. No test was added or edited.
+
+**The version class is minor.** `/build` step 1 raised the four homes from
+`21.1.0` to `21.2.0`. No command is renamed, and no argument, output or
+refusal reason of `/build` changes. The counter-argument: a dev that once wrote
+in place now hands back a commit, and a hand-back touching a frozen test is now
+refused by a diff check. The refusal keeps its reason (law 7) and its result
+(return to `tests`) and only moves from the hook to the diff, and the
+fast-forward is a hand-off between two units shipped at one version, as #717's
+was.
+
+**Verification.** This reviewer ran and read `bash scripts/verify.sh` over the
+builder's `10dc0299` plus this record, committed on top on a branch of the
+reviewer's own: ruff clean, mypy clean over three source files, 632 passed,
+85.47% coverage against the 85% floor, design-token drift guard OK, `All
+checks passed`, exit 0.
+
 ## Cross-references
 
 - `specs/harness-assumptions.md` — one row per hook, script, skill and agent: what it assumes the model cannot do, and the test that would retire it. Read at every model or host release.
