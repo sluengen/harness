@@ -3,18 +3,18 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>harness — a spec-driven development process, shipped as native plugins for Claude Code and Codex</title>
-<meta name="description" content="harness: a spec-driven development process for agent-driven repos, shipped as native plugins for Claude Code and Codex. Lifecycle workflows, skill packages, agent roles, and the guards that keep a build honest." />
+<title>harness — ticket to merged, run by agents</title>
+<meta name="description" content="A Claude Code and Codex plugin that runs your repo&#39;s delivery loop with agents: ticket to spec, test-first build, independent review, gated merge — on demand or unattended. Built on Lean principles." />
 <link rel="icon" type="image/png" sizes="32x32" href="favicon.png" />
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <meta property="og:type" content="website" />
 <meta property="og:url" content="https://sluengen.github.io/harness/" />
-<meta property="og:title" content="harness — native plugins for Claude Code and Codex" />
-<meta property="og:description" content="Let the agent do the judgement work; make the repo own the evidence. Lifecycle workflows, portable skills, agent roles, and hooks that refuse." />
+<meta property="og:title" content="harness — ticket to merged, run by agents" />
+<meta property="og:description" content="A Claude Code and Codex plugin that runs your repo&#39;s delivery loop with agents. Built on Lean principles." />
 <meta property="og:image" content="https://sluengen.github.io/harness/og-card.png" />
 <meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="harness — native plugins for Claude Code and Codex" />
-<meta name="twitter:description" content="Let the agent do the judgement work; make the repo own the evidence. Lifecycle workflows, portable skills, agent roles, and hooks that refuse." />
+<meta name="twitter:title" content="harness — ticket to merged, run by agents" />
+<meta name="twitter:description" content="A Claude Code and Codex plugin that runs your repo&#39;s delivery loop with agents. Built on Lean principles." />
 <meta name="twitter:image" content="https://sluengen.github.io/harness/og-card.png" />
 <style>
   :root{
@@ -98,7 +98,7 @@
     background:var(--product); color:#fff; font-weight:800; font-size:14px; margin-bottom:12px}
   .step h3{margin:0 0 8px; font-size:16px; letter-spacing:-.01em}
   .step pre{margin:0 0 10px; overflow-x:auto; background:#f2f3fa; border:1px solid var(--line);
-    border-radius:10px; padding:10px 12px}
+    border-radius:10px; padding:10px 12px; white-space:pre-wrap; overflow-wrap:anywhere}
   .step code, .step pre{font:600 12.5px/1.7 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; color:var(--ink)}
   .step p{margin:0; font-size:13.5px; color:var(--ink-2)}
 
@@ -174,15 +174,14 @@
 
   <!-- ============ HERO ============ -->
   <header class="hero">
-    <p class="eyebrow">Claude Code + Codex</p>
-    <h1>A spec-driven development process<br /><span class="accent">for agent-driven repos.</span></h1>
+    <p class="eyebrow">A plugin for Claude Code + Codex</p>
+    <h1>Ticket to merged,<br /><span class="accent">run by agents.</span></h1>
     <p class="thesis">
-      <b>harness</b> is a development process shipped as native plugins for Claude Code and Codex:
-      lifecycle workflows, portable skills, agent roles, and enforcement hooks that make a
-      green gate the only path to a shared branch. Install it, initialize the repo, and the repo owns
-      its own contract from then on.
+      <b>harness</b> runs a repo's delivery loop with agents: ticket to spec, test-first build,
+      independent review, gated merge — on demand or unattended. Install the plugin, hydrate the
+      repo, and every agent session in it works the same process.
     </p>
-    <p class="creed">Let the agent do the judgement work; make the repo own the evidence.</p>
+    <p class="creed">Built on Lean principles: do less, build quality in, reduce waste, flow, stop the line, improve continuously.</p>
     <ul class="counts">
       <li><b>9</b> workflows</li>
       <li><b>17</b> skills</li>
@@ -192,37 +191,80 @@
     </ul>
   </header>
 
-  <!-- ============ WHAT THE REPO OWNS ============ -->
-  <section class="section" id="owns">
-    <h2>What the harness owns</h2>
+  <!-- ============ WHAT IT DOES ============ -->
+  <section class="section" id="loop">
+    <h2>What it does</h2>
     <p class="lede">
-      An AI agent does everything that needs judgement — the design, the code, the fixes, the answer to a
-      review finding. The harness owns only the parts that must not depend on an agent remembering them.
+      The agent does the judgement work — the design, the code, the answer to a review finding. The
+      plugin gives that work one loop, and every stage ends on a pass/fail signal the agent can act on.
     </p>
     <div class="grid3">
-      <article class="card card--build">
-        <h3>One verification gate</h3>
-        <p>
-          The repo's verify command decides green, and the builder who ran it and read its output is
-          what carries the claim. Green over those exact bytes is the only evidence a completion claim
-          may cite; one more edit invalidates it.
-        </p>
-      </article>
       <article class="card card--product">
-        <h3>The spine</h3>
+        <h3>Spec, then build</h3>
         <p>
-          A repo-owned <code>AGENTS.md</code> carries the five principles, the laws derived from
-          them, and the lifecycle contract — always loaded, never optional. <code>CLAUDE.md</code>
-          imports it on its first line and adds that host's deltas, seeded once by
-          <code>/harness:hydrate</code> and repo-owned after — and the repo's configuration is
-          <code>harness.yaml</code>. Skills carry the depth and load by task.
+          <code>/capture</code> files a decided change as a ticket with its change spec and acceptance
+          criteria; <code>/propose</code> works an undecided one to a decision first. <code>/build</code>
+          takes the ticket onto its own branch in its own worktree, locks the tests, and builds against
+          them test-first.
         </p>
       </article>
       <article class="card card--strategy">
-        <h3>Builder ≠ recorder</h3>
+        <h3>Independent review</h3>
         <p>
-          The agent that promises delivery is never the one that records it. The reviewer writes the
-          as-built record from the diff, which is what keeps that record honest.
+          A separate agent in a fresh context reviews the diff against the spec and runs the gate
+          itself. It returns <b>PASS</b>, <b>FAIL</b> or <b>DEFER</b>, and on PASS it — never the
+          builder — writes the as-built record of what shipped.
+        </p>
+      </article>
+      <article class="card card--build">
+        <h3>Gated merge</h3>
+        <p>
+          <code>/promote</code> rebases onto the integration branch, runs the gate again over the exact
+          tree that will land, pushes, and closes the ticket. The same command moves completed work
+          along the repo's release branches.
+        </p>
+      </article>
+    </div>
+    <p class="lede" style="margin-top:20px">
+      <code>/routine</code> runs the loop unattended: it picks the next ready ticket, builds it and
+      lands it, and holds the ticket for a person rather than push past a red gate or a review that
+      will not converge. Every build ends with a short reflection filed to an improvement ledger;
+      <code>/assess</code> runs periodic health checks and <code>/drain</code> clears what has
+      accumulated.
+    </p>
+  </section>
+
+  <!-- ============ HOW IT DECIDES ============ -->
+  <section class="section" id="spine">
+    <h2>How it decides</h2>
+    <p class="lede">
+      Hydration writes the process into the repo as the spine — <code>AGENTS.md</code>, loaded in every
+      session. <code>CLAUDE.md</code> imports it and adds that host's deltas, and the repo's commands,
+      branches and tracker live in <code>harness.yaml</code>.
+    </p>
+    <div class="grid3">
+      <article class="card card--product">
+        <h3>An operating context</h3>
+        <p>
+          The stage the repo is at and the risk it accepts, stated once so every rule is read against
+          it. A pre-user repo accepts a defect a revert fixes in an hour; it never accepts losing user
+          data, leaking a credential or moving money wrongly.
+        </p>
+      </article>
+      <article class="card card--strategy">
+        <h3>Six principles, seven laws</h3>
+        <p>
+          Lean, applied to agent-run repos, each principle stating what it refuses — with <b>do less</b>
+          overriding the rest. The laws are the per-change obligations derived from them: no claim of
+          done without gate output read this session, and no editing a test while building against it.
+        </p>
+      </article>
+      <article class="card card--quality">
+        <h3>Lanes and holds</h3>
+        <p>
+          Three assurance lanes — fix, change, feature — so a one-line fix and a contract change are not
+          weighed the same. Work that reaches user data, credentials or money stops and waits for a
+          person, and a ticket held for a person is never picked up by the unattended loop.
         </p>
       </article>
     </div>
@@ -232,38 +274,39 @@
   <section class="section" id="install">
     <h2>How a repo adopts it</h2>
     <p class="lede">
-      The guidance ships from this repo through native marketplaces for both hosts. Three steps, then
-      the process is live in every session.
+      This repo is the plugin marketplace for both hosts. In Claude Code the install steps are slash
+      commands typed in a session; in Codex they are shell commands run in your terminal.
     </p>
     <div class="install">
       <div class="step">
         <span class="step__n">1</span>
         <h3>Add the marketplace</h3>
-        <pre>Claude: /plugin marketplace add sluengen/harness
-Codex: codex plugin marketplace add sluengen/harness</pre>
+        <pre># Claude Code, in a session
+/plugin marketplace add sluengen/harness
+# Codex, in your terminal
+codex plugin marketplace add sluengen/harness</pre>
         <p>Points either host at this repository as a plugin source.</p>
       </div>
       <div class="step">
         <span class="step__n">2</span>
         <h3>Install the plugin</h3>
-        <pre>Claude: /plugin install harness@harness
-Codex: codex plugin add harness@harness</pre>
+        <pre># Claude Code, in a session
+/plugin install harness@harness
+# Codex, in your terminal
+codex plugin add harness@harness</pre>
         <p>Brings the host-native workflows, skills, roles, and hooks into your sessions.</p>
       </div>
       <div class="step">
         <span class="step__n">3</span>
         <h3>Hydrate the repo</h3>
-        <pre>Claude: /harness:hydrate
-Codex: ask to hydrate Harness</pre>
+        <pre># Claude Code, in a session
+/harness:hydrate
+# Codex, in a session
+ask to hydrate Harness</pre>
         <p>
-          Interviews for the repo's values and writes the files that must be repo-owned:
-          <code>harness.yaml</code>, the spine (<code>AGENTS.md</code>) and the
-          <code>CLAUDE.md</code> importing it, the path-scoped rules, Codex role adapters, the specs
-          scaffold and the infrastructure record. It writes no gate: where there is none yet it says
-          what the gate must do and leaves the bytes to the repo, because a gate is what every later
-          claim of green is read off. After a plugin update, refresh migrates the configuration into
-          <code>harness.yaml</code> as a verbatim move and regenerates the marked spine block, without
-          replacing repo-owned prose.
+          Writes the repo-owned files — <code>harness.yaml</code>, the spine, rules, role adapters and
+          the specs scaffold — but never a gate: that stays the repo's own. Run it again after a
+          plugin update; it refreshes the plugin-marked blocks and leaves repo-owned files alone.
         </p>
       </div>
     </div>
@@ -285,7 +328,7 @@ Codex: ask to hydrate Harness</pre>
           worktree, through the same gate. Anything that changes documented behaviour, spans commits,
           or needs independent review becomes a ticket instead.
         </p>
-        <ol class="steps"><li><span>branch</span></li><li><span>build</span></li><li><span>gate</span></li><li><span>ship</span></li></ol>
+        <ol class="steps"><li><span>branch</span></li><li><span>build</span></li><li><span>gate</span></li><li><span>land</span></li></ol>
       </article>
       <article class="lane lane--ticket">
         <h3>A ticket</h3>
@@ -295,7 +338,7 @@ Codex: ask to hydrate Harness</pre>
           second lands it. The reviewer is a separate agent in a fresh context; its verdict covers the
           tree it read, and a second gate over the tree that lands is what licenses the push.
         </p>
-        <ol class="steps"><li><span>spec</span></li><li><span>build</span></li><li><span>gate</span></li><li><span>review</span></li><li><span>ship</span></li></ol>
+        <ol class="steps"><li><span>spec</span></li><li><span>build</span></li><li><span>review</span></li><li><span>gate</span></li><li><span>land</span></li></ol>
       </article>
       <article class="lane lane--proposal">
         <h3>A proposal</h3>
@@ -347,20 +390,20 @@ Codex: ask to hydrate Harness</pre>
     <h2>What the plugin installs</h2>
     <p class="lede">
       The whole surface, as the repository carries it. Both hosts read the same
-      <code>skills/</code> — the lifecycle workflows and the craft skills behind them — and hooks
-      enforce the gate.
+      <code>skills/</code> — the lifecycle workflows and the craft skills behind them — and four hooks
+      sit behind them as a backstop.
     </p>
 
     <div class="grid2">
       <article class="card inv inv--commands">
         <h3>Workflows <span class="n">9</span></h3>
-        <p>The entry points, on both hosts. Each ships once, as a skill; three are operator-triggered only, and <code>/routine</code>, <code>/build</code>, <code>/review</code>, <code>/drain</code>, <code>/assess</code> and <code>/promote</code> stay model-invocable because each answers to a caller that is not a human at a prompt.</p>
+        <p>The entry points, on both hosts. Each ships once, as a skill; three are operator-triggered only, and <code>/routine</code>, <code>/build</code>, <code>/review</code>, <code>/drain</code>, <code>/assess</code> and <code>/promote</code> stay model-invocable because each answers to a caller that is not a human at a prompt. In Claude Code each runs as <code>/harness:&lt;name&gt;</code>; in Codex, ask for it by name.</p>
         <ul class="units">
           <li class="unit" data-unit="skill:build"><code>/build</code><span>Implement, verify and review a ticket, ending at PASS.</span></li>
-          <li class="unit" data-unit="skill:capture"><code>/capture</code><span>File an already-decided change straight to Todo.</span></li>
+          <li class="unit" data-unit="skill:capture"><code>/capture</code><span>File an already-decided change straight onto the queue.</span></li>
           <li class="unit" data-unit="skill:propose"><code>/propose</code><span>Work an idea before it becomes work; accepted proposals spawn tickets.</span></li>
           <li class="unit" data-unit="skill:review"><code>/review</code><span>Review the current branch, when a branch needs only that.</span></li>
-          <li class="unit" data-unit="skill:routine"><code>/routine</code><span>One unattended cycle: discover the next ticket, build it, ship it.</span></li>
+          <li class="unit" data-unit="skill:routine"><code>/routine</code><span>One unattended cycle: discover the next ticket, build it, land it.</span></li>
           <li class="unit" data-unit="skill:promote"><code>/promote</code><span>Land a reviewed branch, or move completed work toward release along the repo's role branches.</span></li>
           <li class="unit" data-unit="skill:drain"><code>/drain</code><span>Clear what has accumulated for the operator: held tickets, then the improvement ledger.</span></li>
           <li class="unit" data-unit="skill:assess"><code>/assess</code><span>Run a periodic whole-system health assessment.</span></li>
@@ -425,7 +468,7 @@ Codex: ask to hydrate Harness</pre>
         <h3>No runtime, nothing to install</h3>
         <p>
           There is no CLI and no service behind any of this. Python here is tooling only — the gate, the
-          token generator, the mutation instrument. Work moves
+          token generator, the mutation instrument — and the hooks run on Node. Work moves
           <code>dev → main</code>, and what lands on release is exactly the tree that was gated.
         </p>
       </article>

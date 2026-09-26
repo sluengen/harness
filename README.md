@@ -103,22 +103,23 @@ drives `review`, and `assess` drives `drain`.
 
 This repo is the marketplace for both hosts.
 
-**Claude Code**
+**Claude Code** — slash commands, typed inside a Claude Code session:
 
 ```
 /plugin marketplace add sluengen/harness
 /plugin install harness@harness
 ```
 
-**Codex**
+**Codex** — shell commands, run in your terminal:
 
 ```bash
 codex plugin marketplace add sluengen/harness
 codex plugin add harness@harness
 ```
 
-Then hydrate the repo you want to run the process in: `/harness:hydrate` in
-Claude Code, or ask Codex to hydrate Harness. Both hosts read the same workflow.
+Then, in the repo you want to run the process in, hydrate it from inside a
+session: type `/harness:hydrate` in Claude Code, or ask Codex to hydrate Harness.
+Both hosts read the same workflow.
 
 ### What hydration writes
 

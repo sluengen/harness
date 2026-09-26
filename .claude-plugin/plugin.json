@@ -1,6 +1,6 @@
 {
   "name": "harness",
   "version": "21.2.0",
-  "description": "A spec-driven development process for agent-driven repos: nine lifecycle workflows, the craft skills behind them, five agent roles, and the guards that keep a build honest.",
+  "description": "A Claude Code and Codex plugin that runs your repo's delivery loop with agents: ticket to spec, test-first build, independent review, gated merge — on demand or unattended. Built on Lean principles.",
   "author": { "name": "sluengen" }
 }
