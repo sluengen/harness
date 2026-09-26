@@ -90,6 +90,35 @@
   .grid3{display:grid; grid-template-columns:repeat(3,1fr); gap:20px}
   .grid2{display:grid; grid-template-columns:repeat(2,1fr); gap:20px}
 
+  /* ---------- FLOW ---------- */
+  .flow{margin:0 0 20px; background:var(--card); border:1px solid var(--line); border-radius:18px;
+    padding:18px 18px 14px; box-shadow:var(--shadow)}
+  .flow__scroll{overflow-x:auto}
+  .flow svg{display:block; width:100%; min-width:880px; height:auto}
+  .flow figcaption{margin:12px 2px 0; max-width:860px; font-size:13.5px; color:var(--ink-2)}
+  .flow text{font:500 12px/1 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; fill:var(--ink-2)}
+  .flow .mid{text-anchor:middle}
+  .flow .t-lane,.flow .t-cmd{font:700 13px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; fill:var(--ink)}
+  .flow .t-rg{font-size:11px; font-weight:700; letter-spacing:.12em}
+  .flow .rg--product{fill:var(--product-soft)} .flow .t-rg--product{fill:var(--product-ink)}
+  .flow .rg--strategy{fill:var(--strategy-soft)} .flow .t-rg--strategy{fill:var(--strategy-ink)}
+  .flow .rg--build{fill:var(--build-soft)} .flow .t-rg--build{fill:var(--build-ink)}
+  .flow .ln{fill:none; stroke:var(--ink-2); stroke-width:2.5}
+  .flow .ln--dev{stroke:var(--ink); stroke-width:3}
+  .flow .ln--main{stroke:var(--muted); stroke-width:3}
+  .flow .ln--fail{stroke:var(--strategy); stroke-dasharray:6 5}
+  .flow .ln--hold{stroke:var(--quality); stroke-dasharray:6 5}
+  .flow .node{fill:var(--card); stroke:var(--ink-2); stroke-width:2.5}
+  .flow .node--pass{fill:var(--strategy); stroke:var(--strategy)}
+  .flow .node--land{fill:var(--ink); stroke:var(--ink)}
+  .flow .gate rect{fill:var(--build-soft); stroke:var(--build); stroke-width:2}
+  .flow .gate text{font-weight:700; fill:var(--build-ink); text-anchor:middle}
+  .flow .hold rect{fill:var(--quality-soft); stroke:var(--quality); stroke-width:1.5}
+  .flow .hold text{font-weight:600; fill:var(--quality-ink); text-anchor:middle}
+  .flow .t-fail{fill:var(--strategy-ink); font-weight:600}
+  .flow .brk{fill:none; stroke:var(--muted); stroke-width:1.5}
+  .flow .ah{fill:var(--ink-2)} .flow .ah--s{fill:var(--strategy)} .flow .ah--q{fill:var(--quality)}
+
   /* ---------- INSTALL ---------- */
   .install{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:20px}
   .step{background:var(--card); border:1px solid var(--line); border-radius:18px; padding:20px 22px;
@@ -199,6 +228,88 @@
       The agent does the judgement work — the design, the code, the answer to a review finding. The
       plugin gives that work one loop, and every stage ends on a pass/fail signal the agent can act on.
     </p>
+    <figure class="flow">
+      <div class="flow__scroll">
+        <svg viewBox="0 0 1200 440" role="img" aria-label="One ticket's path through the process. The ticket branch is cut from dev after gate 1 passes over the base. The spec is grounded, tests are written red and locked, and the build turns them green. The branch is rebased on dev and an independent reviewer runs gate 2: FAIL sends findings back to the build, DEFER holds the ticket for a person, and PASS pushes the branch. Promote rebases again, runs gate 3 over what will land, and pushes to dev. A nightly release hop gates dev again before it reaches main. Routine runs build and promote unattended.">
+          <defs>
+            <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0 L10 5 L0 10 z"/></marker>
+            <marker id="ah-s" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah ah--s" d="M0 0 L10 5 L0 10 z"/></marker>
+            <marker id="ah-q" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah ah--q" d="M0 0 L10 5 L0 10 z"/></marker>
+          </defs>
+
+          <!-- stage regions, matching the three cards below -->
+          <rect class="rg--product" x="182" y="196" width="378" height="104" rx="12"/>
+          <text class="t-rg t-rg--product" x="196" y="214">SPEC, THEN BUILD</text>
+          <rect class="rg--strategy" x="570" y="196" width="285" height="104" rx="12"/>
+          <text class="t-rg t-rg--strategy" x="624" y="214">INDEPENDENT REVIEW</text>
+          <rect class="rg--build" x="865" y="196" width="220" height="104" rx="12"/>
+          <text class="t-rg t-rg--build" x="926" y="214">GATED MERGE</text>
+
+          <!-- long-lived branches -->
+          <text class="t-lane" x="16" y="64">main</text>
+          <text class="t-lane" x="16" y="144">dev</text>
+          <text class="t-lane" x="16" y="254">ticket</text>
+          <line class="ln ln--main" x1="130" y1="60" x2="1188" y2="60"/>
+          <line class="ln ln--dev" x1="130" y1="140" x2="1188" y2="140"/>
+
+          <!-- cut the ticket branch off a gated base -->
+          <path class="ln" d="M172 151 V250 H1026"/>
+          <g class="gate"><rect x="140" y="129" width="64" height="22" rx="11"/><text x="172" y="144">gate 1</text></g>
+          <text x="184" y="180">worktree cut from a green base</text>
+
+          <!-- build -->
+          <circle class="node" cx="240" cy="250" r="8"/><text class="mid" x="240" y="278">grounded spec</text>
+          <circle class="node" cx="330" cy="250" r="8"/><text class="mid" x="330" y="278">tests · RED</text>
+          <circle class="node" cx="420" cy="250" r="8"/><text class="mid" x="420" y="278">tests locked</text>
+          <circle class="node" cx="510" cy="250" r="8"/><text class="mid" x="510" y="278">build · GREEN</text>
+
+          <!-- review -->
+          <path class="ln" d="M588 140 L607 238" marker-end="url(#ah)"/>
+          <circle class="node" cx="610" cy="250" r="8"/><text class="mid" x="610" y="278">rebase on dev</text>
+          <g class="gate"><rect x="688" y="239" width="64" height="22" rx="11"/><text x="720" y="254">gate 2</text></g>
+          <text class="mid" x="720" y="232">reviewer runs it</text>
+          <circle class="node node--pass" cx="815" cy="250" r="8"/>
+          <text class="mid" x="815" y="278">PASS</text><text class="mid" x="815" y="292">branch pushed</text>
+
+          <path class="ln ln--fail" d="M708 262 C708 334, 510 334, 510 292" marker-end="url(#ah-s)"/>
+          <text class="mid t-fail" x="609" y="340">FAIL · findings back to the build</text>
+          <path class="ln ln--hold" d="M742 262 L786 314" marker-end="url(#ah-q)"/>
+          <g class="hold"><rect x="770" y="318" width="170" height="26" rx="8"/><text x="855" y="335">DEFER · held for a person</text></g>
+
+          <!-- promote -->
+          <path class="ln" d="M893 140 L912 238" marker-end="url(#ah)"/>
+          <circle class="node" cx="915" cy="250" r="8"/><text class="mid" x="915" y="278">rebase again</text>
+          <g class="gate"><rect x="968" y="239" width="64" height="22" rx="11"/><text x="1000" y="254">gate 3</text></g>
+          <text class="mid" x="1000" y="232">over what lands</text>
+          <path class="ln" d="M1034 250 Q1054 250 1060 226 L1073 153" marker-end="url(#ah)"/>
+          <text x="1078" y="198">push</text>
+          <circle class="node node--land" cx="1075" cy="140" r="7"/>
+          <text x="1060" y="128" style="text-anchor:end">ticket Done</text>
+
+          <!-- release hop -->
+          <path class="ln" d="M1112 140 L1150 70" marker-end="url(#ah)"/>
+          <g class="gate"><rect x="1101" y="94" width="56" height="22" rx="11"/><text x="1129" y="109">gate</text></g>
+          <circle class="node node--land" cx="1155" cy="60" r="7"/>
+          <text x="1188" y="42" style="text-anchor:end">nightly promotion</text>
+
+          <!-- which command owns which stretch -->
+          <path class="brk" d="M172 362 V370 H840 V362"/>
+          <text class="t-cmd mid" x="506" y="390">/build</text>
+          <path class="brk" d="M865 362 V370 H1085 V362"/>
+          <text class="t-cmd mid" x="975" y="390">/promote</text>
+          <path class="brk" d="M1100 362 V370 H1188 V362"/>
+          <text class="mid" x="1144" y="390">release hop</text>
+          <path class="brk" d="M172 404 V412 H1085 V404"/>
+          <text class="mid" x="628" y="432"><tspan class="t-cmd">/routine</tspan> runs both, unattended</text>
+        </svg>
+      </div>
+      <figcaption>
+        One ticket's path. The same gate runs three times per ticket — over the base before the branch is
+        cut, by the reviewer over the tree it read, and over the tree that lands — and the release hop runs
+        it once more before <code>main</code>. A FAIL goes back to the builder for a bounded number of
+        cycles; a DEFER holds the ticket for a person.
+      </figcaption>
+    </figure>
     <div class="grid3">
       <article class="card card--product">
         <h3>Spec, then build</h3>
