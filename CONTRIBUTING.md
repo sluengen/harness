@@ -1,10 +1,10 @@
 # Contributing
 
 Thanks for your interest. First, the honest framing: **this is dogfood
-infrastructure.** The harness is a verification layer and a body of guidance that
-one maintainer runs on their own agent-driven development and publishes so others
-can read, learn from, and adapt it — not a turnkey product with a support
-commitment.
+infrastructure.** The harness is a plugin, a delivery process and the guidance
+behind it, that one maintainer runs on their own agent-driven development and
+publishes so others can read, learn from, and adapt it — not a turnkey product
+with a support commitment.
 
 ## Issues
 

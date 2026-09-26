@@ -45,10 +45,10 @@ here.
 
   | Token family | Domain it marks | Where it appears |
   |---|---|---|
-  | `--build` | the gate and its evidence | the gate panel, its stage list, the fix lane, the no-runtime card |
-  | `--product` | the guidance surface | the spine card, the install steps, the workflow and skill inventories, the ticket lane |
-  | `--strategy` | roles and deciding | the agents inventory, the proposal lane, the builder-≠-recorder card |
-  | `--quality` | enforcement and health | the hooks inventory, the refuses badge, the dogfood card |
+  | `--build` | the gate and its evidence | the gate panel, its stage list, the fix lane, the gated-merge card, the no-runtime card |
+  | `--product` | the guidance surface | the spec-and-build card, the operating-context card, the install steps, the workflow and skill inventories, the ticket lane |
+  | `--strategy` | roles and deciding | the agents inventory, the proposal lane, the independent-review card, the principles card |
+  | `--quality` | enforcement and health | the hooks inventory, the refuses badge, the lanes-and-holds card, the dogfood card |
 
   A new surface introducing a fifth "brand" hue unrelated to a domain is a finding.
   The token *names* are inherited from the retired Four Loops model the page presented

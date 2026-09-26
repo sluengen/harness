@@ -1,7 +1,7 @@
 [project]
 name = "harness"
 version = "0.2.1"
-description = "Evidence layer that keeps agent-driven development honest"
+description = "A Claude Code and Codex plugin that runs a repo's delivery loop with agents"
 readme = "README.md"
 requires-python = ">=3.11"
 # One licence for everything — the guidance the plugin ships and the repo's own

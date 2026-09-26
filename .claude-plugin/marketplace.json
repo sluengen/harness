@@ -5,7 +5,7 @@
     {
       "name": "harness",
       "source": "./",
-      "description": "Spec-driven development for agent-driven repos: lifecycle workflows, craft skills, agents, and the guards that keep a build honest. Run /harness:hydrate after installing to bring a repo into the process."
+      "description": "A Claude Code and Codex plugin that runs your repo's delivery loop with agents: ticket to spec, test-first build, independent review, gated merge — on demand or unattended. Built on Lean principles. Run /harness:hydrate after installing to bring a repo into the process."
     }
   ]
 }
