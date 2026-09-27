@@ -107,6 +107,8 @@ No completion claim without fresh evidence. Identify the command that proves the
 
 **Capture the gate's exit code directly; never pipe it.** A pipe reports the *last* command's status, so `verify.sh | tail` returns tail's — it masked a red gate three times across three consumer migrations. The idiom is `verify.sh > /tmp/gate.log 2>&1; echo EXIT=$?`, then read the log. And run the final gate on a quiet machine: a contended run stacked a load-induced subprocess timeout on top of a genuine defect, and separating the two cost five full gate runs.
 
+**Stage before you gate, in every lane.** Some guards read the index rather than the working tree, so an edit left unstaged is invisible to them and the gate goes green over the old bytes. `/build` commits before its gates; a fix owes the same, so stage or commit the change before the run whose evidence you will claim. A fix-lane edit that skipped this went green locally and red on the integration branch.
+
 | Claim | Required evidence |
 |---|---|
 | Tests pass | Full suite run, output read |
