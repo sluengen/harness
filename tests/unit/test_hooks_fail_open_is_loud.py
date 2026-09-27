@@ -145,6 +145,9 @@ _EXPECTED_CLASS_A = {
     "push-target-guard.js": 3,
     # readStdin + the main() wrapper + the shared reader's load (#538)
     "test-lock-guard.js": 3,
+    # readStdin + the main() wrapper (#723). Its manifest and network reads are
+    # Class B: an unreadable version is an answer ("say nothing"), not a fault.
+    "version-drift-guard.js": 2,
 }
 
 #: Which hooks carry Class B sites at all, so the silence half of AC-4 is
@@ -166,6 +169,7 @@ _HOOKS_WITH_CLASS_B = {
     "test-lock-guard.js",
     "workflow-guard.js",
     "push-target-guard.js",
+    "version-drift-guard.js",
 }
 
 

@@ -12,7 +12,7 @@
         "It fetches first and branches off the integration branch named in harness.yaml, naming the branch this repo actually declares, rather than off whatever the local checkout last saw",
         "It creates the worktree detached and runs the repo's declared verify command in it before the branch is cut, rather than assuming the base is green",
         "It states what a red base means \u2014 an andon pull: file the failure as a bug against the integration branch, remove the worktree, hold the task, and do not repair the base inside this ticket's tree",
-        "It symlinks the gitignored local state from the shared root, anchoring the path to the shared root computed from git rather than to the current directory",
+        "It installs dependencies inside the new worktree with the repo's install command rather than symlinking a shared dependency tree, and links only small read-only state such as the env file, anchored to the shared root computed from git rather than to the current directory",
         "The branch name identifies the task",
         "It requires reporting which commit the work started from and the result of the base gate run"
       ]
