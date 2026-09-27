@@ -71,7 +71,7 @@ output before claiming anything complete.
 | **Workflows** | 9 | The lifecycle entry points — see below |
 | **Craft skills** | 8 | `engineering`, `architecture`, `authoring`, `review-discipline`, `worktree-isolation`, `work-discovery`, `tracker`, `design-system` — loaded by task, not all at once |
 | **Agent roles** | 5 | `dev`, `reviewer`, `architect`, `steward`, `harness-audit` |
-| **Hooks** | 4 | One refuses: an edit to a test file while the run has locked its tests. Three advise: injection-shaped content on write, a source edit on the default branch or outside a worktree, and a push aimed at a branch the repo declares |
+| **Hooks** | 5 | One refuses: an edit to a test file while the run has locked its tests. Four advise: injection-shaped content on write, a source edit on the default branch or outside a worktree, a push aimed at a branch the repo declares, and a session started on a plugin version behind the published one |
 
 The hooks are a backstop, not the assurance. The assurance is the repo's gate,
 run and read by the builder, plus the independent review. Branch protection and

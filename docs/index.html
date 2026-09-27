@@ -216,7 +216,7 @@
       <li><b>9</b> workflows</li>
       <li><b>17</b> skills</li>
       <li><b>5</b> agents</li>
-      <li><b>4</b> hooks</li>
+      <li><b>5</b> hooks</li>
       <li><b>1</b> gate</li>
     </ul>
   </header>
@@ -490,7 +490,7 @@ ask to hydrate Harness</pre>
         <code>green over these exact bytes — and no others</code>
         <p>
           Any stage failing means no claim at all. The assurance is this gate, run and read by the
-          builder, plus the independent review — one hook refuses and three advise, and none of them is
+          builder, plus the independent review — one hook refuses and four advise, and none of them is
           the assurance. Whatever server-side controls a repository runs are its own.
         </p>
       </div>
@@ -502,7 +502,7 @@ ask to hydrate Harness</pre>
     <h2>What the plugin installs</h2>
     <p class="lede">
       The whole surface, as the repository carries it. Both hosts read the same
-      <code>skills/</code> — the lifecycle workflows and the craft skills behind them — and four hooks
+      <code>skills/</code> — the lifecycle workflows and the craft skills behind them — and five hooks
       sit behind them as a backstop.
     </p>
 
@@ -534,8 +534,8 @@ ask to hydrate Harness</pre>
           <li class="unit" data-unit="agent:harness-audit"><code>harness-audit</code><span>Hydration's close-out: reads a hydrated repo and reports drift against the current plugin.</span></li>
         </ul>
 
-        <h3 style="margin-top:22px">Hooks <span class="n">4</span></h3>
-        <p>One refuses, three advise. The refusal is the test lock, and it rests on what the run
+        <h3 style="margin-top:22px">Hooks <span class="n">5</span></h3>
+        <p>One refuses, four advise. The refusal is the test lock, and it rests on what the run
           declared about itself — never on a branch name granting an exemption. The assurance is not
           the hooks: it is the gate the repo declares, run and read, plus the independent review.</p>
         <ul class="units">
@@ -543,6 +543,7 @@ ask to hydrate Harness</pre>
           <li class="unit" data-unit="hook:push-target-guard"><code>push-target-guard</code><span>Flags a push aimed at a branch the repo declares under <code>branches:</code>.<span class="verdict verdict--advises">advises</span></span></li>
           <li class="unit" data-unit="hook:prompt-guard"><code>prompt-guard</code><span>Flags injection-shaped content on write.<span class="verdict verdict--advises">advises</span></span></li>
           <li class="unit" data-unit="hook:workflow-guard"><code>workflow-guard</code><span>Flags a source edit made on the default branch or outside a worktree.<span class="verdict verdict--advises">advises</span></span></li>
+          <li class="unit" data-unit="hook:version-drift-guard"><code>version-drift-guard</code><span>Warns at session start when the loaded plugin is behind the published one.<span class="verdict verdict--advises">advises</span></span></li>
         </ul>
       </article>
     </div>

@@ -16,7 +16,7 @@ this host alone.
   What keeps `/drain` at the keyboard, and `/promote`'s release hop deliberate,
   is the rule in each one's own body; the flag never enforced that for `/drain`'s
   predecessor either.
-- **Hooks.** `hooks/hooks.json` registers the four guards at install; no per-repo
+- **Hooks.** `hooks/hooks.json` registers the five hooks at install; no per-repo
   wiring. Permissions and the unattended authorisations live in
   `settings/harness.json`.
 - **Sub-agents.** `agents/` defines the five roles Claude Code dispatches. Codex

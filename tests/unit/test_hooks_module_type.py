@@ -48,9 +48,11 @@ things about the same hook.
 
 from __future__ import annotations
 
+import http.server
 import json
 import shutil
 import subprocess
+import threading
 from pathlib import Path
 
 import pytest
@@ -83,7 +85,9 @@ def _esm_fixture(tmp_path: Path) -> Path:
     return fixture
 
 
-def _run(hook: str, payload: dict, fixture: Path, tmp_path: Path) -> tuple[int, str, str]:
+def _run(
+    hook: str, payload: dict, fixture: Path, tmp_path: Path, env: dict[str, str] | None = None
+) -> tuple[int, str, str]:
     """Run ``hook`` from inside ``fixture``; return (returncode, stdout, stderr).
 
     ``TMPDIR`` is redirected into an isolated directory because the advisory
@@ -100,7 +104,7 @@ def _run(hook: str, payload: dict, fixture: Path, tmp_path: Path) -> tuple[int, 
         capture_output=True,
         timeout=30,
         cwd=fixture,
-        env={"PATH": "/usr/bin:/bin:/usr/local/bin", "TMPDIR": str(marker_dir)},
+        env={"PATH": "/usr/bin:/bin:/usr/local/bin", "TMPDIR": str(marker_dir), **(env or {})},
     )
     return proc.returncode, proc.stdout, proc.stderr
 
@@ -249,6 +253,48 @@ def _probe_test_lock_guard(fixture: Path, tmp_path: Path) -> bool:
     return decision == "deny"
 
 
+def _probe_version_drift_guard(fixture: Path, tmp_path: Path) -> bool:
+    """Designed behaviour: warn when the loaded plugin is behind the published one.
+
+    The loaded version is a manifest beside the copied ``hooks/``, where the hook
+    reads it; the published one is served on loopback. An ESM root that disarmed
+    the hook leaves no context, which is the #302 shape this module exists for.
+    """
+    (fixture / ".claude-plugin").mkdir(exist_ok=True)
+    (fixture / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "harness", "version": "1.0.0"}) + "\n", encoding="utf-8"
+    )
+    body = json.dumps({"name": "harness", "version": "2.0.0"}).encode()
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802 — the stdlib's spelling
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args: object) -> None:
+            pass
+
+    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        _, out, _ = _run(
+            "version-drift-guard.js",
+            {"session_id": "s", "hook_event_name": "SessionStart"},
+            fixture,
+            tmp_path,
+            env={
+                "HARNESS_PUBLISHED_MANIFEST_URL": (
+                    f"http://127.0.0.1:{httpd.server_address[1]}/plugin.json"
+                )
+            },
+        )
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+    return "[VERSION-DRIFT-GUARD]" in _advisory_context(out)
+
+
 #: One probe per shipped hook, each asserting that hook's *designed observable*
 #: rather than "it exited 0" — the distinction AC-1 turns on.
 _PROBES = {
@@ -256,6 +302,7 @@ _PROBES = {
     "workflow-guard.js": _probe_workflow_guard,
     "push-target-guard.js": _probe_push_target_guard,
     "test-lock-guard.js": _probe_test_lock_guard,
+    "version-drift-guard.js": _probe_version_drift_guard,
 }
 
 
