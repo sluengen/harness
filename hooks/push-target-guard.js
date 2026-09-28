@@ -137,7 +137,8 @@ function declaredBranches(top) {
 /** The branch names ``command`` appears to push to.
  *
  * A token scan, deliberately. Everything after a `push` token preceded by a
- * `git`-shaped token is treated as a candidate operand: strip a leading `+`
+ * `git`-shaped token, up to the next shell operator, is treated as a candidate
+ * operand: strip a leading `+`
  * (the force spelling of a refspec), take the segment after the last `:` (the
  * destination half of `src:dst`), and strip a `refs/heads/` prefix. Options and
  * the remote name fall out on their own — they match no declared branch.
@@ -148,10 +149,16 @@ function targets(command) {
   for (let i = 0; i < tokens.length; i += 1) {
     if (tokens[i] !== "push") continue;
     if (!tokens.slice(0, i).some((t) => t === "git" || t.endsWith("/git"))) continue;
-    for (const operand of tokens.slice(i + 1)) {
-      if (operand.startsWith("-")) continue;
-      const dst = operand.replace(/^\+/, "").split(":").pop();
-      found.push(dst.replace(/^refs\/heads\//, ""));
+    // The push's operands end where the shell starts another command: a token
+    // after `&&`, `||`, `;` or `|` belongs to that command, not to this push.
+    for (const token of tokens.slice(i + 1)) {
+      if (/^(&&|\|\|?|;)$/.test(token)) break;
+      const operand = token.replace(/;$/, "");
+      if (operand && !operand.startsWith("-")) {
+        const dst = operand.replace(/^\+/, "").split(":").pop();
+        found.push(dst.replace(/^refs\/heads\//, ""));
+      }
+      if (token.endsWith(";")) break;
     }
   }
   return found;

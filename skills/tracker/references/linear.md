@@ -186,17 +186,24 @@ State, team, and label IDs are **resolved at runtime** from the queries above â€
 
 ## Relations â€” blocked-by
 
-Linear models dependencies as **issue relations**, so `blocks` / `blockedBy` is
-one mutation and needs no board:
+Linear models dependencies as **issue relations**, so a dependency is one
+mutation and needs no board. There is one type, `blocks`, and it reads
+**`issueId` blocks `relatedIssueId`**. The blocker goes first, so a ticket that
+waits on another is the `relatedIssueId`. Linear has no `blocked_by` type to
+write it the other way round.
 
 ```bash
-LINEAR 'mutation { issueRelationCreate(input: { issueId: \"<blocked-id>\", relatedIssueId: \"<blocker-id>\", type: blocks }) { success } }'
+LINEAR 'mutation { issueRelationCreate(input: { issueId: \"<blocker-id>\", relatedIssueId: \"<blocked-id>\", type: blocks }) { success } }'
 LINEAR 'query { issue(id:\"<issue-id>\") { relations { nodes { type relatedIssue { identifier state { type } } } } inverseRelations { nodes { type issue { identifier state { type } } } } } }'
 ```
 
 Read **both** `relations` and `inverseRelations`: Linear stores one edge and
 reports it from each side under a different key, so a reader that consults only
-one silently sees an unblocked ticket.
+one silently sees an unblocked ticket. Read on the blocked ticket, each blocker is
+a `blocks` node in `inverseRelations`, named by `issue`. Read on the blocker,
+each ticket it holds up is a `blocks` node in `relations`, named by
+`relatedIssue`. A `blocks` node under `relations` never means the ticket you
+queried is waiting.
 
 ## Priority
 
