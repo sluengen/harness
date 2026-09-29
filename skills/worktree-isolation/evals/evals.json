@@ -10,11 +10,11 @@
       "expectations": [
         "The setup creates a new branch in its own git worktree, not a branch in the shared checkout",
         "It fetches first and branches off the integration branch named in harness.yaml, naming the branch this repo actually declares, rather than off whatever the local checkout last saw",
-        "It creates the worktree detached and runs the repo's declared verify command in it before the branch is cut, rather than assuming the base is green",
-        "It states what a red base means \u2014 an andon pull: file the failure as a bug against the integration branch, remove the worktree, hold the task, and do not repair the base inside this ticket's tree",
+        "It cuts the branch without running the repo's verify command over the base first",
+        "It says a failure the diff does not explain is attributed by re-running the failing tests at the integration tip, and that red there is an andon pull handled without repairing the base inside this ticket's tree",
         "It installs dependencies inside the new worktree with the repo's install command rather than symlinking a shared dependency tree, and links only small read-only state such as the env file, anchored to the shared root computed from git rather than to the current directory",
         "The branch name identifies the task",
-        "It requires reporting which commit the work started from and the result of the base gate run"
+        "It requires reporting which commit the work started from"
       ]
     },
     {
@@ -64,18 +64,18 @@
     },
     {
       "id": 5,
-      "name": "a-red-base-somebody-is-already-repairing",
-      "prompt": "I'm starting ticket HAR-530 on this repository (do not read anything under skills/ or agents/ there). I cut the detached worktree and ran the repo's verify command in it. It failed: `tests/unit/test_promotion_step_script.py::test_the_gate_runs_inside_the_checkout` errors, and nothing I have done could have caused it \u2014 I have changed no files.\n\nThe repo's open queue has one P1 bug, `HAR-528`, titled \"Promotion step loses the checkout path\". Its most recent comment is a run saying it took the repair, timestamped 20 minutes ago. `harness.yaml` declares `loop.cord_claim_minutes: 120`.\n\nWhat do I do? Give me the sequence and what to report. Save it as redbase.md in the output directory.",
+      "name": "a-red-base-met-mid-build",
+      "prompt": "I'm building ticket HAR-530 on this repository (do not read anything under skills/ or agents/ there). The branch is cut and pushed, and my targeted tests for the change are green. But `tests/unit/test_promotion_step_script.py::test_the_gate_runs_inside_the_checkout` fails, and my diff does not touch the promotion step.\n\nThe repo's open queue has one P1 bug, `HAR-528`, titled \"Promotion step loses the checkout path\". Its most recent comment is a run saying it took the repair, timestamped 20 minutes ago. `harness.yaml` declares `loop.cord_claim_minutes: 120`.\n\nWhat do I do? Give me the sequence and what to report. Save it as redbase.md in the output directory.",
       "expected_output": "A written artefact demonstrating worktree-isolation judgment on a recorded failure mode.",
       "files": [],
       "expectations": [
-        "It treats the red base as an andon pull and does not cut the branch or build on it",
+        "It re-runs only the failing test at the fetched integration tip before deciding whose failure it is, rather than re-running the whole gate",
         "Before anything is filed, it searches the open queue keyed to the failure \u2014 the failing test or the surface it names \u2014 rather than to the wording of a title",
         "It identifies HAR-528 as covering this failure and files no new bug, adding the evidence to HAR-528 instead",
         "It reads the 20-minute-old comment against the declared 120-minute bound and concludes the repair is in flight",
-        "It still holds HAR-530 and stops: a repair in flight does not license building on the red base, and does not leave HAR-530 sitting In Progress",
+        "It holds HAR-530 with the `operator` label and stops, keeping its pushed branch rather than removing it: a repair in flight does not license building past the red base, and does not leave HAR-530 sitting In Progress",
         "The report names HAR-528 and how old its claim is, so the operator can see what would clear the base",
-        "It says that with no such open P1, or with a claim older than the declared bound, the outcome is unchanged \u2014 file the bug or extend the existing one, remove the worktree, hold the task, and stop",
+        "It says that with no such open P1, or with a claim older than the declared bound, the outcome is unchanged \u2014 file the bug or extend the existing one, hold the task, and stop",
         "It does not repair HAR-528's defect inside HAR-530's tree"
       ]
     }

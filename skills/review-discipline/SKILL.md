@@ -104,7 +104,7 @@ One further outcome is not a verdict. A small, contained, in-scope finding the r
 
 ## Reviewer obligations
 
-- *Run the verification yourself* — fresh run, output read (`engineering`). Do not trust the builder's claim.
+- *Run the complete gate yourself* — `commands.verify`, fresh, output read (`engineering` → *Verification*). It is the full-suite claim; the builder hands off on targeted tests and makes none. A failure the diff does not explain is attributed before it is reported (`worktree-isolation` → *A red base*).
 - *Before certifying, load* [`references/certifying.md`](references/certifying.md) — the as-built-record gate, the twin sweep, and the ordering that makes the gate cover the tree that ships.
 - *Report:* the verdict, the mandate reviewed under, one explicit item per test file with the four cheat categories checked by name, Stage 1 result per criterion, Stage 2 findings each placed on both axes with the four parts and what happened to them, the verification output, the `reviewed_tree`, and whether visual evidence was consulted. That last line reads `consulted`, naming the capture directory, or `not consulted` with one reason: not a user-facing change, not supplied, or not readable by this reviewer. Silence on it is incomplete, and a bare `not consulted` is that silence wearing a label.
 

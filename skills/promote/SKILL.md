@@ -91,6 +91,15 @@ a run that skipped the review, which this command does not launder.
 2. *Gate.* Run the repo's `harness.yaml` `commands.verify` gate over the merged
    tree — read the command fresh from `harness.yaml` every run and never
    hardcode one here. Capture the output and read all of it.
+   **Skip the run only where all three hold** (#731): stage 1's fetch found the
+   integration tip already in the branch (`git merge-base --is-ancestor
+   <remote>/<integration> HEAD`), so the merge brought nothing in; `git rev-parse
+   HEAD^{tree}` equals the `reviewed_tree` in the review report; and that report
+   is the one this session's review stage returned, which puts its gate on this
+   host — a gate is not host-portable, and a suite has run green in CI and red on
+   a developer's machine over a temp path one character past a 200-character
+   cap. The report's gate output is then this stage's evidence, read in full.
+   Any condition unmet, and the gate runs.
 3. *Pass.* Green over the tree in hand is what licenses the push. **A red gate
    here is this builder's to fix, whatever caused it.** That is the resolved
    posture and it is deliberate: stop the line, not stop the tick. The bytes
@@ -101,8 +110,8 @@ a run that skipped the review, which this command does not launder.
    fix made here is made after the review that no longer covers it. That is the
    trade the split accepts, and a fix large enough to want a reviewer is a fix
    large enough to go back to one.
-4. *Tree compare.* `git rev-parse HEAD^{tree}` must equal the tree the gate just
-   ran over. Nothing may be edited between the gate and the push — the check is
+4. *Tree compare.* `git rev-parse HEAD^{tree}` must equal the tree stage 2's
+   evidence covers. Nothing may be edited between the gate and the push — the check is
    cheap and it is the whole of what the retired binding still buys.
 5. *Push.* Integrate exactly as `harness.yaml`'s `branches:` block declares:
    a direct push where the model allows one, a PR where it requires one, and

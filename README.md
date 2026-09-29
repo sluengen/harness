@@ -74,7 +74,7 @@ output before claiming anything complete.
 | **Hooks** | 5 | One refuses: an edit to a test file while the run has locked its tests. Four advise: injection-shaped content on write, a source edit on the default branch or outside a worktree, a push aimed at a branch the repo declares, and a session started on a plugin version behind the published one |
 
 The hooks are a backstop, not the assurance. The assurance is the repo's gate,
-run and read by the builder, plus the independent review. Branch protection and
+run and read by an agent in the run, plus the independent review. Branch protection and
 any other server-side controls stay the repository's own.
 
 Tickets live in GitHub Issues and Projects, Linear, or nowhere — with `tracker:
