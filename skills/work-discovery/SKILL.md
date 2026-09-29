@@ -11,7 +11,7 @@ An unattended loop reads the queue and decides, with no human in the turn, which
 
 Work off the Build queue. Its scope comes from the optional `repo.project` in `harness.yaml`, resolved at runtime and never hardcoded: set, scope to that one project's queue; unset, take the provider's natural full queue. Resolve the address through `tracker` rather than naming a backend here.
 
-Consider only tickets in Todo — an In Progress ticket is somebody's live run, and In Review is somebody's open handoff. Scope bounds only which tickets are in view; the ranking and actionability tests below are the same either way.
+Consider only tickets in Todo — an In Progress ticket is somebody's live run until its claim says otherwise (*Stale runs* below), and In Review is somebody's open handoff. Scope bounds only which tickets are in view; the ranking and actionability tests below are the same either way.
 
 **The queue is bounded**, and *The limit* below is the step that acts on it. `repo.project` names where the queue lives; `queue.project_field` names the field a ticket's own initiative is read from, and the bounds are read per initiative.
 
@@ -72,6 +72,12 @@ Run this **after the andon check and before ranking**, and run it as a step rath
 4. Then rank Todo, including anything you just pulled.
 
 This step is the only thing in the loop that moves a ticket out of Backlog. The operator can of course move one on the board by hand, which is outside this loop and needs no command. `tracker` owns the operations and `harness.yaml` owns the numbers — never restate one here.
+
+## Stale runs — report an In Progress ticket whose claim has aged out
+
+Run this beside step 1 of the limit, which already reads every In Progress ticket. For each one that is not held, read its claim through `tracker`, which owns what a claim is and when one goes stale. **Where the claim is stale, or the ticket carries none, name it in this tick's report**: the ticket, the claim's age (or that there is none), and the branch the claim names, which is where the dead run's commits are. The report carries this whatever else the tick does, a tick that finds nothing actionable included; under a stopped line, *What a stopped tick outputs* governs instead.
+
+**Report it and do nothing else to it.** Do not pick it, move it, hold it or touch its branch: a claim's age says the run is probably gone and cannot prove it, which is the same reason `worktree-isolation` refuses to reclaim a worktree on a timestamp. The ticket keeps counting against the limit. An operator who reads the line decides whether to resume it, and a stale claim on the cord is the one case handled elsewhere (*A claimed cord is somebody's repair*).
 
 ## Ranking — the next most logical ticket
 
