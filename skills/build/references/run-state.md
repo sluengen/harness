@@ -48,7 +48,7 @@ are the stages a resume needs and no block has. A second vocabulary for the same
 word is the defect this shape avoids.
 
 **Two stages appear in both blocks, and neither is two stages.** `rebase` runs
-once before the review and once before the landing gate — same operation, same
+once before the review and once at landing — same operation, same
 rules, one reference. `pass` means *the run holds green certification over the
 tree in hand and may proceed*, which is why the `authority` field carries the
 difference: at `/build` the **reviewer** certifies it as a verdict, at `/promote`

@@ -8,7 +8,10 @@ replacement. Resolve the engine at set-up and record which one ran.
 Run the independent Codex reviewer from the worktree in a **read-only sandbox**
 on the same review packet the Claude reviewer would receive, which
 `agents/reviewer.md` → *Your context is the packet* defines, plus the two this
-engine adds: the committed candidate's lint output and `reviewed_tree`. Never the
+engine adds: the committed candidate's complete gate output and `reviewed_tree`.
+A read-only sandbox cannot run the gate, so on this engine the driving run runs
+`commands.verify` over the committed candidate, reads it, and hands it over for the
+reviewer to judge — it is the full-suite claim this engine cannot make itself. Never the
 implementer's conversation. A second list drifts from the first, and this one
 had: it named the lint output and omitted the canonical record.
 
