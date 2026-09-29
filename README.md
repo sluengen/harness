@@ -27,7 +27,8 @@ process:
    builder, for a bounded number of cycles) or **DEFER** (held for you). On PASS
    the reviewer — never the builder — writes the as-built record.
 4. **Land.** `/promote` rebases onto the integration branch, runs the gate again
-   over the exact tree that will land, pushes, and closes the ticket. The same
+   over the exact tree that will land unless the reviewer already gated it,
+   pushes, and closes the ticket. The same
    command moves completed work along the repo's release branches.
 5. **Improve.** Every build ends with a short reflection that files what should
    change to an improvement ledger. `/assess` runs periodic health checks;
@@ -61,8 +62,8 @@ repo as the **spine** — `AGENTS.md`, loaded in every session — which carries
   user data, credentials or money stops and waits for a person.
 
 Your repo's commands, branches, tracker and layers live in `harness.yaml`. The
-gate is yours: `commands.verify` names it, and the builder runs it and reads its
-output before claiming anything complete.
+gate is yours: `commands.verify` names it, and an agent in the run runs it and
+reads its output before claiming anything complete.
 
 ## What the plugin carries
 

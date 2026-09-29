@@ -10,7 +10,7 @@ set -euo pipefail
 # what *passed*.
 #
 # So this script runs stages and exits, and it writes no evidence. The claim a
-# green run licenses is law 3's, held by the builder who ran it and read it, not
+# green run licenses is law 3's, held by the agent who ran it and read it, not
 # by a token left on disk for a later hook to find. Nothing may infer
 # authorisation from the fact that this script once exited zero.
 

@@ -230,7 +230,7 @@
     </p>
     <figure class="flow">
       <div class="flow__scroll">
-        <svg viewBox="0 0 1200 440" role="img" aria-label="One ticket's path through the process. The ticket branch is cut from dev after gate 1 passes over the base. The spec is grounded, tests are written red and locked, and the build turns them green. The branch is rebased on dev and an independent reviewer runs gate 2: FAIL sends findings back to the build, DEFER holds the ticket for a person, and PASS pushes the branch. Promote rebases again, runs gate 3 over what will land, and pushes to dev. A nightly release hop gates dev again before it reaches main. Routine runs build and promote unattended.">
+        <svg viewBox="0 0 1200 440" role="img" aria-label="One ticket's path through the process. The ticket branch is cut from dev. The spec is grounded, tests are written red and locked, and the build turns them green. The branch is rebased on dev and an independent reviewer runs the gate: FAIL sends findings back to the build, DEFER holds the ticket for a person, and PASS pushes the branch. Promote rebases again, gates again unless nothing has moved since the review, and pushes to dev. A nightly release hop gates dev again before it reaches main. Routine runs build and promote unattended.">
           <defs>
             <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0 L10 5 L0 10 z"/></marker>
             <marker id="ah-s" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah ah--s" d="M0 0 L10 5 L0 10 z"/></marker>
