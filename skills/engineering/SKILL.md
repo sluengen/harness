@@ -112,7 +112,7 @@ No completion claim without fresh evidence. Identify the command that proves the
 | Claim | Required evidence |
 |---|---|
 | Tests pass, at hand-off | The change's tests and its dependents' — what imports or calls the changed code, or reads a changed file — output read |
-| Tests pass, certified | The complete `commands.verify` gate, output read: the review stage's claim, or in the fix lane, which has no reviewer, the builder's |
+| Tests pass, certified | The complete `commands.verify` gate, output read: the reviewer's claim, or the builder's where no reviewer can run it — the fix lane, and `--engine codex` |
 | Bug fixed | The regression test, shown passing |
 | Measurable criterion met | A test measuring the quantity and asserting the bound — a structural change that ought to reduce it is not proof that it did |
 | Ready for review | All of the above that apply at hand-off |

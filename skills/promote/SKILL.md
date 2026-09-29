@@ -93,8 +93,8 @@ a run that skipped the review, which this command does not launder.
    hardcode one here. Capture the output and read all of it.
    **Skip the run only where both hold** (#731): `git rev-parse HEAD^{tree}`,
    taken after stage 1, equals the `reviewed_tree` in the review report; and that
-   review stage ran in this session and its complete gate over that tree was
-   green (the reviewer's, or on `--engine codex` the driving run's). A run that wrote the
+   review ran in this session and its reviewer's own complete gate over that tree
+   was green — never on `--engine codex`, whose reviewer cannot run one. A run that wrote the
    reviewer's record bytes itself has moved the tree past that value, so it
    gates. The session is law 3's condition, and it is also the host's: a
    gate is not host-portable, and a suite has run green in CI and red on a
