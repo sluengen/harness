@@ -4,9 +4,8 @@ Load this on entering the `rebase` stage. There are **two** of them and this is
 their one home: `/build` rebases *before* the review, so the reviewer reads the
 branch as it will land; `/promote` rebases again *before* the gate it pushes on,
 so that gate covers the bytes that will actually land rather than a tree the
-base has already moved out from under — a fresh run where the rebase brought
-anything in, the review's own where it brought nothing (`skills/promote/SKILL.md`
-stage 2). The stage was called `reconcile`
+base has already moved out from under — a fresh run, or the review stage's own where
+`skills/promote/SKILL.md` stage 2's conditions hold. The stage was called `reconcile`
 and sat between two review stages until #623; the delta review that placement
 required is gone, and the rules below did not depend on it.
 

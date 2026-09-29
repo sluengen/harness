@@ -20,7 +20,7 @@ so it never reaches the tree the reviewer reads or the gate runs over.
 | `stage` | string | one of the names below |
 | `tests_locked` | boolean | strictly boolean. `false` at set-up, `true` in the same write that sets `stage: "implement"` |
 | `base_commit` | string | the commit the worktree branched from. The test lock asks this tree whether a test file is new |
-| `reviewed_tree` | string \| null | tree oid the verdict was issued over. `/promote`'s rebase moves the tree past it whenever it brings anything in |
+| `reviewed_tree` | string \| null | tree oid the verdict was issued over. `/promote`'s rebase moves the tree past it whenever the merge changes the tree |
 | `verdict` | string \| null | `PASS` \| `FAIL` \| `DEFER` — transcribed from the reviewer's report, never authored |
 | `review_cycles` | integer | cycles **spent**, against `loop.max_review_cycles` |
 | `engine` | string | `claude` \| `codex` |
@@ -89,11 +89,11 @@ inherited across a change — and the resume path inherits it rather than
 inventing a second one.
 
 **`/promote`'s own rebase is the one exception, and it is an exception by
-decision rather than by oversight.** Where it brings commits in, it moves the
-tree past `reviewed_tree` on purpose, so the fields do not survive it and the run
+decision rather than by oversight.** Where the merge changes the tree, it moves it
+past `reviewed_tree` on purpose, so the fields do not survive it and the run
 does not return to review: what licenses the push from there is the gate
 `/promote` runs over the merged tree, plus the verdict on record for the ticket.
-Where it brings nothing in, the tree still matches, and `skills/promote/SKILL.md`
+Where the tree still matches, `skills/promote/SKILL.md`
 stage 2 says when the review's own gate is the push's evidence. `skills/promote/SKILL.md` names
 the residual that trades for — a fix made after the review that no longer covers
 it — rather than leaving it to be discovered here.

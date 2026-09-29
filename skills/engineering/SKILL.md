@@ -112,10 +112,10 @@ No completion claim without fresh evidence. Identify the command that proves the
 | Claim | Required evidence |
 |---|---|
 | Tests pass, at hand-off | The change's tests and its dependents' — what imports or calls the changed code, or reads a changed file — output read |
-| Tests pass, certified | The complete `commands.verify` gate, output read: the reviewer's claim, or in the fix lane, which has no reviewer, the builder's |
+| Tests pass, certified | The complete `commands.verify` gate, output read: the review stage's claim, or in the fix lane, which has no reviewer, the builder's |
 | Bug fixed | The regression test, shown passing |
 | Measurable criterion met | A test measuring the quantity and asserting the bound — a structural change that ought to reduce it is not proof that it did |
-| Ready for review | All of the above that apply |
+| Ready for review | All of the above that apply at hand-off |
 
 A builder hands off on the targeted set because the reviewer's complete gate runs over the same tree, and a builder's own full run is one the ticket would pay for twice (#731). A failure in either that the diff does not explain is attributed before it is fixed: `worktree-isolation` → *A red base*.
 
