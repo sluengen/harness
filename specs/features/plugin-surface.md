@@ -5416,6 +5416,24 @@ The stale-run report does not cover In Review. `/build` moves the ticket to In R
 
 **Verification.** This reviewer ran and read `bash scripts/verify.sh` over `cc9a7e89` before writing this record: 677 passed, design-token drift guard OK, `All checks passed`, exit 0. The certifying run over `cc9a7e89` plus this record is the one the review report names.
 
+### #730: `/build` asks before it clears a hold the invocation did not answer
+
+One `simple`-lane ticket, one skill file changed plus the version homes: commit `624e04e5` on `work-730`, cut from `5a5df949`.
+
+`/build` step 2 read a human naming a held ticket as the answer arriving, and removed the hold label and the assignment without reading the hold comment. A hold can ask the operator to do something first, and step 2 could not tell that apart from a question the invocation answers. In a consuming repo on plugin 21.4.0, `/build` cleared a hold filed so the operator could review a data contract. Grounding and design then settled the contract without them, and their review after the first PASS changed the tree, which cost a second review cycle and a second landing gate.
+
+- `skills/build/SKILL.md` step 1 now stops at opening the ticket. It stops and reports, having written nothing, on a Done ticket, an unmet dependency or a ticket the tracker cannot find. The transition to In Progress and the claim moved to the end of step 2, so a run that declines a hold has written nothing. The worktree collision it cites is now named as step 4 instead of "two steps later".
+- Step 2 reads what the hold comment says is needed and judges clearability as `work-discovery` → *Return path* does. It adds one case that section does not make: the operator may waive what the hold asked for. Where the invocation supplies the answer, or says to start without it, the run releases, and the invocation's words are the resolution. Otherwise, attended, the run asks before any write: it quotes why the ticket is held and what is needed, and asks whether that is done or whether to start anyway. Either answer releases. After a "done" the run re-opens the ticket before its first write, so it does not overwrite amendments the operator made during the hold. Any other reply, or none, leaves the hold, writes nothing and stops. An unattended run whose invocation does not supply what is needed leaves the hold, writes nothing, and names in its output what the ticket waits on. *Released* is the *Return path* section's three parts, and the resolution replaces any `[NEEDS CLARIFICATION: …]` marker it answers. The claim then names any hold cleared and what cleared it.
+- `tracker` → *`hold`* gains no line. The spine's hold contract already requires a comment saying why the ticket is held and what is needed, so step 2 has text to quote.
+
+This supersedes two earlier descriptions in this record: #611(b)'s step 2 as producer-side housekeeping that clears a stale hold, and #728's "step 1 claims every ticket". The claim is unchanged in content and is now written at step 2.
+
+**Evidence.** The change is guidance, so the evidence is ADR 0019's for prose: this reviewer read step 2 against each criterion, and the builder reported three rounds of use-probes, each a fresh agent given steps 1 and 2 and *Return path*. The scenarios were an attended `input` hold asking for a contract review (the observed case), an attended control whose invocation carried the answer, and an unattended run on an `operator` hold. In all three rounds the first asked before writing, the control released without asking, and the unattended run wrote nothing and stopped. The findings from rounds 1 and 2 were folded, and round 3, over `624e04e5`, returned none. The transcripts are not in the tree.
+
+**The version class is major, raised at this review: `21.6.0` → `22.0.0`.** Before this change `/build` on a held ticket completed: it cleared the hold and built. After it, the same call stops when the operator declines, and an unattended call whose invocation does not supply what the hold needs always stops. That is a call that used to complete and now blocks, the test `certifying.md` names and the one #700 was raised major for. It reaches a consumer whose operator names held tickets to `/build`, which is how the observed case arose. `/build` step 7 raised the four homes from `21.5.0` (`origin/main`) to `21.6.0`, and this review raised both plugin manifests and the `spine:generated` markers in `AGENTS.md` and `templates/spine.md` to `22.0.0` inside the candidate, before the certifying gate.
+
+**Verification.** The certifying run of `bash scripts/verify.sh` over `624e04e5` plus this record and the major raise is the one the review report for #730 names.
+
 ## Cross-references
 
 - `specs/harness-assumptions.md` — one row per hook, script, skill and agent: what it assumes the model cannot do, and the test that would retire it. Read at every model or host release.
