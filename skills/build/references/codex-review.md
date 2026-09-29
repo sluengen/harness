@@ -11,7 +11,8 @@ on the same review packet the Claude reviewer would receive, which
 engine adds: the committed candidate's lint output, its complete gate output, and
 `reviewed_tree`. **A read-only sandbox cannot run the gate**, so on this engine the
 builder still runs `commands.verify` over the committed candidate before hand-off,
-as every builder did before #731, and the reviewer judges that output; `/promote`
+as every builder did before #731, and the reviewer judges that output — say so in
+the packet, as context, so it does not try a gate its sandbox would fail; `/promote`
 always runs its own landing gate after a review on this engine. Never the
 implementer's conversation. A second list drifts from the first, and this one
 had: it named the lint output and omitted the canonical record.
