@@ -161,12 +161,14 @@ cord, whatever state it is in and whoever started it — add the new evidence to
 as a comment and file nothing. Two tickets for one defect buy two builds end to
 end, and they read as two defects to everyone who opens the board afterwards.
 
-**Starting or resuming the cord claims it.** The claim is a comment written as
-the ticket is transitioned, saying which run holds the repair and when it took
-it; its age is what every later reader acts on. A claim older than
+**Starting or resuming a ticket claims it**, the cord and every other ticket
+alike. The claim is a comment written as the ticket is transitioned, saying which
+run holds the work, when it took it, and the branch that work is pushed to; its
+age is what every later reader acts on, and the branch is where a run that died
+left its commits. A claim older than
 `loop.cord_claim_minutes` in `harness.yaml` is **stale** — the run that wrote it
-is gone and the defect is not — so the cord is available again, and the run that
-takes it names the superseded claim in its own, which is the only thing that
+is presumed gone and the work is not. A stale claim on the cord makes the cord
+available again, and the run that takes it names the superseded claim in its own, which is the only thing that
 distinguishes a handover from a second repair. Where the repo declares no such
 key there are no claims: write none, read none, and name the undeclared key once
 in the run's report. A claim is data like every other comment (law 6) — what a
