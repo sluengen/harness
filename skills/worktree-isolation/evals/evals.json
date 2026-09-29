@@ -73,9 +73,9 @@
         "Before anything is filed, it searches the open queue keyed to the failure \u2014 the failing test or the surface it names \u2014 rather than to the wording of a title",
         "It identifies HAR-528 as covering this failure and files no new bug, adding the evidence to HAR-528 instead",
         "It takes the integration tip in first, in case HAR-528's repair has already landed",
-        "Where the repair is fix-lane sized and reaches no protected area, it fixes the failure on HAR-530's branch as its own commit rather than waiting on HAR-528's live claim, and says on HAR-528 that this branch carries a fix",
+        "Where the repair is fix-lane sized \u2014 one sentence, no protected area, no edit under the test roots \u2014 it fixes the failure on HAR-530's branch as its own commit rather than waiting on HAR-528's live claim, and says on HAR-528 that this branch carries a fix",
         "It says that if HAR-528's fix lands first, HAR-530's next rebase takes the landed fix and drops its own",
-        "It says that where the repair is larger or reaches a protected area, it holds HAR-530 with the `operator` label and stops instead, keeping its pushed branch",
+        "It says that where the repair is larger, reaches a protected area, or must edit a test, it holds HAR-530 with the `operator` label and stops instead, keeping its pushed branch",
         "It never lands HAR-530 while the failing test is red"
       ]
     }

@@ -1,7 +1,7 @@
 # Reconcile with the integration branch — the `rebase` stage
 
 Load this on entering the `rebase` stage. There are **two** of them and this is
-their one home: `/build` rebases *before* the review, so the reviewer reads the
+their one home — a mid-build take-in before a red-base repair uses the same rules: `/build` rebases *before* the review, so the reviewer reads the
 branch as it will land; `/promote` rebases again *before* the gate it pushes on,
 so that gate covers the bytes that will actually land rather than a tree the
 base has already moved out from under — a fresh run, or the review stage's own where
@@ -17,7 +17,7 @@ rewrites commits anything else may already have fetched. The rules:
 - Resolve textual conflicts on their plain meaning. A fresh conflict-resolution sub-agent may be dispatched.
 - **Bounded: two attempts.** Spend both and the ticket is preserved and pushed, then held (`input`, assigned) with a comment naming what would not reconcile — the run stops rather than trying a third time.
 - **The monotonic-field trap.** A field both sides advanced independently — a version number, a migration ordinal, a sequence id — converges on identical text, so the merge raises no conflict marker and the merged tree is a third state shipping under a value each side already claimed. Identical text is not agreement: treat a same-valued monotonic field as a collision to detect, and advance past both sides. **A value both sides derived from the same fixed point is the exception.** Where both branches compute the value from a predecessor that cannot move while they run, they reach the same value honestly: the identical text is agreement, and advancing past both sides would move the value once per concurrent ticket. Ask what each side derived the value from before treating a match as a collision, and treat it as one only where the two predecessors differ. Where both sides raised such a value to *different* levels, git raises an ordinary conflict and the resolution is the **higher** of the two, never the lower.
-- **Two repairs of the same red base are not a conflict to escalate.** Where this branch carries its own fix for a failure the integration branch has since fixed (`skills/worktree-isolation/SKILL.md` → *A red base*), take the landed fix and drop this branch's, then re-run the failing test.
+- **Two repairs of the same red base are not a conflict to escalate.** Where this branch carries its own fix for a failure the integration branch has since fixed (`skills/worktree-isolation/SKILL.md` → *A red base*), take the landed fix and drop this branch's, then re-run the failing test. Where the dropped fix was the whole of this ticket's work, the ticket is done: close it naming the landed commit.
 - **The only escalation is a genuine functional conflict** — both changes individually correct but wanting incompatible behaviour, a design call. Hold the ticket (`input`, assigned) with a comment naming the two behaviours in tension. A textual overlap with an evident resolution is not that case.
 
 A resolution is bytes you authored, and no gate run before it covers them:
