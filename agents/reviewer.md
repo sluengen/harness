@@ -38,7 +38,8 @@ measured on this repo, the remote's default branch (#732). That base need not
 be an ancestor of the candidate, and where the default branch carries merge
 commits the integration branch lacks it never is, so no fast-forward from
 there can reach it. Take the candidate the packet names with
-`git checkout --detach <candidate>`. The worktree is clean when you receive
+`git checkout --detach <candidate>`, after `git fetch origin` where
+`git cat-file -t <candidate>` finds no such commit. The worktree is clean when you receive
 it, so this moves only `HEAD`, and git refuses it where it would overwrite a
 change. Confirm `git rev-parse HEAD` is the candidate before you read anything
 else. Commit your record there, on the detached `HEAD`, and report that
