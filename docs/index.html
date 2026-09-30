@@ -230,7 +230,7 @@
     </p>
     <figure class="flow">
       <div class="flow__scroll">
-        <svg viewBox="0 0 1200 440" role="img" aria-label="One ticket's path through the process. The ticket branch is cut from dev after gate 1 passes over the base. The spec is grounded, tests are written red and locked, and the build turns them green. The branch is rebased on dev and an independent reviewer runs gate 2: FAIL sends findings back to the build, DEFER holds the ticket for a person, and PASS pushes the branch. Promote rebases again, runs gate 3 over what will land, and pushes to dev. A nightly release hop gates dev again before it reaches main. Routine runs build and promote unattended.">
+        <svg viewBox="0 0 1200 440" role="img" aria-label="One ticket's path through the process. The ticket branch is cut from dev. The spec is grounded, tests are written red and locked, and the build turns them green. The branch is rebased on dev and an independent reviewer runs the gate: FAIL sends findings back to the build, DEFER holds the ticket for a person, and PASS pushes the branch. Promote rebases again, gates again unless nothing has moved since the review, and pushes to dev. A nightly release hop gates dev again before it reaches main. Routine runs build and promote unattended.">
           <defs>
             <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0 L10 5 L0 10 z"/></marker>
             <marker id="ah-s" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah ah--s" d="M0 0 L10 5 L0 10 z"/></marker>
@@ -252,10 +252,9 @@
           <line class="ln ln--main" x1="130" y1="60" x2="1188" y2="60"/>
           <line class="ln ln--dev" x1="130" y1="140" x2="1188" y2="140"/>
 
-          <!-- cut the ticket branch off a gated base -->
-          <path class="ln" d="M172 151 V250 H1026"/>
-          <g class="gate"><rect x="140" y="129" width="64" height="22" rx="11"/><text x="172" y="144">gate 1</text></g>
-          <text x="184" y="180">worktree cut from a green base</text>
+          <!-- cut the ticket branch off dev -->
+          <path class="ln" d="M172 140 V250 H1026"/>
+          <text x="184" y="180">worktree cut from dev</text>
 
           <!-- build -->
           <circle class="node" cx="240" cy="250" r="8"/><text class="mid" x="240" y="278">grounded spec</text>
@@ -266,7 +265,7 @@
           <!-- review -->
           <path class="ln" d="M588 140 L607 238" marker-end="url(#ah)"/>
           <circle class="node" cx="610" cy="250" r="8"/><text class="mid" x="610" y="278">rebase on dev</text>
-          <g class="gate"><rect x="688" y="239" width="64" height="22" rx="11"/><text x="720" y="254">gate 2</text></g>
+          <g class="gate"><rect x="688" y="239" width="64" height="22" rx="11"/><text x="720" y="254">gate</text></g>
           <text class="mid" x="720" y="232">reviewer runs it</text>
           <circle class="node node--pass" cx="815" cy="250" r="8"/>
           <text class="mid" x="815" y="278">PASS</text><text class="mid" x="815" y="292">branch pushed</text>
@@ -279,8 +278,8 @@
           <!-- promote -->
           <path class="ln" d="M893 140 L912 238" marker-end="url(#ah)"/>
           <circle class="node" cx="915" cy="250" r="8"/><text class="mid" x="915" y="278">rebase again</text>
-          <g class="gate"><rect x="968" y="239" width="64" height="22" rx="11"/><text x="1000" y="254">gate 3</text></g>
-          <text class="mid" x="1000" y="232">over what lands</text>
+          <g class="gate"><rect x="968" y="239" width="64" height="22" rx="11"/><text x="1000" y="254">gate</text></g>
+          <text class="mid" x="1000" y="232">if dev moved</text>
           <path class="ln" d="M1034 250 Q1054 250 1060 226 L1073 153" marker-end="url(#ah)"/>
           <text x="1078" y="198">push</text>
           <circle class="node node--land" cx="1075" cy="140" r="7"/>
@@ -304,9 +303,9 @@
         </svg>
       </div>
       <figcaption>
-        One ticket's path. The same gate runs three times per ticket — over the base before the branch is
-        cut, by the reviewer over the tree it read, and over the tree that lands — and the release hop runs
-        it once more before <code>main</code>. A FAIL goes back to the builder for a bounded number of
+        One ticket's path. The reviewer runs the gate over the tree it read; it runs again over the tree
+        that lands unless nothing has moved since, and the release hop runs it once more before
+        <code>main</code>. A FAIL goes back to the builder for a bounded number of
         cycles; a DEFER holds the ticket for a person.
       </figcaption>
     </figure>
@@ -332,7 +331,7 @@
         <h3>Gated merge</h3>
         <p>
           <code>/promote</code> rebases onto the integration branch, runs the gate again over the exact
-          tree that will land, pushes, and closes the ticket. The same command moves completed work
+          tree that will land unless the reviewer already gated it, pushes, and closes the ticket. The same command moves completed work
           along the repo's release branches.
         </p>
       </article>
@@ -448,7 +447,8 @@ ask to hydrate Harness</pre>
         <p>
           A change spec lives on the tracker issue. One command takes it to a reviewed branch and a
           second lands it. The reviewer is a separate agent in a fresh context; its verdict covers the
-          tree it read, and a second gate over the tree that lands is what licenses the push.
+          tree it read, and a gate over the tree that lands licenses the push: the reviewer's where
+          nothing moved, a second one where it did.
         </p>
         <ol class="steps"><li><span>spec</span></li><li><span>build</span></li><li><span>review</span></li><li><span>gate</span></li><li><span>land</span></li></ol>
       </article>
@@ -478,8 +478,8 @@ ask to hydrate Harness</pre>
         <p>
           What makes the claim checkable is that it is narrow enough to re-run. A green is green over the
           exact bytes it ran on — nothing else — so an amend that rewrites no bytes changes nothing, and
-          one more edit invalidates the run. The builder who ran it and read the output is who holds that
-          claim, which is why the gate runs again over whatever the branch has become at landing.
+          one more edit invalidates the run. The agent who ran it and read the output holds that claim, which
+          is why the gate runs again at landing whenever the branch has become something else.
         </p>
         <ul class="stages">
           <li>ruff</li><li>mypy</li><li>pytest + coverage floor</li><li>design-token drift</li>
@@ -489,8 +489,8 @@ ask to hydrate Harness</pre>
         <h4>What a green licenses</h4>
         <code>green over these exact bytes — and no others</code>
         <p>
-          Any stage failing means no claim at all. The assurance is this gate, run and read by the
-          builder, plus the independent review — one hook refuses and four advise, and none of them is
+          Any stage failing means no claim at all. The assurance is this gate, run and read by an
+          agent in the run, plus the independent review — one hook refuses and four advise, and none of them is
           the assurance. Whatever server-side controls a repository runs are its own.
         </p>
       </div>
