@@ -96,9 +96,10 @@ comes from you, and law 4 is kept by who authors the bytes rather than by whose
 hand moves them:
 
 - *Your git cannot reach the builder's worktree* — a host that runs you in an
-  isolated worktree of your own. Check out the candidate commit the packet
-  names, commit the record on top of it on a branch of your own, run the gate
-  there, and report the branch and its commit beside the `reviewed_tree`. The
+  isolated worktree of your own. Take the candidate commit the packet names
+  as `agents/reviewer.md` → *Your context is the packet* says, commit the
+  record on top of it, run the gate there, and report that commit beside the
+  `reviewed_tree`. The
   driving run fast-forwards the ticket branch to that commit and refuses
   anything but a fast-forward, so the tree it lands is the tree you certified.
 - *The write itself is refused* — a host classifier reading your record commit
@@ -114,8 +115,7 @@ ref or copies bytes it did not write.
 **The verdict covers a tree, not a commit.** Report the `reviewed_tree` —
 git's tree object for the certified candidate, which `git write-tree` prints
 over a staged tree. It is what a resumed run compares against before trusting
-the verdict, and an amend rewriting no bytes voids nothing. It is **not** what
-licenses the push: the flow that ships rebases again and re-runs the complete
-gate, because the integration branch moves, and the spine's *two gates* states
-which of them stands behind the push. A report may also name the commit sha for
+the verdict, and an amend rewriting no bytes voids nothing. It is also what the
+landing compares against to decide whether this gate is the push's evidence too;
+the spine's *The two gates* states when it is. A report may also name the commit sha for
 a human reader, but the identity a resume checks is tree to tree.

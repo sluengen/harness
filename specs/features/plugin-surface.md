@@ -1,12 +1,12 @@
 ---
 feature: plugin-surface
 status: implemented
-last_updated: 2026-09-23
+last_updated: 2026-09-30
 ---
 
 # The plugin surface
 
-> The harness is a spec-driven development process shipped as native plugins for Claude Code and Codex. Both packages carry the same skills, lifecycle procedures, role guidance, and hooks under one version, plus the guards this repo runs over them. Since #621 the assurance is the gate a repo declares in `commands.verify`, run and read by the builder, plus the independent review; server-side controls are the repository's own and are neither required nor assumed. This record is the canonical answer to "what is the harness now" (v5, ADR 0017); its registry-era predecessor, the `guidance-system` record, left the tree with `specs/retired/` at #547 and stays in git history.
+> The harness is a spec-driven development process shipped as native plugins for Claude Code and Codex. Both packages carry the same skills, lifecycle procedures, role guidance, and hooks under one version, plus the guards this repo runs over them. Since #621 the assurance is the gate a repo declares in `commands.verify`, run and read by an agent in the run (the reviewer, since #731), plus the independent review; server-side controls are the repository's own and are neither required nor assumed. This record is the canonical answer to "what is the harness now" (v5, ADR 0017); its registry-era predecessor, the `guidance-system` record, left the tree with `specs/retired/` at #547 and stays in git history.
 
 ## Behaviour
 
@@ -410,6 +410,8 @@ by the same tick, onto the same declared role, moved inside `/promote`'s landing
 altitude. Its hold rule gained the matching exclusion: a red gate at landing is not a
 hold, because stage 3 says the builder fixes it.
 
+*Superseded 2026-10-01 (#734):* the clause this paragraph describes is gone. The host never read the `autoMode` block it sat in, and #734 retired the block from both settings files. Its push and close halves are now narrow `permissions.allow` rules; *#734* below records each disposition. The paragraph that follows stands as history.
+
 **The unattended permission clause was rewritten because the old one had become
 unsatisfiable.** `settings/harness.json` and `.claude/settings.json` both carried a
 *Closing a shipped ticket* clause conditioned on a review PASS "whose `reviewed_tree`
@@ -424,6 +426,8 @@ and ADR 0022's *Consequences* already accepted from the operator, not a new lice
 change invented. The clause is one opaque string to
 `tests/unit/test_settings_template_parity.py`, so both copies had to move together and
 did.
+
+*Superseded in part 2026-09-30 (#731):* the landing gate no longer always runs, and the `reviewed_tree` is no longer only what a resume compares against. Where the tree after `/promote`'s merge still equals the `reviewed_tree` of a review the same session ran, the reviewer's gate is the push's evidence. *#731* below records the rule; the paragraph that follows stands as history.
 
 **The spine's *The binding* entry became *The two gates*.** A verdict covers the tree the
 reviewer read; a push is licensed by a gate run over the tree that lands; those are two
@@ -762,6 +766,8 @@ is the purchase ADR 0022 point 4 asks a change spec to record against its
 guard-to-change ratio.
 
 ### The landing posture
+
+*Superseded in part 2026-09-30 (#731):* two sentences below no longer hold. What licenses a push is the landing gate, or the reviewer's gate where the landed tree equals a same-session review's `reviewed_tree`. And `skills/worktree-isolation` cuts the branch from the fetched integration tip without gating it. *#731* below records both.
 
 **Retired at #621 with ADR 0020, which it implemented.** A verdict still names the tree
 it covered, but the two-shape binding the spine admitted at #621 — the reviewed tree, or
@@ -2662,6 +2668,8 @@ For a consumer already hydrated, step 3 retains their `harness.yaml` whatever it
 
 *Decided at the design stage of #660, 2026-09-15.*
 
+*Superseded in part 2026-09-30 (#731):* the base gate this block orders around no longer runs. Point 1's placement argument, grounding ahead of the gate so a red base cannot swallow the `/propose` redirect, now holds with nothing to be ahead of. Point 4's red-base disposition (remove the worktree, hold, stop, whether or not a repair is in flight) is replaced by `worktree-isolation` → *A red base*. The out-of-scope case under *Consequences*, a cord repair refused by its own red base, is resolved: no base gate refuses it, and a run meeting a fix-lane-sized red repairs it on its own branch. Points 2 and 3 stand.
+
 **Context.** `/build`'s setup ran, before this decision, in an order nothing chose: grounding sat fourth, telling the run to check every fact "against the code as it is *now*", and the worktree was cut fifth — which is where the setup path's only `git fetch` lives, under `skills/worktree-isolation/SKILL.md` → *Creating the worktree*. The steps are named rather than numbered here because this decision renumbers them. Grounding therefore reads whatever the checkout last saw. It failed twice on this ticket alone — once reading the #664 Decision block as absent because the checkout was two commits behind it, and once, recorded on the ticket at 03:27, reading the ticket's own central claim as false because the checkout predated the test that landed it. Step 1 has the mirror problem in the other direction: it writes In Progress and a comment onto the ticket *before* anything looks at the host, so a second attended `/build <TICKET>` marks a ticket another run holds and only then meets `git worktree add`'s native refusal at step 5. Two writes onto somebody else's ticket, and a board state that names the wrong run, are the cost this ticket can measure on this host. Whether the duplicate build the ticket was filed from shared a host stays unestablished — both primary records are silent, the ticket's own 02:19 comment says so, and nothing below claims that case.
 
 **Decision.** Three of the four criteria are answered by moving a read, and none of them adds a signal.
@@ -3537,6 +3545,8 @@ against the 85% floor, design-token drift guard OK, `All checks passed`, exit 0.
 
 ### #662: *Gating the base* names the run's two jobs and its empty-diff dependency
 
+*Superseded 2026-09-30 (#731):* *Gating the base* is gone, and with it the two jobs, the empty-diff paragraph and the costing sentence recorded here. Attribution moved to *A red base*, which runs only the failing tests at the integration tip. The watchdog job now falls to the build's own tests, the reviewer's gate and the release hop, and a repo with CI on integration pushes has its own.
+
 `skills/worktree-isolation/SKILL.md` → *Gating the base* gains three paragraphs
 between the sequencing rationale and the "somebody else's green" note. The first
 names the two jobs the base gate run answers for — attribution, and the only
@@ -3633,6 +3643,8 @@ unrelated change to `skills/worktree-isolation/SKILL.md`, reviewed separately.
 `All checks passed`, exit 0.
 
 ### #673: the portable-dependency caveat and the red-base hold's label
+
+*Superseded in part 2026-09-30 (#731):* the **Red** bullet is now *A red base*, and a red base is no longer always a hold: a fix-lane-sized repair is made on the ticket's branch. The `operator`/`input` split survives for the hold that remains, and the "arrives dressed as a red base" paragraph now points at *A red base*.
 
 `skills/worktree-isolation/SKILL.md` gains two clauses, closing the gap
 #660's own record named open (above) and the one filed independently at
@@ -4926,6 +4938,8 @@ the candidate. Results are in the review report for #712.
 
 ### #708: the run-cost figure joins the spine's *Lanes* bullet, and *Actionability* gains a size/absorb question
 
+*Superseded in part 2026-09-30 (#731):* the *Lanes* sentence quoted under AC-1 no longer prices three gate runs. It now reads that a build run costs the reviewer's gate once per review cycle that reaches it, plus the landing gate unless *The two gates* lets the reviewer's stand in. *Actionability*'s question cites the spine rather than the figure, so it needed no change.
+
 `simple` — #700's AC-4, held until `specs/proposals/ticket-granularity.md`
 landed (`b48c18e`); item 1's run-cost half plus item 4, both from the same
 proposal.
@@ -5222,6 +5236,8 @@ verbatim followed by the complete gate. `agents/reviewer.md` is unchanged,
 because it already routes the reviewer to `certifying.md` before it touches
 the candidate.
 
+*Superseded in part 2026-10-01 (#732):* the first hand-back no longer checks the candidate out onto a branch of the reviewer's own. The reviewer takes it with `git checkout --detach`, as `agents/reviewer.md` → *Your context is the packet* now says, commits the record on the detached `HEAD`, and reports that commit. *#732* below records why.
+
 **AC-1.** Met. Read under the bold lead *The record commit holds what you
 wrote and nothing else*: "Stage by path… Anything else in the index or the
 working tree… goes back to the builder as a finding rather than into your
@@ -5415,6 +5431,122 @@ The stale-run report does not cover In Review. `/build` moves the ticket to In R
 **The version class is minor.** `/build` raised the four homes from `21.4.0` to `21.5.0` (`origin/main` carries `21.4.0`). No command, skill or argument is renamed, and no refusal reason changes. The counter-argument: `/build` now writes a claim comment and a branch push at points where it wrote neither before, so a consumer whose posture refuses an early push would now see step 6 fail. Against that, the early push is the same push of the ticket's own branch that PASS and DEFER already made, and `/routine`'s standing authorisation already names the ticket's own branch. `/build` already wrote to the ticket before this change, at step 5's change spec and at step 2 when it clears a hold. *Stale runs* only adds lines to the report and blocks nothing.
 
 **Verification.** This reviewer ran and read `bash scripts/verify.sh` over `cc9a7e89` before writing this record: 677 passed, design-token drift guard OK, `All checks passed`, exit 0. The certifying run over `cc9a7e89` plus this record is the one the review report names.
+
+### #731: the base gate is dropped, the builder hands off on targeted tests, and an unmoved landing reads the reviewer's gate
+
+One `complex`-lane ticket on `claude/e2e-process-test-gates-r6qqbh`, cut from `5a5df949` (`origin/dev`, unmoved at the pre-review rebase and at this review). Nine commits from `15a97772` to `aad15878`; at `aad15878` the diff from the base is 21 files, +121 / −99, before this record. Review cycle 1 returned FAIL at `0f69ce58` on the lifecycle figure's `aria-label`, which still described three gates; `90dc7e17` fixed it along with the operator's scope change below.
+
+Before this ticket every ticket paid three complete gate runs (base, reviewer, landing) and in practice a fourth, because `engineering`'s evidence table asked the builder for a full-suite run to claim "tests pass". Two of those re-proved something already proven: the base gate re-ran a tree the previous landing gate had certified, and the landing gate re-ran the reviewer's tree whenever the landing merge brought nothing in.
+
+**The gate sequence, as built.**
+
+- **Setup runs no gate.** `/build` steps 4 to 6 cut the worktree detached at the fetched tip, ground the spec inside it, then cut and push the branch. `worktree-isolation` → *Creating the worktree* says no gate runs over the base, because the tip is normally a tree a landing already gated. The empty-diff and watchdog paragraphs of *Gating the base* retired with their subject.
+- **The builder hands off on targeted tests.** `engineering` → *Verify GREEN* and the evidence table split "tests pass" in two. At hand-off the builder shows the change's tests and its dependents' (what imports or calls the changed code, or reads a changed file). The certified claim is the complete `commands.verify` gate, which the reviewer runs in the change and feature lanes. The builder runs it in the fix lane, which has no reviewer (design D3), and on `--engine codex`, whose read-only sandbox cannot run a gate (`skills/build/references/codex-review.md`).
+- **The reviewer's gate runs last** (`review-discipline` → *Reviewer obligations*), once no blocking finding stands. A cycle that ends in FAIL on findings runs no gate.
+- **The landing gate is skipped where nothing moved.** `/promote` stage 2 skips its run only where `HEAD^{tree}` after stage 1 equals the review report's `reviewed_tree`, and that review ran in this session with its reviewer's own complete gate green over that tree. The skip never applies after `--engine codex`. A driving run that wrote the reviewer's record bytes itself has moved the tree past the reported value, so it gates. Stage 4 compares against "the tree stage 2's evidence covers", and the lifecycle stage tuple is unchanged.
+- **The release hop is unchanged** and still runs the complete gate over everything the integration branch carries.
+
+A ticket now pays one gate run in the best case (first-cycle PASS, nothing landed since, landing in the same session), and one per review cycle that reaches the reviewer's gate plus one at landing in the worst.
+
+The spine pair moved with it, byte-identical in `AGENTS.md` and `templates/spine.md`. The *Lanes* cost sentence prices the reviewer's gate per cycle plus a conditional landing gate. *The two gates* says when the reviewer's gate is the push's evidence and drops "never a tree identity". Law 3 reads "gate evidence read this session over the exact tree you claim: a gate you ran, or, at landing, the gate this session's reviewer ran over identical bytes". *Enforcement* and ADR 0022 point 2 read "run and read by an agent in the run". P4 names "a red integration branch the build that meets it cannot fix" and refuses "landing over a red base". ADR 0022 carries a dated amendment separating the landing's tree comparison from the retired ADR 0020 binding: no executable reads a verdict, nothing refuses, and nothing is written for another run to find. Its index line in `specs/architecture-principles.md` names the amendment.
+
+**"Same host" means "a review this session ran" (design D1).** The operator's condition was same host. A session runs on one host, so a report returned by this session's own review stage implies it with no new report field, no report storage, and no ticket comment read back as gate evidence (law 6). The cost is that a `/promote` re-entered in a new session always gates. A `host:` field in the report was rejected because it needs storage a later session can read and trusts text read back from the tracker. The design's first draft also required `git merge-base --is-ancestor`; the build dropped it (AC-3 amended on the ticket 2026-09-29) because after stage 1's merge it is always true, and identical tree bytes already imply nothing came in, so it shared the tree check's operand (P0).
+
+**The reviewer's gate stays last (design D4), and the question stays closed unless someone reopens it.** Running the gate in parallel with the review saves a review cycle only when the review and the gate both fail. When the review alone fails, which is the common FAIL, the parallel run has gated a tree that is about to change, and one whole gate run is spent for nothing. Gate time is the constrained resource on the hosts this serves (a Mac-bound consumer with a 25-minute suite), and after #731 the reviewer's gate is the only full-suite run a ticket normally pays for. The operator decided this on 2026-09-29; it is recorded here so a later cost review does not reopen it by default.
+
+**A red base is met in the build, and the build that can fix it does** (`worktree-isolation` → *A red base*). The operator widened AC-1 on 2026-09-29, after cycle 1: with one agent running, a hold stalls the run until the operator clears it, and with several running, each can fix the same red and the first to land clears it. A failure the diff does not explain is attributed first. The builder rules the worktree's local state out, then, with the work committed, runs only the failing tests at the fetched integration tip. Green there, and the failure is the branch's own. Red there, and:
+
+- a repair that is fix-lane sized (one sentence, no protected area, nothing under the declared test roots) is made on the ticket's branch as its own commit. The builder takes the tip in first, in case another run's fix already landed. The commit message names the failing test and any open bug it completes, and the reviewer reviews the commit with the ticket (`review-discipline` puts it in scope and checks the size bound). An open bug covering the failure gains the evidence rather than a twin. `/promote` stage 6 closes that bug when the ticket lands; a fix-lane change, which has no landing command, closes it after its own push.
+- a larger repair, or one reaching a protected area, holds the ticket (`operator`, or `input` where the run cannot tell a host-local failure from a base defect), returns it to Todo, and removes nothing, because the branch is already pushed.
+- a reviewer or a dispatched `dev` repairs, files and holds nothing. It attributes the failure and returns it, the reviewer as a FAIL finding, which `/build`'s FAIL bullet routes to *A red base*.
+
+`skills/build/references/reconcile.md` gains the duplicate case. Where the integration branch has since landed a fix for the same red, the branch takes the landed fix and drops its own. Where that dropped fix was the ticket's whole work, the ticket is held for the operator to close. `worktree-isolation`'s evals 1 and 5 were retargeted from a base-gate run to a red met mid-build.
+
+**Kept on purpose.** The *Closing a shipped ticket* auto-mode permission text in `settings/harness.json` and `.claude/settings.json` is the operator's to reword, and the skip case meets its wording literally. The one-line summaries saying `/promote` "rebases, gates, pushes" still name a stage that exists. `agents/reviewer.md` and its Codex twin already say the reviewer runs verification itself. ADR 0020's banner still says "run and read by the builder" and stands as history.
+
+*Superseded in part 2026-10-01 (#734):* the *Closing a shipped ticket* auto-mode text is gone, with the `autoMode` block the host never read.
+
+**Residuals.** A red integration branch is now discovered during a build rather than before one; the operator accepted this for a two-person repo on 2026-09-29. A skipped landing trusts the reviewer's reading of its own gate instead of taking a second one, the residual ADR 0015's 2026-08-16 amendment already accepted. `.harness/run.json`'s `reviewed_tree` is written before the reviewer's record commit in the feature lane, so it can be stale against the report's. Stage 2 compares against the report, and the design flagged the field for the improvement ledger.
+
+**Evidence.**
+
+- AC-1: this reviewer read *A red base*, `/build` steps 4 to 6 and its FAIL bullet, and `reconcile.md` against the design's red-base scenario as amended by the operator's decision. No step runs `commands.verify` over the base. Attribution re-runs only the failing tests at `<remote>/<integration>`. A fix-lane-sized red is repaired on the branch as its own commit and reviewed with the ticket. A later rebase meeting a landed fix takes it. A larger or protected repair takes search, cord, `operator` hold and stop, and keeps the pushed branch. The reviewer path returns FAIL and repairs nothing. Evals 1 and 5 assert each of these. The builder's use-probes (four rounds over the rework, the last returning two one-phrase findings fixed in `aad15878`) are in the build evidence; this reviewer did not re-run them.
+- AC-2: direct review of `engineering` → *Verify GREEN*, the evidence table and the paragraph after it.
+- AC-3: direct review of `/promote` stage 2 against the design's five promote scenarios. It skips on an unmoved tree with a green review from this session. It gates when another ticket landed, when the review ran in another session or on another host, when the driving run wrote the record bytes, and after `--engine codex`. `tests/unit/test_build_lifecycle_order.py` is green in the certifying run.
+- AC-4: `grep -rn -i` for "three gate runs", "never a tree identity", "base gate", "Gating the base", "run and read by the builder" and "is \*\*not\*\* what licenses the push" over the tree outside `specs/features/` and `specs/proposals/` hits twice. One is ADR 0022's amendment quoting its old wording, and the other is ADR 0020's banner; both are history.
+- AC-5 and AC-6: this record. The passages it supersedes carry dated notes: the #623 *two gates* paragraph, *The landing posture*, #660's ordering Decision (including its out-of-scope cord-repair case, now resolved), and the #662, #673 and #708 sections.
+- AC-7: direct review of ADR 0022 point 2, its dated amendment, and the index line.
+- The change is prose, so no test measures it (law 2), and no file under `tests/` moved. `docs/index.html` was checked against the captures in `.evidence/731/` and the diff: the `gate 1` pill is gone, the cut path starts at the dev line, the promote gate reads "if dev moved", and the `aria-label` matches the figure.
+
+**The version class is major.** `/build` raised the four homes from `21.5.0` to `21.6.0`, and this record raises them to `22.0.0`. A `/build` that meets a red integration branch used to be refused: it held and stopped at the base gate before its branch was cut. Now it proceeds, builds, and repairs a fix-lane-sized red on its own branch. That is a call that used to be refused and now succeeds, which `review-discipline` → `references/certifying.md` places in the major clause. The #660 Decision above read the same shape as major and avoided it by scoping the proceed out. This ticket takes the proceed in by operator decision, so the class follows it, and a pinned consumer receives the release as a decision.
+
+**Verification.** The certifying run of `bash scripts/verify.sh`, over `aad15878` plus this record and the version raise, is the one the review report names.
+
+### #734: the `autoMode` block the host never read is retired, and the loop's authorisations become narrow allow rules
+
+`simple`. Grounded at `origin/dev` `94913517` and built as `e4312f08` on branch `work-732-734`, beside #732, with the version raise in `998211dd`. Review cycle 1 returned FAIL on the version homes alone, because the candidate still carried the released `22.0.0`. Nothing in #734's own diff moved after that cycle.
+
+**Cause, as grounded.** Claude Code does not read `autoMode` from a project's `.claude/settings.json` (https://code.claude.com/docs/en/auto-mode-config.md, *Where the classifier reads configuration*), so the block that `settings/harness.json` and `.claude/settings.json` both carried reached no classifier. It held `$defaults` and seven prose clauses. The ticket counted six and left out the first, *Pushing reviewed work to `dev`*. Narrow `Bash(...)` allow rules stay in effect in auto mode, and `Bash(*)` is dropped there, so the loop's working authorisation was the classifier's defaults plus the three `git push origin … dev` rules. `skills/work-discovery` → *When a tracker write is refused* sent a run that met a refused write to `autoMode.allow`, which could not take effect.
+
+**What ships.**
+
+- Both settings files lose `autoMode` and gain the same seven `permissions.allow` rules, in the same position after the `dev` push rules: `Bash(gh issue comment *)`, `Bash(gh issue edit *)`, `Bash(gh issue create *)`, `Bash(gh issue close *)`, `Bash(gh project item-add *)`, `Bash(gh project item-edit *)` and `Bash(git branch -d *)`. The deny list is unchanged, and `tests/unit/test_settings_template_parity.py` holds the two allow arrays deep-equal.
+- `work-discovery` → *When a tracker write is refused* names the lever as a narrow rule for the command the write runs, under `permissions.allow`, or the operator approving the prompt, and says an `autoMode` block in project settings is not a lever. Its follow-on sentence asks the run to name "the rule that is missing" rather than the clause.
+- The `CLAUDE.md` *Hooks* delta says the unattended authorisations live in `settings/harness.json` as narrow `permissions.allow` rules, and gives the reason: the host ignores `autoMode` in project settings and drops `Bash(*)` in auto mode.
+
+**Dispositions of the retired clauses.** Each row is the change spec's, as built.
+
+| # | Clause | Disposition |
+|---|---|---|
+| 1 | Push reviewed work to `dev` | (a) already expressed: `Bash(git push origin dev)`, `Bash(git push origin HEAD:dev)`, `Bash(git push origin *:dev)`. The force-push denies stand. |
+| 2 | Defer a ticket (comment, hold label, assign) | (a) `Bash(gh issue comment *)`, `Bash(gh issue edit *)` |
+| 3 | File `/assess` findings to the board | (a) `Bash(gh issue create *)`, `Bash(gh project item-add *)`, `Bash(gh project item-edit *)` |
+| 4 | Append to the improvement ledger | (a) covered by rows 2 and 3 (`gh issue comment`, `gh issue create`) |
+| 5 | Remove a merged run's worktree and branch | (a) `Bash(git branch -d *)`. (b) `git worktree remove` and the remote branch delete are dropped: no narrow spelling excludes `--force`, so the classifier's defaults judge them. |
+| 6 | Close a shipped ticket | (a) `Bash(gh issue close *)`; the Done transition is row 3's `item-edit` and the push is row 1's |
+| 7 | Push an `/assess` report to `dev` | (a) the push is row 1's rules. Its "only `assessments/`" bound was prose the host never read, and it now lives only in `/assess`'s own guidance, where it was always enforced. |
+
+**Width, accepted.** Rows 2 and 3 grant the verbs without the prose bounds: `gh issue edit` can also change a title or body, and no rule expresses "assign only to the operator". Row 5 is wider than the change spec states, because `Bash(git branch -d *)` also matches `git branch -d -f …`, which force-deletes, so git refuses an unmerged branch only under the plain spelling. At this repo's stage a wrong edit costs a revert and a deleted local branch whose commits are pushed costs nothing, so no deny rule was added (P0). Nothing destructive is granted: no `gh api`, no delete, no `-D`.
+
+**Reach.** Nothing installs `settings/harness.json` into a consuming repo. `skills/hydrate/SKILL.md` never names it, and nothing under `skills/`, `templates/`, `scripts/`, `hooks/` or `.claude-plugin/` copies it. So this change moves the permissions of this repo alone, through `.claude/settings.json`. The ticket's *Out of scope* premise that consuming repos "pick up the template at their next hydration" is false in this tree, and a consuming repo's own copy of the inert block stays until that repo removes it. The rewritten `work-discovery` sentence keeps the pre-existing path `settings/<profile>.json` as the rule's home. At this record's date neither calibrate nor nano-erp carries a `settings/` directory. The host reads `permissions.allow` from `.claude/settings.json` and the settings files beside it.
+
+**Test-file diff.** `test_the_template_operand_is_live` is the one test edit. Its floor was `{"permissions", "autoMode", "hooks"} <= set(template)` and is now `{"permissions", "hooks"}`. The property that moved is the set of sections the template declares, and AC-1 removes one of them. The change spec named the edit as a `tests`-stage change made before the lock. The test's remaining assertions and the subtree sweep are unchanged. The synthetic `autoMode` key in `test_two_agreeing_documents_report_nothing` is fixture data and reads no real file.
+
+**Evidence.**
+
+- AC-1: `grep -rn autoMode` over the tree at `998211dd` hits neither settings file, and the parity guard is green in the certifying run.
+- AC-2: the table above.
+- AC-3: direct review of *When a tracker write is refused*.
+- AC-4: the certifying run below.
+
+*Superseded in part by this ticket:* the #623 permission-clause paragraph and #731's *Kept on purpose* line each carry a dated note.
+
+### #732: a worktree-isolated reviewer takes the named candidate by detached checkout
+
+`simple`. Grounded at `origin/dev` `94913517` and built as `90a8366b`, `ff52dec9` and `15da975f` on branch `work-732-734`, beside #734. The change is prose in `agents/reviewer.md`, its Codex twin `.codex/agents/reviewer.toml`, `skills/build/SKILL.md` and `skills/review-discipline/references/certifying.md`.
+
+**Cause, as grounded.** The one instruction a host-isolated reviewer had was `certifying.md`'s "Check out the candidate commit the packet names, commit the record on top of it on a branch of your own". That wording leads a reviewer to `git switch -c <branch> <candidate>` or `git reset --hard <candidate>`. The host refuses both as destroying local work, and this repo's `permissions.deny` also carries `Bash(git reset --hard *)`. In calibrate CAL-1973 the first reviewer tried both and returned DEFER, which spent a review cycle without a gate.
+
+**The filed approach was refuted by use, and the ticket was amended before review.** The filed Scope named `git merge --ff-only <candidate>`, guarded by `git merge-base --is-ancestor HEAD <candidate>`, and `90a8366b` implemented it. A use-probe dispatched with `isolation: worktree` found its worktree cut at `35b282ec`, which is `origin/HEAD` and `origin/main`. That commit carries PR merge commits `dev` lacks, so the ancestry check returned 1 and no fast-forward could reach a candidate cut from `dev`. `ff52dec9` and `15da975f` replaced the take. On 2026-10-01 the ticket's Scope bullet and AC-2 were amended with the filed text struck through, and an amendment comment carries the probe evidence. The dispatching run still lands the reviewer's record by `git merge --ff-only`, by sha.
+
+**What ships.**
+
+- `agents/reviewer.md` → *Your context is the packet* gains the paragraph *Taking the candidate, where the host runs you in a worktree of your own*. The host cuts that worktree from a base it chooses, measured on this repo as the remote's default branch, so the base need not be the candidate's ancestor. The reviewer runs `git checkout --detach <candidate>`, after `git fetch origin` where `git cat-file -t <candidate>` finds no such commit, and confirms `git rev-parse HEAD` is the candidate before reading anything else. It commits its record on the detached `HEAD` and reports that commit's sha. `git reset --hard` and `git switch -c` onto the candidate are forbidden, and a refused checkout stops the reviewer with a report naming the candidate and the refusal.
+- `.codex/agents/reviewer.toml` carries the same paragraph byte for byte.
+- `/build`'s *Commit the candidate onto the ticket's branch before the reviewer starts* bullet points at that paragraph for how the reviewer takes the commit, and its hand-back reads "a commit of its own" where it read "a commit on a branch of its own".
+- `certifying.md`'s first hand-back takes the candidate "as `agents/reviewer.md` → *Your context is the packet* says" and reports "that commit" beside the `reviewed_tree`, where it reported a branch and its commit.
+
+**Not changed.** `agents/dev.md` and its Codex twin still tell a dispatched `dev` to check the named commit out "on a branch of your own" (#719). #732 covers the reviewer only.
+
+**Evidence.**
+
+- AC-1: direct review of the new paragraph.
+- AC-2 (as amended): the take is stated once, in `agents/reviewer.md`, and the paragraph compares byte-equal with the Codex twin's. `/build` and `certifying.md` each point at it without restating the commands. `grep` for "Check out the candidate" and "branch of your own" over `skills/`, `agents/` and `.codex/` hits only the `dev` role.
+- AC-3: two observed dispatches. Review cycle 1's reviewer ran from host base `35b282ec`, where `git checkout --detach 15da975f` exited 0 with nothing refused. This cycle's reviewer received a worktree at `35b282ec`, equal to `origin/main` and `origin/HEAD` on 2026-10-01, and ran `git checkout --detach 998211dd` with nothing refused; `git rev-parse HEAD` returned `998211dd`. This record was committed on that detached `HEAD`.
+
+**The version class is minor, for both tickets.** `998211dd` raised the four homes `scripts/plugin-version.js` names from `22.0.0` to `22.1.0`, and `origin/main` carries `22.0.0`. No command, skill or argument is renamed, and no refusal reason the harness states has changed. The counter-argument is that a reviewer's take which the host used to refuse now completes, which has the shape of "a call that used to be refused and now succeeds". Against that, the refusal came from the host's permission layer over a command the guidance never named, and the one step the dispatching run performs, a fast-forward by sha, is unchanged. #734's new allow rules reach no consuming repo, because nothing installs `settings/harness.json`.
+
+**Verification.** The certifying run of `bash scripts/verify.sh`, over `998211dd` plus this record, is the one the review report names.
 
 ### #730: `/build` asks before it clears a hold the invocation did not answer
 

@@ -153,9 +153,10 @@ def test_the_template_operand_is_live() -> None:
     """
     template = _document(TEMPLATE_PATH)
     assert isinstance(template, dict)
-    assert {"permissions", "autoMode", "hooks"} <= set(template), (
-        f"the template no longer declares the three sections this guard was built "
-        f"over — it declares {sorted(template)}"
+    assert {"permissions", "hooks"} <= set(template), (
+        f"the template no longer declares the sections this guard was built "
+        f"over — it declares {sorted(template)}. (#734 retired ``autoMode``: the "
+        f"host never reads it from project settings.)"
     )
     assert "Bash(git push origin dev)" in template["permissions"]["allow"], (
         "the template's permissions.allow no longer carries the integration-branch "

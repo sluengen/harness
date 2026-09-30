@@ -53,7 +53,7 @@ No production code without a failing test first. If you wrote implementation bef
 - *RED* — one minimal test, one criterion, real behaviour over mocks unless an external dependency forces otherwise. Drive it with inputs production actually produces: a test fed events no live path emits holds dead code falsely verified.
 - *Verify RED* — confirm it *fails* rather than errors, and fails because the feature is missing. A test that passes immediately is testing existing behaviour.
 - *GREEN* — the simplest code that passes. No untested edge cases, no optimisation.
-- *Verify GREEN* — full suite: new test passes, nothing else broke, no new warnings.
+- *Verify GREEN* — the change's tests and its dependents' (*Verification*): new test passes, nothing near it broke, no new warnings.
 - *Refactor under green*, then repeat for the next criterion.
 
 A bug fix starts with the root cause: *the failure occurs at [location] because [observation]*, on evidence — the full error, a reproduction you can trigger on demand, what changed since it last worked. Changing code to see if it helps is guessing, and a fix aimed at a symptom on the wrong layer makes two bugs out of one. The reproducing test written first is the regression guard, and it must fail for the cause you named. When stuck, widen the evidence rather than narrowing the guesses.
@@ -111,10 +111,13 @@ No completion claim without fresh evidence. Identify the command that proves the
 
 | Claim | Required evidence |
 |---|---|
-| Tests pass | Full suite run, output read |
+| Tests pass, at hand-off | The change's tests and its dependents' — what imports or calls the changed code, or reads a changed file — output read |
+| Tests pass, certified | The complete `commands.verify` gate, output read: the reviewer's claim, or the builder's where no reviewer can run it — the fix lane, and `--engine codex` |
 | Bug fixed | The regression test, shown passing |
 | Measurable criterion met | A test measuring the quantity and asserting the bound — a structural change that ought to reduce it is not proof that it did |
-| Ready for review | All of the above that apply |
+| Ready for review | All of the above that apply at hand-off |
+
+A builder hands off on the targeted set because the reviewer's complete gate runs over the same tree, and a builder's own full run is one the ticket would pay for twice (#731) — except where the reviewer cannot run the gate, and the builder's run is then the only one. A failure in either that the diff does not explain is attributed before it is fixed: `worktree-isolation` → *A red base*.
 
 **Name the instrument: measure the system, not a model of it.** A figure you publish about what shipped code produces, in a comment, a spec, a review finding, or a corrected number on a ticket, is measured by calling that code. A second implementation of the same arithmetic agrees with whoever wrote it, so its agreement confirms nothing, and every freshness rule above is satisfied while the instrument is wrong. Cross-language reimplementation is the case that gets through: rounding, integer division and float formatting differ between languages over a thin slice of the input domain and agree everywhere else, so a spot check passes and the one input that decides the figure does not. Where the measurement cannot go through the shipped entry point, because a floor has to vary or the interface does not expose a parameter, validate the reimplementation against the real one across the shared input domain first and report that validation beside the figure. This is the reverse of [`skills/review-discipline/references/craft.md`](../review-discipline/references/craft.md) → *A positive control must exercise the predicate, not re-implement it*, which governs a test's expected value, and it is distinct from `authoring` → *Grounding*, which governs choosing a probe that can falsify. Neither of those reaches a figure published about shipped output.
 

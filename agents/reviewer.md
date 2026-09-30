@@ -32,6 +32,24 @@ implementer's conversation or its self-assessment; a fresh read of the artifact
 is the whole reason a second agent looks at this. Read `harness.yaml` for the
 repo's stack and gate command.
 
+**Taking the candidate, where the host runs you in a worktree of your own.**
+The host cuts that worktree from a base it chooses, not from the candidate:
+measured on this repo, the remote's default branch (#732). That base need not
+be an ancestor of the candidate, and where the default branch carries merge
+commits the integration branch lacks it never is, so no fast-forward from
+there can reach it. Take the candidate the packet names with
+`git checkout --detach <candidate>`, after `git fetch origin` where
+`git cat-file -t <candidate>` finds no such commit. The worktree is clean when you receive
+it, so this moves only `HEAD`, and git refuses it where it would overwrite a
+change. Confirm `git rev-parse HEAD` is the candidate before you read anything
+else. Commit your record there, on the detached `HEAD`, and report that
+commit's sha: the dispatching run fast-forwards to it by sha, so it needs no
+branch name. Never `git reset --hard` or `git switch -c` onto the candidate.
+The host refuses both as destroying local work, and a refused take spends the
+review cycle with nothing reviewed. Where the checkout itself is refused, stop
+and report it, naming the candidate and the refusal, rather than reaching for
+another way in.
+
 ## Load these skills
 
 - `engineering` — the standard the builder built to. A finding cites the rule

@@ -44,7 +44,7 @@ report is a difference between two sets of bytes, answerable from the bytes.
 Where you read `.harness/run.json` at all, read what the run declared about
 itself and leave its `verdict`, `reviewed_tree` and `review_cycles` alone.
 
-You also never run the repository's gate. `commands.verify` is the builder's to
+You also never run the repository's gate. `commands.verify` is the run's to
 run and read; a green result would be a verdict, and a red one would be
 somebody else's defect reported in the wrong place.
 

@@ -20,7 +20,7 @@ so it never reaches the tree the reviewer reads or the gate runs over.
 | `stage` | string | one of the names below |
 | `tests_locked` | boolean | strictly boolean. `false` at set-up, `true` in the same write that sets `stage: "implement"` |
 | `base_commit` | string | the commit the worktree branched from. The test lock asks this tree whether a test file is new |
-| `reviewed_tree` | string \| null | tree oid the verdict was issued over. `/promote`'s rebase moves the tree past it by design |
+| `reviewed_tree` | string \| null | tree oid the verdict was issued over. `/promote`'s rebase moves the tree past it whenever the merge changes the tree |
 | `verdict` | string \| null | `PASS` \| `FAIL` \| `DEFER` — transcribed from the reviewer's report, never authored |
 | `review_cycles` | integer | cycles **spent**, against `loop.max_review_cycles` |
 | `engine` | string | `claude` \| `codex` |
@@ -48,7 +48,7 @@ are the stages a resume needs and no block has. A second vocabulary for the same
 word is the defect this shape avoids.
 
 **Two stages appear in both blocks, and neither is two stages.** `rebase` runs
-once before the review and once before the landing gate — same operation, same
+once before the review and once at landing — same operation, same
 rules, one reference. `pass` means *the run holds green certification over the
 tree in hand and may proceed*, which is why the `authority` field carries the
 difference: at `/build` the **reviewer** certifies it as a verdict, at `/promote`
@@ -89,10 +89,12 @@ inherited across a change — and the resume path inherits it rather than
 inventing a second one.
 
 **`/promote`'s own rebase is the one exception, and it is an exception by
-decision rather than by oversight.** It moves the tree past `reviewed_tree` on
-purpose, so the fields do not survive it and the run does not return to review:
-what licenses the push from there is the gate `/promote` runs over the merged
-tree, plus the verdict on record for the ticket. `skills/promote/SKILL.md` names
+decision rather than by oversight.** Where the merge changes the tree, it moves it
+past `reviewed_tree` on purpose, so the fields do not survive it and the run
+does not return to review: what licenses the push from there is the gate
+`/promote` runs over the merged tree, plus the verdict on record for the ticket.
+Where the tree still matches, `skills/promote/SKILL.md`
+stage 2 says when the review's own gate is the push's evidence. `skills/promote/SKILL.md` names
 the residual that trades for — a fix made after the review that no longer covers
 it — rather than leaving it to be discovered here.
 
@@ -110,7 +112,7 @@ the directory.
 | `in_review` `substantive_review` | on a tree match, launch the next cycle's fresh reviewer; on a mismatch, discard and restart substantive review |
 | `rebase` | never resume mid-merge: `git merge --abort`, redo from the current tip, and the redo spends one of the two attempts |
 | `pass` | trust the verdict only on a tree match. A resume landing here at `/promote` re-reads the ticket's live state first — the verdict says the tree was reviewed, never that the ticket still wants it |
-| `full_gate` | re-run the gate over the tree in hand and read all of it. A remembered green is not evidence, and nothing records one |
+| `full_gate` | re-decide stage 2 from git and this session's review report, never from memory; where the gate runs, re-run it over the tree in hand and read all of it. A remembered green is not evidence, and nothing records one |
 | `tree_compare` `push` | check whether the push already landed (`git ls-remote`) before pushing again — the crash may have been *after* it succeeded |
 | `tracker_done` `reflect` `cleanup` | every step is idempotent by re-reading, never by assuming |
 

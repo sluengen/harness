@@ -27,7 +27,8 @@ process:
    builder, for a bounded number of cycles) or **DEFER** (held for you). On PASS
    the reviewer — never the builder — writes the as-built record.
 4. **Land.** `/promote` rebases onto the integration branch, runs the gate again
-   over the exact tree that will land, pushes, and closes the ticket. The same
+   over the exact tree that will land unless the reviewer already gated it,
+   pushes, and closes the ticket. The same
    command moves completed work along the repo's release branches.
 5. **Improve.** Every build ends with a short reflection that files what should
    change to an improvement ledger. `/assess` runs periodic health checks;
@@ -61,8 +62,8 @@ repo as the **spine** — `AGENTS.md`, loaded in every session — which carries
   user data, credentials or money stops and waits for a person.
 
 Your repo's commands, branches, tracker and layers live in `harness.yaml`. The
-gate is yours: `commands.verify` names it, and the builder runs it and reads its
-output before claiming anything complete.
+gate is yours: `commands.verify` names it, and an agent in the run runs it and
+reads its output before claiming anything complete.
 
 ## What the plugin carries
 
@@ -74,7 +75,7 @@ output before claiming anything complete.
 | **Hooks** | 5 | One refuses: an edit to a test file while the run has locked its tests. Four advise: injection-shaped content on write, a source edit on the default branch or outside a worktree, a push aimed at a branch the repo declares, and a session started on a plugin version behind the published one |
 
 The hooks are a backstop, not the assurance. The assurance is the repo's gate,
-run and read by the builder, plus the independent review. Branch protection and
+run and read by an agent in the run, plus the independent review. Branch protection and
 any other server-side controls stay the repository's own.
 
 Tickets live in GitHub Issues and Projects, Linear, or nowhere — with `tracker:

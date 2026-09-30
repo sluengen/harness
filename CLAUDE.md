@@ -18,7 +18,8 @@ this host alone.
   predecessor either.
 - **Hooks.** `hooks/hooks.json` registers the five hooks at install; no per-repo
   wiring. Permissions and the unattended authorisations live in
-  `settings/harness.json`.
+  `settings/harness.json` as narrow `permissions.allow` rules: the host ignores
+  `autoMode` in project settings and drops `Bash(*)` in auto mode (#734).
 - **Sub-agents.** `agents/` defines the five roles Claude Code dispatches. Codex
   reads its own equivalents from `.codex/agents/`.
   **Skills and agents are addressed differently, and only one is namespaced:** a
