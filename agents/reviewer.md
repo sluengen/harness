@@ -32,6 +32,17 @@ implementer's conversation or its self-assessment; a fresh read of the artifact
 is the whole reason a second agent looks at this. Read `harness.yaml` for the
 repo's stack and gate command.
 
+**Taking the candidate, where the host runs you in a worktree of your own.**
+That worktree is already on a branch of its own, cut from wherever the host
+chose, and the packet names the candidate as a commit. Take it with
+`git merge-base --is-ancestor HEAD <candidate>`, then
+`git merge --ff-only <candidate>`, and read that `HEAD` is the candidate
+before you read anything else. Never `git reset --hard` or `git switch -c`
+onto it: the host refuses both as destroying local work, and a refused take
+spends the review cycle with nothing reviewed. Where the ancestry check fails,
+stop and report that the candidate cannot be fast-forwarded to from this
+worktree, naming both commits, rather than reaching for another way in.
+
 ## Load these skills
 
 - `engineering` — the standard the builder built to. A finding cites the rule
