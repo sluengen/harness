@@ -123,8 +123,8 @@ a run that skipped the review, which this command does not launder.
    for is a state to report, not a landing. One uninterrupted sequence from stage
    4 to here, with no tracker write inside it.
 6. *Close.* Post the merge link and transition the ticket to Done. Where the
-   branch carries a red-base repair commit naming an open bug, post the merge
-   link on that bug and close it too: the red is cleared, and an open P1 left
+   branch carries a red-base repair commit naming an open bug it completes,
+   post the merge link on that bug and close it too: the red is cleared, and an open P1 left
    behind would keep the line stopped.
 
 ## After the push
