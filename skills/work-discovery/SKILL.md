@@ -106,9 +106,9 @@ If it cannot be actioned yet — it needs a decision, a missing detail, or an un
 
 ## When a tracker write is refused
 
-The host can refuse a write this skill instructs — the comment, the label, a transition — in an unattended run. That is a configuration gap, not a bug in this skill: the lever is the profile's settings (`settings/<profile>.json` → `autoMode.allow`), whose clauses name what an autonomous run may do and the bound that makes each one safe. **Fix the posture, not this skill.** Rewriting the deferral step into "report it instead" would tell every runner whose posture already permits the write to go quiet, and wedge that queue.
+The host can refuse a write this skill instructs — the comment, the label, a transition — in an unattended run. That is a configuration gap, not a bug in this skill: the lever is a narrow rule for the command the write runs (`settings/<profile>.json` → `permissions.allow`), which the host still honours in auto mode where it drops `Bash(*)`, or the operator approving the prompt. An `autoMode` block in project settings is not a lever: the host never reads one there (#734). **Fix the posture, not this skill.** Rewriting the deferral step into "report it instead" would tell every runner whose posture already permits the write to go quiet, and wedge that queue.
 
-When the posture cannot be changed from this run — settings are the operator's call, and granting yourself a permission is rightly refused — surface the deferral in the run's output and name the clause that is missing, so a human can grant it.
+When the posture cannot be changed from this run — settings are the operator's call, and granting yourself a permission is rightly refused — surface the deferral in the run's output and name the rule that is missing, so a human can grant it.
 
 ## Held tickets
 
