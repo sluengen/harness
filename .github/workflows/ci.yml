@@ -49,7 +49,7 @@ permissions:
 
 jobs:
   lint-and-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # A backstop, not a budget: it must exceed the whole gate with room to
     # spare. The gate runs in well under a minute since #435 deleted the docker
     # stage that used to build an uncached image under a 600s allowance.
@@ -70,12 +70,12 @@ jobs:
       # history at #580); the best change is the one not made (P0). What is gone
       # with the guard is the *guard on this key* — nothing now fails if a later
       # edit re-shallows the clone, which is correct while nothing reads it.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v10.2.0
         with:
           version: "latest"
 
