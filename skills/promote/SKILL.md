@@ -95,7 +95,8 @@ a run that skipped the review, which this command does not launder.
    or another landing — can leave this candidate carrying a version already
    released, which the updater, comparing that string alone, delivers as
    nothing (#732). The fetch above refreshed the release ref the script reads.
-   `already-ahead` and `no-plugin-manifest` write nothing. `raised` wrote the
+   `already-ahead`, `no-plugin-manifest` and `no-release-branch` write nothing,
+   the last two because the obligation cannot exist there. `raised` wrote the
    homes again: commit them onto the candidate here, so the raise sits inside
    the tree stage 2 gates — and that tree no longer equals `reviewed_tree`, so
    stage 2 runs the gate rather than skipping it. Any other answer, or a
