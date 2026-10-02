@@ -19,10 +19,12 @@
  * home was rejected:
  *
  *   - The raise lands inside the tree the gate certifies and the reviewer reads,
- *     so law 3 covers it and no second commit follows the verdict. That is why
- *     it is not in the landing step, which mutates no content file and must not
- *     start: the gate's evidence is green over exactly the bytes it ran on, so a
- *     content edit after it invalidates the run that licensed the push (law 3).
+ *     so law 3 covers it and no second commit follows the verdict. The gate's
+ *     evidence is green over exactly the bytes it ran on, so a raise after it
+ *     would invalidate the run that licenses the push (law 3). `/promote`
+ *     re-runs it after its rebase and before its gate (#739), because a release
+ *     between step 7 and the landing can leave the candidate at a released
+ *     version; a raise there still precedes the gate that licenses the push.
  *   - It happens without anyone remembering, which is why it is not a sentence
  *     in a spine.
  *   - It *does the job* rather than detecting that nobody did it, which is why
