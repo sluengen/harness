@@ -130,7 +130,7 @@ A held ticket is clearable when the only thing still missing is what the operato
 - the hold label removed;
 - the operator unassigned — assignment is the authoritative skip signal, so a sweep that records an answer without unassigning leaves the ticket held forever.
 
-A ticket released but still not wholly actionable — the answer supplied did not fully resolve it — is re-deferred through the normal Actionability step, not left half-cleared.
+A ticket released but still not wholly actionable — the answer supplied did not fully resolve it — is deferred again as *Actionability* above directs, not left half-cleared.
 
 ## When nothing is actionable
 

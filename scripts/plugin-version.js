@@ -14,7 +14,7 @@
  * required check and the nightly would wedge permanently. The bump was left with
  * no owner. This is the owner.
  *
- * `/build` step 1 runs it in the new worktree, **before the first edit of the
+ * `/build` step 7 runs it in the new worktree, **before the first edit of the
  * change it is about to build**. Three consequences, and each is why some other
  * home was rejected:
  *
@@ -43,7 +43,7 @@
  * 1, which is why there is not one.
  *
  * **What a home is, and why membership is earned rather than assumed.** `/build`
- * step 1 is shipped guidance: calibrate, nano-erp and lab-book run it too, and
+ * step 7 is shipped guidance: calibrate, nano-erp and lab-book run it too, and
  * each carries an `AGENTS.md` `spine:generated` marker naming the harness
  * version that hydrated it. A writer that raised every marker it found would
  * rewrite three repos' record of which guidance they are running, silently, on
