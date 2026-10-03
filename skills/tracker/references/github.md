@@ -14,7 +14,7 @@ github:
 
 **The queue is the board.** A GitHub board already scopes the queue, so `repo.project` is not consulted on this backend.
 
-**Credential.** `GITHUB_TOKEN`, with `repo` **and** `project` scopes — the second is easy to miss and is what every board mutation needs. `gh` uses it from the environment — the orchestrator's, so a sub-agent finding `GITHUB_TOKEN` unset is reading an orchestrator-only credential rather than a missing one (`tracker` → *Shared rules*). Never echo it.
+**Credential.** `GITHUB_TOKEN`, with `repo` **and** `project` scopes — the second is easy to miss and is what every board mutation needs. `gh` uses it from the environment, so a sub-agent finding `GITHUB_TOKEN` unset runs the probes below before concluding anything (`tracker` → *Shared rules*). Never echo it.
 
 ## Two failures that look the same from the call site
 
