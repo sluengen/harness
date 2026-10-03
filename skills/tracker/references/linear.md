@@ -4,7 +4,7 @@
 
 The queue scope is `repo.project`. The team is resolved at runtime and read from no configuration key — see [Resolving the team](#resolving-the-team) below.
 
-**You already have access — it is one `curl` away.** Linear's GraphQL API is the same for everyone; the only repo-specific part is the token (in an env file). The workspace identifiers you need are **resolved at runtime** from the API — a state by its stable `type`, a team by its key — so no per-repo ID setup is required (see [Resolving states by type](#resolving-states-by-type-the-default)). Do not conclude you lack access or that a tool is missing. If a repo ships a wrapper CLI, `harness.yaml` (`tools.linear_cli`) names it, but the curl below always works.
+**Access is one `curl` away.** Linear's GraphQL API is the same for everyone; the only repo-specific part is the credential: a key in the environment or an env file, or one the host holds for the run. The workspace identifiers you need are **resolved at runtime** from the API — a state by its stable `type`, a team by its key — so no per-repo ID setup is required (see [Resolving states by type](#resolving-states-by-type-the-default)). Do not conclude you lack access or that a tool is missing until the probe in [Accessing Linear](#accessing-linear-graphql-via-curl) has answered. If a repo ships a wrapper CLI, `harness.yaml` (`tools.linear_cli`) names it, but the curl below is the universal fallback.
 
 ## Labels
 
@@ -54,7 +54,7 @@ Linear's GitHub integration links an issue to a PR when the ticket id appears in
 
 ## Accessing Linear (GraphQL via curl)
 
-**Get the token — prefer the environment, and never `source` the env file.** Where `LINEAR_API_KEY` is already set, by an injecting host or a CI secret, use it as it stands and read no file. Fall back to the env file only when the variable is empty: the one named in `harness.yaml` (`env.file`), else `.env` / `.env.local` in the repo root.
+**Find a key if there is one: prefer the environment, and never `source` the env file.** Where `LINEAR_API_KEY` is already set, by an injecting host or a CI secret, use it as it stands and read no file. Fall back to the env file only when the variable is empty: the one named in `harness.yaml` (`env.file`), else `.env` / `.env.local` in the repo root.
 
 ```bash
 if [ -z "$LINEAR_API_KEY" ]; then
@@ -64,24 +64,38 @@ if [ -z "$LINEAR_API_KEY" ]; then
 fi
 ```
 
-Never echo or commit the token; the env file must be gitignored.
+Never echo or commit the key; the env file must be gitignored.
 
 **Two failures this avoids, both observed.** Until #639 this step read `set -a && source .env && set +a`, and each is a property of `source` rather than of any particular file.
 
 - **Sourcing destroys a working credential.** An env file is gitignored and seeded from a committed `.env.example`, so it routinely carries an empty `LINEAR_API_KEY=` placeholder. Where the host injects the real key, sourcing overwrites it with the empty string and Linear answers **401** on the first call. That failure is silent in the direction that costs most: an agent appending a ledger entry or posting a comment gets an error it may not read closely, and *"I recorded that"* is a claim the next reader has no reason to doubt. Two agents in one observed run reached opposite conclusions about whether a tracker write had landed. It also reaches the run's ticket **reads**, not only its writes.
 - **Sourcing executes the file.** An unquoted value carrying a backtick, `$( )` or a redirect is run rather than assigned, on a gitignored file the agent did not write and no review saw. The `sed` above assigns text whatever the file holds: a value of `` `touch /tmp/x` `` comes back as those literal characters, and nothing runs.
 
-The read strips one layer of matching single or double quotes and keeps any `=` inside the value. **An empty result is the no-key case below, not a token** — carrying it forward is what produces the 401 this step exists to prevent.
+The read strips one layer of matching single or double quotes and keeps any `=` inside the value. **An empty result means no key was found; it is never a token, and never a verdict on access.** A host can hold the credential outside the session and add it to each request as the request leaves (Claude Code's cloud-environment API credentials work this way), and then both lookups come back empty while Linear answers. Nothing here reads or prints a credential the host holds; the probe below is the only test that one exists.
 
-**If `LINEAR_API_KEY` is neither already set nor carries a non-empty value in any env file, that is the only blocker — stop and ask the user for one**, where you are the process the host injects into. A dispatched sub-agent is not: see `tracker` → *Shared rules*. Do not conclude you lack access before checking the env files. (If `harness.yaml` defines `tools.linear_cli`, you may use that wrapper instead; the curls below are the universal fallback and always work.)
-
-Every call posts to the same endpoint with the token in the `Authorization` header:
+Every call posts to the same endpoint through one helper, which sends `Authorization` only when a key was found and no header otherwise:
 
 ```bash
-LINEAR() { curl -s -X POST https://api.linear.app/graphql \
-  -H "Authorization: $LINEAR_API_KEY" -H "Content-Type: application/json" \
-  -d "{\"query\":\"$1\"}"; }
+LINEAR() {
+  if [ -n "$LINEAR_API_KEY" ]; then
+    curl -sS -X POST https://api.linear.app/graphql -H "Authorization: $LINEAR_API_KEY" \
+      -H "Content-Type: application/json" -d "{\"query\":\"$1\"}"
+  else
+    curl -sS -X POST https://api.linear.app/graphql \
+      -H "Content-Type: application/json" -d "{\"query\":\"$1\"}"
+  fi
+}
 ```
+
+**Probe once, before the first call. The probe, not the key, decides access:**
+
+```bash
+LINEAR 'query { viewer { id } }'
+```
+
+**Access is a non-empty `data.viewer.id` in the response body, and nothing else.** Do not read the HTTP status: GraphQL reports an authentication failure as an `errors` array, sometimes under a 200. An `errors` array, an empty body, or a body that is not Linear's JSON is a failed probe.
+
+**On a failed probe, stop and ask the operator, quoting what came back:** Linear's `errors[].message` as returned, or curl's own error where Linear never answered. That is the rule where you are the process the operator is talking to; a dispatched sub-agent reports and stops instead (`tracker` → *Shared rules*). Never fall back to a Linear connector or any other route to the workspace, and never read a failed read as an empty one: a queue read that failed returns no issues, and reads as a clear queue. The operator can supply a key, or give the host a credential for host `api.linear.app` in the `Authorization` header with **no prefix**: Linear takes a personal key bare, and a form that defaults to `Bearer` must be cleared. (If `harness.yaml` defines `tools.linear_cli`, you may use that wrapper instead; the curls below are the universal fallback.)
 
 **Read an issue** (brief, description, labels, state):
 ```bash

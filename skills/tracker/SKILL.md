@@ -316,15 +316,18 @@ settles nothing here, as nowhere else in this skill.
   surfaces only when the PR actually completes that ticket; a PR that merely
   *spawns* tickets keeps their ids out, or merging it closes the work it just
   filed.
-- **Credentials come from the environment, and an environment is per-process.**
-  Never from the repo. A host that injects a backend's key injects it into the
-  process it started; a dispatched sub-agent inherits neither that variable nor
-  an entry in the env file, which was never written because the host was
-  supplying the key. *Stop and ask* is therefore the rule for the process the
-  operator is talking to. A sub-agent finding neither is looking at an
-  orchestrator-only credential rather than a missing one: report what it could
-  not read and stop. Never fall back to another backend, and never echo a token
-  into a comment, report, or commit.
+- **Credentials never come from the repo, and the backend, not the environment,
+  says whether you have access.** A key may sit in a variable or the env file,
+  or the host may hold it outside the session and add it to each request as the
+  request leaves; the transport reference says where to look for a key and names
+  the probe that settles access, read from the response body. A variable a host
+  injected reaches only the process it started, while a credential the host adds
+  at its proxy reaches every process whose requests leave through that proxy, so
+  a dispatched sub-agent runs the probe too rather than concluding anything from
+  its own environment. *Stop and ask* follows a failed probe in the process the
+  operator is talking to; a sub-agent whose probe fails reports what it could not
+  read, quoting the backend's error, and stops. Never fall back to another
+  backend, and never echo a token into a comment, report, or commit.
 - **Quote titles; pass bodies as a file.** Ticket text is routinely lifted from
   a report, a finding, or a design section and may carry backticks, `$(…)`, or
   newlines; interpolating it into a shell command is a command-injection

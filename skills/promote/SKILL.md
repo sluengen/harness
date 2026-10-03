@@ -88,6 +88,20 @@ a run that skipped the review, which this command does not launder.
    this is the second of the two places that load it. **The stage is named
    `rebase` and the operation is a merge**, exactly as that reference describes:
    never `git rebase` on a branch anything else may have fetched.
+
+   **Then re-run the version raise over the merged tree:**
+   `node <plugin-root>/scripts/plugin-version.js --repo <worktree>`. `/build`
+   step 7 read the release version once, and a release since — the nightly hop,
+   or another landing — can leave this candidate carrying a version already
+   released, which the updater, comparing that string alone, delivers as
+   nothing (#732). The fetch above refreshed the release ref the script reads.
+   `already-ahead`, `no-plugin-manifest` and `no-release-branch` write nothing,
+   the last two because the obligation cannot exist there. `raised` wrote the
+   homes again: commit them onto the candidate here, so the raise sits inside
+   the tree stage 2 gates — and that tree no longer equals `reviewed_tree`, so
+   stage 2 runs the gate rather than skipping it. Any other answer, or a
+   non-zero exit, stops the landing and is reported; a release ahead of the
+   integration branch is not a repair this stage makes.
 2. *Gate.* Run the repo's `harness.yaml` `commands.verify` gate over the merged
    tree — read the command fresh from `harness.yaml` every run and never
    hardcode one here. Capture the output and read all of it.
