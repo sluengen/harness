@@ -66,13 +66,13 @@ Two axes decide everything about a finding, each a binary.
 |  | Small fix | Large fix |
 |---|---|---|
 | Blocking | Fix now, in this branch | **FAIL** — return it to the builder |
-| Non-blocking | Fix now, in this branch | Let it go — say nothing (P0) |
+| Non-blocking | Note it in the report; repair nothing. It rides with a FAIL if one is returning anyway | Let it go — say nothing (P0) |
 
-The default posture is fix it now: three of the four cells resolve inside this branch, because fixing a small thing costs less than discussing it.
+The default posture for a blocking finding is fix it now, because fixing a small thing costs less than discussing it. A non-blocking one costs nothing to leave, and a repair would cost a second fresh reviewer and a second gate (*The verdicts*), so it never holds a PASS and never triggers a repair. It is written down, and the builder takes it with the blocking findings when the branch is going back on a FAIL anyway.
 
-**Render both axes on every finding**, at its heading — *blocking · small* — or in a placement table. A report that reasons about blocking and never states size has not discharged the 2×2: size is the axis deciding fix-now against let-it-go, and "all findings are blocking" is not a placement.
+**Render both axes on every finding**, at its heading — *blocking · small* — or in a placement table. A report that reasons about blocking and never states size has not discharged the 2×2: size is the axis deciding fix-now (or, for a non-blocking finding, note-it) against let-it-go, and "all findings are blocking" is not a placement.
 
-There is no "small but not worth doing" cell: a stateable defect is a finding and a small one is worth its cost; anything vaguer never became a finding.
+A stateable defect is a finding, and anything vaguer never became one. Whether a small finding is worth its cost depends on the axis above it: a blocking one always is, and a non-blocking one is worth the edit but not a review dispatch.
 
 ### Bugs are filed; improvements are proposed
 
@@ -100,7 +100,7 @@ The three are the spine's contract, not this skill's; what each obliges a review
 - **FAIL** — a blocking finding stands. Return it to the builder and re-review, bounded by the stop rule below.
 - **DEFER** — nothing blocking stands, but the ticket cannot ship as scoped without a call this review may not make. Hold it through `tracker`, and route any out-of-scope finding by the 2×2. Not a soft PASS: nothing merges on a DEFER.
 
-One further outcome is not a verdict. A small, contained, in-scope finding the reviewer *repairs in place* rather than returning, because the builder's context is gone and a round trip for a two-line fix is pure waiting. But a reviewer that repairs has reviewed its own work, so a repaired candidate goes to a second fresh reviewer, which may certify only if it makes no repair of its own. The repairing reviewer reports **Ready for final binding** — the intermediate state the driving command names — rather than a verdict. Certification belongs to a reviewer that changed nothing.
+One further outcome is not a verdict. A small, contained, in-scope **blocking** finding the reviewer *repairs in place* rather than returning, because the builder's context is gone and a round trip for a two-line fix is pure waiting. But a reviewer that repairs has reviewed its own work, so a repaired candidate goes to a second fresh reviewer, which may certify only if it makes no repair of its own. The repairing reviewer reports **Ready for final binding** — the intermediate state the driving command names — rather than a verdict. Certification belongs to a reviewer that changed nothing. A non-blocking finding is never the reason for a repair: the 2×2 routes it to the report, and a reviewer whose only findings are non-blocking returns its verdict over the tree as it stands.
 
 ## Reviewer obligations
 
