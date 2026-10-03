@@ -2792,6 +2792,8 @@ the other: both point at the definition.
 
 *Decided at the design stage of #680, 2026-09-17.*
 
+*Superseded 2026-10-03 by #733:* finding no key no longer decides anything. A host can hold the credential outside the session and add it to each request at its proxy, where it reaches every process whose requests leave through that proxy, so the inference this block wrote down, that a sub-agent finding neither the variable nor a file entry is looking at an orchestrator-only credential, is false there. `tracker` → *Shared rules* now says the backend, not the environment, says whether there is access: every process runs the transport's probe, *stop and ask* follows a failed probe in the process the operator is talking to, and a sub-agent whose probe fails reports and stops. Linear has no no-key branch left to qualify, and `github.md`'s clause now sends a sub-agent finding `GITHUB_TOKEN` unset to its two probes. What survives is the placement: the rule is homed once in `tracker`, and each transport carries only its own variable and probe. *#733* below records the decision; the block that follows stands as history.
+
 **Context.** `tracker` → *Shared rules* said to stop and ask when the variable a
 backend needs is missing, and `linear.md` and `github.md` said the same in their
 own words. That is the one instruction a background sub-agent cannot follow, and
@@ -2986,6 +2988,8 @@ requires every orchestrator to fetch — the regression the design itself warned
 about, arriving through the file it exempted. Step 3 therefore states the fetch
 and withholds only the path convention, which is the half the design's reasoning
 actually protected: `.harness/` is `/build`'s run area, and `/review` keeps none.
+
+*Superseded in part 2026-10-03 (#733):* the per-process clause and both transport qualifiers described in the next paragraph are rewritten. *#733* below records what replaced them.
 
 **The credential rule is homed once.** `skills/tracker/SKILL.md` → *Shared rules*
 replaces "If the variable a backend needs is missing, stop and ask" with the
@@ -5591,6 +5595,43 @@ Review cycle 1 returned FAIL on one finding: the stop condition listed `already-
 **The version class is major, raised at this review: `23.2.0` → `24.0.0`.** Before this change `/promote <TICKET>` in a plugin-source repo completed whatever the version homes said. After it, the same call stops on `release-ahead`, `release-unresolvable`, `homes-disagree` and the script's other refusals, and on an exit 3. That is a call that used to complete and now blocks, the test `certifying.md` names and the one #730 was raised major for. The counter-argument is that each of those stops is a state `/build` step 7 already refuses on, so it can arise only in the interval between the build and the landing, and that a consuming repo without `.claude-plugin/plugin.json` gets `no-plugin-manifest` and sees no change. The grammar has no exception for a refusal that is reachable only in an unusual state, and a plugin-authoring consumer's unattended landing is exactly the call that would now stop, so a pinned consumer receives the release as a decision. This review raised both plugin manifests and the `spine:generated` markers in `AGENTS.md` and `templates/spine.md` to `24.0.0` inside the candidate, before the certifying gate.
 
 **Verification.** The certifying run of `bash scripts/verify.sh` over `31884252` plus this record and the major raise is the one the review report for #739 names.
+
+### #733: Linear access is decided by a `viewer` probe, and a sub-agent probes too
+
+`complex`, cleared by the operator for the protected area (credentials and auth) on 2026-10-03. Built as `583ce44e` on branch `733`, cut from `dev` at `6ba8e408`. Three guidance files changed, no code and no test.
+
+**Cause.** The Linear recipe decided whether it could authenticate by looking for the key: `$LINEAR_API_KEY`, then the env file, and on an empty result *stop and ask the user for one*, with a dispatched sub-agent told to report and stop. Claude Code cloud environments can now hold an API credential at the agent proxy, which adds the header after the request leaves the session. Both lookups then come back empty while Linear answers, so the recipe stopped a run whose credential worked. In calibrate on 2026-10-02 (plugin 23.1.0), with the key moved to such a credential, a GraphQL POST with no `Authorization` header returned the workspace, team and viewer, and the ticket's *Observed* table records it.
+
+**What ships.**
+
+- `skills/tracker/references/linear.md` → *Accessing Linear (GraphQL via curl)*. The env-then-file `sed` lookup is unchanged and now opens "Find a key if there is one". An empty result is "no key was found; never a token, and never a verdict on access", and the paragraph says a host can hold the credential outside the session. `LINEAR()` has two explicit branches: with a key it sends `-H "Authorization: $LINEAR_API_KEY"` as before, and with none it sends no `Authorization` header at all. Both use `curl -sS`, so a transport failure prints curl's own error on stderr. A new probe, `LINEAR 'query { viewer { id } }'`, runs once before the first call. **Access is a non-empty `data.viewer.id` in the response body, and nothing else**: the HTTP status is not read, and an `errors` array, an empty body or a non-Linear body is a failed probe. On a failure the process the operator is talking to stops and asks, quoting `errors[].message` or curl's error. A sub-agent reports and stops. Neither falls back to a connector, and neither reads a failed read as an empty queue. The same paragraph carries the operator set-up: a host credential for `api.linear.app` in the `Authorization` header with no prefix.
+- The file's opening paragraph stops asserting access before the probe answers. "You already have access" became "Access is one `curl` away", "do not conclude you lack access" gained "until the probe … has answered", and "the curl below always works" became "is the universal fallback".
+- `skills/tracker/SKILL.md` → *Shared rules*, the credential bullet, rewritten backend-neutral. Credentials never come from the repo. The backend, not the environment, says whether there is access, and the transport reference names where to look for a key and the probe that settles access. A variable a host injected reaches only the process it started, and a credential the host adds at its proxy reaches every process whose requests leave through it, so a sub-agent probes too. *Stop and ask* follows a failed probe in the attended process, and a sub-agent reports, quoting the backend's error, and stops. The bullet keeps the rules against another backend and against echoing a token.
+- `skills/tracker/references/github.md` → *Credential*, one clause: a sub-agent finding `GITHUB_TOKEN` unset "runs the probes below before concluding anything", in place of the orchestrator-only inference. The file's existing REST and GraphQL probes are GitHub's access probe, and nothing else in the file changed.
+
+**Decision.** This supersedes *Decision: The per-process credential clause is homed in `tracker`, and each transport qualifies its own no-key branch* (#680) in place, and that block carries the dated note. The probe and its success test are the contract. A found key decides only whether the header is sent.
+
+*Alternatives refused:*
+
+- omitting the header when `CLAUDE_CODE_REMOTE=true`, the ticket's first design, which keys on a host flag rather than on what the backend answers;
+- always sending the header, empty when no key was found, which depends on the proxy replacing a header (observed in calibrate, undocumented) and on how curl handles an empty one;
+- judging the probe by HTTP status, which reads an `errors` body under a 200 as access;
+- falling back to the Linear connector, which unattended and local runs cannot rely on being attached;
+- caching the probe across runs, a mechanism to save one call;
+- judging the probe with `jq`, which `linear.md` assumes nowhere and a consumer may not ship.
+
+*Consequences.* Every run makes one extra call. A sub-agent can reach the tracker where the credential is proxy-held. A local run with an invalid key now stops at the probe instead of at its first real call. #680's packet decision, that the reviewer makes no tracker call, is unaffected.
+
+**Evidence.**
+
+- AC-1: the operator's calibrate probe under *Observed*, and a read of the amended recipe against it. In that session neither lookup finds a key, so `LINEAR()` takes the no-header branch for the probe and every later call. The proxy adds the key, the response carries `data.viewer.id`, and the recipe proceeds. Its failure paragraph forbids the connector.
+- AC-2: the recipe's three fenced blocks, extracted verbatim from `583ce44e` with `<env-file>` read as `.env` (absent), run with `LINEAR_API_KEY` unset from this repo's cloud environment, which has no Linear credential. This reviewer re-ran it and got the builder's result: the body was `{"errors":[{"message":"Authentication required, not authenticated", … "code":"AUTHENTICATION_ERROR","statusCode":401 …}]}` with no `data`, so the probe hit the Linear-error branch rather than the transport-error branch. The proxy here passes `api.linear.app` through. The failure paragraph turns that body into stop-and-ask quoting `errors[].message`.
+- AC-3: the success sentence names `data.viewer.id` and tells the reader not to read the status.
+- AC-4: with a key in the variable or the env file, the lookup and the header are unchanged. The run gains one probe call, and `-sS` adds output only on a transport error.
+- AC-5: no recipe line echoes, logs or reads a host-held value. The probe asks for the viewer's id, never the key.
+- AC-6: the certifying run of `bash scripts/verify.sh` over `583ce44e` plus this record is the one the review report for #733 names.
+
+**The version class is major, already carried.** A Linear run that found no key used to stop and ask, and now it proceeds when the probe succeeds. A sub-agent that used to report and stop on an empty environment now probes. Those are changed refusal reasons, the test `certifying.md` names. `dev` already carries `24.0.0` over the `23.1.0` release (`origin/main`), a major raised at #739, so the candidate needs no further raise, and `scripts/plugin-version.js` reported `already-ahead` at build time.
 
 ## Cross-references
 
