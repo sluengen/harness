@@ -83,7 +83,7 @@ a run that skipped the review, which this command does not launder.
 
 1. *Rebase.* Fetch, and bring the integration branch into the candidate.
    [`skills/build/references/reconcile.md`](../build/references/reconcile.md)
-   owns every rule — base movement as normal concurrency, the two-attempt bound,
+   owns every rule — base movement as normal concurrency, the unresolved-conflict bound,
    the monotonic-field trap, functional conflict as the only escalation — and
    this is the second of the two places that load it. **The stage is named
    `rebase` and the operation is a merge**, exactly as that reference describes:
