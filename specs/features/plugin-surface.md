@@ -1,7 +1,7 @@
 ---
 feature: plugin-surface
 status: implemented
-last_updated: 2026-10-04
+last_updated: 2026-10-05
 ---
 
 # The plugin surface
@@ -5426,7 +5426,7 @@ The fix extends the cord's claim to every ticket. It adds no second mechanism.
 - `skills/build/SKILL.md` step 1 claims every ticket as it moves to In Progress and names the branch step 6 will cut. The cord's superseded-or-taken-over wording is kept. Step 6 pushes the branch as soon as it is cut and again after every commit, not only at PASS or DEFER. The operation is the push PASS already made, run earlier. Reconciling with the integration branch is a merge (`references/reconcile.md`), so the earlier pushes never need a force.
 - `skills/work-discovery/SKILL.md` gains *Stale runs*, run beside step 1 of *The limit*. For every unheld In Progress ticket whose claim is stale or missing, the tick's report names the ticket, the claim's age (or that it has none), and the branch the claim names. This applies whatever else the tick does, including a tick that finds nothing actionable; under a stopped line *What a stopped tick outputs* governs instead. The rule is **report only**: the tick does not pick, move or hold the ticket or touch its branch, and the ticket keeps counting against the limit. A claim's age cannot prove the run dead, which is the same reason `worktree-isolation` will not reclaim a worktree on a timestamp. *The queue*'s "an In Progress ticket is somebody's live run" now adds "until its claim says otherwise".
 
-The stale-run report does not cover In Review. `/build` moves the ticket to In Review before the rebase and the review, so a run that dies during review leaves an In Review ticket that *Stale runs* does not read. The ticket's criteria name In Progress, and the commits a run made before review are on the remote branch under step 6.
+The stale-run report does not cover In Review. `/build` moves the ticket to In Review before the rebase and the review, so a run that dies during review leaves an In Review ticket that *Stale runs* does not read. The ticket's criteria name In Progress, and the commits a run made before review are on the remote branch under step 6. Since #743 it does, and it also names an open ticket the board never received; the #743 entry below records the change.
 
 **Deferred twin.** The inline comment on `loop.cord_claim_minutes` in `harness.yaml` and `templates/harness.yaml` still describes the key as the cord's ("a cord claim older than this is stale"). That comment is still true, but it no longer covers everything the key governs. `tracker` is where the key's meaning lives, and it says the key applies to every claim, so the comment is left for the next change that opens those files.
 
@@ -5674,6 +5674,38 @@ The question is whether a call that used to complete now blocks, or the reverse.
 The counter-argument is that both changes only remove work, and that #742's hold contradicted rules in the same file, so it was a defect rather than a contract. The grammar makes no exception for a stop that was itself a defect, as #739's record already noted for a stop reachable only in an unusual state. A consuming repo's unattended loop now lands where it used to hold, and a pinned consumer should receive that as a decision. This review raised both plugin manifests and the `spine:generated` markers in `AGENTS.md` and `templates/spine.md` from `24.1.0` to `25.0.0` inside the candidate, before the certifying gate.
 
 **Verification.** The certifying run of `bash scripts/verify.sh` over `fb6f01d3` plus this record and the major raise is the one the review report for #741 and #742 names.
+
+### #743: *Stale runs* reads In Review, and names an open ticket no state read places
+
+`simple`. Built as `81d7b09e` and `8794f62a` on branch `work-743-746`, cut from `dev` at `1d7a78a4`. `81d7b09e` also carries this cycle's version raise from `25.0.0` (`origin/main`) to `25.1.0`. One guidance file changed, no code and no test.
+
+**Cause.** #730 reached PASS on 2026-09-29 (`925020a4`) and landed on 2026-10-01 (`33632695`). In between, no step of the loop named it. It surfaced only when a routine tick's cord check tripped on it. *Stale runs* read In Progress only, and #730 was not on the board at all, because its build's `item-add` failed. A board read scoped to In Review would not have found it either. The 2026-09-30 drain had dropped the In Review stall as unobserved and asked for it to be raised again if it was ever seen. #730 is that sighting.
+
+**What ships**, all in `skills/work-discovery/SKILL.md` → *Stale runs*:
+
+- The heading reads *report a ticket in flight whose claim has aged out*. The read covers every unheld In Progress **and In Review** ticket, which step 1 of *The limit* already counts. A stale or missing claim is named with the ticket, **its state**, the claim's age (or that it has none), and the branch. A new sentence says why In Review costs more: a run that died there, or stopped at PASS, left a reviewed branch that only `/promote <ticket>` lands.
+- A new paragraph names **every unheld open ticket the state read places nowhere**, whatever its claim's age, with its claim and branch where it has them. It applies only where a tracker can hold an open ticket with no state. The set is the open-queue read the andon's *Coverage* anchor already takes, less every ticket the state read returned, so the tick makes no extra call. `8794f62a` corrected the wording to say the anchor *takes* that read, not that it holds the set. #730 is named as the case.
+- The report-only paragraph adds *place it* to what the tick must not do. The limit sentence now reads "a ticket in flight keeps counting against the limit". The text does not say whether an unplaced ticket counts against the limit.
+
+This supersedes the #728 entry's statement that the stale-run report does not cover In Review. *The queue*'s "In Review is somebody's open handoff" is unchanged and still true, because *Stale runs* only reports.
+
+**Evidence.** The change is guidance, so the evidence is ADR 0019's for prose. AC-2 (report only) is met by the report-only paragraph, read at this review. For AC-1 the builder ran a use-probe of the candidate text against the base text on one tick state. The state held a ticket shaped like #730 (open, never on the board, a claim and a PASS comment, its own branch) and a ticket In Review on the board with a 27-hour-old claim and a PASS comment. The numbers were chosen so the text's "#730" could not be matched. The candidate text named both in the report and acted on neither. The base text named neither in the report. This reviewer checked that the probe's inputs were byte-identical to the candidate's file and walked #730's recorded state through the text: on GitHub the open-issue read minus the board read contains #730, it was unheld, and its claim named `work-730`. The transcripts are not in the tree.
+
+### #746: `/build` names the probe-then-commit-boundary path for a measured re-pin
+
+`simple`. Built as `569e06df` on branch `work-743-746`, on top of #743. One guidance file changed, no code and no test.
+
+**Cause.** *Tests first, checks, then lock* arms the lock before the first line of implementation. Its one named exception, *When the test tree is the subject, not the measure* (#679), covers implementation under the test roots only. A re-pin whose expected values can only be measured by running the implementation had no named path. A consuming repo's feature-lane build on 2026-10-03 improvised one, as it had before, and justified it on the ticket each time (ledger #450 comment `5967643777`).
+
+**What ships.** `skills/build/SKILL.md` gains a bullet after the #679 bullet: *When the expected values can only be measured*. It covers implementation outside the test roots whose new values exist only once it runs, such as a golden, a pixel digest, a byte or timing budget, or a polarity set. The path is **probe, then a commit boundary, then the lock**. At stage `tests` the builder writes the implementation as a probe and measures the values. It sets the probe aside on a commit of its own or a patch file, never a bare stash, and commits the tests alone. It reproduces RED against the base with the probe removed, arms the lock, then restores and commits the implementation. The ticket records that this path was taken, the test-only commit, the RED output against the base, and that the lock was armed before the implementation commit. It also records how each value was judged correct, because a measured value pins what the implementation does, not that it is right. The bullet ends by excluding an ordinary build: an expected value the spec states, or one derivable without running the change, is written first. The test-lock hook is unchanged. It refuses test edits only once armed, so the probe at stage `tests` needs no hook change.
+
+**Evidence.** AC-1 and AC-2 were read in the diff at this review. Its closing clause sends an ordinary build to "the paragraph above", which from where the bullet sits is the #679 bullet rather than *Tests first, checks, then lock*. The review report notes this as non-blocking. For AC-3 the builder ran a use-probe of the candidate text against the base text on a palette-swap ticket that changes 14 PNG digests. The candidate text took the named path and recorded all three items plus how the values were judged. The base text misread the digests file as implementation under the test roots, took the #679 path, and never armed the lock. This reviewer checked that the probe's input was byte-identical to the candidate's file and that the scenario does not restate the obligation. The transcripts are not in the tree.
+
+### The cycle's version class: minor, `25.1.0`, as raised by `/build`
+
+The test is whether a call that used to complete now blocks, or the reverse. #743 adds lines to a tick's report and blocks nothing. #746 adds no refusal and removes none: the test-lock hook refuses exactly what it refused before. The counter-argument is that #746 approves an order, implementation probed before tests, that a consuming repo's reviewer could previously have failed under "before the first line of implementation". Against that, the case had no named outcome before. The observed builds took this sequence and landed, and they still do. The bullet also adds no obligation to an ordinary build. Nothing that used to complete now stops, and nothing that used to stop now completes, so the class stays at the floor. `scripts/plugin-version.js` raised all four homes from `25.0.0` to `25.1.0` at `/build` step 7.
+
+**Verification.** The certifying run of `bash scripts/verify.sh` over `569e06df` plus this record is the one the review report for #743 and #746 names.
 
 ## Cross-references
 

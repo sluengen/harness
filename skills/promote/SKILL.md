@@ -94,7 +94,7 @@ a run that skipped the review, which this command does not launder.
    step 7 read the release version once, and a release since — the nightly hop,
    or another landing — can leave this candidate carrying a version already
    released, which the updater, comparing that string alone, delivers as
-   nothing (#732). The fetch above refreshed the release ref the script reads.
+   nothing (#732). The script fetches the release ref itself.
    `already-ahead`, `no-plugin-manifest` and `no-release-branch` write nothing,
    the last two because the obligation cannot exist there. `raised` wrote the
    homes again: commit them onto the candidate here, so the raise sits inside

@@ -110,7 +110,7 @@ the directory.
 | `tests` | run the tests; a remembered RED is not evidence |
 | `implement` | rewrite `tests_locked: true` before the first edit — a resume re-arms, never assumes |
 | `in_review` `substantive_review` | on a tree match, launch the next cycle's fresh reviewer; on a mismatch, discard and restart substantive review |
-| `rebase` | never resume mid-merge: `git merge --abort`, redo from the current tip, and the redo counts against the conflict bound only where it ends unresolved, like any attempt |
+| `rebase` | never resume mid-merge: `git merge --abort`, redo from the current tip, and the redo counts against the unresolved-conflict bound only where it ends unresolved, like any attempt |
 | `pass` | trust the verdict only on a tree match. A resume landing here at `/promote` re-reads the ticket's live state first — the verdict says the tree was reviewed, never that the ticket still wants it |
 | `full_gate` | re-decide stage 2 from git and this session's review report, never from memory; where the gate runs, re-run it over the tree in hand and read all of it. A remembered green is not evidence, and nothing records one |
 | `tree_compare` `push` | check whether the push already landed (`git ls-remote`) before pushing again — the crash may have been *after* it succeeded |
