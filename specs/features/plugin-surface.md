@@ -5633,6 +5633,8 @@ Review cycle 1 returned FAIL on one finding: the stop condition listed `already-
 
 **The version class is major, already carried.** A Linear run that found no key used to stop and ask, and now it proceeds when the probe succeeds. A sub-agent that used to report and stop on an empty environment now probes. Those are changed refusal reasons, the test `certifying.md` names. `dev` already carries `24.0.0` over the `23.1.0` release (`origin/main`), a major raised at #739, so the candidate needs no further raise, and `scripts/plugin-version.js` reported `already-ahead` at build time.
 
+*Superseded in part 2026-10-05 (#747):* the `LINEAR()` helper and the env-then-file key lookup described under *What ships* are gone. Every call is now a literal `curl`, and the probe picks among three credential paths. The probe, its success test and stop-and-ask stand. *#747* below records the change.
+
 ### #741: a small non-blocking finding is noted, never repaired
 
 `simple`. Built as `6d83cf0c` on branch `741-742`, cut from `dev` at `9c849de4`, which also carries this cycle's version raise from `24.0.0` (`origin/main` `59e3d65d`) to `24.1.0`. One guidance file changed, no code and no test.
@@ -5706,6 +5708,38 @@ This supersedes the #728 entry's statement that the stale-run report does not co
 The test is whether a call that used to complete now blocks, or the reverse. #743 adds lines to a tick's report and blocks nothing. #746 adds no refusal and removes none: the test-lock hook refuses exactly what it refused before. The counter-argument is that #746 approves an order, implementation probed before tests, that a consuming repo's reviewer could previously have failed under "before the first line of implementation". Against that, the case had no named outcome before. The observed builds took this sequence and landed, and they still do. The bullet also adds no obligation to an ordinary build. Nothing that used to complete now stops, and nothing that used to stop now completes, so the class stays at the floor. `scripts/plugin-version.js` raised all four homes from `25.0.0` to `25.1.0` at `/build` step 7.
 
 **Verification.** The certifying run of `bash scripts/verify.sh` over `569e06df` plus this record is the one the review report for #743 and #746 names.
+
+### #747: every Linear call is one literal `curl` a single allow rule approves, and the probe picks the credential path
+
+`simple`. Built as `a83de035` on branch `work-747`, cut from `dev` at `9e5417a3`, with `/build` step 7's raise from `25.1.0` to `25.2.0` in the same commit. One guidance file changed, no code and no test.
+
+**Cause.** Claude Code checks a Bash command's shape before it consults any allow rule, and it refused the shape every Linear call took. The `LINEAR()` helper built its body as `-d "{\"query\":\"$1\"}"`, flagged as a brace with a quote character, and sent `-H "Authorization: $LINEAR_API_KEY"`, flagged as a variable expansion. A function does not survive between Bash tool calls, so every call re-defined the helper and took the refused shape. In a cloud session, where auto mode drops `Bash(*)` and only the repo's `.claude/settings.json` is read, every tracker call therefore prompted, and no consuming repo's settings could prevent it. Calibrate and nano-erp both hit it. The ticket's *Observed* table records the measurements from 2026-10-04.
+
+**What ships**, all in `skills/tracker/references/linear.md` → *Accessing Linear (GraphQL via curl)*:
+
+- The `LINEAR()` helper is gone. Every call is one literal `curl` starting `curl -sS -X POST https://api.linear.app/graphql`. The section names the rule a consuming repo adds, `Bash(curl -sS -X POST https://api.linear.app/graphql *)`, in its own `.claude/settings.json`, and says nothing installs it.
+- The probe, `query { viewer { id } }`, now picks one of three paths as well as deciding access. The run probes them in order and keeps the first that answers for every call. Path 1, the host holds the credential: no `Authorization` header. Path 2, the key is in the environment: `--variable %LINEAR_API_KEY --expand-header 'Authorization: {{LINEAR_API_KEY}}'`, so curl reads the variable and the command line expands nothing. When the variable is unset, curl exits on "variable expansion failure" before it sends anything. Path 3, the key is in the env file: each call reads the file with the same `sed` in a `LINEAR_API_KEY=$(…)` prefix on the curl. The text says that no rule can approve this path and that the way out is to put the key in the session's environment, which moves the run to path 2. `--variable` needs curl 8.3 or later, and the text says so.
+- The `sed`-not-`source` rationale from #639, the success test (a non-empty `data.viewer.id`, never the HTTP status), and stop-and-ask are all kept. Stop-and-ask now follows the failure of every path's probe.
+- Every recipe is rewritten as a literal command. Path 1 is the written form, and the text says what to add for paths 2 and 3. A read or an id-only write keeps its GraphQL document in a single-quoted `-d` body, with string arguments written as `\"`. A write that carries ticket text sends `-d @<file>` holding `query` and `variables`, written by a file-writing tool rather than a shell heredoc. Those writes are create, comment, the hold's comment and the ledger append. Before this change the old recipe put ticket text inside the shell argument, so an apostrophe ended it, which `tracker` → *Shared rules* ("pass bodies as a file") already forbade. `issueCreate` also returns the issue's `id`.
+
+This supersedes the *#733* entry's description of `LINEAR()` and of the env-then-file key lookup. #733's probe, its success test and its stop-and-ask are unchanged.
+
+**Evidence.** All five criteria are read against the ticket as amended at build on 2026-10-04 (second comment).
+
+- AC-1: read in the diff. No recipe defines or calls a function. Paths 1 and 2 expand no shell variable. Path 3 is the one expansion, and the text names it as unapprovable and gives the way out.
+- AC-2: the builder pulled six forms verbatim from the candidate's file and ran each with `claude -p --permission-mode default --setting-sources "" --allowedTools "Bash(curl -sS -X POST https://api.linear.app/graphql *)"`. The forms were the path-1 probe, the path-2 probe, the path-3 probe, an issue read with string arguments, a literal `issueUpdate`, and a `-d @<file>` write. `permission_denials` was empty for every form except path 3, which was denied as the text says. This reviewer re-ran three forms the same way: the held-pile read, a `-d @<file>` comment write, and the same write in the path-2 form. Each body file sat at an absolute path outside the session's working directory and held an apostrophe, quotes, backticks and `$(…)`. All three ran with no denial and reached Linear.
+- AC-3: the order and the keep-the-first rule are read in the text. The builder ran each probe against Linear, read-only. Path 2 with the variable set and path 3 against calibrate's real `.env` returned `viewer.id`. Path 1 returned an authentication error on a host with no credential proxy, and the success case is #733's recorded cloud probe. This reviewer ran the path-2 form with `LINEAR_API_KEY` unset against a local port: curl exited 2 on "variable expansion failure" and made no connection. With the variable set, it reached the connect.
+- AC-4: see *Verification*.
+- AC-5: read in the diff. Create, comment, the hold's comment and the ledger append each send `-d @<file>` with `variables`.
+
+**The version class is major, raised at this review to `26.0.0`.** The test is whether a call that used to complete now blocks, or the reverse, and two cases fail it.
+
+- *Reverse direction.* The old lookup used `$LINEAR_API_KEY` whenever it was set and never read the file, so a set key that Linear rejected stopped the run. Now that path's failed probe falls through to the env file, and the run proceeds if the file's key answers. That is the shape #733 was raised major for: a run that used to stop and ask now proceeds.
+- *Forward direction.* Paths 2 and 3 need curl 8.3 or later. On an older curl (Ubuntu 22.04 and Debian 12 ship 7.x) with the key in the environment or the env file, the old `-H "Authorization: $LINEAR_API_KEY"` call completed. Now both probes fail on an unknown option and the run stops and asks.
+
+The counter-argument for minor: nothing is renamed, the operations and their postconditions are unchanged, and the permission-layer change takes effect only where a consuming repo adds the rule itself, as *#734* reasoned for a host-layer refusal. That covers the permission layer, and this review does not rest the class on it. The two cases above concern the recipe's own stop-and-ask, which is a refusal the harness states. This review raised the four homes `scripts/plugin-version.js` names in `CANDIDATES` (both plugin manifests and the `spine:generated` markers in `AGENTS.md` and `templates/spine.md`) from `25.2.0` to `26.0.0` inside the candidate, before the certifying gate. `origin/main` carries `25.1.0`.
+
+**Verification.** The certifying run of `bash scripts/verify.sh` over `a83de035` plus this record and the major raise is the one the review report for #747 names.
 
 ## Cross-references
 
