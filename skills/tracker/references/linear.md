@@ -54,62 +54,77 @@ Linear's GitHub integration links an issue to a PR when the ticket id appears in
 
 ## Accessing Linear (GraphQL via curl)
 
-**Find a key if there is one: prefer the environment, and never `source` the env file.** Where `LINEAR_API_KEY` is already set, by an injecting host or a CI secret, use it as it stands and read no file. Fall back to the env file only when the variable is empty: the one named in `harness.yaml` (`env.file`), else `.env` / `.env.local` in the repo root.
+**Every call is one literal `curl`, and on the two paths a rule can approve, every call starts with the same words:**
 
 ```bash
-if [ -z "$LINEAR_API_KEY" ]; then
-  LINEAR_API_KEY=$(sed -n 's/^[[:space:]]*LINEAR_API_KEY=//p' "<env-file>" | head -n1 \
-    | sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'\$/\1/")
-  export LINEAR_API_KEY
-fi
+curl -sS -X POST https://api.linear.app/graphql
 ```
 
-Never echo or commit the key; the env file must be gitignored.
+So one rule approves them all: `Bash(curl -sS -X POST https://api.linear.app/graphql *)`, in the consuming repo's own `.claude/settings.json`. That file is the only settings file a cloud session reads, and nothing installs the rule for the repo. The host refuses two shapes before it consults any rule: a shell function wrapping the call, and a shell variable expanded on the command line (#747 measured both). No recipe here does either, outside the one path below that cannot avoid it.
 
-**Two failures this avoids, both observed.** Until #639 this step read `set -a && source .env && set +a`, and each is a property of `source` rather than of any particular file.
+**Choose the path by probing, never by looking at the key.** Three paths reach Linear. Probe them in this order with `query { viewer { id } }`, and use the first one that answers for every call in the run:
+
+1. **The host holds the credential.** The host adds `Authorization` as the request leaves (Claude Code's cloud-environment API credentials work this way), so the call sends none:
+
+   ```bash
+   curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d '{"query":"query { viewer { id } }"}'
+   ```
+
+2. **The key is in the environment**, set by an injecting host or a CI secret. curl reads `LINEAR_API_KEY` itself, so the command line expands nothing:
+
+   ```bash
+   curl -sS -X POST https://api.linear.app/graphql --variable %LINEAR_API_KEY --expand-header 'Authorization: {{LINEAR_API_KEY}}' -H 'Content-Type: application/json' -d '{"query":"query { viewer { id } }"}'
+   ```
+
+   Where the variable is unset, curl stops with "variable expansion failure" and sends nothing. That is this path's failed probe, and it settles whether the variable is set without printing it. `--variable` needs curl 8.3 or later.
+
+3. **The key is in the env file**: the one named in `harness.yaml` (`env.file`), else `.env` / `.env.local` in the repo root. A shell variable does not survive from one tool call to the next where the host keeps no shell state, as Claude Code's Bash tool does not, so every call on this path reads the file in the same command:
+
+   ```bash
+   LINEAR_API_KEY=$(sed -n 's/^[[:space:]]*LINEAR_API_KEY=//p' "<env-file>" | head -n1 | sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'\$/\1/") curl -sS -X POST https://api.linear.app/graphql --variable %LINEAR_API_KEY --expand-header 'Authorization: {{LINEAR_API_KEY}}' -H 'Content-Type: application/json' -d '{"query":"query { viewer { id } }"}'
+   ```
+
+   This path expands a variable, so no allow rule can approve it, and each call prompts wherever `Bash(*)` is not in effect, which includes auto mode. To leave it, put the key in the environment the host starts the session with, and the run takes path 2.
+
+Never echo or commit the key; the env file must be gitignored. The read strips one layer of matching single or double quotes and keeps any `=` inside the value. An empty read is no key, never a token.
+
+**Read the env file with `sed`, never `source` it.** Until #639 this step read `set -a && source .env && set +a`, and it caused two observed failures, each a property of `source` rather than of any particular file:
 
 - **Sourcing destroys a working credential.** An env file is gitignored and seeded from a committed `.env.example`, so it routinely carries an empty `LINEAR_API_KEY=` placeholder. Where the host injects the real key, sourcing overwrites it with the empty string and Linear answers **401** on the first call. That failure is silent in the direction that costs most: an agent appending a ledger entry or posting a comment gets an error it may not read closely, and *"I recorded that"* is a claim the next reader has no reason to doubt. Two agents in one observed run reached opposite conclusions about whether a tracker write had landed. It also reaches the run's ticket **reads**, not only its writes.
 - **Sourcing executes the file.** An unquoted value carrying a backtick, `$( )` or a redirect is run rather than assigned, on a gitignored file the agent did not write and no review saw. The `sed` above assigns text whatever the file holds: a value of `` `touch /tmp/x` `` comes back as those literal characters, and nothing runs.
 
-The read strips one layer of matching single or double quotes and keeps any `=` inside the value. **An empty result means no key was found; it is never a token, and never a verdict on access.** A host can hold the credential outside the session and add it to each request as the request leaves (Claude Code's cloud-environment API credentials work this way), and then both lookups come back empty while Linear answers. Nothing here reads or prints a credential the host holds; the probe below is the only test that one exists.
-
-Every call posts to the same endpoint through one helper, which sends `Authorization` only when a key was found and no header otherwise:
-
-```bash
-LINEAR() {
-  if [ -n "$LINEAR_API_KEY" ]; then
-    curl -sS -X POST https://api.linear.app/graphql -H "Authorization: $LINEAR_API_KEY" \
-      -H "Content-Type: application/json" -d "{\"query\":\"$1\"}"
-  else
-    curl -sS -X POST https://api.linear.app/graphql \
-      -H "Content-Type: application/json" -d "{\"query\":\"$1\"}"
-  fi
-}
-```
-
-**Probe once, before the first call. The probe, not the key, decides access:**
-
-```bash
-LINEAR 'query { viewer { id } }'
-```
+Nothing here reads or prints a credential the host holds; path 1's probe is the only test that one exists.
 
 **Access is a non-empty `data.viewer.id` in the response body, and nothing else.** Do not read the HTTP status: GraphQL reports an authentication failure as an `errors` array, sometimes under a 200. An `errors` array, an empty body, or a body that is not Linear's JSON is a failed probe.
 
-**On a failed probe, stop and ask the operator, quoting what came back:** Linear's `errors[].message` as returned, or curl's own error where Linear never answered. That is the rule where you are the process the operator is talking to; a dispatched sub-agent reports and stops instead (`tracker` → *Shared rules*). Never fall back to a Linear connector or any other route to the workspace, and never read a failed read as an empty one: a queue read that failed returns no issues, and reads as a clear queue. The operator can supply a key, or give the host a credential for host `api.linear.app` in the `Authorization` header with **no prefix**: Linear takes a personal key bare, and a form that defaults to `Bearer` must be cleared. (If `harness.yaml` defines `tools.linear_cli`, you may use that wrapper instead; the curls below are the universal fallback.)
+**When every path's probe fails, stop and ask the operator, quoting what came back:** Linear's `errors[].message` as returned, or curl's own error where Linear never answered. That is the rule where you are the process the operator is talking to; a dispatched sub-agent reports and stops instead (`tracker` → *Shared rules*). Never fall back to a Linear connector or any other route to the workspace, and never read a failed read as an empty one: a queue read that failed returns no issues, and reads as a clear queue. The operator can supply a key, or give the host a credential for host `api.linear.app` in the `Authorization` header with **no prefix**: Linear takes a personal key bare, and a form that defaults to `Bearer` must be cleared. (If `harness.yaml` defines `tools.linear_cli`, you may use that wrapper instead; the curls below are the universal fallback.)
+
+**The recipes below are written for path 1.** On path 2, put `--variable %LINEAR_API_KEY --expand-header 'Authorization: {{LINEAR_API_KEY}}'` after the URL. On path 3, also put the env-file read from path 3 in front of `curl`. A recipe that reads or writes only ids keeps its GraphQL document inside the single-quoted `-d` body, writing a string argument as `\"`. The `<placeholders>` are ids resolved at runtime, and none contains a quote.
+
+**A write that carries ticket text goes as a file.** That covers a title, a description and a comment body. Write a JSON object holding `query` and `variables` to a scratch file outside the tree with a file-writing tool, never a shell heredoc of the text, and send it with `-d @<file>`. The tool that wrote the file owns the JSON escaping, an apostrophe cannot end the shell argument, and the text never reaches the command line (`tracker` → *Shared rules*: quote titles, pass bodies as a file). For example, a comment:
+
+```json
+{"query": "mutation($input: CommentCreateInput!) { commentCreate(input: $input) { success comment { id } } }",
+ "variables": {"input": {"issueId": "<issue-id>", "body": "<the comment text>"}}}
+```
+
+```bash
+curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d @<file>
+```
 
 **Read an issue** (brief, description, labels, state):
 ```bash
-LINEAR 'query { issue(id:\"<issue-id>\") { identifier title description url state { name } labels { nodes { name } } comments { nodes { body createdAt } } } }'
+curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d '{"query":"query { issue(id:\"<issue-id>\") { identifier title description url state { name } labels { nodes { name } } comments { nodes { body createdAt } } } }"}'
 ```
 
 **Pull the Todo queue** for a team (the work to pick up):
 ```bash
-LINEAR 'query { issues(filter: { team: { key: { eq: \"<team-key>\" } }, state: { name: { eq: \"Todo\" } } }) { nodes { identifier title } } }'
+curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d '{"query":"query { issues(filter: { team: { key: { eq: \"<team-key>\" } }, state: { name: { eq: \"Todo\" } } }) { nodes { identifier title } } }"}'
 ```
 
 **Pull the held pile.** Both conditions — the hold label and the operator's own assignment — and the fields a triage read needs; add a `project` clause to the same filter, matching on the name `repo.project` gives, when that scope is set:
 ```bash
-LINEAR 'query { issues(filter: { team: { key: { eq: \"<team-key>\" } }, labels: { name: { eq: \"input\" } }, assignee: { isMe: { eq: true } } }) { nodes { identifier title url description updatedAt } } }'
+curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d '{"query":"query { issues(filter: { team: { key: { eq: \"<team-key>\" } }, labels: { name: { eq: \"input\" } }, assignee: { isMe: { eq: true } } }) { nodes { identifier title url description updatedAt } } }"}'
 ```
 
 ### Resolving the team
@@ -117,7 +132,7 @@ LINEAR 'query { issues(filter: { team: { key: { eq: \"<team-key>\" } }, labels: 
 The API token is **workspace-scoped**, so nothing needs to say which workspace this is, and the team follows from the workspace rather than from a declaration:
 
 ```bash
-LINEAR 'query { teams { nodes { id key name } } }'
+curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d '{"query":"query { teams { nodes { id key name } } }"}'
 ```
 
 **Exactly one node is the team.** Use its `key` wherever a recipe below writes `<team-key>` and its `id` wherever one writes `<team-uuid>`. No configuration field is read for it: `repo.linear` held a workspace hostname in one repo and was absent in another, so a recipe reading it returned an empty queue on both — which only an unattended discovery run would ever have noticed. That key is retired from this recipe's read set; a repo keeping it as a human-facing pointer to its workspace URL is unaffected and it is reported as an ordinary unread key.
@@ -139,26 +154,34 @@ Workflow-state IDs are **per-team UUIDs** — not portable across repos or track
 Query the team's states *with* their `type`, then pick the one you need. For the two `started` states, **disambiguate by name** (In Progress vs In Review):
 
 ```bash
-LINEAR 'query { workflowStates(filter: { team: { key: { eq: \"<team-key>\" } } }) { nodes { id name type } } }'
+curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d '{"query":"query { workflowStates(filter: { team: { key: { eq: \"<team-key>\" } } }) { nodes { id name type } } }"}'
 ```
 
 From that result: `backlog` is the Backlog column, `unstarted` is the Todo column, `completed` is Done, `canceled` is the cancel state, and the two `started` states are In Progress and In Review — match the one you want by `name`. This is the same call for every workspace; nothing is cached. Resolve team and label IDs (for `issueCreate`) at runtime the same way:
 
 ```bash
-LINEAR 'query { teams { nodes { id key name } } }'
-LINEAR 'query { issueLabels { nodes { id name } } }'
+curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d '{"query":"query { teams { nodes { id key name } } }"}'
+curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d '{"query":"query { issueLabels { nodes { id name } } }"}'
 ```
 
 **CONTEXT override (the exception, not the default).** If a repo has *custom or renamed* states that `type` + name cannot disambiguate, cache those specific state UUIDs in `harness.yaml` and use them directly. That override is for the unusual case — the type-based resolution above is the standard path and needs no per-repo setup.
 
 **Move an issue's status** (resolve `<state-id>` by `type` per above; the issue id may be the `<issue-id>` identifier):
 ```bash
-LINEAR 'mutation { issueUpdate(id: \"<issue-id>\", input: { stateId: \"<state-id>\" }) { success } }'
+curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d '{"query":"mutation { issueUpdate(id: \"<issue-id>\", input: { stateId: \"<state-id>\" }) { success } }"}'
 ```
 
 **Create an issue** (returns its identifier + url). `projectId` is **mandatory** — a project-less issue is invisible to the Build queue ([Placement on create](#placement-on-create)). `assigneeId` holds the ticket for a human (set it when filing held/deferred work). `parentId` is optional — omit it for a top-level issue, set it to the parent's id to create a sub-issue — a deferred-finding follow-up, or every item of a breakdown under its umbrella ([A breakdown files under one umbrella issue](#a-breakdown-files-under-one-umbrella-issue)):
+The title and description are ticket text, so the input travels as `variables` in a body file (*A write that carries ticket text goes as a file*, above):
+
+```json
+{"query": "mutation($input: IssueCreateInput!) { issueCreate(input: $input) { issue { id identifier url } } }",
+ "variables": {"input": {"teamId": "<team-uuid>", "projectId": "<project-uuid>", "title": "<title>", "description": "<description>",
+   "labelIds": ["<label-uuid>"], "assigneeId": "<user-uuid>", "parentId": "<parent-id>"}}}
+```
+
 ```bash
-LINEAR 'mutation { issueCreate(input: { teamId: \"<team-uuid>\", projectId: \"<project-uuid>\", title: \"...\", description: \"...\", labelIds: [\"<label-uuid>\"], assigneeId: \"<user-uuid>\", parentId: \"<parent-id>\" }) { issue { identifier url } } }'
+curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d @<file>
 ```
 
 `labelIds` **must** include the resolved id of the `assurance:<level>` label the filer chose. Resolve it at runtime from the `issueLabels` query above, the same way as every other label id. An id that does not resolve — the workspace has no such label, or the mutation reports fewer labels than were passed — is an **incomplete filing**, not a filing without the label: report the identifier and URL, say so, and stop.
@@ -166,7 +189,7 @@ LINEAR 'mutation { issueCreate(input: { teamId: \"<team-uuid>\", projectId: \"<p
 **Read both halves of the filing back before reporting it.** The `issueCreate` above passes no `stateId`, so the issue lands in the team's default state and its placement is the separate `issueUpdate` at *Move an issue's status* — a second write whose `success` field says the call ran, not that the postcondition holds. Reading the labels alone leaves that write unconfirmed, so a ticket created but never placed reports as filed and a Todo-scoped queue read never sees it. Read the state alongside the labels:
 
 ```bash
-LINEAR 'query { issue(id: \"<issue-id>\") { identifier url state { id name type } labels { nodes { id name } } } }'
+curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d '{"query":"query { issue(id: \"<issue-id>\") { identifier url state { id name type } labels { nodes { id name } } } }"}'
 ```
 
 The filing is complete when the labels carry exactly one `assurance:<level>` and the returned `state.id` is the id the placement `issueUpdate` set. **Compare the id, not the state's name:** the state was resolved by `type` ([Resolving states by type](#resolving-states-by-type-the-default)) and a workspace may rename its columns, so matching on a name resolves the state a second time instead of confirming the write.
@@ -175,25 +198,25 @@ The filing is complete when the labels carry exactly one `assurance:<level>` and
 
 Resolve `projectId` at runtime by the name in `harness.yaml` → `repo.project`, and `assigneeId` for the current operator via `viewer` (the same runtime-resolution rule as team/state/label IDs — no per-repo UUID setup):
 ```bash
-LINEAR 'query { projects(filter: { name: { eq: \"<repo.project>\" } }) { nodes { id name } } }'
-LINEAR 'query { viewer { id name } }'
+curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d '{"query":"query { projects(filter: { name: { eq: \"<repo.project>\" } }) { nodes { id name } } }"}'
+curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d '{"query":"query { viewer { id name } }"}'
 ```
 
-**Comment** (PR links, blocker notes):
+**Comment** (PR links, blocker notes). The body is ticket text, so send the body file shown under *A write that carries ticket text goes as a file*:
 ```bash
-LINEAR 'mutation { commentCreate(input: { issueId: \"<issue-id>\", body: \"...\" }) { success } }'
+curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d @<file>
 ```
 
 **Hold** — comment, label, assign; three writes, per `tracker` → *`hold`*. Use `issueAddLabel`, which adds one label without touching the rest: a bare `labelIds` on `issueUpdate` **replaces** the whole set and drops the `assurance:` label with it.
 ```bash
-LINEAR 'mutation { commentCreate(input: { issueId: \"<issue-id>\", body: \"...\" }) { success } }'
-LINEAR 'mutation { issueAddLabel(id: \"<issue-id>\", labelId: \"<hold-label-uuid>\") { success } }'
-LINEAR 'mutation { issueUpdate(id: \"<issue-id>\", input: { assigneeId: \"<user-uuid>\" }) { success } }'
+curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d @<comment-file>
+curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d '{"query":"mutation { issueAddLabel(id: \"<issue-id>\", labelId: \"<hold-label-uuid>\") { success } }"}'
+curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d '{"query":"mutation { issueUpdate(id: \"<issue-id>\", input: { assigneeId: \"<user-uuid>\" }) { success } }"}'
 ```
 
 Read all three back before reporting the hold; `success` says only that the call ran:
 ```bash
-LINEAR 'query { issue(id: \"<issue-id>\") { assignee { id } labels { nodes { name } } comments { nodes { id } } } }'
+curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d '{"query":"query { issue(id: \"<issue-id>\") { assignee { id } labels { nodes { name } } comments { nodes { id } } } }"}'
 ```
 
 State, team, and label IDs are **resolved at runtime** from the queries above — the same call for every Linear workspace, no per-repo setup. `harness.yaml` carries an ID as an *override* in exactly two cases, each named where it applies above: a custom or renamed state the `type` enum cannot disambiguate, and a team key for the ambiguous-workspace case (`tracker_address.team`, [Resolving the team](#resolving-the-team)); it is not where the standard states or the unambiguous team live.
@@ -207,8 +230,8 @@ waits on another is the `relatedIssueId`. Linear has no `blocked_by` type to
 write it the other way round.
 
 ```bash
-LINEAR 'mutation { issueRelationCreate(input: { issueId: \"<blocker-id>\", relatedIssueId: \"<blocked-id>\", type: blocks }) { success } }'
-LINEAR 'query { issue(id:\"<issue-id>\") { relations { nodes { type relatedIssue { identifier state { type } } } } inverseRelations { nodes { type issue { identifier state { type } } } } } }'
+curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d '{"query":"mutation { issueRelationCreate(input: { issueId: \"<blocker-id>\", relatedIssueId: \"<blocked-id>\", type: blocks }) { success } }"}'
+curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d '{"query":"query { issue(id:\"<issue-id>\") { relations { nodes { type relatedIssue { identifier state { type } } } } inverseRelations { nodes { type issue { identifier state { type } } } } } }"}'
 ```
 
 Read **both** `relations` and `inverseRelations`: Linear stores one edge and
@@ -246,8 +269,8 @@ Two consequences worth stating, because the mismatch is what misleads:
 Set it in the same `issueCreate` input, or afterwards:
 
 ```bash
-LINEAR 'mutation { issueUpdate(id: \"<issue-id>\", input: { priority: 1 }) { success } }'
-LINEAR 'query { issues(filter: { team: { key: { eq: \"<team-key>\" } }, state: { type: { neq: \"completed\" } } }) { nodes { identifier title priority labels { nodes { name } } } pageInfo { hasNextPage } } }'
+curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d '{"query":"mutation { issueUpdate(id: \"<issue-id>\", input: { priority: 1 }) { success } }"}'
+curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d '{"query":"query { issues(filter: { team: { key: { eq: \"<team-key>\" } }, state: { type: { neq: \"completed\" } } }) { nodes { identifier title priority labels { nodes { name } } } pageInfo { hasNextPage } } }"}'
 ```
 
 The read asks for the open queue with its priority rather than filtering on
@@ -279,18 +302,20 @@ search the pre-#547 `proposals-ledger` label and migrate the hit
 than opening a second ledger.
 
 ```bash
-LINEAR 'query { issues(filter: { labels: { name: { eq: \"improvement-ledger\" } }, state: { type: { neq: \"completed\" } } }) { nodes { id identifier title url } } }'
+curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d '{"query":"query { issues(filter: { labels: { name: { eq: \"improvement-ledger\" } }, state: { type: { neq: \"completed\" } } }) { nodes { id identifier title url } } }"}'
 ```
 
 **Read the appended comment back.** `commentCreate` returns `success`, which
 says the call ran — not that the entry is on the issue carrying the body you
 meant to store. This is the same postcondition rule the rest of this file
 applies to `create` and `hold`, and the append is the one write that had been
-left outside it. Take the id from the mutation, then read the body:
+left outside it. The entry goes as a body file, the comment shape under
+*A write that carries ticket text goes as a file* with `issueId` set to the
+ledger's id. Take the id from the mutation, then read the body:
 
 ```bash
-LINEAR 'mutation { commentCreate(input: { issueId: \"<ledger-id>\", body: \"...\" }) { success comment { id } } }'
-LINEAR 'query { comment(id: \"<comment-id>\") { body } }'
+curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d @<entry-file>
+curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d '{"query":"query { comment(id: \"<comment-id>\") { body } }"}'
 ```
 
 Compare that body against the entry you composed. A ledger entry has **no
@@ -309,8 +334,8 @@ so it applies here as much as to GitHub: see that reference's *Prune* for the
 refusals it was measured against.
 
 ```bash
-LINEAR 'query { issue(id:\"<ledger-id>\") { comments { nodes { id createdAt body } pageInfo { hasNextPage } } } }'
-LINEAR 'mutation { commentDelete(id: \"<comment-id>\") { success } }'
+curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d '{"query":"query { issue(id:\"<ledger-id>\") { comments { nodes { id createdAt body } pageInfo { hasNextPage } } } }"}'
+curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d '{"query":"mutation { commentDelete(id: \"<comment-id>\") { success } }"}'
 ```
 
 `success` says the call ran. Verify by re-reading the comments connection and
