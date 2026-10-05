@@ -52,6 +52,8 @@ Adding a column fires none of them and is ordered by dependency like anything el
 
 *Declare each breakdown item separable or sequential.* An item is **separable** when it has a checkable outcome of its own, whether or not later items depend on it; an item the four-dimension test fires is separable by construction, which is what keeps a held foundation out of the item built on it. It is a **sequential step** when it is one step of a change whose interim state nothing pulls but the next step — a slice of a migration, an annotation whose only reader is the edit that follows it. A run of sequential steps files as one ticket and each separable item as its own (`tracker` → *`create`*). Describe as many slices as the work needs: the declaration decides how they file, not how finely the proposal may think. Dependency between separable items stays in the tracker's native fields.
 
+*Give each deletion to exactly one item.* Where the work retires a command, a file, a rule or a field, one breakdown item owns removing it, and any other item that needs it gone declares a dependency on that one. Two items each told to delete the same thing race: whichever lands second carries a criterion already met, and its builder pulls a stale ticket. Measured in a consuming repo, a breakdown gave the retirement of the same two commands to two tickets; one landed first, and the other's criterion was stale when it was pulled.
+
 ## Change spec
 
 A single, concrete piece of work, on the tracker issue. Sections per `templates/change.md`: Problem, Approach, Design (data model / contract / scenarios), Acceptance criteria, Out of scope. If the design rests on a cross-cutting decision, settle that in a proposal first.
