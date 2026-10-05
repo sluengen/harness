@@ -5741,6 +5741,25 @@ The counter-argument for minor: nothing is renamed, the operations and their pos
 
 **Verification.** The certifying run of `bash scripts/verify.sh` over `a83de035` plus this record and the major raise is the one the review report for #747 names.
 
+### #749: `/build` reads a landed blocker's diff before the spec binds, and a breakdown gives each deletion to one item
+
+`simple`. Built as `ea98ce51` on branch `749`, cut from `dev` at `d8b05f3a`, with `/build` step 7's raise from `26.0.0` to `26.1.0` in the same commit. Two guidance files changed, no code and no test.
+
+**Cause.** A breakdown writes every child's criteria before the first child builds. In calibrate on 2026-10-03, four tickets of one breakdown (CAL-2031, CAL-2032, CAL-2034, CAL-2038) met a sibling that had landed first and changed their surface. Step 5's grounding read only the files each ticket named, so it never met the sibling's change. One case is in calibrate's history: CAL-2034's as-built commit says CAL-2038 had already retired the two roaster commands it was also to retire. The source ledger comment on #450 has been pruned. The case survives in the 2026-10-05 drain table on #450 and in calibrate's forwarded rows, both cited in the ticket's change spec.
+
+**What ships.**
+
+- `skills/build/SKILL.md` step 5 gains one clause after the grounding checks. Where a blocked-by sibling has landed since the ticket was filed, the run reads the diff it landed before the spec binds. That diff is the commits on the integration branch carrying the sibling's id. The run then re-states every criterion on a surface the diff touched against what the sibling shipped. The clause adds a read and no refusal. `work-discovery` → *Actionability* → *And its premise still holds* is unchanged. It is the pull-time look over the ticket's named surface, it is skipped when `/build` is invoked by name, and it does not reach a contract a sibling reshaped.
+- `skills/authoring/SKILL.md` → *Proposal spec* gains *Give each deletion to exactly one item*, after the separable-or-sequential paragraph. Where the work retires a command, a file, a rule or a field, one breakdown item owns removing it, and any other item that needs it gone declares a dependency on that one. `templates/proposal.md` → *Breakdown* defers to *Proposal spec*, so it needed no edit.
+
+**Evidence.** The change is guidance, so the evidence is ADR 0019's for prose. AC-1 and AC-2 were read in the diff at this review. No use-probe was run.
+
+### The cycle's version class: minor, `26.1.0`, as raised by `/build`
+
+The test is whether a call that used to complete now blocks, or the reverse. The counter-argument for major is that step 5 now requires an extra read before the spec binds. That read adds work and has no stop condition: a run that reads the sibling's diff and finds nothing to re-state goes on as before, and one that finds something amends its own spec, which step 5 already asked of a stale fact. The authoring clause shapes how a proposal is written and refuses nothing. Nothing that used to complete now stops, and nothing that used to stop now completes, so the class stays at the floor. `scripts/plugin-version.js` raised all four homes in its `CANDIDATES` from `26.0.0` (`origin/main`) to `26.1.0` at `/build` step 7.
+
+**Verification.** The certifying run of `bash scripts/verify.sh` over `ea98ce51` plus this record is the one the review report for #749 names.
+
 ## Cross-references
 
 - `specs/harness-assumptions.md` — one row per hook, script, skill and agent: what it assumes the model cannot do, and the test that would retire it. Read at every model or host release.
