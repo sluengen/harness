@@ -5760,6 +5760,32 @@ The test is whether a call that used to complete now blocks, or the reverse. The
 
 **Verification.** The certifying run of `bash scripts/verify.sh` over `ea98ce51` plus this record is the one the review report for #749 names.
 
+### #751: a reviewer that returns no verdict certified nothing, and a `/build` that cannot dispatch one hands the review back
+
+`simple`. Built as `ed44b800` on branch `work-751`, cut from `dev` at `2937c62b`, with `/build` step 7's raise from `26.1.0` to `26.2.0` in the same commit. Two guidance files changed, no code and no test.
+
+**Cause.** Two findings from consuming-repo runs, carried on the ticket from the improvement ledger (#450) after the 2026-10-06 drain pruned the source comments. In one, a reviewer's session died after it committed its as-built record and before it returned a verdict, and the builder fast-forwarded to that commit and sent a fresh cycle to certify over it. Nothing said to do that, and nothing said whether the lost cycle counted against `loop.max_review_cycles`. In the other (calibrate, CAL-2040), `/build` ran as a sub-agent with no Agent tool and stalled at the review stage.
+
+**What ships.**
+
+- `skills/build/SKILL.md` → the *Commit the candidate onto the ticket's branch before the reviewer starts* bullet gains two rules after its hand-back sentence. First, a reviewer that returns no verdict certified nothing, whatever it committed. The builder leaves that commit untaken and dispatches the next fresh reviewer against the same candidate, and the bullet points at `fail-stop-rule.md` for whether the cycle counts. Second, where the run cannot dispatch a sub-agent, it stops at `substantive_review` with the candidate committed and pushed and the ticket In Review. It returns the branch, the candidate commit, the `reviewed_tree` and the contents of `.harness/run.json` inline, because the worktree holding that file may not outlive the return. The dispatching run resumes `/build` at that stage through the existing `substantive_review` row of `references/run-state.md`'s resume table. No new stage, field or hand-off format was added.
+- `skills/review-discipline/references/fail-stop-rule.md` gains a paragraph, *A cycle that returns no verdict spends nothing*, between the budget statement and the three-phase list. Only a FAIL spends a cycle, so a lost reviewer is replaced by a fresh one against the same candidate. A second lost reviewer in the same run is not replaced, and the ticket goes on operator hold as *Exhausted* describes. `run.json` records cycles spent and nothing about lost reviewers, so the run counts the second loss itself. The file's opening still reads "Nothing else routes here", and `/build` now routes a lost cycle to this file.
+- `review-discipline` → `references/certifying.md` is unchanged. The orphan rule governs what the builder takes, which is `/build`'s, and certifying's *Close the candidate before you certify it* governs what the reviewer writes.
+
+**Evidence.** The change is guidance, so the evidence is ADR 0019's for prose. AC-1, AC-2 and AC-3 were read in the diff at this review against the resume table and `/build`'s *Resuming a held or deferred ticket*, which already requires `run.json` to be carried across. No use-probe was run.
+
+### The cycle's version class: minor, `26.2.0`, as raised by `/build`
+
+The test is whether a call that used to complete now blocks, or the reverse. Each changed point, judged against it:
+
+- *The orphan commit.* The builder no longer takes a commit no live reviewer stands behind. That changes which commit lands and stops nothing.
+- *The lost cycle.* The counter-argument for major is that a run whose second reviewer dies now holds for the operator, where under the old text it could have dispatched a third that passed. Before this change, though, `/build` and `fail-stop-rule.md` defined nothing for a lost reviewer at all. The run that met one improvised, so the hold fills a silence and changes no documented outcome. It uses the existing `operator` label and assignment, so a consuming repo has no new state to handle.
+- *The delegated `/build`.* The counter-argument for major is that it changes what a delegated `/build` returns to its caller. Under the old text that call never returned. It stalled. It still does not reach PASS: it stops at an existing stage, and its caller resumes it through an existing resume row. Nothing that completed now stops, and nothing that was refused now succeeds.
+
+Nothing is renamed, no argument changes, and no documented refusal reason moves, so the class stays at the floor. `scripts/plugin-version.js` raised all four homes in its `CANDIDATES` from `26.1.0` (`origin/main`) to `26.2.0` at `/build` step 7.
+
+**Verification.** The certifying run of `bash scripts/verify.sh` over `ed44b800` plus this record is the one the review report for #751 names.
+
 ## Cross-references
 
 - `specs/harness-assumptions.md` — one row per hook, script, skill and agent: what it assumes the model cannot do, and the test that would retire it. Read at every model or host release.
