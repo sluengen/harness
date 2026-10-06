@@ -16,6 +16,14 @@ more: at three cycles the whole budget *is* the window a longer one used to
 carve out, and a justification owed on every cycle would be ceremony proving a
 stage ran (P2). One judgment is owed, at the one moment it changes anything.
 
+**A cycle that returns no verdict spends nothing.** A reviewer whose session
+dies before it reports — after committing its record or not — returned no FAIL,
+and only a FAIL spends a cycle. The builder dispatches a fresh reviewer against
+the same candidate. A second lost reviewer in the same run is not dispatched
+again: put the ticket on operator hold as *Exhausted* below describes, because a
+failure that repeats is not the review's to absorb, and re-dispatching until one
+survives is the unbounded loop this budget exists to refuse.
+
 - **Iterating** — cycles up to the last. A FAIL here is normal iteration: fix
   the root cause and re-review, no justification owed.
 - **Before spending the last cycle** — make a convergence judgment and **write
