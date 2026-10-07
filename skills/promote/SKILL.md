@@ -79,6 +79,44 @@ the branch in hand. There is no machine half to this: the ticket's state and the
 review report are the record, and a branch that reached here without a verdict is
 a run that skipped the review, which this command does not launder.
 
+**A parked ticket is landed from its pushed branch.** The run that parked it is
+gone, so check the branch the park comment names out in a fresh worktree through
+`worktree-isolation`, claim the ticket and drop its `parked` label (`tracker` →
+*`park` and `parked`*), and confirm the branch tip is, or descends from, the
+reviewed commit the park comment names. The review ran in another session, so
+stage 2 always gates.
+
+## The landing window
+
+Where `harness.yaml` declares a `cadence:` (ADR 0023), ask whether this run may
+land now, **before stage 1 and again immediately before stage 5**:
+
+```bash
+node <plugin-root>/scripts/landing-window.js --run routine --fired <tick-start> --repo <worktree>
+node <plugin-root>/scripts/landing-window.js --run attended --repo <worktree>
+```
+
+A run driven by `/routine` is a **routine** run and passes the instant its tick
+started, which `/routine` recorded; every other run is **attended**. Read the
+JSON line and the exit code; never re-derive a window in prose.
+
+- **Exit 0** — `open`, or `no-cadence`: proceed exactly as without a cadence.
+- **Exit 1, routine.** `not-yet` before stage 1 is `/routine`'s to wait out, so
+  hand it back with `opens`. `closed` at either check means the window has
+  passed: **do not push.** Push the ticket's own branch as it stands, `park` the
+  ticket through `tracker` naming that branch and the commit the review passed,
+  and stop. Merge commits made by stage 1 travel with the branch; the tick that
+  lands it gates again whatever they are. A `park` is a tracker write, so make it
+  only after abandoning the push, never inside the stage 4 to stage 5 interval.
+- **Exit 1, attended.** Warn rather than stop: name the routine window the
+  answer says is open now (`routine_window`, or that none is) and the next
+  reserve (`opens` to `closes`), and push only on the operator's confirmation.
+  One confirmation covers both checks unless the second names a routine window
+  the first did not; then ask again. With no confirmation, stop with the branch
+  pushed and the ticket In Review.
+- **Exit 2 or any other failure** — an unreadable or invalid `cadence:` is a
+  refusal, never permission: stop and report the `case` it printed.
+
 ## The stages
 
 1. *Rebase.* Fetch, and bring the integration branch into the candidate.
@@ -128,7 +166,9 @@ a run that skipped the review, which this command does not launder.
 4. *Tree compare.* `git rev-parse HEAD^{tree}` must equal the tree stage 2's
    evidence covers. Nothing may be edited between the gate behind the push and the push — the check is
    cheap and it is the whole of what the retired binding still buys.
-5. *Push.* Integrate exactly as `harness.yaml`'s `branches:` block declares:
+5. *Push.* Where a `cadence:` is declared, ask *The landing window* first; it
+   writes nothing, so it does not break the interval below. Integrate exactly as
+   `harness.yaml`'s `branches:` block declares:
    a direct push where the model allows one, a PR where it requires one, and
    where a human must merge that PR, that is a hold rather than a failure. Never
    force. Never a release branch from this altitude — that is altitude 2's hop,
