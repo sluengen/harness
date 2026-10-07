@@ -317,6 +317,69 @@ def test_an_unloadable_reader_leaves_the_hook_protecting(tmp_path: Path, hook: s
     assert "fail-open" in proc.stderr, "a hook that fell open must say so on stderr (#303)"
 
 
+# --- ``cadence:`` (#756) ------------------------------------------------------
+#
+# ``declaredCadence`` serves ``scripts/landing-window.js``. Its keys are dotted
+# scalars because the reader is flat, and it reads ``harness.yaml`` alone: a
+# spine's fenced ``yaml`` blocks are configuration to this reader, so a fenced
+# ``cadence:`` example in a spine would otherwise become a consumer's cadence.
+
+CADENCE_MAP = {
+    "timezone": "UTC",
+    "anchor": "00:57",
+    "pitch": "120",
+    "attended.open": "15",
+    "attended.close": "45",
+    "routine.open": "45",
+    "routine.close": "135",
+    "parked_limit": "1",
+}
+
+CADENCE_SPELLINGS = {
+    "block": (
+        "cadence:\n  timezone: UTC\n  anchor: \"00:57\"\n  pitch: 120\n"
+        "  attended.open: 15\n  attended.close: 45\n"
+        "  routine.open: 45\n  routine.close: 135\n  parked_limit: 1\n"
+    ),
+    "flow": (
+        "cadence: {timezone: UTC, anchor: \"00:57\", pitch: 120, attended.open: 15, "
+        "attended.close: 45, routine.open: 45, routine.close: 135, parked_limit: 1}\n"
+    ),
+}
+
+CADENCE_READ = (
+    "const c = require(process.env.READER);"
+    "const r = c.declaredCadence(process.cwd(), (f) => process.stderr.write('NOTICE ' + f));"
+    "process.stdout.write(JSON.stringify(r));"
+)
+
+
+@pytest.mark.parametrize("spelling", sorted(CADENCE_SPELLINGS))
+def test_the_cadence_block_reads_as_dotted_scalars(tmp_path: Path, spelling: str) -> None:
+    repo = _repo(tmp_path, f"cadence-{spelling}", CADENCE_SPELLINGS[spelling])
+    proc = _run_node(CADENCE_READ, repo, {"READER": str(READER)})
+    assert proc.returncode == 0, proc.stderr
+    assert json.loads(proc.stdout) == CADENCE_MAP
+    assert "NOTICE" not in proc.stderr
+
+
+def test_an_unreadable_cadence_block_is_reported(tmp_path: Path) -> None:
+    repo = _repo(tmp_path, "cadence-nested", "cadence:\n  routine:\n    open: 45\n")
+    proc = _run_node(CADENCE_READ, repo, {"READER": str(READER)})
+    assert proc.returncode == 0, proc.stderr
+    assert json.loads(proc.stdout) == {}
+    assert f"NOTICE {repo / 'harness.yaml'}" in proc.stderr
+
+
+def test_a_cadence_fenced_in_a_spine_is_not_read(tmp_path: Path) -> None:
+    body = "# Spine\n\n```yaml\n" + CADENCE_SPELLINGS["block"] + "```\n"
+    repo = _repo(tmp_path, "cadence-spine", body, filename="AGENTS.md")
+    proc = _run_node(CADENCE_READ, repo, {"READER": str(READER)})
+    assert proc.returncode == 0, proc.stderr
+    assert json.loads(proc.stdout) == {}
+    assert "NOTICE" not in proc.stderr
+
+
 # --- The reader is the only reader --------------------------------------------
 
 #: Tokens distinctive to a hand-rolled yaml reader. Spelled as tokens rather than
