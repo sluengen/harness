@@ -220,7 +220,7 @@ Read all three back before reporting the hold; `success` says only that the call
 curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d '{"query":"query { issue(id: \"<issue-id>\") { assignee { id } labels { nodes { name } } comments { nodes { id } } } }"}'
 ```
 
-**Park** — comment, then label, per `tracker` → *`park` and `parked`*; the comment releases the claim, so there is no third write, and nothing is assigned. Resolve the team-scoped `parked` label id from the `issueLabels` query below as you would a hold label; where the team has none, create it once with `issueLabelCreate(input: { name: "parked", teamId: "<team-uuid>" })` and use the id it returns. Then the same comment body file and `issueAddLabel` as *Hold*, and the same read-back, which must show the comment, the label, and no assignee:
+**Park** — comment, then label, per `tracker` → *`park` and `parked`*; the comment releases the claim, so there is no third write, and nothing is assigned. Resolve the team-scoped `parked` label id from the `issueLabels` query above as you would a hold label; where the team has none, create it once with `issueLabelCreate(input: { name: "parked", teamId: "<team-uuid>" })` and use the id it returns. Then the same comment body file and `issueAddLabel` as *Hold*, and the same read-back, which must show the comment, the label, and no assignee:
 ```bash
 curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d @<comment-file>
 curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d '{"query":"mutation { issueAddLabel(id: \"<issue-id>\", labelId: \"<parked-label-uuid>\") { success } }"}'

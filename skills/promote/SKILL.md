@@ -115,7 +115,8 @@ JSON line and the exit code; never re-derive a window in prose.
   the first did not; then ask again. With no confirmation, stop with the branch
   pushed and the ticket In Review.
 - **Exit 2 or any other failure** — an unreadable or invalid `cadence:` is a
-  refusal, never permission: stop and report the `case` it printed.
+  refusal, never permission: stop and report the `case` it printed, or its stderr
+  for exits 3 and 64, which print no `case`.
 
 ## The stages
 

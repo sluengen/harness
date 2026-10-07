@@ -238,8 +238,13 @@ line rather than asking jq for `last`:
 gh issue list --repo <owner>/<name> --state open --label parked \
   --limit <n> --json number,title,assignees
 gh api --paginate repos/<owner>/<name>/issues/<number>/events \
-  --jq '.[] | select(.event == "labeled" and .label.name == "parked") | .created_at' | tail -1
+  --jq '.[] | select(.event == "labeled" and .label.name == "parked") | .created_at' > <file>
+tail -n 1 <file>
 ```
+
+Check the `gh api` call's own exit status before reading the file: piping it
+straight into `tail` reports `tail`'s status, and a failed events read would pass
+for a ticket with no label event.
 
 Drop any row with a non-empty `assignees`: a parked ticket that is also held is
 held. Sort the rest by that timestamp, oldest first.

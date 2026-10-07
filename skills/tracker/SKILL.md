@@ -214,16 +214,15 @@ is not a hold.** The loop owns parked work and no human is asked anything, so
 `park` never assigns, and a ticket that is both parked and held is held: the hold
 wins, and `parked` does not return it.
 
-**`park <ticket>`** is three writes, in this order, then a read-back of all three:
+**`park <ticket>`** is two writes, in this order, then a read-back of both:
 
 1. **A comment** naming the ticket's branch, the commit the review passed, and why
    the window was missed. That comment is the record the landing tick reads, so a
-   park whose comment did not land has not happened.
+   park whose comment did not land has not happened. It also **releases the
+   claim**: a reader treats a claim followed by a `park` comment as released
+   whatever its age.
 2. **The `parked` label.** A repo that has none yet creates it on first use, as it
    does `input` and `operator`.
-3. **The claim released.** The park comment releases it: a reader treats a claim
-   followed by a `park` comment as released whatever its age. Nothing else is
-   written.
 
 The ticket stays **In Review** and unassigned, and its branch must already be
 pushed: a parked ticket whose commits exist only on the parking host cannot be
