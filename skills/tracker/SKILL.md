@@ -170,8 +170,9 @@ host it runs on, as a line of its own reading `host: <name>` with the name
 age is what every later reader acts on, and the branch is where a run that died
 left its commits. **A claim from this host is fresh** when its `host:` line
 equals this run's own `hostname -s`, it is younger than
-`loop.cord_claim_minutes`, the ticket is still In Progress or In Review, and no
-later `park` comment has released it. A host whose name changes per session,
+`loop.cord_claim_minutes`, the ticket is still In Progress or In Review and is
+not held, and no later `park` comment has released it. A hold ends the run that
+wrote the claim, so a held ticket's claim finds nobody live. A host whose name changes per session,
 as a cloud container's does, never matches its predecessor, so this only ever
 finds a run on a machine that persists. A claim older than
 `loop.cord_claim_minutes` in `harness.yaml` is **stale** — the run that wrote it
