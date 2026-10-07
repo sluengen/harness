@@ -1,13 +1,16 @@
 ---
 proposal: takt-landing-windows
-status: accepted
+status: shipped          # draft | under-decision | accepted | shipped | rejected | split | superseded
 date: 2026-10-07
+shipped: 2026-10-07
 related: [specs/decisions/0023-takt-landing-windows.md, skills/routine/SKILL.md, skills/promote/SKILL.md, skills/work-discovery/SKILL.md, skills/tracker/SKILL.md]
 ---
 
 # Proposal: takt landing windows
 
 > Run the unattended loop on a fixed cadence and give each tick, and the operator, its own window on the integration branch, so that two or more runners can work one queue without landing over each other.
+
+> **Shipped 2026-10-07.** Every change spec this proposal spawned has landed on the integration branch: #756, #757, #758, audited against ADR 0023 on the umbrella #755. The as-built records in `specs/features/plugin-surface.md` are the canonical account of what each delivered; this file is the record of the decision, not of the behaviour. Two checks no build could carry remain the operator's: #758's AC-5, a no-cadence `/routine` tick in a consumer once 26.3.0 is released, and a probe that the Mac runner wakes from a background `sleep`, since ADR 0023's probe covered the cloud runner only. Everything below describes the tree as it was on 2026-10-07 and is history.
 
 ## Problem / motivation
 
