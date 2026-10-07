@@ -66,7 +66,7 @@ For calibrate that gives: pitch 120 minutes, attended reserve 15 to 45, routine 
 - `harness.yaml` gains an optional `cadence:` block. Absent, every skill behaves as it does today.
 - **Parked** is a new ticket condition beside held: In Review, branch pushed, a `parked` label and a comment naming the branch and reviewed commit, no assignee and no live claim. It is not a hold: the loop owns it, and the next tick lands it.
 - `/promote` checks the window before its rebase stage and again before its push stage. A routine outside its window parks rather than pushes. An attended run outside the reserve stops, names the next reserve, and leaves the ticket In Review.
-- `/routine` waits for its window after PASS, lands the oldest parked ticket first, builds nothing while the parked count exceeds the limit, and skips the tick when a run from the same host still holds a fresh claim.
+- `/routine` waits for its window after PASS with a background command, lands the oldest parked ticket first, builds nothing while the parked count exceeds the limit, and skips the tick when a run from the same host still holds a fresh claim.
 - `work-discovery` names parked tickets as landable work instead of reporting them as stranded, and counts them in the queue as it already counts In Review.
 
 The cadence is a takt: the operator sets demand to it, so `queue.wip_limit` sized to about one day of ticks is the consumer's lever for holding arrivals to the cadence, and Backlog growth is the signal that demand has outrun it.
@@ -89,7 +89,7 @@ The cadence is a takt: the operator sets demand to it, so `queue.wip_limit` size
 | Mark parked work with a `parked` label, rather than inferring it from In Review plus a stale claim | operator | `skills/tracker/SKILL.md` |
 | How a tick knows a run on the same host is still live: the claim records the host, or the consumer's scheduler enforces single-flight | operator | `skills/tracker/SKILL.md` |
 | Whether an attended `/promote` outside the reserve stops, or warns and lets the operator push anyway | operator | `skills/promote/SKILL.md` |
-| How a cloud session waits up to 45 minutes for its window without the container being reclaimed | architect, after a probe | `skills/routine/SKILL.md` |
+| ~~How a cloud session waits up to 45 minutes for its window without the container being reclaimed~~ Resolved 2026-10-07 by probe: a background command (`sleep N` with `run_in_background`, its timeout above N). See *Risks / unknowns*. | architect, after a probe | `skills/routine/SKILL.md` |
 
 ## Breakdown
 
@@ -101,7 +101,7 @@ The cadence is a takt: the operator sets demand to it, so `queue.wip_limit` size
 ## Risks / unknowns
 
 - **The simulation is pessimistic and small.** 90 tickets over 16 days, with landing times measured under today's contention. Landings on an unmoved `dev` should be faster than modelled, so the park rate is more likely to fall than rise. A two-week measurement after rollout settles it: parks a day (expect about one), extra gate runs, attended landings inside the reserve, and Backlog growth.
-- **Waiting is untested.** A routine that passes review at 20 minutes waits 25 for its window. A cloud session cannot sleep in the foreground; whether a background wait keeps the container alive for that long is unverified (open decision 5).
+- **Waiting is proven to 45 minutes, not beyond.** A probe on 2026-10-07, run in a finished calibrate routine session, started a background `sleep` and ended its turn: the session woke itself 5 seconds after a 10-minute sleep and 12 seconds after a 45-minute one, and a marker file and the kernel boot id were unchanged both times, so the container survived. `send_later` is not available in a routine session, so the background command is the mechanism. The longest wait this design asks for is 45 minutes, a ticket ready the moment its tick fires. A background command runs for at most two hours, and an idle session longer than the probe could still lose its container; a window further out than 45 minutes needs its own probe. The probe ran in a resumed routine session rather than a fresh scheduled firing.
 - **Clock trust.** Every run computes windows from its own clock. Cloud containers and a Mac on NTP should agree within seconds, and the 15-minute overlap absorbs more than that, but nothing checks it.
 - **Cron runs late.** A tick that starts late still owns the window its scheduled fire time defines, so a late start shortens its build time rather than shifting the window.
 - **Throughput is capped by the cadence.** Twelve ticks a day closes at most about twelve tickets. Calibrate closed 16.6 a day with attended sessions; holding demand to twelve is the operator's choice, and the queue limit is how it is held.
