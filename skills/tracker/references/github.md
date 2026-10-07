@@ -244,6 +244,12 @@ gh api --paginate repos/<owner>/<name>/issues/<number>/events \
 Drop any row with a non-empty `assignees`: a parked ticket that is also held is
 held. Sort the rest by that timestamp, oldest first.
 
+**The list trails the write.** Measured on #757, `gh issue list --label parked`
+run straight after the label write returned nothing, and returned the ticket
+seconds later; `gh issue view` saw the label at once. So `park`'s read-back is
+the `view`, never the list, and an empty `parked` read in the run that just
+parked something says nothing about that ticket.
+
 ### `queue` — the Todo work
 
 ```bash
