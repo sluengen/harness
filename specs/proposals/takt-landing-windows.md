@@ -1,8 +1,8 @@
 ---
 proposal: takt-landing-windows
-status: under-decision
+status: accepted
 date: 2026-10-07
-related: [skills/routine/SKILL.md, skills/promote/SKILL.md, skills/work-discovery/SKILL.md, skills/tracker/SKILL.md]
+related: [specs/decisions/0023-takt-landing-windows.md, skills/routine/SKILL.md, skills/promote/SKILL.md, skills/work-discovery/SKILL.md, skills/tracker/SKILL.md]
 ---
 
 # Proposal: takt landing windows
