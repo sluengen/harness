@@ -65,7 +65,7 @@ For calibrate that gives: pitch 120 minutes, attended reserve 15 to 45, routine 
 
 - `harness.yaml` gains an optional `cadence:` block. Absent, every skill behaves as it does today.
 - **Parked** is a new ticket condition beside held: In Review, branch pushed, a `parked` label and a comment naming the branch and reviewed commit, no assignee and no live claim. It is not a hold: the loop owns it, and the next tick lands it.
-- `/promote` checks the window before its rebase stage and again before its push stage. A routine outside its window parks rather than pushes. An attended run outside the reserve stops, names the next reserve, and leaves the ticket In Review.
+- `/promote` checks the window before its rebase stage and again before its push stage. A routine outside its window parks rather than pushes. An attended run outside the reserve warns, names the open routine window and the next reserve, and pushes only on the operator's confirmation.
 - `/routine` waits for its window after PASS with a background command, lands the oldest parked ticket first, builds nothing while the parked count exceeds the limit, and skips the tick when a run from the same host still holds a fresh claim.
 - `work-discovery` names parked tickets as landable work instead of reporting them as stranded, and counts them in the queue as it already counts In Review.
 
@@ -83,19 +83,21 @@ The cadence is a takt: the operator sets demand to it, so `queue.wip_limit` size
 
 ## Open decisions
 
-| Decision | Who decides | Recorded in |
+Every decision below was answered by the operator on 2026-10-07. The answers settle what this proposal says; they are not its acceptance.
+
+| Decision | Resolution | Recorded in |
 |---|---|---|
-| Ship the cadence as an optional `harness.yaml` block for every consumer, rather than as a rule in calibrate's own `AGENTS.md` | operator | `specs/architecture-principles.md` (ADR, since it changes the spine contract) |
-| Mark parked work with a `parked` label, rather than inferring it from In Review plus a stale claim | operator | `skills/tracker/SKILL.md` |
-| How a tick knows a run on the same host is still live: the claim records the host, or the consumer's scheduler enforces single-flight | operator | `skills/tracker/SKILL.md` |
-| Whether an attended `/promote` outside the reserve stops, or warns and lets the operator push anyway | operator | `skills/promote/SKILL.md` |
-| ~~How a cloud session waits up to 45 minutes for its window without the container being reclaimed~~ Resolved 2026-10-07 by probe: a background command (`sleep N` with `run_in_background`, its timeout above N). See *Risks / unknowns*. | architect, after a probe | `skills/routine/SKILL.md` |
+| Ship the cadence as an optional `harness.yaml` block for every consumer, or as a rule in calibrate's own `AGENTS.md` | **Harness-wide and optional.** The skills it changes live here, so a consumer-side rule would be a second copy overriding them from prose; with no `cadence:` block nothing changes. | `specs/architecture-principles.md` (ADR, since it changes the spine contract) |
+| Mark parked work with a `parked` label, or infer it from In Review plus a stale claim | **An explicit `parked` label**, written by the run that missed its window with a comment naming the branch and reviewed commit. Inference would land on a guess, which `work-discovery` already refuses to do. | `skills/tracker/SKILL.md` |
+| How a tick knows a run on the same host is still live | **The claim records the host.** A tick that finds a fresh claim from its own host skips. It uses state every run already writes and needs nothing from the consumer's scheduler. | `skills/tracker/SKILL.md` |
+| Whether an attended `/promote` outside the reserve stops, or warns and lets the operator push | **It warns, and the operator decides.** `/promote` names the open routine window and the next reserve, then pushes on the operator's confirmation. A collision costs a merge and a gate, which is recoverable, and the spine refuses only the unrecoverable. | `skills/promote/SKILL.md` |
+| How a cloud session waits up to 45 minutes for its window | **A background command** (`sleep N` with `run_in_background`, its timeout above N), resolved by probe. See *Risks / unknowns*. | `skills/routine/SKILL.md` |
 
 ## Breakdown
 
 1. **Cadence shape.** The `cadence:` block (anchor time, pitch, attended reserve, routine window, parked limit), its reader in `scripts/harness-config.js`, and one script that answers "may this run land now, and when does its window open and close" with an exit code, with tests over the slot arithmetic including the overlap into the next pitch and a DST change. Held `input` for the operator: the key names fan out across four skills and the consumers' configs (Blast, Comprehension). · separable
 2. **Parked condition.** `tracker`'s `park` and `parked` operations: label, comment, claim release, and the read that returns parked tickets oldest first; the claim records the host. · separable, depends on 1
-3. **Landing inside the window.** `/promote` calls the item 1 script before its rebase and push stages, parks a routine that falls outside, and stops an attended run outside the reserve. · separable, depends on 1 and 2
+3. **Landing inside the window.** `/promote` calls the item 1 script before its rebase and push stages, parks a routine that falls outside, and warns an attended run outside the reserve, pushing only on the operator's confirmation. · separable, depends on 1 and 2
 4. **The tick on a cadence.** `/routine` waits for its window, lands parked work first, stops building over the parked limit, and skips on a same-host live claim; `work-discovery` names parked tickets as landable; the spine's *The contract* and *The lifecycle* gain the cadence and the parked condition, mirrored in `templates/spine.md`. · sequential with 3
 
 ## Risks / unknowns
