@@ -99,7 +99,7 @@ Nothing here reads or prints a credential the host holds; path 1's probe is the 
 
 **When every path's probe fails, stop and ask the operator, quoting what came back:** Linear's `errors[].message` as returned, or curl's own error where Linear never answered. That is the rule where you are the process the operator is talking to; a dispatched sub-agent reports and stops instead (`tracker` → *Shared rules*). Never fall back to a Linear connector or any other route to the workspace, and never read a failed read as an empty one: a queue read that failed returns no issues, and reads as a clear queue. The operator can supply a key, or give the host a credential for host `api.linear.app` in the `Authorization` header with **no prefix**: Linear takes a personal key bare, and a form that defaults to `Bearer` must be cleared. (If `harness.yaml` defines `tools.linear_cli`, you may use that wrapper instead; the curls below are the universal fallback.)
 
-**The recipes below are written for path 1.** On path 2, put `--variable %LINEAR_API_KEY --expand-header 'Authorization: {{LINEAR_API_KEY}}'` after the URL. On path 3, also put the env-file read from path 3 in front of `curl`. A recipe that reads or writes only ids keeps its GraphQL document inside the single-quoted `-d` body, writing a string argument as `\"`. The `<placeholders>` are ids resolved at runtime, and none contains a quote.
+**The recipes below are written for path 1.** On path 2, put `--variable %LINEAR_API_KEY --expand-header 'Authorization: {{LINEAR_API_KEY}}'` after the URL. On path 3, also put the env-file read from path 3 in front of `curl`. A recipe that reads or writes only ids keeps its GraphQL document inside the single-quoted `-d` body, writing a string argument as `\"`. The `<placeholders>` are ids resolved at runtime, and none contains a quote, except `<repo.project>`, which is a project name: a name carrying a quote goes in a variables body file instead.
 
 **A write that carries ticket text goes as a file.** That covers a title, a description and a comment body. Write a JSON object holding `query` and `variables` to a scratch file outside the tree with a file-writing tool, never a shell heredoc of the text, and send it with `-d @<file>`. The tool that wrote the file owns the JSON escaping, an apostrophe cannot end the shell argument, and the text never reaches the command line (`tracker` → *Shared rules*: quote titles, pass bodies as a file). For example, a comment:
 
@@ -172,6 +172,7 @@ curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/js
 ```
 
 **Create an issue** (returns its identifier + url). `projectId` is **mandatory** — a project-less issue is invisible to the Build queue ([Placement on create](#placement-on-create)). `assigneeId` holds the ticket for a human (set it when filing held/deferred work). `parentId` is optional — omit it for a top-level issue, set it to the parent's id to create a sub-issue — a deferred-finding follow-up, or every item of a breakdown under its umbrella ([A breakdown files under one umbrella issue](#a-breakdown-files-under-one-umbrella-issue)):
+
 The title and description are ticket text, so the input travels as `variables` in a body file (*A write that carries ticket text goes as a file*, above):
 
 ```json
@@ -217,6 +218,17 @@ curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/js
 Read all three back before reporting the hold; `success` says only that the call ran:
 ```bash
 curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d '{"query":"query { issue(id: \"<issue-id>\") { assignee { id } labels { nodes { name } } comments { nodes { id } } } }"}'
+```
+
+**Park** — comment, then label, per `tracker` → *`park` and `parked`*; the comment releases the claim, so there is no third write, and nothing is assigned. Resolve the team-scoped `parked` label id from the `issueLabels` query above as you would a hold label; where the team has none, create it once with `issueLabelCreate(input: { name: "parked", teamId: "<team-uuid>" })` and use the id it returns. Then the same comment body file and `issueAddLabel` as *Hold*, and the same read-back, which must show the comment, the label, and no assignee:
+```bash
+curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d @<comment-file>
+curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d '{"query":"mutation { issueAddLabel(id: \"<issue-id>\", labelId: \"<parked-label-uuid>\") { success } }"}'
+```
+
+**Pull the parked pile**, open and unassigned, with the label history that orders it. A label applied at creation leaves no history row, but `park` always adds the label to an existing issue, so the latest history row whose `addedLabels` carries `parked` is when it was parked. Sort oldest first on that timestamp:
+```bash
+curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d '{"query":"query { issues(first: 50, filter: { team: { key: { eq: \"<team-key>\" } }, labels: { name: { eq: \"parked\" } }, assignee: { null: true }, state: { type: { nin: [\"completed\", \"canceled\"] } } }) { nodes { identifier url history(first: 50) { nodes { createdAt addedLabels { name } } } } } }"}'
 ```
 
 State, team, and label IDs are **resolved at runtime** from the queries above — the same call for every Linear workspace, no per-repo setup. `harness.yaml` carries an ID as an *override* in exactly two cases, each named where it applies above: a custom or renamed state the `type` enum cannot disambiguate, and a team key for the ambiguous-workspace case (`tracker_address.team`, [Resolving the team](#resolving-the-team)); it is not where the standard states or the unambiguous team live.

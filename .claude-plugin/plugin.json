@@ -1,6 +1,6 @@
 {
   "name": "harness",
-  "version": "26.2.0",
+  "version": "26.3.0",
   "description": "A Claude Code and Codex plugin that runs your repo's delivery loop with agents: ticket to spec, test-first build, independent review, gated merge — on demand or unattended. Built on Lean principles.",
   "author": { "name": "sluengen" }
 }

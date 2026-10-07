@@ -48,11 +48,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 READER = REPO_ROOT / "scripts" / "harness-config.js"
 HOOKS = REPO_ROOT / "hooks"
 
-#: The reader's whole public surface after #621. `declaredBranches` serves the
-#: advisory push guard and `plugin-version.js`; `declaredPaths` serves the test
-#: lock. Named rather than counted: a count tells a later reader nothing about
-#: which export it may rely on, and the name is the contract.
-EXPECTED_EXPORTS = {"declaredBranches", "declaredPaths"}
+#: The reader's whole public surface. `declaredBranches` serves the advisory push
+#: guard and `plugin-version.js`; `declaredPaths` serves the test lock; and
+#: `declaredCadence` serves `landing-window.js` (#756). Named rather than
+#: counted: a count tells a later reader nothing about which export it may rely
+#: on, and the name is the contract.
+EXPECTED_EXPORTS = {"declaredBranches", "declaredPaths", "declaredCadence"}
 
 #: What "reads a verdict" looks like in source. These are the retired complex's
 #: own spellings — the marker directory it wrote, the helper that owned it, and
@@ -128,10 +129,10 @@ def _advisory(out: dict) -> str:
 # --------------------------------------------------------------------------
 
 
-def test_the_reader_exports_exactly_the_two_names_its_consumers_use(tmp_path: Path) -> None:
+def test_the_reader_exports_exactly_the_names_its_consumers_use(tmp_path: Path) -> None:
     """Both directions. A missing export breaks a consumer; a surviving one is a
-    contract nobody has, and every one of the nine removed here had a consumer
-    that leaves in this ticket or the next."""
+    contract nobody has. #621 removed nine that had lost their consumers, and
+    #756 added `declaredCadence` with its consumer in the same change."""
     proc = _run_node(
         "const c = require(process.env.READER);"
         "process.stdout.write(JSON.stringify(Object.keys(c)));",

@@ -79,6 +79,8 @@ Run this beside step 1 of the limit, which already reads every In Progress and I
 
 **Name, too, every open ticket the state read places nowhere**, whatever its claim's age. Where a tracker can hold an open ticket with no state — an issue the board never received — no state-scoped read ever finds it. The open-queue read the andon's *Coverage* anchor already takes gives the set: that read, less every ticket the state read returned. Name each one that is not held, with its claim and branch where it has them. This is the case that hid #730: its build could not add it to the board, so it reached PASS with no Status any read could see, and sat unlanded until a cord check tripped on it.
 
+**A parked ticket is not stranded.** An In Review ticket labelled `parked` carries a released claim by construction (`tracker` → *`park` and `parked`*), so name it as **landable work** instead — the ticket, its park's age, and the branch its park comment names — and leave it to `/routine`, which lands parked work before its own. It keeps counting against the limit as every In Review ticket does. Every other In Review ticket with a stale claim or none is reported as below.
+
 **Report it and do nothing else to it.** Do not pick it, move it, hold it, place it or touch its branch: a claim's age says the run is probably gone and cannot prove it, which is the same reason `worktree-isolation` refuses to reclaim a worktree on a timestamp. A ticket in flight keeps counting against the limit. An operator who reads the line decides whether to resume it, and a stale claim on the cord is the one case handled elsewhere (*A claimed cord is somebody's repair*).
 
 ## Ranking — the next most logical ticket
