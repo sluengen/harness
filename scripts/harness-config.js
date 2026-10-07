@@ -300,10 +300,12 @@ function readFlowBody(body) {
 
 /** Every configuration source present under ``top``, in precedence order, as
  * ``{source, text}``. ``text`` is ``null`` for a source that exists but cannot be
- * read — a distinction both callers depend on and neither may skip past. */
-function configSources(top) {
+ * read — a distinction both callers depend on and neither may skip past.
+ * ``names`` narrows the search for a block that only ``harness.yaml`` may
+ * declare; it defaults to every source. */
+function configSources(top, names = SOURCES) {
   const present = [];
-  for (const name of SOURCES) {
+  for (const name of names) {
     const source = path.join(top, name);
     try {
       // ``lstatSync`` distinguishes a missing source from a dangling link. A
@@ -349,9 +351,11 @@ function configSources(top) {
  * point of having it: without the notice, a declaration the parser could not
  * read is indistinguishable from one that agrees with the fallback (#487). Each
  * caller passes its own reporter so it keeps its own stderr tag.
+ *
+ * ``names`` is :func:`configSources`'s narrowing, passed through.
  */
-function readMap(top, name, onUnreadable) {
-  for (const selected of configSources(top)) {
+function readMap(top, name, onUnreadable, names = SOURCES) {
+  for (const selected of configSources(top, names)) {
     if (selected.text === null) {
       if (onUnreadable) onUnreadable(selected.source);
       continue;
@@ -392,9 +396,23 @@ function declaredPaths(top, onUnreadable) {
   return readMap(top, "paths", onUnreadable);
 }
 
-// The public surface, narrowed to two at #621. `declaredBranches` serves the
+/** The ``cadence:`` map the repo at ``top`` declares, with its dotted keys raw.
+ *
+ * Read by ``scripts/landing-window.js`` (ADR 0023, #756), which validates the
+ * values; this returns strings and judges none of them. **It reads
+ * ``harness.yaml`` alone.** The markdown spines are read behind it only for
+ * repos that have not migrated, and no such repo has ever declared a cadence,
+ * while a fenced ``yaml`` block in a spine *is* configuration to this reader: a
+ * spine showing a ``cadence:`` example would otherwise become the cadence of
+ * every consumer that declares none.
+ */
+function declaredCadence(top, onUnreadable) {
+  return readMap(top, "cadence", onUnreadable, ["harness.yaml"]);
+}
+
+// The public surface, narrowed to two at #621 and widened to three at #756. `declaredBranches` serves the
 // push-target advisory and `plugin-version.js`; `declaredPaths` serves the test
-// lock. The other nine went with their consumers — the marker helper, the Stop
+// lock; `declaredCadence` serves `landing-window.js`. The other nine went with their consumers — the marker helper, the Stop
 // hook and the refusing push guard — and `queueSettings`, `declaredLoop` and
 // `declaredCommands` went because they never had a runtime consumer at all, only
 // tests. An export with neither a caller nor a contract is a maintenance
@@ -407,4 +425,5 @@ function declaredPaths(top, onUnreadable) {
 module.exports = {
   declaredBranches,
   declaredPaths,
+  declaredCadence,
 };
