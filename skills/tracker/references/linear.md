@@ -220,6 +220,17 @@ Read all three back before reporting the hold; `success` says only that the call
 curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d '{"query":"query { issue(id: \"<issue-id>\") { assignee { id } labels { nodes { name } } comments { nodes { id } } } }"}'
 ```
 
+**Park** — comment, then label, per `tracker` → *`park` and `parked`*; the comment releases the claim, so there is no third write, and nothing is assigned. Resolve the team-scoped `parked` label id from the `issueLabels` query below as you would a hold label; where the team has none, create it once with `issueLabelCreate(input: { name: "parked", teamId: "<team-uuid>" })` and use the id it returns. Then the same comment body file and `issueAddLabel` as *Hold*, and the same read-back, which must show the comment, the label, and no assignee:
+```bash
+curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d @<comment-file>
+curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d '{"query":"mutation { issueAddLabel(id: \"<issue-id>\", labelId: \"<parked-label-uuid>\") { success } }"}'
+```
+
+**Pull the parked pile**, open and unassigned, with the label history that orders it. A label applied at creation leaves no history row, but `park` always adds the label to an existing issue, so the latest history row whose `addedLabels` carries `parked` is when it was parked. Sort oldest first on that timestamp:
+```bash
+curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d '{"query":"query { issues(first: 50, filter: { team: { key: { eq: \"<team-key>\" } }, labels: { name: { eq: \"parked\" } }, assignee: { null: true }, state: { type: { nin: [\"completed\", \"canceled\"] } } }) { nodes { identifier url history(first: 50) { nodes { createdAt addedLabels { name } } } } } }"}'
+```
+
 State, team, and label IDs are **resolved at runtime** from the queries above — the same call for every Linear workspace, no per-repo setup. `harness.yaml` carries an ID as an *override* in exactly two cases, each named where it applies above: a custom or renamed state the `type` enum cannot disambiguate, and a team key for the ambiguous-workspace case (`tracker_address.team`, [Resolving the team](#resolving-the-team)); it is not where the standard states or the unambiguous team live.
 
 ## Relations — blocked-by
