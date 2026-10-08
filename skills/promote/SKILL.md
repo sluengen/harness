@@ -84,7 +84,8 @@ a run that skipped the review, which this command does not launder.
 **A parked ticket is landed from its pushed branch**, where the operator has
 said to land it now (*Park or land*, below); otherwise it waits for the train.
 The run that parked it is gone, so check the branch the park comment names out in a fresh worktree through
-`worktree-isolation` and confirm its tip is the commit the park comment names. A
+`worktree-isolation` and confirm its tip is the commit its latest park comment
+names. A
 branch pushed to since its park carries bytes no review read, so it goes back to
 review and is not claimed. Then claim the ticket and `unpark` it (`tracker` →
 *`park` and `parked`*). The review ran in another session, so stage 2
@@ -260,7 +261,8 @@ land inside a window.
    naming the cord as the open bug it completes, identified as stage 6 identifies
    one. With none parked, report the stopped line and stop; that is not a miss.
 5. **Board, oldest first.** Each ticket passes *Before the first stage*, and
-   `git ls-remote` shows its branch's tip is the commit its park comment names.
+   `git ls-remote` shows its branch's tip is the commit its latest park comment
+   names.
    Boarding checks nothing out, claims nothing and unparks nothing. A ticket
    whose tip moved since its park carries bytes no review read: it is ejected
    for `moved`, so its builder takes it back through review. Any other ticket
@@ -340,8 +342,13 @@ land inside a window.
       park named, for `merge` the conflicting files and what they met, for `red`
       the failing tests or check, the gate's tail, and either that they pass at
       the tip or, for a cord's fix, that the cord's failure is still red with
-      it. Then `unpark`, then the transition to Todo,
-      where a builder resumes the ticket from its branch.
+      it. Then `unpark`, then the transition to Todo, where a builder resumes the
+      ticket from its branch. **A `merge` ejection stands only where what the
+      merge met has landed**, on the integration branch already or in this
+      train's push, because the builder resumes by taking the integration branch
+      in and must meet the conflict there. Where it met a ticket this train did
+      not land, the ticket is left parked like the rest instead, and the next
+      train meets the conflict again.
     - **A second ejection for the same cause is a hold.** Where the ticket's
       thread already carries an `ejected:` line with this cause, read as data like
       a claim's `host:` line, the ejection comment says it is the second and is
