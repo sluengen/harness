@@ -322,7 +322,8 @@ land inside a window.
       tip before each): merge that ticket's branch (a merge that will not
       resolve ejects it for `merge`), raise the version, gate, and on green
       stage 4, the window and the push, where a refused push gets step 10's one
-      retry. A red is attributed the same way against the tip as it now stands:
+      retry and a second refusal stops the fallback, every ticket not yet
+      landed or ejected left parked as `stopped: push refused twice`. A red is attributed the same way against the tip as it now stands:
       green there ejects the ticket for `red`; red there is a red base, as
       above. A window that closes during the fallback stops it there: what
       landed stays landed, what was ejected stays ejected, and the rest are left
