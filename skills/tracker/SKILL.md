@@ -244,9 +244,9 @@ like every other read here.
 
 A run that lands one parked ticket on its own claims it as any run starting a
 ticket does, and unparks it in the same breath. **The train claims nothing**: it
-leaves every label in place while it runs and unparks each ticket as it closes or
-ejects it, so a train that pushes nothing leaves every ticket, and the park
-order, as it found them.
+leaves every label in place while it runs and unparks each ticket only as it
+closes or ejects it after a push, so a train that pushes nothing leaves every
+ticket, and the park order, as it found them.
 
 ## `ledger` — the improvement ledger
 
