@@ -15,8 +15,14 @@
  *
  *     landing-window.js --run routine --fired <instant> [--now <instant>] [--repo <dir>]
  *     landing-window.js --run attended                  [--now <instant>] [--repo <dir>]
+ *     landing-window.js --run train   --fired <instant> [--now <instant>] [--repo <dir>]
  *
- * `--fired` is the routine's own start instant. The clock alone cannot tell the
+ * A **train** (ADR 0024, #762) is the one land-only run on a cadence. It owns the
+ * interval from its scheduled departure to the next one, so its window opens at
+ * its slot and closes at the grid's next fire: across a daylight-saving gap that
+ * is the next real fire, never the slot plus the pitch.
+ *
+ * `--fired` is the routine's or the train's own start instant. The clock alone cannot tell the
  * tick that fired at T asking at T+125 from the tick that fired at T+120 asking
  * at the same moment, because a routine window may run past the next fire. The
  * run is matched to the latest scheduled fire at or before `--fired`, so cron
@@ -31,7 +37,9 @@
  *   0  land now            `open`, or `no-cadence`
  *   1  do not land now     `not-yet` (wait until `opens`), or `closed` (a
  *                          routine whose own window has passed: it parks, and
- *                          `opens`/`closes` name a later tick's window)
+ *                          `opens`/`closes` name a later tick's window; or a
+ *                          train whose window has passed: it lands nothing, and
+ *                          `closes` is its own)
  *   2  refusal             `unreadable-cadence`, `invalid-cadence`, `not-a-work-tree`
  *   3  could not run       stderr only
  *   64 usage               stderr only
@@ -73,7 +81,10 @@ const KEYS = [
   "parked_limit",
 ];
 
-const RUNS = ["routine", "attended"];
+const RUNS = ["routine", "attended", "train"];
+
+//: The runs a window is found for by their own start instant.
+const FIRED = ["routine", "train"];
 
 //: RFC 3339 with a mandatory `Z` or offset; seconds and fractions optional.
 const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/;
@@ -127,7 +138,7 @@ function validate(values) {
   if (cadence.pitch === 0 || 1440 % cadence.pitch !== 0) {
     throw new Invalid("pitch", values.pitch, "must divide a day (1440 minutes) exactly");
   }
-  for (const kind of RUNS) {
+  for (const kind of ["routine", "attended"]) {
     const { open, close } = cadence[kind];
     const key = `${kind}.close`;
     if (open >= close) throw new Invalid(key, values[key], `must be later than ${kind}.open`);
@@ -242,6 +253,18 @@ function answer(cadence, run, now, fired) {
   const grid = fires(cadence, fmt, Math.min(now, fired ?? now) - reach - 2 * DAY, now + reach + 2 * DAY);
   const at = (ms) => render(fmt, ms);
 
+  if (run === "train") {
+    const slot = grid.filter((fire) => fire <= fired).pop();
+    if (slot === undefined) throw new Error("no scheduled fire precedes --fired");
+    const closes = grid.find((fire) => fire > slot);
+    if (closes === undefined) throw new Error("no scheduled fire follows the train's slot");
+    const state = now < closes ? "open" : "closed";
+    return {
+      code: state === "open" ? 0 : 1,
+      payload: { case: state, run, now: at(now), fired: at(slot), closes: at(closes) },
+    };
+  }
+
   if (run === "routine") {
     const slot = grid.filter((fire) => fire <= fired).pop();
     if (slot === undefined) throw new Error("no scheduled fire precedes --fired");
@@ -300,15 +323,17 @@ function parse(argv) {
     if (Object.hasOwn(options, match[1])) throw new Usage(`${argv[i]} given twice`);
     options[match[1]] = argv[i + 1];
   }
-  if (!RUNS.includes(options.run)) throw new Usage("--run must be routine or attended");
+  if (!RUNS.includes(options.run)) throw new Usage("--run must be routine, attended or train");
   const now = options.now === undefined ? Date.now() : instant("--now", options.now);
   let fired = null;
-  if (options.run === "routine") {
-    if (options.fired === undefined) throw new Usage("--run routine needs --fired, the instant the tick started");
+  if (FIRED.includes(options.run)) {
+    if (options.fired === undefined) {
+      throw new Usage(`--run ${options.run} needs --fired, the instant the run started`);
+    }
     fired = instant("--fired", options.fired);
     if (fired > now) throw new Usage("--fired is later than now");
   } else if (options.fired !== undefined) {
-    throw new Usage("--fired applies to --run routine only");
+    throw new Usage("--fired applies to --run routine and --run train only");
   }
   return { run: options.run, now, fired, repo: path.resolve(options.repo ?? process.cwd()) };
 }

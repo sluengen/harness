@@ -56,7 +56,8 @@ board nobody can read; attempting costs one call.
 | `hold` | the `comment` POST above, then `gh api -X POST repos/<owner>/<name>/issues/<n>/labels -f 'labels[]=<input\|operator>'`, then `gh api -X POST repos/<owner>/<name>/issues/<n>/assignees -f 'assignees[]=<login>'`, then a read-back |
 | `queue` / `held` | `gh api 'repos/<owner>/<name>/issues?state=open&labels=<label>&assignee=<login\|none>&per_page=100'` |
 | `park` | the `comment` POST above, then `gh api -X POST repos/<owner>/<name>/labels -f name=parked` where the label is missing, then `gh api -X POST repos/<owner>/<name>/issues/<n>/labels -f 'labels[]=parked'`, then a read-back |
-| `parked` | `gh api 'repos/<owner>/<name>/issues?state=open&labels=parked&assignee=none&per_page=100'`, then the events call under *`park` and `parked`* below, which is already REST |
+| `unpark` | `gh api -X DELETE repos/<owner>/<name>/issues/<n>/labels/parked`, then a read-back |
+| `parked` | `gh api 'repos/<owner>/<name>/issues?state=open&labels=parked&assignee=none&per_page=100'`, then the events call under *`park`, `unpark` and `parked`* below, which is already REST |
 | `close` | `gh api -X PATCH repos/<owner>/<name>/issues/<n> -f state=closed` |
 | dependencies | the `dependencies/blocked_by` and `dependencies/blocking` calls below — already REST |
 
@@ -210,23 +211,31 @@ Then read all three back. A login the repository cannot assign — no push acces
 gh issue view <number> --repo <owner>/<name> --json assignees,labels,comments
 ```
 
-### `park` and `parked`
+### `park`, `unpark` and `parked`
 
 `park` is the comment, then the label, per `tracker` → *`park` and `parked`*; the
 comment is what releases the claim, so there is no third call. `gh issue edit`
 refuses a label the repository does not have, so create it first where it is
-missing — `--force` makes the create a no-op where it exists:
+missing — `--force` makes the create a no-op where it exists, apart from bringing
+its description up to date:
 
 ```bash
 gh issue comment <number> --repo <owner>/<name> --body-file <path>
 gh label create parked --repo <owner>/<name> --force \
-  --description "Reviewed, missed its landing window; the next tick lands it"
+  --description "Reviewed; waiting for the landing train"
 gh issue edit <number> --repo <owner>/<name> --add-label parked
 gh issue view <number> --repo <owner>/<name> --json assignees,labels,comments
 ```
 
 The read-back shows the comment, the label, and no assignee. The board Status is
 not touched: the ticket is already In Review.
+
+`unpark` is one call and its read-back, which shows `parked` gone:
+
+```bash
+gh issue edit <number> --repo <owner>/<name> --remove-label parked
+gh issue view <number> --repo <owner>/<name> --json labels
+```
 
 `parked` is a filtered issue read, then each ticket's label event for the
 ordering. The last `labeled` event's `created_at` is when the label was applied.

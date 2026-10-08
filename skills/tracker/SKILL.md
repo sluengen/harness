@@ -22,7 +22,7 @@ performs it.
 ## The operations
 
 `open` · `create` · `transition` · `comment` · `hold` · `queue` · `held` ·
-`park` · `parked` · `close` · `ledger`. Each reference implements exactly these
+`park` · `unpark` · `parked` · `close` · `ledger`. Each reference implements exactly these
 names.
 
 A postcondition is verified by re-reading the ticket, **never by exit status**.
@@ -165,16 +165,21 @@ end, and they read as two defects to everyone who opens the board afterwards.
 **Starting or resuming a ticket claims it**, the cord and every other ticket
 alike. The claim is a comment written as the ticket is transitioned, saying which
 run holds the work, when it took it, the branch that work is pushed to, and the
-host it runs on, as a line of its own reading `host: <name>` with the name
-`hostname -s` prints there; its
-age is what every later reader acts on, and the branch is where a run that died
-left its commits. **A claim from this host is fresh** when its `host:` line
-equals this run's own `hostname -s`, it is younger than
+host it runs on, as a line of its own reading `host: <name> <boot id>`: the name
+`hostname -s` prints there, then the kernel's boot id, from
+`/proc/sys/kernel/random/boot_id` on Linux or `sysctl -n kern.bootsessionuuid`
+on macOS. A host where neither reads writes `host: <name>` alone. Its age is
+what every later reader acts on, and the branch is where a run that died left its
+commits. **A claim from this host is fresh** when its `host:` line carries a boot
+id and equals the line this run would write, it is younger than
 `loop.cord_claim_minutes`, the ticket is still In Progress or In Review and is
 not held, and no later `park` comment has released it. A hold ends the run that
-wrote the claim, so a held ticket's claim finds nobody live. A host whose name changes per session,
-as a cloud container's does, never matches its predecessor, so this only ever
-finds a run on a machine that persists. A claim older than
+wrote the claim, so a held ticket's claim finds nobody live. The name alone
+cannot tell machines apart: Claude Code's cloud sessions all print `vm`, each on
+its own kernel with its own boot id (three measured, #761), so two of them never
+match, while a machine that persists matches its own earlier runs until a reboot
+ends them. A line with no boot id, written before the boot id was recorded or on
+a host that exposes none, is never fresh from this host. A claim older than
 `loop.cord_claim_minutes` in `harness.yaml` is **stale** — the run that wrote it
 is presumed gone and the work is not. A stale claim on the cord makes the cord
 available again, and the run that takes it names the superseded claim in its own, which is the only thing that
@@ -206,21 +211,22 @@ ticket held for a reason nobody wrote down.
 The loop skips both labels alike (`work-discovery` owns that rule). Which label
 a given clearing pass selects is that pass's business, not this operation's.
 
-## `park` and `parked` — reviewed work the next tick lands
+## `park` and `parked` — reviewed work waiting for the train
 
-Parked is a ticket condition beside held (ADR 0023): a routine that passed review
-but missed its landing window leaves the ticket for the next tick to land. **It
-is not a hold.** The loop owns parked work and no human is asked anything, so
-`park` never assigns, and a ticket that is both parked and held is held: the hold
-wins, and `parked` does not return it.
+Parked is a ticket condition beside held (ADR 0024): a builder that reaches PASS
+in a repo on the landing train leaves the ticket for the train, which lands
+everything parked. **It is not a hold.** The loop owns parked work and no human
+is asked anything, so `park` never assigns, and a ticket that is both parked and
+held is held: the hold wins, and `parked` does not return it.
 
 **`park <ticket>`** is two writes, in this order, then a read-back of both:
 
-1. **A comment** naming the ticket's branch, the commit the review passed, and why
-   the window was missed. That comment is the record the landing tick reads, so a
-   park whose comment did not land has not happened. It also **releases the
-   claim**: a reader treats a claim followed by a `park` comment as released
-   whatever its age.
+1. **A comment** naming the ticket's branch, the commit its build handed off
+   at PASS (the reviewer's record included), and why it is parked. The latest
+   such comment is the record the train reads, so a park whose comment did not
+   land has not happened. It also **releases the claim**: a
+   reader treats a claim followed by a `park` comment as released whatever its
+   age.
 2. **The `parked` label.** A repo that has none yet creates it on first use, as it
    does `input` and `operator`.
 
@@ -228,14 +234,20 @@ The ticket stays **In Review** and unassigned, and its branch must already be
 pushed: a parked ticket whose commits exist only on the parking host cannot be
 landed by any other.
 
+**`unpark <ticket>`** removes the `parked` label, then reads the ticket back to
+confirm it is gone. It writes no comment: whatever moved the ticket on, a close,
+an ejection or a claim, writes its own.
+
 **`parked`** returns the open tickets labelled `parked` and unassigned, **oldest
 park first**, ordered by when the label was applied as the tracker records it,
 never by a date written in a comment. Its row count is checked against its limit
 like every other read here.
 
-A run that takes a parked ticket to land it claims it as any run starting a
-ticket does, and removes the `parked` label in the same breath. A run that misses
-its window again parks it again.
+A run that lands one parked ticket on its own claims it as any run starting a
+ticket does, and unparks it in the same breath. **The train claims nothing**: it
+leaves every label in place while it runs and unparks each ticket only as it
+closes or ejects it, at the end, so a ticket the train neither lands nor ejects
+keeps its label and its place in the park order.
 
 ## `ledger` — the improvement ledger
 
