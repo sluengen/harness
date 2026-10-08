@@ -226,6 +226,12 @@ curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/js
 curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d '{"query":"mutation { issueAddLabel(id: \"<issue-id>\", labelId: \"<parked-label-uuid>\") { success } }"}'
 ```
 
+**Unpark** — `issueRemoveLabel` with the same resolved `parked` label id, then the read-back, which must show the label gone:
+```bash
+curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d '{"query":"mutation { issueRemoveLabel(id: \"<issue-id>\", labelId: \"<parked-label-uuid>\") { success } }"}'
+curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d '{"query":"query { issue(id: \"<issue-id>\") { labels { nodes { name } } } }"}'
+```
+
 **Pull the parked pile**, open and unassigned, with the label history that orders it. A label applied at creation leaves no history row, but `park` always adds the label to an existing issue, so the latest history row whose `addedLabels` carries `parked` is when it was parked. Sort oldest first on that timestamp:
 ```bash
 curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d '{"query":"query { issues(first: 50, filter: { team: { key: { eq: \"<team-key>\" } }, labels: { name: { eq: \"parked\" } }, assignee: { null: true }, state: { type: { nin: [\"completed\", \"canceled\"] } } }) { nodes { identifier url history(first: 50) { nodes { createdAt addedLabels { name } } } } } }"}'

@@ -22,7 +22,7 @@ performs it.
 ## The operations
 
 `open` · `create` · `transition` · `comment` · `hold` · `queue` · `held` ·
-`park` · `parked` · `close` · `ledger`. Each reference implements exactly these
+`park` · `unpark` · `parked` · `close` · `ledger`. Each reference implements exactly these
 names.
 
 A postcondition is verified by re-reading the ticket, **never by exit status**.
@@ -211,21 +211,21 @@ ticket held for a reason nobody wrote down.
 The loop skips both labels alike (`work-discovery` owns that rule). Which label
 a given clearing pass selects is that pass's business, not this operation's.
 
-## `park` and `parked` — reviewed work the next tick lands
+## `park` and `parked` — reviewed work waiting for the train
 
-Parked is a ticket condition beside held (ADR 0023): a routine that passed review
-but missed its landing window leaves the ticket for the next tick to land. **It
-is not a hold.** The loop owns parked work and no human is asked anything, so
-`park` never assigns, and a ticket that is both parked and held is held: the hold
-wins, and `parked` does not return it.
+Parked is a ticket condition beside held (ADR 0024): a builder that reaches PASS
+in a repo on the landing train leaves the ticket for the train, which lands
+everything parked. **It is not a hold.** The loop owns parked work and no human
+is asked anything, so `park` never assigns, and a ticket that is both parked and
+held is held: the hold wins, and `parked` does not return it.
 
 **`park <ticket>`** is two writes, in this order, then a read-back of both:
 
 1. **A comment** naming the ticket's branch, the commit the review passed, and why
-   the window was missed. That comment is the record the landing tick reads, so a
-   park whose comment did not land has not happened. It also **releases the
-   claim**: a reader treats a claim followed by a `park` comment as released
-   whatever its age.
+   it is parked. That comment is the record the train reads, so a park whose
+   comment did not land has not happened. It also **releases the claim**: a
+   reader treats a claim followed by a `park` comment as released whatever its
+   age.
 2. **The `parked` label.** A repo that has none yet creates it on first use, as it
    does `input` and `operator`.
 
@@ -233,14 +233,20 @@ The ticket stays **In Review** and unassigned, and its branch must already be
 pushed: a parked ticket whose commits exist only on the parking host cannot be
 landed by any other.
 
+**`unpark <ticket>`** removes the `parked` label, then reads the ticket back to
+confirm it is gone. It writes no comment: whatever moved the ticket on, a close,
+an ejection or a claim, writes its own.
+
 **`parked`** returns the open tickets labelled `parked` and unassigned, **oldest
 park first**, ordered by when the label was applied as the tracker records it,
 never by a date written in a comment. Its row count is checked against its limit
 like every other read here.
 
-A run that takes a parked ticket to land it claims it as any run starting a
-ticket does, and removes the `parked` label in the same breath. A run that misses
-its window again parks it again.
+A run that lands one parked ticket on its own claims it as any run starting a
+ticket does, and unparks it in the same breath. **The train claims nothing**: it
+leaves every label in place while it runs and unparks each ticket as it closes or
+ejects it, so a train that pushes nothing leaves every ticket, and the park
+order, as it found them.
 
 ## `ledger` — the improvement ledger
 

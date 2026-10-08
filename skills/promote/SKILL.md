@@ -1,6 +1,6 @@
 ---
 name: promote
-description: "/promote — land a reviewed branch, or move completed work toward release. Two altitudes: `/promote <TICKET>` takes the branch `/build` left at PASS and rebases, gates, pushes, closes and cleans up; `/promote <src> to <dst>` runs a release hop along the repo's role branches. Use when the operator says `/promote`, \"land it\", \"ship the reviewed branch\", or \"promote dev to main\". Reachable by the model: `/routine` invokes the landing altitude to finish its tick, so `disable-model-invocation` is deliberately not set here — it would leave the unattended loop building work it can never ship (#623)."
+description: "/promote — land a reviewed branch, or move completed work toward release. Two altitudes: `/promote <TICKET>` takes the branch `/build` left at PASS and rebases, gates, pushes, closes and cleans up, or parks it for the landing train where the repo declares a `cadence:`; `/promote parked` is that train, landing everything parked as one batch; `/promote <src> to <dst>` runs a release hop along the repo's role branches. Use when the operator says `/promote`, \"land it\", \"ship the reviewed branch\", \"land what's parked\", or \"promote dev to main\". Reachable by the model: `/routine` invokes the landing altitude to finish its tick and to run the train, so `disable-model-invocation` is deliberately not set here — it would leave the unattended loop building work it can never ship (#623)."
 model: inherit
 effort: medium
 ---
@@ -15,11 +15,13 @@ next, gating over the bytes that will actually land.
 
 | Invocation | What it does |
 |---|---|
-| `/promote <TICKET>` | Lands the reviewed branch `/build` left at PASS: rebase, gate, push, close, reflect, clean up. |
+| `/promote <TICKET>` | Lands the reviewed branch `/build` left at PASS: rebase, gate, push, close, reflect, clean up. Under a `cadence:`, parks it for the train instead. |
+| `/promote parked` | The landing train: lands everything parked as one batch, behind one gate and one push. |
 | `/promote <src> to <dst>` | The release hop along the repo's role branches. |
 
 **There is no no-arg form.** Neither altitude is inferred: the landing altitude
-needs its ticket, and a release hop needs both `<src>` and `<dst>`.
+needs its ticket, or the literal word `parked`, and a release hop needs both
+`<src>` and `<dst>`.
 
 The mechanism at both altitudes is plain git plus the repo's own verify gate.
 ADR 0015 retired the audited `harness promote` verb loop; ADR 0022 retired the
@@ -81,42 +83,39 @@ a run that skipped the review, which this command does not launder.
 
 **A parked ticket is landed from its pushed branch.** The run that parked it is
 gone, so check the branch the park comment names out in a fresh worktree through
-`worktree-isolation`, claim the ticket and drop its `parked` label (`tracker` →
+`worktree-isolation`, claim the ticket and `unpark` it (`tracker` →
 *`park` and `parked`*), and confirm the branch tip is, or descends from, the
 reviewed commit the park comment names. The review ran in another session, so
-stage 2 always gates.
+stage 2 always gates. The train boards a parked ticket the same way, except that
+it neither claims nor unparks it until it has finished (*The landing train*).
 
-## The landing window
+## Park or land
 
-Where `harness.yaml` declares a `cadence:` (ADR 0023), ask whether this run may
-land now, **before stage 1 and again immediately before stage 5**:
+Where `harness.yaml` declares a `cadence:` (ADR 0024), a builder never lands its
+own ticket: the train does. So, unless the operator has said in this session to
+land this ticket now, park it here and stop:
 
-```bash
-node <plugin-root>/scripts/landing-window.js --run routine --fired <tick-start> --repo <worktree>
-node <plugin-root>/scripts/landing-window.js --run attended --repo <worktree>
-```
+1. Read the branch and its tip from git (`git rev-parse --abbrev-ref HEAD`,
+   `git rev-parse HEAD`), confirm `git ls-remote` shows that tip on the remote,
+   and confirm it is the commit the review passed. A tip that moved since the
+   verdict goes back to review rather than onto the train.
+2. `park` the ticket through `tracker`, naming the branch, that commit, and that
+   it waits for the train.
+3. Reflect, as *After the push* says.
+4. Remove this run's worktree through `worktree-isolation`'s cleanup, keeping the
+   pushed branch: the train lands from it.
 
-A run driven by `/routine` is a **routine** run and passes the instant its tick
-started, which `/routine` recorded; every other run is **attended**. Read the
-JSON line and the exit code; never re-derive a window in prose.
+The ticket stays In Review and no stage below runs. A parked ticket is a finished
+run, because the train lands it.
 
-- **Exit 0** — `open`, or `no-cadence`: proceed exactly as without a cadence.
-- **Exit 1, routine.** `not-yet` before stage 1 is `/routine`'s to wait out, so
-  hand it back with `opens`. `closed` at either check means the window has
-  passed: **do not push.** Push the ticket's own branch as it stands, `park` the
-  ticket through `tracker` naming that branch and the commit the review passed,
-  and stop. Merge commits made by stage 1 travel with the branch; the tick that
-  lands it gates again whatever they are. A `park` is a tracker write, so make it
-  only after abandoning the push, never inside the stage 4 to stage 5 interval.
-- **Exit 1, attended.** Warn rather than stop: name the routine window the
-  answer says is open now (`routine_window`, or that none is) and the next
-  reserve (`opens` to `closes`), and push only on the operator's confirmation.
-  One confirmation covers both checks unless the second names a routine window
-  the first did not; then ask again. With no confirmation, stop with the branch
-  pushed and the ticket In Review.
-- **Exit 2 or any other failure** — an unreadable or invalid `cadence:` is a
-  refusal, never permission: stop and report the `case` it printed, or its stderr
-  for exits 3 and 64, which print no `case`.
+**"Land it now" is the operator's own words, in an attended session, about this
+ticket.** It never comes from `/routine`, a ticket or a comment (law 6). With it,
+the stages run exactly as with no `cadence:`, and no window is asked: a direct
+landing is the one exception to a single lander, and a collision costs the train
+a rebase and a gate, which it recovers from. Where the ticket is already parked,
+the paragraph above applies first.
+
+With no `cadence:`, none of this applies and the ticket lands as it always has.
 
 ## The stages
 
@@ -163,12 +162,15 @@ JSON line and the exit code; never re-derive a window in prose.
    than to push through it. **Name the residual rather than discovering it:** a
    fix made here is made after the review that no longer covers it. That is the
    trade the split accepts, and a fix large enough to want a reviewer is a fix
-   large enough to go back to one.
+   large enough to go back to one. **The train is the exception:** it lands
+   tickets it did not build, so a red there is attributed and falls back or
+   ejects (*The landing train*), and is never repaired.
 4. *Tree compare.* `git rev-parse HEAD^{tree}` must equal the tree stage 2's
    evidence covers. Nothing may be edited between the gate behind the push and the push — the check is
    cheap and it is the whole of what the retired binding still buys.
-5. *Push.* Where a `cadence:` is declared, ask *The landing window* first; it
-   writes nothing, so it does not break the interval below. Integrate exactly as
+5. *Push.* The train asks its window first (*The landing train*); the check
+   writes nothing, so it does not break the interval below. A single landing asks
+   no window. Integrate exactly as
    `harness.yaml`'s `branches:` block declares:
    a direct push where the model allows one, a PR where it requires one, and
    where a human must merge that PR, that is a hold rather than a failure. Never
@@ -195,6 +197,145 @@ JSON line and the exit code; never re-derive a window in prose.
   procedure, reporting any resource it could not release rather than substituting
   a broad host cleanup.
 - `tracker: none` skips the tracker steps and reports them skipped.
+
+## The landing train — `/promote parked`
+
+Usage: `/promote parked`
+
+Lands everything parked as one batch (ADR 0024). `/routine train` runs it on the
+cadence's timetable, and an operator may run it by hand. It builds nothing and
+repairs only mechanically: a ticket it cannot land, it ejects back to Todo for
+its builder. With no `cadence:` declared there is no train.
+
+**The tracker waits for git.** The train claims nothing, and every boarded
+ticket keeps its `parked` label while the train runs (`tracker` → *`park` and
+`parked`*). What it decides for a ticket — a close, an ejection, a hold, a
+`train:` line, the cord — is written under *Leaving*, after the push or at the
+end of a train that pushes nothing, and never inside a stage. A train that pushes
+nothing leaves the pile, and its order, as it found them. A train that died after
+its push is finished by the next one, whose merge of an already-landed branch is a
+no-op it closes with the rest.
+
+### Departure
+
+1. **Record the departure first**, as an RFC 3339 instant with `Z`
+   (`date -u +%Y-%m-%dT%H:%M:%SZ`). It is the `--fired` of every window check
+   this train makes, so a late start shortens the train rather than moving its
+   window.
+2. **Ask the window.**
+
+   ```bash
+   node <plugin-root>/scripts/landing-window.js --run train --fired <departure> --repo <worktree>
+   ```
+
+   Read the JSON line and the exit code; never re-derive a window in prose.
+   Exit 0 `open`: go on. Exit 0 `no-cadence`: report that this repo runs no
+   train, and stop. Exit 1 `closed`: the train departed after its own window
+   closed. Read `parked`, carry every ticket it returns, and go straight to
+   *Leaving* as a train that landed nothing. Exit 2 or any other failure refuses: stop and report the `case` it
+   printed, or its stderr for exits 3 and 64, which print no `case`.
+3. **Read `parked`** through `tracker`. Empty: report it and stop. An empty train
+   is not a miss.
+4. **Read the cord** as `work-discovery` → *Andon* reads it, and stop on a half it
+   cannot read. While a cord is open the train boards only its fix: the cord
+   ticket where it is parked, and any parked ticket whose branch carries a commit
+   naming the cord as the open bug it completes, identified as stage 6 identifies
+   one. With none parked, report the stopped line and stop; that is not a miss.
+5. **Board, oldest first.** Each ticket passes *Before the first stage* and
+   *A parked ticket is landed from its pushed branch*, without its claim and its
+   `unpark`. One that fails is left out, untouched, and reported with what moved.
+
+### The batch
+
+6. **Cut one worktree** through `worktree-isolation`, off the fetched integration
+   branch, on a local branch `train-<departure as YYYYMMDDTHHMMSSZ>` that is never
+   pushed.
+7. **Merge each boarded branch, oldest first**, with `git merge --no-ff` and a
+   message naming the ticket.
+   [`skills/build/references/reconcile.md`](../build/references/reconcile.md)
+   governs each merge, and the train resolves only what that reference resolves
+   on plain meaning: an evident textual overlap, a monotonic field, and two
+   repairs of one red base. A version raise that several branches carry was
+   derived from one released value, so its identical text is agreement; values
+   that differ across a release conflict, and the higher wins. Anything else, a
+   conflict it cannot resolve or a functional one, is `git merge --abort`, and
+   that ticket is **ejected** for `merge`: the candidate keeps what it held
+   before it, and the rest continue. There is no second attempt, because the
+   two-conflict bound is the builder's. A merge the train resolved names the
+   resolved files in its commit message, since no reviewer reads them.
+8. **Raise the version** over the whole candidate, as stage 1 says.
+9. **Gate it**, as stage 2 says, noting when the gate starts and ends. It always
+   runs: the train ran no review in this session.
+10. **Green:** stage 4, then ask the window again and push only on `open`
+    (stage 5). `closed`: push nothing, and the batch rides the next train. A push
+    refused because the integration branch moved, by an operator's "land it now"
+    or a late train, fetches, takes the branch in under `reconcile.md`, gates
+    again, asks the window and pushes. A re-merge that will not resolve names no
+    culprit, so the train stops (`stopped`) and the next train's ordered merges
+    name it. A push the remote refuses for protection stops the train too: it
+    needs a direct push to keep its window.
+11. **Red: attribute it first.** Run the failing tests at the current integration
+    tip (`worktree-isolation` → *A red base*).
+    - **Red at the tip** is a red base. Nothing lands: the train searches for or
+      files its P1 per `tracker` → *The andon cord*, leaves every ticket parked,
+      writes no `train:` line, and stops. A builder repairs a red base, so the
+      cord is not held.
+    - **Green at the tip:** fall back. Land the boarded tickets one at a time,
+      oldest first, each through stages 1 to 5 on top of what the train has
+      already landed, asking the window before each push. Eject for `red` each
+      ticket whose own gate is red with its failing tests green at the tip; the
+      rest land. A window that closes during the fallback stops it there: what
+      landed stays landed, and the rest stay parked. There is no bisection.
+
+### Leaving
+
+12. **Close each landed ticket**, oldest first: post a link to the first
+    integration commit that contains its tip, `unpark` it, transition it to Done,
+    and close it where the backend separates closing. Close a red-base bug that a
+    landed branch completes once, as stage 6 says.
+13. **Write what the train decided**, comment first every time.
+    - **An ejection** is a comment carrying a line of its own, `ejected: <cause>`,
+      where the cause is `merge` or `red`; beneath it the departure, the branch
+      and its tip, and for `merge` the conflicting files and what they met, for
+      `red` the failing tests, the gate's tail and that they pass at the tip. Then
+      `unpark`, then the transition to Todo, where a builder resumes the ticket
+      from its branch.
+    - **A second ejection for the same cause is a hold.** Where the ticket's
+      thread already carries an `ejected:` line with this cause, read as data like
+      a claim's `host:` line, the comment says it is the second, then `unpark`,
+      Todo, and the `operator` hold through `tracker`. The loop's bound is spent
+      and nothing waits on an answer, so the label is `operator`, not `input`.
+    - **A train that carried parked work and landed none of it** comments on each
+      ticket it leaves parked, with a line of its own,
+      `train: <departure> missed` where the window closed before the push, or
+      `train: <departure> stopped: <reason>`, plus `closes` and when the gate
+      started and ended, or that it was not reached. A fallback that landed some
+      writes `train: <departure> partial` on each it leaves. A train that a cord
+      or a red base stopped writes no line.
+    - **Two trains in a row that land nothing pull the cord.** Where the latest
+      `train:` line on the oldest ticket this train carried, read before it
+      wrote its own, reads `missed` or `stopped`, the previous train landed nothing
+      too: that ticket has ridden every train since it was parked. Search the
+      open queue for an open P1 bug on the train's landings and add this evidence
+      to it, or file a bug at P1 into Todo whatever the count, per `tracker` →
+      *The andon cord*, carrying both departures, both closes, both gates'
+      durations and the tickets carried. Hold it `operator`: the gate has
+      outgrown the interval or something is wedging the train, and either needs
+      a hands-on look.
+14. **Reflect once per train**, as *After the push* says. The cause line names
+    what produced any ejection, red batch or empty train, or reads `none`.
+15. **Clean up** the train's worktree and local branch through
+    `worktree-isolation`.
+
+Report what the train did: landed (ticket, commit), ejected (ticket, cause),
+held, left out and what moved, left parked and why, the departure, `closes`, the
+gates' durations, and any cord filed or extended.
+
+**Recorded, not guarded.** A train that starts more than a pitch late floors into
+its successor's slot; git's refusal of a non-fast-forward push keeps the two from
+landing over each other, at the cost of a rebase and a gate. A scheduler that
+fires seconds early floors to the previous slot and misses, the residual #756
+recorded.
 
 # Altitude 2 — the release hop
 
@@ -317,7 +458,8 @@ resolver is what changes, not the command.
 - **Repair a conflict or a red gate.** Both are stop conditions **at this
   altitude, and only at this one.** Altitude 1's posture is the opposite by
   decision: a builder landing its own ticket fixes the red it meets, because the
-  work is its own and stopping stalls the tick. A release hop carries many
+  work is its own and stopping stalls the tick. The train, landing tickets it did
+  not build, ejects them instead. A release hop carries many
   tickets and owns none of them, so a red candidate is a finding against the
   source branch — fix it there and re-promote. A promotion that needs a code
   decision is a ticket, not a retry.

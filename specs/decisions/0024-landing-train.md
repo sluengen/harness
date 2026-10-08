@@ -31,3 +31,11 @@ ADR 0023 shipped clock-derived landing windows so that two unattended runners an
 - A ticket lands up to one train interval after PASS, and a chain of dependent tickets pays that once per link.
 - The train's judgement between a mechanical repair and a behavioural one is made without the build's context; the second-ejection hold bounds the loop, not the judgement.
 - The clock still matters at one point: the train's window close before its push, on cloud hosts only.
+
+## Amendment (2026-10-08, #762)
+
+The build of decisions 1 to 4 settled three points the decision left open or stated too broadly. The operator accepted each.
+
+- **Decision 1 applies under a `cadence:` only.** Declaring the block is what puts a repo on the train, so attended `/promote` parks by default only there. With no `cadence:` there is no train to land a parked ticket, and every run lands as it did before.
+- **Decision 3's cord fires on two trains in a row that land nothing**, whether the window closed or the train stopped for another reason: an unrunnable gate, a refused push, a re-merge that would not resolve. A train wedged on its gate or its push is the same stopped line as one that keeps missing its window. Each train that lands nothing records why on the tickets it leaves parked, and the next one reads that line.
+- **Decision 4's native-code ejection does not ship.** The plugin cannot tell what native code is, or which host can verify it, without a declaration no consumer makes, and a key built before any observed break guards an unobserved risk (P2). The train's gate is the consumer's own `commands.verify` on the train's host. A native interaction that gate cannot see reaches the integration branch and surfaces as a red base at the next build on a host that can run it, a defect the operating context accepts. Reopen on the first native break a train lands.
