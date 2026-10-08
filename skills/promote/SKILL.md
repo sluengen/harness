@@ -83,10 +83,10 @@ a run that skipped the review, which this command does not launder.
 
 **A parked ticket is landed from its pushed branch.** The run that parked it is
 gone, so check the branch the park comment names out in a fresh worktree through
-`worktree-isolation`, claim the ticket and `unpark` it (`tracker` →
-*`park` and `parked`*), and confirm the branch tip is the reviewed commit the
-park comment names. A branch pushed to since its park carries bytes no review
-read, so it goes back to review. The review ran in another session, so stage 2
+`worktree-isolation` and confirm its tip is the commit the park comment names. A
+branch pushed to since its park carries bytes no review read, so it goes back to
+review and is not claimed. Then claim the ticket and `unpark` it (`tracker` →
+*`park` and `parked`*). The review ran in another session, so stage 2
 always gates.
 
 ## Park or land
@@ -97,19 +97,24 @@ land this ticket now, park it here and stop:
 
 1. Read the branch and its tip from git (`git rev-parse --abbrev-ref HEAD`,
    `git rev-parse HEAD`), confirm `git ls-remote` shows that tip on the remote,
-   and confirm it is the commit the review passed. A tip that moved since the
-   verdict goes back to review rather than onto the train.
-2. `park` the ticket through `tracker`, naming the branch, that commit, and that
-   it waits for the train.
+   and confirm the tip's tree (`git rev-parse HEAD^{tree}`) is the
+   `reviewed_tree` the verdict covers. A verdict covers a tree, not a commit, so
+   a tip whose tree differs goes back to review rather than onto the train.
+2. `park` the ticket through `tracker`, naming the branch, that tip, and that it
+   waits for the train.
 3. Reflect, as *After the push* says.
 4. Remove this run's worktree through `worktree-isolation`'s cleanup, keeping the
    pushed branch: the train lands from it.
 
 The ticket stays In Review and no stage below runs. A parked ticket is a finished
-run, because the train lands it.
+run, because the train lands it. A ticket that is already parked is left as it
+is: report that it waits for the train, and stop. Either way, tell the operator
+that saying to land it now overrides the park.
 
 **"Land it now" is the operator's own words, in an attended session, about this
-ticket.** It never comes from `/routine`, a ticket or a comment (law 6). With it,
+ticket, asking to bypass the train.** Invoking `/promote` or asking in general to
+land or ship the branch is not it: under a `cadence:` that request parks. It
+never comes from `/routine`, a ticket or a comment (law 6). With it,
 the stages run exactly as with no `cadence:`, and no window is asked: a direct
 landing is the one exception to a single lander, and a collision costs the train
 a rebase and a gate, which it recovers from. Where the ticket is already parked,
@@ -249,15 +254,17 @@ land inside a window.
    naming the cord as the open bug it completes, identified as stage 6 identifies
    one. With none parked, report the stopped line and stop; that is not a miss.
 5. **Board, oldest first.** Each ticket passes *Before the first stage*, and
-   `git ls-remote` shows its branch's tip is the reviewed commit its park comment
-   names. Boarding checks nothing out, claims nothing and unparks nothing. A
+   `git ls-remote` shows its branch's tip is the commit its park comment names. Boarding checks nothing out, claims nothing and unparks nothing. A
    ticket that fails is left out, untouched, and reported with what moved.
 
 ### The batch
 
-6. **Cut one worktree** through `worktree-isolation`, off the fetched integration
-   branch, on a local branch `train-<departure as YYYYMMDDTHHMMSSZ>` that is never
-   pushed.
+6. **Cut one worktree** through `worktree-isolation`, at `../<repo>-train-<departure
+   as YYYYMMDDTHHMMSSZ>` off the fetched integration branch, on a local branch
+   `train-<departure>` that is never pushed. Remove any `<repo>-train-*` worktree
+   and `train-*` branch an earlier train left first: they hold nothing that is not
+   already pushed, either on the integration branch or on a parked ticket's own
+   branch.
 7. **Merge each boarded branch, oldest first**, with `git merge --no-ff` and a
    message naming the ticket.
    [`skills/build/references/reconcile.md`](../build/references/reconcile.md)
@@ -287,17 +294,22 @@ land inside a window.
 11. **Red: attribute it first.** Run what failed, the failing tests or the
     failing check, at the current integration tip (`worktree-isolation` →
     *A red base*).
-    - **Red at the tip** is a red base. Nothing more lands, and the train goes
-      to *Leaving*, which files or extends its P1.
-    - **Green at the tip:** fall back. Land the boarded tickets one at a time,
-      oldest first, in the train's worktree reset to the integration tip as it
-      now stands: merge that ticket's branch (a merge that will not resolve
-      ejects it for `merge`), raise the version, gate, and on green stage 4, the
-      window and the push. A red is attributed the same way against the tip as
-      it now stands: green there ejects the ticket for `red`; red there is a red
-      base, and the fallback stops. A window that closes during the fallback
-      stops it there: what landed stays landed, and the rest stay parked. There
-      is no bisection.
+    - **While a cord is open**, the batch is the cord's fix, and a red in the
+      cord's own failing test or check is that fix not fixing it: eject it for
+      `red` rather than extending the cord with it.
+    - **Red at the tip** is otherwise a red base. Nothing more lands, and the
+      train goes to *Leaving*, which files or extends its P1.
+    - **Green at the tip:** fall back. Land the boarded tickets that step 7 did
+      not eject one at a time, oldest first, each in the train's worktree reset
+      to the integration tip as it now stands (`git reset --hard` to the fetched
+      tip before each): merge that ticket's branch (a merge that will not
+      resolve ejects it for `merge`), raise the version, gate, and on green
+      stage 4, the window and the push, where a refused push gets step 10's one
+      retry. A red is attributed the same way against the tip as it now stands:
+      green there ejects the ticket for `red`; red there is a red base, and the
+      fallback stops. A window that closes during the fallback stops it there:
+      what landed stays landed, and the rest stay parked. There is no
+      bisection.
 
 ### Leaving
 
@@ -329,23 +341,27 @@ land inside a window.
       `train: <departure> missed` where the window closed before the push, or
       `train: <departure> stopped: <reason>`, plus `closes` and when the gate
       started and ended, or that it was not reached. A fallback that landed some
-      writes `train: <departure> partial` on each it leaves. A train that a cord
-      or a red base stopped writes no line.
+      that the window stopped writes `train: <departure> partial` on each it
+      leaves. A train that a cord or a red base stopped writes no line, and is
+      not a train that landed nothing for the rule below.
     - **Two trains in a row that land nothing pull the cord.** Where the latest
       `train:` line on the oldest ticket this train carried, read before it
       wrote its own, reads `missed` or `stopped`, the previous train landed nothing
       too: that ticket has ridden every train since it was parked. Search the
-      open queue for an open P1 bug an earlier train filed under this rule, which
-      names the landing train in its title, and add this evidence to it; or file
-      one at P1 into Todo whatever the count, per `tracker` → *The andon cord*,
+      open queue for an open P1 bug keyed to this surface, `/promote parked`, as
+      `tracker` → *The andon cord* keys a search to the surface a failure names,
+      and add this evidence to it; or file one at P1 into Todo whatever the
+      count, naming that surface,
       carrying both departures, both closes, both gates' durations and the
       tickets carried. Either way, hold it `operator`: the gate has outgrown the
       interval or something is wedging the train, and either needs a hands-on
       look.
 14. **Reflect once per train**, as *After the push* says. The cause line names
     what produced any ejection, red batch or empty train, or reads `none`.
-15. **Clean up** the train's worktree and local branch through
-    `worktree-isolation`.
+15. **Clean up**: `git worktree remove` the train's worktree, `git worktree prune`,
+    and `git branch -D` its local `train-<departure>` branch. `-D`, because the
+    branch was never pushed and holds nothing that is not on the integration
+    branch or a parked ticket's branch.
 
 Report what the train did: landed (ticket, commit), ejected (ticket, cause),
 held, left out and what moved, left parked and why, the departure, `closes`, the
