@@ -81,8 +81,9 @@ the branch in hand. There is no machine half to this: the ticket's state and the
 review report are the record, and a branch that reached here without a verdict is
 a run that skipped the review, which this command does not launder.
 
-**A parked ticket is landed from its pushed branch.** The run that parked it is
-gone, so check the branch the park comment names out in a fresh worktree through
+**A parked ticket is landed from its pushed branch**, where the operator has
+said to land it now (*Park or land*, below); otherwise it waits for the train.
+The run that parked it is gone, so check the branch the park comment names out in a fresh worktree through
 `worktree-isolation` and confirm its tip is the commit the park comment names. A
 branch pushed to since its park carries bytes no review read, so it goes back to
 review and is not claimed. Then claim the ticket and `unpark` it (`tracker` →
@@ -182,7 +183,7 @@ With no `cadence:`, none of this applies and the ticket lands as it always has.
    force. Never a release branch from this altitude — that is altitude 2's hop,
    and it has its own rules. **Never push from a shape you cannot describe:** a
    dirty worktree, a detached HEAD, or a branch the repository declares no role
-   for is a state to report, not a landing. The train's local `train-<departure>`
+   for is a state to report, not a landing. The train's local `train-<stamp>`
    branch is the one named exception: it is a candidate for the integration
    branch and pushes nowhere else. One uninterrupted sequence from stage
    4 to here, with no tracker write inside it.
@@ -218,10 +219,13 @@ its builder. With no `cadence:` declared there is no train.
 ticket keeps its `parked` label while the train runs (`tracker` → *`park` and
 `parked`*). What it decides for a ticket — a close, an ejection, a hold, a
 `train:` line, the cord — is written under *Leaving*, after the push or at the
-end of a train that pushes nothing, and never inside a stage. **A train that
-pushes nothing ejects nobody**: it leaves the pile, and its order, as it found
-them, writing only its `train:` lines and any cord, and the next train's merges
-find again whatever this one would have ejected. A train that died after its
+end of a train that pushes nothing, and never inside a stage. **A train cut
+short ejects nobody**: one whose window closed, or that stopped or met a red base
+before deciding every ticket it carried, leaves the pile, and its order, as it
+found them, writing only its `train:` lines and any cord, and the next train's
+merges find again whatever this one would have ejected. A train that decided
+every ticket, landing some and ejecting the rest or ejecting them all, writes its
+ejections whether or not it pushed. A train that died after its
 push is finished by the next one, whose merge of an already-landed branch is a
 no-op it closes with the rest. The train needs a branch model that lets it push
 the integration branch directly, because a pull request a human merges cannot
@@ -259,12 +263,12 @@ land inside a window.
 
 ### The batch
 
-6. **Cut one worktree** through `worktree-isolation`, at `../<repo>-train-<departure
-   as YYYYMMDDTHHMMSSZ>` off the fetched integration branch, on a local branch
-   `train-<departure>` that is never pushed. Remove any `<repo>-train-*` worktree
-   and `train-*` branch an earlier train left first: they hold nothing that is not
-   already pushed, either on the integration branch or on a parked ticket's own
-   branch.
+6. **Cut one worktree** through `worktree-isolation`, at `../<repo>-train-<stamp>`
+   off the fetched integration branch, on a local branch `train-<stamp>` that is
+   never pushed, where `<stamp>` is the departure as `YYYYMMDDTHHMMSSZ` (git
+   refuses the colons of the RFC 3339 form). A `<repo>-train-*` worktree another
+   train left is reported, never removed: the run behind it may still be live
+   (`worktree-isolation` → *Creating the worktree*).
 7. **Merge each boarded branch, oldest first**, with `git merge --no-ff` and a
    message naming the ticket.
    [`skills/build/references/reconcile.md`](../build/references/reconcile.md)
@@ -293,7 +297,8 @@ land inside a window.
     needs a direct push to keep its window.
 11. **Red: attribute it first.** Run what failed, the failing tests or the
     failing check, at the current integration tip (`worktree-isolation` →
-    *A red base*).
+    *A red base*). A failing test the tip does not have came with the candidate,
+    so it counts as green at the tip.
     - **While a cord is open**, the batch is the cord's fix, and a red in the
       cord's own failing test or check is that fix not fixing it: eject it for
       `red` rather than extending the cord with it.
@@ -318,8 +323,8 @@ land inside a window.
     and close it where the backend separates closing. Close a red-base bug that a
     landed branch completes once, as stage 6 says.
 13. **Write what the train decided**, comment first every time.
-    - **An ejection**, written only by a train that pushed, its fallback
-      included, is a comment carrying a line of its own, `ejected: <cause>`,
+    - **An ejection**, written only by a train that decided every ticket it
+      carried, is a comment carrying a line of its own, `ejected: <cause>`,
       where the cause is `merge` or `red`; beneath it the departure, the branch
       and its tip, and for `merge` the conflicting files and what they met, for
       `red` the failing tests, the gate's tail and that they pass at the tip. Then
@@ -336,7 +341,8 @@ land inside a window.
       *The andon cord*, keyed to the failing test or check. It is not held,
       because a builder repairs a red base. Every ticket not landed stays parked,
       and no `train:` line is written.
-    - **A train that carried parked work and landed none of it** comments on each
+    - **A train cut short that carried parked work and landed none of it**
+      comments on each
       ticket it leaves parked, with a line of its own,
       `train: <departure> missed` where the window closed before the push, or
       `train: <departure> stopped: <reason>`, plus `closes` and when the gate
@@ -359,7 +365,7 @@ land inside a window.
 14. **Reflect once per train**, as *After the push* says. The cause line names
     what produced any ejection, red batch or empty train, or reads `none`.
 15. **Clean up**: `git worktree remove` the train's worktree, `git worktree prune`,
-    and `git branch -D` its local `train-<departure>` branch. `-D`, because the
+    and `git branch -D` its local `train-<stamp>` branch. `-D`, because the
     branch was never pushed and holds nothing that is not on the integration
     branch or a parked ticket's branch.
 
