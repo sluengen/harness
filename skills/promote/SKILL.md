@@ -326,7 +326,7 @@ land inside a window.
       green there ejects the ticket for `red`; red there is a red base, as
       above. A window that closes during the fallback stops it there: what
       landed stays landed, what was ejected stays ejected, and the rest are left
-      parked as `partial`. There is no bisection.
+      parked as `missed`. There is no bisection.
 
 ### Leaving
 
@@ -348,8 +348,8 @@ land inside a window.
       merge met has landed**, on the integration branch already or in this
       train's push, because the builder resumes by taking the integration branch
       in and must meet the conflict there. Where it met a ticket this train did
-      not land, the ticket is left parked like the rest instead, and the next
-      train meets the conflict again.
+      not land, the ticket is left parked instead, as `waiting on <ticket>`, and
+      the next train meets the conflict again.
     - **A second ejection for the same cause is a hold.** Where the ticket's
       thread already carries an `ejected:` line with this cause, read as data like
       a claim's `host:` line, the ejection comment says it is the second and is
@@ -358,19 +358,20 @@ land inside a window.
       ticket is never pickable in between. The loop's bound is spent and nothing
       waits on an answer, so the label is `operator`, not `input`.
     - **A ticket left parked** gets a comment with a line of its own,
-      `train: <departure> <why>`, where the why is `missed` (the window closed
-      before its push), `partial` (the window closed during a fallback that
-      landed something), `stopped: <reason>`, or `red base`; beneath it `closes`
-      and when the gate started and ended, or that it was not reached.
+      `train: <departure> landed <n>, <why>`, where `<n>` is how many tickets
+      this train landed and the why is what kept this one back: `missed` (the
+      window closed before its push), `stopped: <reason>`, `red base`, or
+      `waiting on <ticket>`; beneath it `closes` and when the gate started and
+      ended, or that it was not reached.
     - **A red base**: search for or file its P1 per `tracker` → *The andon
       cord*, keyed to the failing test or check. It is not held, because a
       builder repairs a red base.
     - **Two trains in a row that land nothing pull the cord.** Where this train
-      landed nothing and left its oldest ticket parked as `missed` or `stopped`,
-      and the line read first says the same of the previous train, that ticket
-      has ridden both and neither landed anything. A `partial` line breaks the
-      run, because that train landed something, and so does a `red base` line,
-      because that train stopped for a cord of its own. Search the open queue for an
+      landed nothing, for any reason but a red base, and the line read first
+      reads `landed 0` with any why but `red base`, the ticket carrying it has
+      ridden both trains and neither landed anything. A train that a red base
+      stopped is excluded on either side, because it stopped for a cord of its
+      own. Search the open queue for an
       open P1 bug keyed to this surface, `/promote parked`, as `tracker` →
       *The andon cord* keys a search to the surface a failure names, and add
       this evidence to it; or file one at P1 into Todo whatever the count,
@@ -389,7 +390,11 @@ Report what the train did: landed (ticket, commit), ejected (ticket, cause),
 held, left out and what moved, left parked and why, the departure, `closes`, the
 gates' durations, and any cord filed or extended.
 
-**Recorded, not guarded.** A train that starts more than a pitch late floors into
+**Recorded, not guarded.** The line read first is the latest on the oldest
+ticket, which is the previous train's unless a train in between carried that
+ticket nowhere (it boarded only a cord's fix, or left the ticket out at boarding);
+two misses that were not in a row then pull the cord, and an operator clears it.
+Telling the previous slot apart would need grid arithmetic in prose. A train that starts more than a pitch late floors into
 its successor's slot; git's refusal of a non-fast-forward push keeps the two from
 landing over each other, at the cost of a rebase and a gate. A scheduler that
 fires seconds early floors to the previous slot and misses, the residual #756
