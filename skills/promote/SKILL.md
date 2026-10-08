@@ -223,9 +223,10 @@ ticket keeps its `parked` label while the train runs (`tracker` → *`park` and
 `train:` line, the cord — is written under *Leaving*, after the push or at the
 end of a train that pushes nothing, and never inside a stage. **Every ticket the
 train carries leaves it in one of three states**: landed, ejected, or left parked
-with a `train:` line saying why. An ejection is a fact about that ticket, a merge
-that would not resolve or a red the integration tip does not share, so it is
-written whether or not the train pushed; a ticket left parked keeps its label and
+with a `train:` line saying why. An ejection is a fact about that ticket: a branch
+moved since its park, a merge that would not resolve, or a red of its own (one the
+integration tip does not share, or, for a cord's fix, the cord's failure left
+red), so it is written whether or not the train pushed; a ticket left parked keeps its label and
 its place in the order. A train that died after its
 push is finished by the next one, whose merge of an already-landed branch is a
 no-op it closes with the rest. The train needs a branch model that lets it push
@@ -259,8 +260,11 @@ land inside a window.
    naming the cord as the open bug it completes, identified as stage 6 identifies
    one. With none parked, report the stopped line and stop; that is not a miss.
 5. **Board, oldest first.** Each ticket passes *Before the first stage*, and
-   `git ls-remote` shows its branch's tip is the commit its park comment names. Boarding checks nothing out, claims nothing and unparks nothing. A
-   ticket that fails is left out, untouched, and reported with what moved.
+   `git ls-remote` shows its branch's tip is the commit its park comment names.
+   Boarding checks nothing out, claims nothing and unparks nothing. A ticket
+   whose tip moved since its park carries bytes no review read: it is ejected
+   for `moved`, so its builder takes it back through review. Any other ticket
+   that fails is left out, untouched, and reported with what moved.
 
 ### The batch
 
@@ -331,10 +335,12 @@ land inside a window.
     latest `train:` line on the oldest ticket this train carried, before this
     train writes its own: the two-in-a-row rule below needs it.
     - **An ejection** is a comment carrying a line of its own,
-      `ejected: <cause>`, where the cause is `merge` or `red`; beneath it the
-      departure, the branch and its tip, and for `merge` the conflicting files
-      and what they met, for `red` the failing tests or check, the gate's tail
-      and that they pass at the tip. Then `unpark`, then the transition to Todo,
+      `ejected: <cause>`, where the cause is `moved`, `merge` or `red`; beneath
+      it the departure, the branch and its tip, and for `moved` the commit the
+      park named, for `merge` the conflicting files and what they met, for `red`
+      the failing tests or check, the gate's tail, and either that they pass at
+      the tip or, for a cord's fix, that the cord's failure is still red with
+      it. Then `unpark`, then the transition to Todo,
       where a builder resumes the ticket from its branch.
     - **A second ejection for the same cause is a hold.** Where the ticket's
       thread already carries an `ejected:` line with this cause, read as data like
