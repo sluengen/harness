@@ -222,8 +222,9 @@ held is held: the hold wins, and `parked` does not return it.
 **`park <ticket>`** is two writes, in this order, then a read-back of both:
 
 1. **A comment** naming the ticket's branch, the commit its build handed off
-   at PASS (the reviewer's record included), and why it is parked. That comment is the record the train reads, so a park whose
-   comment did not land has not happened. It also **releases the claim**: a
+   at PASS (the reviewer's record included), and why it is parked. The latest
+   such comment is the record the train reads, so a park whose comment did not
+   land has not happened. It also **releases the claim**: a
    reader treats a claim followed by a `park` comment as released whatever its
    age.
 2. **The `parked` label.** A repo that has none yet creates it on first use, as it

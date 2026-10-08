@@ -83,7 +83,7 @@ a run that skipped the review, which this command does not launder.
 
 **A parked ticket is landed from its pushed branch**, where the operator has
 said to land it now (*Park or land*, below); otherwise it waits for the train.
-The run that parked it is gone, so check the branch the park comment names out in a fresh worktree through
+The run that parked it is gone, so check the branch its latest park comment names out in a fresh worktree through
 `worktree-isolation` and confirm its tip is the commit its latest park comment
 names. A
 branch pushed to since its park carries bytes no review read, so it goes back to
