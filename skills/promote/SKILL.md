@@ -326,7 +326,7 @@ land inside a window.
       green there ejects the ticket for `red`; red there is a red base, as
       above. A window that closes during the fallback stops it there: what
       landed stays landed, what was ejected stays ejected, and the rest are left
-      parked as `missed`. There is no bisection.
+      parked as `partial`. There is no bisection.
 
 ### Leaving
 
@@ -359,7 +359,8 @@ land inside a window.
       waits on an answer, so the label is `operator`, not `input`.
     - **A ticket left parked** gets a comment with a line of its own,
       `train: <departure> <why>`, where the why is `missed` (the window closed
-      before its push), `stopped: <reason>`, or `red base`; beneath it `closes`
+      before its push), `partial` (the window closed during a fallback that
+      landed something), `stopped: <reason>`, or `red base`; beneath it `closes`
       and when the gate started and ended, or that it was not reached.
     - **A red base**: search for or file its P1 per `tracker` → *The andon
       cord*, keyed to the failing test or check. It is not held, because a
@@ -367,8 +368,9 @@ land inside a window.
     - **Two trains in a row that land nothing pull the cord.** Where this train
       landed nothing and left its oldest ticket parked as `missed` or `stopped`,
       and the line read first says the same of the previous train, that ticket
-      has ridden both and neither landed anything. A `red base` line breaks the
-      run: that train stopped for a cord of its own. Search the open queue for an
+      has ridden both and neither landed anything. A `partial` line breaks the
+      run, because that train landed something, and so does a `red base` line,
+      because that train stopped for a cord of its own. Search the open queue for an
       open P1 bug keyed to this surface, `/promote parked`, as `tracker` →
       *The andon cord* keys a search to the surface a failure names, and add
       this evidence to it; or file one at P1 into Todo whatever the count,
