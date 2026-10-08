@@ -165,16 +165,21 @@ end, and they read as two defects to everyone who opens the board afterwards.
 **Starting or resuming a ticket claims it**, the cord and every other ticket
 alike. The claim is a comment written as the ticket is transitioned, saying which
 run holds the work, when it took it, the branch that work is pushed to, and the
-host it runs on, as a line of its own reading `host: <name>` with the name
-`hostname -s` prints there; its
-age is what every later reader acts on, and the branch is where a run that died
-left its commits. **A claim from this host is fresh** when its `host:` line
-equals this run's own `hostname -s`, it is younger than
+host it runs on, as a line of its own reading `host: <name> <boot id>`: the name
+`hostname -s` prints there, then the kernel's boot id, from
+`/proc/sys/kernel/random/boot_id` on Linux or `sysctl -n kern.bootsessionuuid`
+on macOS. A host where neither reads writes `host: <name>` alone. Its age is
+what every later reader acts on, and the branch is where a run that died left its
+commits. **A claim from this host is fresh** when its `host:` line carries a boot
+id and equals the line this run would write, it is younger than
 `loop.cord_claim_minutes`, the ticket is still In Progress or In Review and is
 not held, and no later `park` comment has released it. A hold ends the run that
-wrote the claim, so a held ticket's claim finds nobody live. A host whose name changes per session,
-as a cloud container's does, never matches its predecessor, so this only ever
-finds a run on a machine that persists. A claim older than
+wrote the claim, so a held ticket's claim finds nobody live. The name alone
+cannot tell machines apart: Claude Code's cloud sessions all print `vm`, each on
+its own kernel with its own boot id (three measured, #761), so two of them never
+match, while a machine that persists matches its own earlier runs until a reboot
+ends them. A line with no boot id, written before the boot id was recorded or on
+a host that exposes none, is never fresh from this host. A claim older than
 `loop.cord_claim_minutes` in `harness.yaml` is **stale** — the run that wrote it
 is presumed gone and the work is not. A stale claim on the cord makes the cord
 available again, and the run that takes it names the superseded claim in its own, which is the only thing that

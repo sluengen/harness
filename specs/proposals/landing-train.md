@@ -63,7 +63,7 @@ For calibrate this means: cloud builders as often as wanted, a Mac builder that 
 
 ## Open decisions
 
-Accepted by the operator on 2026-10-08, which settles the first four as this proposal recommends. The fifth is a design question for the build.
+Accepted by the operator on 2026-10-08, which settles the first four as this proposal recommends. The fifth was a design question for the build, and #761's design settled it.
 
 | Decision | Resolution | Recorded in |
 |---|---|---|
@@ -71,7 +71,7 @@ Accepted by the operator on 2026-10-08, which settles the first four as this pro
 | The configuration shape | **The reshaped `cadence:` block is the switch.** It carries only the train's timetable (`timezone`, `anchor`, `pitch`), and declaring it puts the repo on the train; no separate key. This replaces the earlier draft's `landing: train`, which predates the window rule that made the cadence the train's timetable. | `templates/harness.yaml` |
 | Where an ejected ticket goes | **Back to Todo with the reason**, held for the operator on a second ejection for the same cause | `skills/promote/SKILL.md` |
 | Attended `/promote` default | **Park**, with "land it now" as the operator's override | `skills/promote/SKILL.md` |
-| The run identity a claim records for cloud sessions | Open: the architect decides in item 1's design, after reading what the host exposes | `skills/tracker/SKILL.md` |
+| The run identity a claim records for cloud sessions | **The kernel boot id beside the host name**, on the claim's one `host:` line; a line without one never matches (#761) | `skills/tracker/SKILL.md` |
 
 ## Breakdown
 
