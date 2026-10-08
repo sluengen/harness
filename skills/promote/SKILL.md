@@ -225,9 +225,10 @@ ticket keeps its `parked` label while the train runs (`tracker` → *`park` and
 end of a train that pushes nothing, and never inside a stage. **Every ticket the
 train carries leaves it in one of three states**: landed, ejected, or left parked
 with a `train:` line saying why. An ejection is a fact about that ticket: a branch
-moved since its park, a merge that would not resolve, or a red of its own (one the
-integration tip does not share, or, for a cord's fix, the cord's failure left
-red), so it is written whether or not the train pushed; a ticket left parked keeps its label and
+moved since its park, a merge that would not resolve against what lands (step
+13), or a red of its own (one the integration tip does not share, or, for a
+cord's fix, the cord's failure left red), so it is written whether or not the
+train pushed; a ticket left parked keeps its label and
 its place in the order. A train that died after its
 push is finished by the next one, whose merge of an already-landed branch is a
 no-op it closes with the rest. The train needs a branch model that lets it push

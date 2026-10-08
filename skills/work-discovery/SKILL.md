@@ -43,6 +43,7 @@ An answer that cannot show both anchors stops the tick exactly as an unreadable 
 A cord another run is already repairing stops the line for this one exactly as an unrepaired cord does. What it does not need is a second repair: one measured downstream cost two branches, two reviews and two landing gates for a single defect, because the ticket sat In Review and unassigned and nothing on the board said a run held it. Read the claim through `tracker`, which owns what a claim is and when one goes stale; `harness.yaml` owns the number, and neither is restated here.
 
 - **A live claim.** Report the stopped line and return no pick. This is the one case where the cord is not this run's to start.
+- **A parked cord.** Its fix is reviewed and waits for the landing train, which boards the cord's fix ahead of everything else, so the cord is the train's to land and not this run's to rebuild: report the stopped line, the park's age and its branch, and return no pick, as for a live claim. The park comment released the claim, so without this case a tick would read the cord as unclaimed and start a second repair.
 - **A stale claim.** The run that wrote it is gone and the defect is not, so the cord is this run's like any other pick — judged for actionability below, and handed on with the stale claim named, so the record shows a handover rather than a duplicate.
 - **No claim.** The cord is the pick, and the rest of this section is unchanged.
 
