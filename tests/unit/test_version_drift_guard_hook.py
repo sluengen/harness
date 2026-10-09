@@ -119,7 +119,10 @@ def _published(version: str) -> bytes:
 
 
 def _run(
-    root: Path, url: str, payload: object | None = None
+    root: Path,
+    url: str,
+    payload: object | None = None,
+    env: dict[str, str] | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], float]:
     stdin = json.dumps(
         payload
@@ -134,7 +137,7 @@ def _run(
         capture_output=True,
         timeout=30,
         cwd=root,
-        env={"PATH": "/usr/bin:/bin:/usr/local/bin", URL_VAR: url},
+        env={"PATH": "/usr/bin:/bin:/usr/local/bin", URL_VAR: url, **(env or {})},
     )
     return proc, time.monotonic() - started
 
@@ -274,6 +277,75 @@ def test_a_codex_session_hears_nothing_when_there_is_nothing_to_say(
     )
     assert proc.returncode == 0, proc.stderr
     assert proc.stdout == ""
+
+
+# --- #767: a session whose only egress is a declared proxy reads through it ----
+#
+# Node's ``fetch`` ignores the proxy variables (measured on v24.19.0, #767), so a
+# cloud container that reaches the internet only through its declared proxy read
+# nothing and the hook stayed silent. The published URL here is on a host that
+# never resolves, so the read succeeds only if it went through the proxy.
+
+UNRESOLVABLE_URL = "http://harness-drift.invalid/.claude-plugin/plugin.json"
+
+
+def _proxy_base(server: _Server) -> str:
+    return f"http://127.0.0.1:{server.httpd.server_address[1]}"
+
+
+@pytest.mark.parametrize("variable", ["http_proxy", "HTTP_PROXY", "all_proxy"])
+def test_a_declared_proxy_carries_the_published_read(
+    variable: str, tmp_path: Path, serve
+) -> None:
+    proxy = serve(_published("27.0.0"))
+    proc, _ = _run(
+        _plugin_root(tmp_path, "26.1.0"),
+        UNRESOLVABLE_URL,
+        env={variable: _proxy_base(proxy)},
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert proxy.hits == 1, f"the read never reached the declared proxy: {proc.stderr!r}"
+    context = _context(proc.stdout)
+    assert "26.1.0" in context and "27.0.0" in context, proc.stdout
+
+
+def test_a_proxy_that_never_answers_is_cut_off_by_the_timeout(tmp_path: Path, serve) -> None:
+    proxy = serve(None)
+    proc, elapsed = _run(
+        _plugin_root(tmp_path, "1.0.0"),
+        UNRESOLVABLE_URL,
+        env={"http_proxy": _proxy_base(proxy)},
+    )
+    _assert_quiet(proc)
+    assert proxy.hits == 1
+    assert elapsed < TIMEOUT_BOUND_S, (
+        f"the hook took {elapsed:.1f}s against a silent proxy; session start waits on it"
+    )
+
+
+def test_an_unreachable_proxy_is_quiet_and_says_why_on_stderr(tmp_path: Path) -> None:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    proc, _ = _run(
+        _plugin_root(tmp_path, "1.0.0"),
+        UNRESOLVABLE_URL,
+        env={"http_proxy": f"http://127.0.0.1:{port}"},
+    )
+    _assert_quiet(proc)
+    assert "VERSION-DRIFT-GUARD" in proc.stderr, (
+        f"a failed published read left no trace for the operator: {proc.stderr!r}"
+    )
+
+
+def test_no_proxy_declared_reads_direct_and_never_touches_a_proxy(
+    tmp_path: Path, serve
+) -> None:
+    """The control: without a proxy variable the read is the direct one it always was."""
+    server = serve(_published("2.0.0"))
+    proc, _ = _run(_plugin_root(tmp_path, "1.0.0"), server.url)
+    assert "1.0.0" in _context(proc.stdout), proc.stdout
+    assert server.hits == 1
 
 
 # --- AC-4: registered under SessionStart --------------------------------------
