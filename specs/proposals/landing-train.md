@@ -1,13 +1,16 @@
 ---
 proposal: landing-train
-status: accepted
+status: shipped          # draft | under-decision | accepted | shipped | rejected | split | superseded
 date: 2026-10-08
+shipped: 2026-10-09
 related: [specs/decisions/0024-landing-train.md, specs/decisions/0023-takt-landing-windows.md, specs/proposals/takt-landing-windows.md, skills/routine/SKILL.md, skills/promote/SKILL.md, skills/tracker/SKILL.md, skills/work-discovery/SKILL.md]
 ---
 
 # Proposal: landing train
 
 > Split the unattended loop into builders that never land and one train that lands everything, so landings cannot collide by construction, builders scale independently, and every landing runs in the cloud.
+
+> **Shipped 2026-10-09.** Every change spec this proposal spawned has landed on the integration branch: #761, #762, #763, audited against ADR 0024 on the umbrella #760. The as-built records in `specs/features/plugin-surface.md` are the canonical account of what each delivered; this file is the record of the decision, not of the behaviour. Three things below did not ship as written: the native-code ejection (ADR 0024's 2026-10-08 amendment dropped it, so the *How it works* clause and the *Native changes at landing* risk are history), attended parking with no `cadence:` (parking applies only under one), and the cord, which fires on two trains in a row that land nothing for any reason, not only on two missed windows. Two checks no build could carry remain the operator's: #761's scenario 2, that two runs on one Mac between reboots write identical `host:` lines (the macOS boot-id source is unmeasured), and a first real train in a consumer that declares a `cadence:`, since neither the train nor its fallback has run in use. Everything below describes the tree as it was on 2026-10-08 and is history.
 
 ## Problem / motivation
 

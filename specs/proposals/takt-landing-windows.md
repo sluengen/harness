@@ -10,7 +10,7 @@ related: [specs/decisions/0023-takt-landing-windows.md, skills/routine/SKILL.md,
 
 > Run the unattended loop on a fixed cadence and give each tick, and the operator, its own window on the integration branch, so that two or more runners can work one queue without landing over each other.
 
-> **Superseded in part 2026-10-09 by [ADR 0024](../decisions/0024-landing-train.md).** The landing windows, the attended reserve, the in-place wait and the parked limit are retired; the `parked` condition and the cadence's anchor and pitch stand, now the landing train's timetable.
+> **Superseded in part 2026-10-09 by [ADR 0024](../decisions/0024-landing-train.md).** The landing windows, the attended reserve, the in-place wait and the parked limit are retired; the `parked` condition and the cadence's anchor and pitch stand, now the landing train's timetable. The Mac `sleep` probe the banner below names is no longer owed, because the wait it would test is retired.
 
 > **Shipped 2026-10-07.** Every change spec this proposal spawned has landed on the integration branch: #756, #757, #758, audited against ADR 0023 on the umbrella #755. The as-built records in `specs/features/plugin-surface.md` are the canonical account of what each delivered; this file is the record of the decision, not of the behaviour. Two checks no build could carry remain the operator's: #758's AC-5, a no-cadence `/routine` tick in a consumer once 26.3.0 is released, and a probe that the Mac runner wakes from a background `sleep`, since ADR 0023's probe covered the cloud runner only. Everything below describes the tree as it was on 2026-10-07 and is history.
 
