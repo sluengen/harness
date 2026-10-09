@@ -204,8 +204,9 @@ function render(fmt, ms) {
 
 function answer(cadence, run, now, fired) {
   const fmt = formatter(cadence.zone);
-  // A pitch divides a day, so the slot and the next fire both lie within a day
-  // and a daylight-saving hour of `fired`, and `fired` is never later than now.
+  // A pitch divides a day, so the slot and the next fire both lie within two
+  // days of `fired` (a daily pitch whose fire a spring-forward skips leaves a
+  // window of about 47 hours), and `fired` is never later than now.
   const grid = fires(cadence, fmt, fired - 2 * DAY, now + 2 * DAY);
   const at = (ms) => render(fmt, ms);
   const slot = grid.filter((fire) => fire <= fired).pop();
