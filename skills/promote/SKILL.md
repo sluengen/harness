@@ -317,9 +317,10 @@ land inside a window.
       ticket not yet landed or ejected is left parked as `red base`, and the
       train goes to *Leaving*, which files or extends its P1.
     - **Green at the tip:** fall back. Land the boarded tickets that step 7 did
-      not eject one at a time, oldest first, each in the train's worktree reset
-      to the integration tip as it now stands (`git reset --hard` to the fetched
-      tip before each): merge that ticket's branch (a merge that will not
+      not eject one at a time, oldest first, each in the train's worktree moved
+      to the integration tip as it now stands (fetch, then
+      `git checkout -B train-<stamp> <remote>/<integration>` before each; both
+      hosts' settings forbid `git reset --hard`): merge that ticket's branch (a merge that will not
       resolve ejects it for `merge`), raise the version, gate, and on green
       stage 4, the window and the push, where a refused push gets step 10's one
       retry and a second refusal stops the fallback, every ticket not yet
