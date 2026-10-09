@@ -15,6 +15,7 @@ A design is an artifact, not code. It answers *what* and *why* clearly enough th
 - Data model — entities, fields, relationships, invariants.
 - Test strategy — what to test, the key edge cases, the integration points. An implementer should be able to write a failing test from this alone.
 - Security considerations — validation at each boundary, the trust model, what data is exposed to whom.
+- End states, before any scenario, for a loop that writes state other runs read — a ticket's status, a label, a claim, a comment. For each entity the loop touches, name every state a run can leave it in and the owner of each fact on it: who writes it and who may clear it. Then write the scenarios against that table. Specified scenario by scenario, such a loop surfaces one missed edge per review round; #762's landing train took ten use-probe rounds, and they stopped finding edges only once its end states and the train's own outcome were named.
 - The decisions behind it, recorded in the spec they govern.
 
 Prefer simple, proven patterns over clever ones. Design for the current scope; leave room to extend, but do not build the extension (`engineering`: no speculation).
