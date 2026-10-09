@@ -396,10 +396,12 @@ function declaredPaths(top, onUnreadable) {
   return readMap(top, "paths", onUnreadable);
 }
 
-/** The ``cadence:`` map the repo at ``top`` declares, with its dotted keys raw.
+/** The ``cadence:`` map the repo at ``top`` declares, every key raw.
  *
- * Read by ``scripts/landing-window.js`` (ADR 0023, #756), which validates the
- * values; this returns strings and judges none of them. **It reads
+ * Read by ``scripts/landing-window.js`` as the landing train's timetable
+ * (ADR 0024; #756 added it under ADR 0023), which validates ``timezone``,
+ * ``anchor`` and ``pitch`` and ignores any other key; this returns strings and
+ * judges none of them. **It reads
  * ``harness.yaml`` alone.** The markdown spines are read behind it only for
  * repos that have not migrated, and no such repo has ever declared a cadence,
  * while a fenced ``yaml`` block in a spine *is* configuration to this reader: a

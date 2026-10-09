@@ -37,19 +37,15 @@ queue:
   # Optional per-project override, one flat key per project:
   # projects.{project name}.wip_limit: 8
 # cadence:
-#   # Optional (ADR 0023). Declare it only where scheduled ticks share the
-#   # integration branch; absent, every run lands when it is ready. Each tick
-#   # owns a routine landing window and attended work owns a reserve, both in
-#   # minutes after the tick's scheduled fire. `scripts/landing-window.js`
-#   # answers whether a run may land now. Every value is a scalar.
-#   timezone: UTC          # the IANA zone every scheduler here fires in
-#   anchor: "00:57"        # any one fire time, HH:MM in that zone; keep the quotes
-#   pitch: 120             # minutes between fires; must divide 1440
-#   attended.open: 15      # the attended reserve
-#   attended.close: 45
-#   routine.open: 45       # the window the tick that fired lands in
-#   routine.close: 135     # may run past the next fire, never longer than the pitch
-#   parked_limit: 1        # a tick builds nothing while more than this are parked
+#   # Optional (ADR 0024): the landing train's timetable. A train departs at
+#   # every fire, and its window runs to the next one. Declaring the block puts
+#   # the repo on the train, so builders park at PASS and the train lands them;
+#   # absent, every run lands when it is ready. `scripts/landing-window.js`
+#   # answers whether a train's window is still open. Every value is a scalar,
+#   # and a key beyond these three is ignored.
+#   timezone: UTC          # the IANA zone the train's scheduler fires in
+#   anchor: "00:57"        # any one departure, HH:MM in that zone; keep the quotes
+#   pitch: 120             # minutes between departures; must divide 1440
 layers:
   design_system: false
   feature_specs: true

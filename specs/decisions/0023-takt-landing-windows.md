@@ -1,6 +1,8 @@
 # ADR 0023 — The unattended loop may run on a takt, with landing windows on the integration branch
 
-- **Status:** Accepted
+> **Superseded in part 2026-10-09 by [ADR 0024](0024-landing-train.md).** Decision 1's routine windows and attended reserve, decision 4's warning outside the reserve, and decision 5's in-place wait are retired: builders park at PASS, and one train lands everything parked inside a window that runs from its departure to the next. Decision 2's parked limit goes with them: every builder now parks, so a limit would stop them all between trains, against ADR 0024's consequence that builders scale with the queue. What stands: the optional `cadence:` block, reduced to `timezone`, `anchor` and `pitch` and now the train's timetable; the grid it defines, daylight-saving rule included; the `parked` condition, now a reviewed ticket waiting for the train, with `park`, `parked` and land-parked-first; and decision 3's claim, which records a run identity rather than a host name (ADR 0024 decision 5). The sections below record the windows as decided on 2026-10-07.
+
+- **Status:** Accepted; superseded in part 2026-10-09 by ADR [0024](0024-landing-train.md)
 - **Date:** 2026-10-07
 - **Source:** accepted proposal [`takt-landing-windows`](../proposals/takt-landing-windows.md)
 
