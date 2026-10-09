@@ -10,8 +10,10 @@
  * behind, tells the session both versions and the remedy.
  *
  * Advisory only — never blocks. Every failure to read either version is an
- * answer, not a fault: the hook says nothing and lets the session start. The
- * published read is bounded by FETCH_TIMEOUT_MS, because session start waits on it.
+ * answer, not a fault: the hook says nothing to the session and lets it start,
+ * leaving a fail-open line on stderr where the published read failed. The read is
+ * bounded by FETCH_TIMEOUT_MS, because session start waits on it, and goes through
+ * the environment's declared proxy where there is one (#767).
  *
  * HARNESS_PUBLISHED_MANIFEST_URL overrides where the published manifest is read
  * from — the test seam, and how a fork points the check at itself.
@@ -67,15 +69,71 @@ function loadedVersion(fs, path) {
   catch { return null; }
 }
 
-/** The published version, or null on any failure within the timeout. */
-async function publishedVersion(url) {
-  if (typeof fetch !== "function") return null;
+/**
+ * The proxy the environment declares for `url`'s scheme, or null.
+ *
+ * Node's `fetch` ignores these variables (measured on v24.19.0, #767), so a
+ * container whose only egress is its declared proxy cannot read the published
+ * manifest through it, and the hook stayed silent in exactly the cloud sessions
+ * it exists to warn.
+ */
+function declaredProxy(url) {
+  let scheme;
+  try { scheme = new URL(url).protocol.slice(0, -1); }
+  catch { return null; }
+  const env = process.env;
+  return env[`${scheme}_proxy`] || env[`${scheme.toUpperCase()}_PROXY`] ||
+    env.all_proxy || env.ALL_PROXY || null;
+}
+
+/**
+ * Read through `curl`, which honours the proxy and `no_proxy` natively, under the
+ * same bound. Resolves to the body, null on a failed read, or `undefined` when
+ * there is no `curl` to run, so the caller can fall back to `fetch`.
+ */
+function curlBody(url, proxy) {
+  return new Promise((resolve) => {
+    const seconds = String(FETCH_TIMEOUT_MS / 1000);
+    require("child_process").execFile(
+      "curl",
+      ["--silent", "--show-error", "--fail", "--max-time", seconds, "--proxy", proxy, url],
+      { timeout: FETCH_TIMEOUT_MS + 500, encoding: "utf8" },
+      (err, stdout, stderr) => {
+        if (err && err.code === "ENOENT") return resolve(undefined);
+        // curl's own message, never `err.message`: that repeats the command line,
+        // and a proxy URL can carry credentials.
+        if (err) {
+          failOpen("could not read the published version through the declared proxy",
+            String(stderr || "").trim() || `curl exited ${err.code}`);
+          return resolve(null);
+        }
+        resolve(stdout);
+      }
+    );
+  });
+}
+
+async function fetchBody(url) {
+  if (typeof fetch !== "function") { failOpen("could not read the published version", "no fetch"); return null; }
   try {
     const response = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
-    if (!response.ok) return null;
-    return JSON.parse(await response.text()).version;
+    if (!response.ok) { failOpen("could not read the published version", `HTTP ${response.status}`); return null; }
+    return await response.text();
   }
-  catch { return null; }
+  catch (err) { failOpen("could not read the published version", err); return null; }
+}
+
+/**
+ * The published version, or null on any failure within the timeout. A failure
+ * leaves one fail-open line on stderr, so a silent session is diagnosable.
+ */
+async function publishedVersion(url) {
+  const proxy = declaredProxy(url);
+  let body = proxy ? await curlBody(url, proxy) : undefined;
+  if (body === undefined) body = await fetchBody(url);
+  if (body === null) return null;
+  try { return JSON.parse(body).version; }
+  catch (err) { failOpen("the published manifest is not JSON", err); return null; }
 }
 
 async function main() {
