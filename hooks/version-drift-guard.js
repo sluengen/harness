@@ -11,7 +11,7 @@
  *
  * Advisory only — never blocks. Every failure to read either version is an
  * answer, not a fault: the hook says nothing to the session and lets it start,
- * leaving a fail-open line on stderr where the published read failed. The read is
+ * leaving a fail-open line on stderr where a proxied published read failed. The read is
  * bounded by FETCH_TIMEOUT_MS, because session start waits on it, and goes through
  * the environment's declared proxy where there is one (#767).
  *
@@ -114,18 +114,18 @@ function curlBody(url, proxy) {
 }
 
 async function fetchBody(url) {
-  if (typeof fetch !== "function") { failOpen("could not read the published version", "no fetch"); return null; }
+  if (typeof fetch !== "function") return null;
   try {
     const response = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
-    if (!response.ok) { failOpen("could not read the published version", `HTTP ${response.status}`); return null; }
-    return await response.text();
+    return response.ok ? await response.text() : null;
   }
-  catch (err) { failOpen("could not read the published version", err); return null; }
+  catch { return null; }
 }
 
 /**
- * The published version, or null on any failure within the timeout. A failure
- * leaves one fail-open line on stderr, so a silent session is diagnosable.
+ * The published version, or null on any failure within the timeout. A failed
+ * read through a declared proxy leaves one fail-open line on stderr, since that
+ * silence is the one #767 could not diagnose; the direct read stays silent.
  */
 async function publishedVersion(url) {
   const proxy = declaredProxy(url);
@@ -133,7 +133,7 @@ async function publishedVersion(url) {
   if (body === undefined) body = await fetchBody(url);
   if (body === null) return null;
   try { return JSON.parse(body).version; }
-  catch (err) { failOpen("the published manifest is not JSON", err); return null; }
+  catch { return null; }
 }
 
 async function main() {
