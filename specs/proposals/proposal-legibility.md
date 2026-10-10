@@ -11,7 +11,7 @@ related: []
 
 ## In brief
 
-**So what.** A proposal is an agent's case for a change, written before anything is built. Proposal pages are hard to decide from unless you were in the conversation that made them. They open on how the change works, leave terms undefined, and show hand-drawn app screens. This gives every proposal an opening a newcomer can decide from in two minutes, and makes app screens real captures with only the proposed change drawn in.
+**So what.** A proposal is an agent's case for a change, written before anything is built. Proposal pages are hard to decide from unless you were in the conversation that made them. They open on how the change works, leave terms undefined, and show hand-drawn app screens. This gives every proposal an opening a newcomer can decide from in two minutes, and makes app screens real screenshots of today's app and of the built change.
 
 **What changes.**
 
@@ -19,14 +19,10 @@ related: []
 |---|---|
 | Opens on the problem, written for insiders | Opens with so what, what changes, what we need |
 | Answers appear without their questions | Each answer sits beside its question |
-| Hand-drawn app screens | Captures of today's app, with the change marked |
+| Hand-drawn app screens | Screenshots of today's app beside the change built and screenshotted |
 | No check that a newcomer can follow it | A fresh agent must state its point from the page alone |
 
-**What we need from you.** Approve as written, or change an open decision:
-
-- Does the cold-read check run on every proposal? Recommended: yes.
-- What if the host can't capture the app? Recommended: say so at the start and mark the screen *capture owed*.
-- How is the "after" screen made? Recommended: edit the real capture.
+**What we need from you.** Approve as written. Three earlier questions are answered under *Settled already*: an agent checks each page reads clearly first; where the app can't be screenshotted, the screens are taken before any screen work starts; and the "after" screen is built for real and screenshotted, never drawn.
 
 ## Settled already
 
@@ -36,6 +32,9 @@ related: []
 | Does the page open with a summary? | Yes. It opens with an executive summary that gives the "so what" of the change. | Operator, in the request, 10 Oct |
 | What may an app screen show? | Only today's app plus the proposed change. Nothing guessed or restyled. | Operator, in the request, 10 Oct |
 | How is the template tested? | This proposal is written in it, file and page both. | Operator, in the request, 10 Oct |
+| Does the cold-read check run on every proposal? | Yes. | Operator, 10 Oct |
+| What does a run do on a host that can't capture a screen the proposal changes? | It drafts everything it can. Then either it hands off to a session that can capture, or, once accepted, the first ticket is held for the operator to capture and lock in the screens before any screen work starts. | Operator, 10 Oct |
+| How is the "after" screen made? | The way Calibrate does it: the change is built on a throwaway branch from the app's own components, and that branch and today's app are screenshotted the same way. The operator's answer was "edit the capture (whatever Calibrate currently does)", and Calibrate builds rather than edits, so building is recorded. | Operator, 10 Oct; reading confirmed against Calibrate's *Screen Hierarchy Captures* page |
 
 ## Why
 
@@ -48,7 +47,7 @@ The person deciding is often not the person who asked. A team member, Barry, rep
 
 The template doesn't prevent any of this. Its only summary is one sentence, "what is being proposed and why it is worth a decision", and every section after it is written for the agents who will file and build the work. The page is a free restyle of the file, so its quality depends on the session that made it.
 
-**App screens are redrawn instead of captured.** *Screen Hierarchy Revamp* draws nine phone screens in hand-written HTML and CSS. Its source labels the coffee artwork as "art stand-ins" and a country map as an "approximate outline … for the mock only". Three days later a separate page, *Screen Hierarchy Captures* (9 Oct), showed about 60 real before-and-after screen images of the same app. Calibrate, the coffee app those screens belong to, has twelve `.mockup.html` files in `specs/proposals/`. It also already has two documented ways to screenshot its own app, both in its `design/AGENTS.md` → *Visual evidence*. **Route A** uses Expo Web and Playwright and runs on any host, including a cloud container. **Route B** uses the iOS simulator and needs a Mac. Calibrate uses them only for build evidence, and no rule points a proposal at them. Route A doesn't render the iOS 26 glass material or native tab bars, so a cloud session can capture most screens but not chrome changes. This is the case the operator raised: launching on a Mac avoids it, but only if the run says early that it needs one.
+**App screens are redrawn instead of captured.** *Screen Hierarchy Revamp* draws nine phone screens in hand-written HTML and CSS. Its source labels the coffee artwork as "art stand-ins" and a country map as an "approximate outline … for the mock only". The same day, a separate page, *Screen Hierarchy Captures*, built those screens on a throwaway branch from the app's own components and screenshotted them beside today's screens on the iOS simulator: about 60 images. It lists what the hand-drawn version got wrong. The mock invented fields a brewer doesn't record ("Brand, Model, Material"), drew a chip selection style the app's chip doesn't have, and couldn't show that the Passport toggle snaps instead of sliding. Calibrate, the coffee app those screens belong to, has twelve `.mockup.html` files in `specs/proposals/`. It also already has two documented ways to screenshot its own app, both in its `design/AGENTS.md` → *Visual evidence*. **Route A** uses Expo Web and Playwright and runs on any host, including a cloud container. **Route B** uses the iOS simulator and needs a Mac. Calibrate's rules point only builds at them. The captures page was one session's own initiative, and no rule asks a proposal for it. Route A doesn't render the iOS 26 glass material or native tab bars, so a cloud session can capture most screens but not chrome changes. This is the case the operator raised: launching on a Mac avoids it, but only if the run says early that it needs one.
 
 If nothing changes, every decision costs a second round: the reader asks what the page meant, or decides against a screen that isn't the app.
 
@@ -63,7 +62,7 @@ If nothing changes, every decision costs a second round: the reader asks what th
 
 **For app screens**
 
-- **V1. Capture first, label everything** *(recommended)*. A screen that exists is shown from a capture taken by the repo's own screenshot route. The "after" changes only the proposed part. Every screen carries one of three labels: *Captured*, *Captured, edited* or *Sketch*. A host that can't capture says so at the start of the run.
+- **V1. Capture first, label everything** *(recommended)*. A screen that exists is shown from a capture taken by the repo's own screenshot route. The "after" is the change built on a throwaway branch and captured the same way. Every screen carries one of three labels: *Captured*, *Spike capture* or *Sketch, not the app*. A host that can't capture says so at the start of the run.
 - **V2. No screens in proposals.** This removes guessed screens, and also removes what a picture is for.
 - **V3. UI proposals must run on a Mac.** This is the operator's choice per session and the harness can't enforce it. Route A covers most screens from the cloud anyway.
 
@@ -77,7 +76,9 @@ If nothing changes, every decision costs a second round: the reader asks what th
 4. **For the builder** sits at the end and holds the grounding: anchors, file paths, ticket numbers and tree facts. The decider may skip it, and the agents who file the tickets start there.
 5. **The page contract.** The page renders the file's sections in the file's order and adds nothing the file doesn't say. *For the builder* is collapsed or left as a link to the file. Before hand-over, the author gives a fresh agent the page and nothing else, and asks it for the so-what, the change and the decision asked. If the answer differs from the brief, the author fixes the page.
 
-**For screens:** a screen that exists starts from a capture taken through the repo's own visual-evidence route. That route is the *Visual evidence* section of the repo's `.claude/rules/design-system.md`, which the harness seeds. The page names the commit the capture was taken at. The "after" is that capture with the changed region edited in and outlined. A sketch is labelled *Sketch, not the app* and never stands in for a screen that exists. `/propose` checks at the start whether the proposal touches a user-facing surface and whether this host can take the capture it needs. If it can't, the run says so before drafting, so the operator can relaunch somewhere that can. The run then carries on, and the page shows *Capture owed: {screen}, needs {route}* where the screen would be.
+**For screens:** a screen that exists starts from a capture taken through the repo's own visual-evidence route. That route is the *Visual evidence* section of the repo's `.claude/rules/design-system.md`, which the harness seeds. The "after" is the change built on a throwaway branch from the app's own components and captured through the same route, as Calibrate did for *Screen Hierarchy Captures*. The branch is never merged. Each capture names the commit or bundle it came from. A sketch is labelled *Sketch, not the app* and never stands in for a screen that exists.
+
+`/propose` checks at the start whether the proposal touches a user-facing surface and whether this host can take the capture it needs. If it can't, the run says so before drafting and drafts everything it can, with *Capture owed: {screen}, needs {route}* where each screen would be. Then one of two things happens. The run hands off to a session that can capture, naming the screens and the route. Or, if the proposal is accepted with captures still owed, `/propose` step 4 files a first ticket held for the operator (the `operator` hold) to capture and lock in the screens, and every ticket that changes a screen depends on it.
 
 ### Visuals
 
@@ -99,7 +100,7 @@ Options                            Settled already  (question → answer)
 Recommendation                     Why
 Not doing                          Options
 Open decisions                     Recommendation
-Breakdown                            └ Visuals  (Captured / Captured, edited / Sketch)
+Breakdown                            └ Visuals  (Captured / Spike capture / Sketch)
 Risks                              Not doing
                                    Open decisions  (options + recommended answer)
 (page: any order the session       Breakdown · Risks
@@ -118,22 +119,18 @@ Risks                              Not doing
 
 ## Open decisions
 
-| Decision | Options | Recommended | Who decides |
-|---|---|---|---|
-| Does the cold-read check run on every proposal? | Every proposal · only proposals that show screens · never | Every proposal. It is one fresh-agent call of about a minute, and it is the only check that runs before a person reads the page. | Operator |
-| What does a run do on a host that can't capture a screen the proposal changes? | Say so at the start and keep drafting, with *capture owed* on the page · stop until relaunched on a capable host · draw a labelled sketch | Say so and keep drafting. The text still gets decided, and screen-level decisions wait for the capture. | Operator |
-| How is the "after" screen made? | The real capture with the change edited in and outlined · build the change on a throwaway branch and capture it · either, at the author's choice | Edit the real capture. Building first spends build time before the decision. Use a throwaway branch only when the operator asks for it. | Operator |
+None. The three that were open were answered on 10 Oct and are listed under *Settled already*.
 
 ## Breakdown
 
 1. **Proposal template and page contract.** Add *In brief*, *Settled already*, *Visuals*, *For the builder* and the page contract to `templates/proposal.md`. Bring `authoring` → *Proposal spec*'s section list into line with it. In `/propose`, step 3 renders by the contract and runs the cold-read check. · `assurance:simple` · separable
-2. **Screens from captures.** In `/propose`, step 1 checks whether the proposal touches a user-facing surface and whether this host can capture it, and the template's *Visuals* section gets the provenance rules. · `assurance:simple` · sequential with 1: the same three files, done by one builder in one sitting, so both items file as one ticket
+2. **Screens from captures.** In `/propose`, step 1 checks whether the proposal touches a user-facing surface and whether this host can capture it. Step 3 hands off when it can't, and step 4 files the operator-held capture ticket first when captures are still owed at acceptance. The template's *Visuals* section gets the spike-capture and provenance rules. · `assurance:simple` · sequential with 1: the same files, done by one builder in one sitting, so both items file as one ticket
 
 ## Risks
 
 - **A short brief can hide a caveat.** A decider who reads only the top may miss a risk that would change the answer. Mitigation: *What we need from you* names any risk that bears on the decision asked.
 - **The cold read shares the author's vocabulary.** An agent can pass a page that a person still finds unclear. The real test is a person. Barry reading this page cold is the acceptance check for the shape.
-- **Capturing costs time on a cold host.** Route A installs Playwright and a browser on first use. That is minutes against a decision round, which is the trade this proposal makes.
+- **A spike spends build time before the decision.** Building the screens on a throwaway branch costs part of a build run for a proposal that may be rejected. Calibrate paid that once and found five things the hand-drawn version got wrong, one of them invented fields. On a cold host, Route A also installs Playwright and a browser on first use.
 - **The word budget is measured from one example.** This proposal's first brief was 410 words. It came down to 294 without losing a decision, but not to the 250 first proposed, so the budget is 300. Revisit it after five proposals.
 - **The template grows.** It gains four sections and loses the one-line summary. Each new section answers a failure shown above, and *Settled already* is omitted when nothing was settled.
 
@@ -200,7 +197,7 @@ The direction, and why it beats the others.
 
 ### Visuals
 
-Required when the proposal changes something a user sees, and omitted otherwise. A screen that exists starts from a capture taken through the repo's visual-evidence route, at a named commit. The "after" changes only what this proposal changes. Label every screen: *Captured*, *Captured, edited* (with the edit outlined) or *Sketch, not the app*. Where this host cannot capture a screen, write *Capture owed: {screen}, needs {route}* in its place. Diagrams and charts are not screens and need no label.
+Required when the proposal changes something a user sees, and omitted otherwise. A screen that exists starts from a capture taken through the repo's visual-evidence route, at a named commit. The "after" is the change built on a throwaway branch and captured the same way. Label every screen: *Captured*, *Spike capture* or *Sketch, not the app*. Where this host cannot capture a screen, write *Capture owed: {screen}, needs {route}* in its place, and hand off or file the operator capture ticket first. Diagrams and charts are not screens and need no label.
 
 ## Not doing
 
