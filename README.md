@@ -28,8 +28,9 @@ process:
    the reviewer — never the builder — writes the as-built record.
 4. **Land.** `/promote` rebases onto the integration branch, runs the gate again
    over the exact tree that will land unless the reviewer already gated it,
-   pushes, and closes the ticket. The same
-   command moves completed work along the repo's release branches.
+   pushes, and closes the ticket — or, where the repo runs a landing train,
+   parks the branch for it (below). The same command moves completed work along
+   the repo's release branches.
 5. **Improve.** Every build ends with a short reflection that files what should
    change to an improvement ledger. `/assess` runs periodic health checks;
    `/drain` clears the ledger and anything held for you.
@@ -38,6 +39,30 @@ process:
 queue, builds it, and lands it — and holds the ticket for you rather than push
 past a red gate, a review that will not converge, or a decision only a person can
 make.
+
+### Landing on a cadence
+
+By default every run lands its own ticket as soon as it is reviewed. A repo with
+several builders sharing one integration branch can instead declare a
+`cadence:` block in `harness.yaml` — a timezone, an anchor time and a pitch in
+minutes — and put landing on a timetable (ADR 0024):
+
+- **Builders park.** `/routine` and an attended `/promote` stop at PASS: the
+  ticket stays In Review with its branch pushed and a `parked` label, and still
+  counts against the WIP limit. The operator can still land one directly.
+- **One train lands.** `/routine train`, scheduled on the cadence, runs
+  `/promote parked`: it merges everything parked oldest first, gates the batch
+  once and pushes once. Each train owns the interval to the next departure and
+  pushes only inside it; `scripts/landing-window.js` answers whether that window
+  is still open.
+- **The train repairs only mechanically.** A merge it cannot reconcile ejects
+  that ticket back to Todo with the reason; a red batch falls back to one ticket
+  at a time, ejecting the first that goes red. A train that misses its window
+  lands nothing and leaves the batch parked. A second ejection for the same
+  cause holds the ticket for you, and two trains in a row that land nothing pull
+  the andon cord.
+
+With no `cadence:` declared none of this applies, and nothing parks.
 
 A small fix skips the ticket. Ask for it and it gets the same worktree and the
 same gate.
@@ -89,8 +114,8 @@ none` the process degrades to specs and session reports.
 | `capture` | File an already-decided change straight onto the queue |
 | `propose` | Work an idea to a decision before build time is spent; accepted proposals spawn tickets |
 | `review` | Review a branch that needs only the review stage |
-| `routine` | One unattended discover → build → land cycle |
-| `promote` | Land a reviewed branch, or move completed work toward release |
+| `routine` | One unattended discover → build → land cycle, or build → park on a cadence; `routine train` is the landing train |
+| `promote` | Land a reviewed branch or park it for the train; `promote parked` lands everything parked as one batch; also moves completed work toward release |
 | `drain` | Clear what has accumulated for you: held tickets, then the improvement ledger |
 | `assess` | Periodic whole-system health assessment — `code`, `architecture` or `process` |
 | `hydrate` | Bring a repo into the process, first time or after a plugin update |
@@ -169,7 +194,8 @@ uv sync --extra dev          # the dev toolchain (needs uv)
 bash scripts/verify.sh       # the gate (also needs node and jq)
 ```
 
-Work lands on `dev`. A nightly job promotes `dev` to `main` only when the gate
+Work lands on `dev`, and with no `cadence:` declared each run lands as soon as
+it is reviewed. A nightly job promotes `dev` to `main` only when the gate
 is green on the exact candidate, and what lands on `main` is exactly the tree
 that was gated (`specs/infrastructure.md`).
 
@@ -187,6 +213,8 @@ ones that set the current shape:
   writing it
 - **ADR 0022** — the plugin is the whole deliverable, and the repo's declared
   gate is the assurance
+- **ADR 0024** — on a cadence, builders park at PASS and one scheduled train
+  lands everything parked as one batch
 
 What each component assumes the model cannot do, and the test that would retire
 it, is in [`specs/harness-assumptions.md`](./specs/harness-assumptions.md).
