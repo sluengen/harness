@@ -230,7 +230,7 @@
     </p>
     <figure class="flow">
       <div class="flow__scroll">
-        <svg viewBox="0 0 1200 440" role="img" aria-label="One ticket's path through the process. The ticket branch is cut from dev. The spec is grounded, tests are written red and locked, and the build turns them green. The branch is rebased on dev and an independent reviewer runs the gate: FAIL sends findings back to the build, DEFER holds the ticket for a person, and PASS pushes the branch. Promote rebases again, gates again unless nothing has moved since the review, and pushes to dev. A nightly release hop gates dev again before it reaches main. Routine runs build and promote unattended.">
+        <svg viewBox="0 0 1200 440" role="img" aria-label="One ticket's path through the process. The ticket branch is cut from dev. The spec is grounded, tests are written red and locked, and the build turns them green. The branch is rebased on dev and an independent reviewer runs the gate: FAIL sends findings back to the build, DEFER holds the ticket for a person, and PASS pushes the branch. Promote rebases again, gates again unless nothing has moved since the review, and pushes to dev. A nightly release hop gates dev again before it reaches main. Routine runs build and promote unattended. Where the repo declares a cadence, the branch parks at PASS instead, and a scheduled landing train runs promote's stretch for everything parked, as one batch.">
           <defs>
             <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0 L10 5 L0 10 z"/></marker>
             <marker id="ah-s" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah ah--s" d="M0 0 L10 5 L0 10 z"/></marker>
@@ -306,7 +306,9 @@
         One ticket's path. The reviewer runs the gate over the tree it read; it runs again over the tree
         that lands unless nothing has moved since, and the release hop runs it once more before
         <code>main</code>. A FAIL goes back to the builder for a bounded number of
-        cycles; a DEFER holds the ticket for a person.
+        cycles; a DEFER holds the ticket for a person. Where the repo declares a <code>cadence:</code>, the
+        path stops at PASS and the branch parks; the landing train runs the <code>/promote</code> stretch
+        for everything parked at once.
       </figcaption>
     </figure>
     <div class="grid3">
@@ -331,15 +333,16 @@
         <h3>Gated merge</h3>
         <p>
           <code>/promote</code> rebases onto the integration branch, runs the gate again over the exact
-          tree that will land unless the reviewer already gated it, pushes, and closes the ticket. The same command moves completed work
-          along the repo's release branches.
+          tree that will land unless the reviewer already gated it, pushes, and closes the ticket — or, on
+          a repo with a <code>cadence:</code>, parks the branch for the landing train. The same command
+          moves completed work along the repo's release branches.
         </p>
       </article>
     </div>
     <p class="lede" style="margin-top:20px">
       <code>/routine</code> runs the loop unattended: it picks the next ready ticket, builds it and
-      lands it, and holds the ticket for a person rather than push past a red gate or a review that
-      will not converge. Every build ends with a short reflection filed to an improvement ledger;
+      lands it — or parks it at PASS where the repo runs a landing train — and holds the ticket for a
+      person rather than push past a red gate or a review that will not converge. Every build ends with a short reflection filed to an improvement ledger;
       <code>/assess</code> runs periodic health checks and <code>/drain</code> clears what has
       accumulated.
     </p>
@@ -446,7 +449,7 @@ ask to hydrate Harness</pre>
         <p class="role">The unit of tracked work</p>
         <p>
           A change spec lives on the tracker issue. One command takes it to a reviewed branch and a
-          second lands it. The reviewer is a separate agent in a fresh context; its verdict covers the
+          second lands it, or parks it for the landing train. The reviewer is a separate agent in a fresh context; its verdict covers the
           tree it read, and a gate over the tree that lands licenses the push: the reviewer's where
           nothing moved, a second one where it did.
         </p>
@@ -460,6 +463,50 @@ ask to hydrate Harness</pre>
           never half-decided — and an accepted proposal spawns the tickets that build it.
         </p>
         <ol class="steps"><li><span>draft</span></li><li><span>decide</span></li><li><span>spawn tickets</span></li></ol>
+      </article>
+    </div>
+  </section>
+
+  <!-- ============ LANDING ============ -->
+  <section class="section" id="landing">
+    <h2>How work lands</h2>
+    <p class="lede">
+      Two ways, chosen by one block in <code>harness.yaml</code>. With no <code>cadence:</code>, every run
+      lands its own ticket when it is reviewed. Declaring one — a timezone, an anchor time and a pitch in
+      minutes — is the timetable a landing train departs on, and <code>scripts/landing-window.js</code>
+      answers whether a train's window is still open.
+    </p>
+    <div class="grid3">
+      <article class="lane">
+        <h3>Lands when ready</h3>
+        <p class="role">No cadence · the default</p>
+        <p>
+          <code>/promote</code> takes the branch <code>/build</code> left at PASS, rebases it onto the
+          integration branch, gates it unless the reviewer already gated the same bytes, pushes, and
+          closes the ticket. Each run lands its own work.
+        </p>
+        <ol class="steps"><li><span>PASS</span></li><li><span>rebase</span></li><li><span>gate</span></li><li><span>push</span></li><li><span>Done</span></li></ol>
+      </article>
+      <article class="lane">
+        <h3>The landing train</h3>
+        <p class="role">Cadence declared · builders park</p>
+        <p>
+          Builders stop at PASS and park: the ticket stays In Review with its branch pushed and a
+          <code>parked</code> label. <code>/routine train</code> departs on the timetable and runs
+          <code>/promote parked</code>, which merges everything parked oldest first, gates the batch
+          once and pushes once — only inside its window, which runs to the next departure.
+        </p>
+        <ol class="steps"><li><span>PASS</span></li><li><span>park</span></li><li><span>train departs</span></li><li><span>merge oldest first</span></li><li><span>gate once</span></li><li><span>push once</span></li></ol>
+      </article>
+      <article class="card card--quality">
+        <h3>When a train cannot land</h3>
+        <p>
+          It repairs only mechanically. A merge it cannot reconcile ejects that ticket back to Todo with
+          the reason; a red batch falls back to one ticket at a time, ejecting the first that goes red.
+          A train that misses its window lands nothing and leaves the batch parked. A second ejection
+          for the same cause holds the ticket for a person, and two trains in a row that land nothing
+          pull the cord.
+        </p>
       </article>
     </div>
   </section>
@@ -515,8 +562,8 @@ ask to hydrate Harness</pre>
           <li class="unit" data-unit="skill:capture"><code>/capture</code><span>File an already-decided change straight onto the queue.</span></li>
           <li class="unit" data-unit="skill:propose"><code>/propose</code><span>Work an idea before it becomes work; accepted proposals spawn tickets.</span></li>
           <li class="unit" data-unit="skill:review"><code>/review</code><span>Review the current branch, when a branch needs only that.</span></li>
-          <li class="unit" data-unit="skill:routine"><code>/routine</code><span>One unattended cycle: discover the next ticket, build it, land it.</span></li>
-          <li class="unit" data-unit="skill:promote"><code>/promote</code><span>Land a reviewed branch, or move completed work toward release along the repo's role branches.</span></li>
+          <li class="unit" data-unit="skill:routine"><code>/routine</code><span>One unattended cycle: discover the next ticket, build it, land it — or park it, where the repo declares a <code>cadence:</code>. <code>/routine train</code> is the scheduled landing train.</span></li>
+          <li class="unit" data-unit="skill:promote"><code>/promote</code><span>Land a reviewed branch or park it for the train; <code>/promote parked</code> lands everything parked as one batch. Also moves completed work toward release along the repo's role branches.</span></li>
           <li class="unit" data-unit="skill:drain"><code>/drain</code><span>Clear what has accumulated for the operator: held tickets, then the improvement ledger.</span></li>
           <li class="unit" data-unit="skill:assess"><code>/assess</code><span>Run a periodic whole-system health assessment.</span></li>
           <li class="unit" data-unit="skill:hydrate"><code>/harness:hydrate</code><span>Hydrate a repo — first time or after a plugin update.</span></li>
@@ -571,7 +618,8 @@ ask to hydrate Harness</pre>
       <article class="card card--quality">
         <h3>The plugin's source, dogfooding itself</h3>
         <p>
-          Every change here ships through the process the plugin publishes, against the same gate. Three
+          Every change here ships through the process the plugin publishes, against the same gate, and
+          with no <code>cadence:</code> declared each run lands as soon as it is reviewed. Three
           parts: the guidance surface above, the gate (<code>scripts/verify.sh</code>), and the guards —
           admitted by a written rule rather than by momentum, so a guard exists because a class of defect
           exists, not because someone once had a hunch.
