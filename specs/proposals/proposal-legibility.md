@@ -1,7 +1,8 @@
 ---
 proposal: proposal-legibility
-status: under-decision   # draft | under-decision | accepted | shipped | rejected | split | superseded
+status: accepted         # draft | under-decision | accepted | shipped | rejected | split | superseded
 date: 2026-10-10
+decided: 2026-10-10
 related: []
 ---
 
@@ -139,6 +140,8 @@ Risks                              Not doing
 None. The three that were open were answered on 10 Oct and are listed under *Settled already*.
 
 ## Breakdown
+
+**Filed 2026-10-10 as #769**, both items in one ticket, in Todo at P2.
 
 1. **Proposal template and page contract.** Add *In brief*, *Settled already*, *Visuals*, *For the builder* and the page contract to `templates/proposal.md`. Bring `authoring` → *Proposal spec*'s section list into line with it. In `/propose`, step 3 renders by the contract and runs the cold-read check. · `assurance:simple` · separable
 2. **Screens from captures.** In `/propose`, step 1 checks whether the proposal touches a user-facing surface and whether this host can capture it. Step 3 hands off when it can't, and step 4 files the operator-held capture ticket first when captures are still owed at acceptance. The template's *Visuals* section gets the spike-capture and provenance rules. · `assurance:simple` · sequential with 1: the same files, done by one builder in one sitting, so both items file as one ticket
