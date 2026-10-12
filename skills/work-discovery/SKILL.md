@@ -31,15 +31,13 @@ Read both halves from the tracker's own fields, through `tracker`: the kind (bug
 
 **The cord is read positively.** Only a bug whose priority reads back as the top priority is the cord. An open bug whose priority is blank, or which has no row in the board read at all, is not P1: P1 is set deliberately at filing (`tracker` → *Dependencies and priority*), so a bug that has earned it carries it, and one that carries nothing is read as carrying nothing. That reading is per ticket. The field as a whole is the paragraph above's — a call refused, or a Priority field the board read cannot find — and is still a half you cannot read.
 
-**Trust an empty answer only where the read finished.** "No P1 is open" is a conclusion drawn from a result set, and a read that stopped at a page limit returns the same set a clear queue does. So:
-
-- **Completeness.** No call the check made stopped at a limit it was given. A result standing at its limit is a read that stopped, and the cord may be in the part it never returned. A queue holding exactly as many tickets as the limit is indistinguishable from a truncated one, which is why this is absolute rather than a judgment: the repair is to re-read below the limit, never to argue the boundary.
+**Trust an empty answer only where the read finished.** "No P1 is open" is a conclusion drawn from a result set, and a read that stopped at a page limit returns the same set a clear queue does. That is **completeness**: no call the check made stopped at a limit it was given. A result standing at its limit is a read that stopped, and the cord may be in the part it never returned. A queue holding exactly as many tickets as the limit is indistinguishable from a truncated one, which is why this is absolute rather than a judgment: the repair is to re-read with a limit above the rows returned, never to argue the boundary.
 
 **Re-read once before you stop.** A read that stopped at its limit is cleared by one more call at a higher one, and a tick that re-reads has spent a call to avoid stopping the whole line. One re-read, not a loop: a re-read that still stands at its limit has failed, and a run that keeps calling until it likes the answer is the thing this rule exists to refuse.
 
 A read that cannot show completeness stops the tick exactly as an unreadable field does, whatever status the calls returned, so the stop reaches as far as an open cord's does. Name it and what would clear it — a limit raised above the rows returned — because "the tracker failed" names nothing.
 
-**Name what the read could not price.** Every open bug the cord read leaves unpriced — a blank priority, or no board row — is named in the tick's report by its id, so the operator can price or place it. The set is the open queue, read in every state, less the tickets the priced read returned with a priority: a difference over ticket identities, never over two totals, since a priced read can return as many rows as the queue holds and still be missing a bug. Naming them is the whole of the response, and it stops nothing.
+**Name what the read could not price.** Every open bug the cord read leaves unpriced — a blank priority, or no board row — is named in the tick's report by its id, so the operator can price or place it. The set is the open bugs in the open queue, read in every state, less the tickets the cord read returned with a priority: a difference over ticket identities, never over two totals, since a priced read can return as many rows as the queue holds and still be missing a bug. Naming them is the whole of the response, and it stops nothing. A ticket is named once in the report however many rules here name it, carrying each fact they give. Under a stopped line, *What a stopped tick outputs* governs instead, and nothing is named.
 
 ### A claimed cord is somebody's repair
 
@@ -92,11 +90,11 @@ Run this beside step 1 of the limit, which already reads every In Progress and I
 With no P1 bug open, pick the single next most logical Todo ticket. The first step is a filter, not a weighing:
 
 1. **Drop every blocked ticket.** One with an open blocked-by is not a lower-ranked candidate; it is not a candidate. Read the relationship from the tracker's own field through `tracker`, never from prose in the body (law 6), and never from ID order standing in for a dependency. A breakdown that filed its order correctly makes this read decisive; one that did not was an incomplete filing, and `tracker` → *`create`* says to report it as such.
-2. Prefer the higher priority among what is left. A ticket with no priority that reads back ranks after every priced ticket, whatever the priced one's level, and the tick names each unpriced ticket it passes over so the operator can price it.
+2. Prefer the higher priority among what is left. A ticket with no priority that reads back ranks after every priced ticket, whatever the priced one's level, and the tick names every unpriced Todo ticket it does not pick so the operator can price it.
 3. Break a tie by what the pick unblocks: between two unblocked tickets of the same priority, take the one with the longest `blocking` set. Finishing it converts several blocked tickets into candidates, while finishing a leaf converts none (P3).
 4. Fall back to ID order. Tickets are often filed in the order they need to be done, so a lower ID usually comes first; it is the weakest signal, and the three steps above override it.
 
-Steps 2 to 4 combine as judgment rather than a strict sort; step 1 does not. Take one ticket and test it for actionability before reaching for the next.
+Steps 2 to 4 combine as judgment rather than a strict sort; step 1 does not, and neither does step 2's placing of an unpriced ticket after every priced one, which no blocking set or ID outweighs. Take one ticket and test it for actionability before reaching for the next.
 
 ## Actionability — is this ticket ready to build?
 
