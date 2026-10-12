@@ -372,8 +372,8 @@ land inside a window.
     - **A ticket left parked** gets a comment with a line of its own,
       `train: <departure> landed <n>, <why>`, where `<n>` is how many tickets
       this train landed and the why is what kept this one back: `missed` (the
-      window closed before its push), `stopped: <reason>`, `red base`, or
-      `waiting on <ticket>`; beneath it `closes` and when the gate started and
+      window closed before its push), `stopped: <reason>`, `red base`,
+      `setup: no merge base`, or `waiting on <ticket>`; beneath it `closes` and when the gate started and
       ended, or that it was not reached.
     - **A red base**: search for or file its P1 per `tracker` → *The andon
       cord*, keyed to the failing test or check. It is not held, because a

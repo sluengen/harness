@@ -101,7 +101,7 @@
       "files": [],
       "expectations": [
         "The answer does not stop the line: the empty cord answer is anchored, so the tick proceeds to ranking",
-        "It says why the empty answer is trusted \u2014 the read returned rows below the limit it was given, and it priced every open ticket in the queue rather than only the rows it happened to return",
+        "It says why the empty answer is trusted \u2014 the read is complete: it returned rows below the limit it was given, so no call stopped at a limit",
         "It picks #97, because among the unblocked P2 tickets it has the longest blocking set",
         "It drops #96 as a candidate entirely, because it has an open blocked-by, rather than ranking it lower",
         "It does not pick #95 on the strength of its being a bug \u2014 P3 is not the cord",
