@@ -276,7 +276,11 @@ land inside a window.
    never pushed, where `<stamp>` is the departure as `YYYYMMDDTHHMMSSZ` (git
    refuses the colons of the RFC 3339 form). A `<repo>-train-*` worktree another
    train left is reported, never removed: the run behind it may still be live
-   (`worktree-isolation` → *Creating the worktree*).
+   (`worktree-isolation` → *Creating the worktree*). **Then give the clone the
+   history the merges need**: where `git rev-parse --is-shallow-repository`
+   prints `true`, as a cloud checkout often does, run
+   `git fetch --unshallow <remote>` before step 7. The worktree shares the
+   clone's objects, so one fetch serves every merge the train makes.
 7. **Merge each boarded branch, oldest first**, with `git merge --no-ff` and a
    message naming the ticket.
    [`skills/build/references/reconcile.md`](../build/references/reconcile.md)
@@ -291,6 +295,12 @@ land inside a window.
    two-conflict bound is the builder's. A merge the train resolved names the
    resolved files in its commit message, since no reviewer reads them. Where
    every boarded ticket was ejected, nothing is left to land: go to *Leaving*.
+   **A merge git refuses for want of a merge base** (`refusing to merge
+   unrelated histories`) is not a conflict, and ejects nothing: the clone is
+   missing history, which no builder can repair from the ticket's branch. Stop
+   the train there. Every ticket not yet landed or ejected is left parked as
+   `setup: no merge base`, and the report names the clone's depth as the cause,
+   so the operator fixes the checkout rather than re-reviewing a branch.
 8. **Raise the version** over the whole candidate, as stage 1 says.
 9. **Gate it**, as stage 2 says, noting when the gate starts and ends. It always
    runs: the train ran no review in this session.
