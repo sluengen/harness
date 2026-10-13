@@ -296,15 +296,10 @@ The read asks for the open queue with its priority rather than filtering on
 halves here, since `priority` and the labels sit on the same issue.
 
 **`0` is unpriced, and on this backend it arrives looking priced.** `priority` is
-a non-null integer, so every row returns one and a bug carrying `0` is indistinguishable
-from a bug carrying `3` to a check that asks only whether the field came back.
-The table above already calls `0` unset. Coverage is therefore met only by a row
-whose `priority` is `1` through `4`; a row priced `0` counts as unpriced, and an
-open bug among those leaves the anchor unmet exactly as an absent field does.
-The divergence is worth stating because GitHub has no equivalent trap: an unset
-Priority there is a missing board field, which already reads as absent. A check
-written against GitHub's behaviour and carried over unchanged lets a Linear-backed
-tick report a clear line over an unprioritised bug.
+a non-null integer, so every row returns one, and the table above calls `0`
+unset. Only a row whose `priority` is `1` is the cord; a bug priced `0` is not,
+and is named in the report as unpriced exactly as a GitHub bug with a blank
+Priority is, so the operator can price it. Neither stops the tick.
 
 `pageInfo.hasNextPage` is how the connection reports that it stopped: `true` is a
 truncated read whatever the nodes contain, and a truncated read cannot support an

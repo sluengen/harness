@@ -302,15 +302,16 @@ gh project item-list <number> --owner <owner> --format json --limit <n>
 gh project field-list <number> --owner <owner> --format json   # the Priority field and its option ids
 ```
 
-**The join is what makes the answer about this queue.** Every open issue whose
-labels make it a bug must appear in the item list with a priority that reads back
-as one of the options `field-list` declares. An empty or partial intersection
-means the two calls are describing different things — a board scoped to another
-owner or number, an issue never added to the board, a Priority field renamed out
-from under the query — and none of those is a clear line. An issue on the board
-with no Status is the trap `create` names; an open bug with no board item at all
-is the same trap seen from the read side, and a truncated half cannot support an
-empty cord answer either way.
+**The join is what finds the cord, and what names the gaps.** An open issue whose
+labels make it a bug and whose board item carries the Priority option
+`field-list` declares as P1 is the cord. An open bug with a blank Priority, or
+with no board item at all, is not: it is named in the report as unpriced, by
+number, and stops nothing. An issue on the board with no Status is the trap
+`create` names, and a bug with no board item is the same trap seen from the read
+side, which is why the report names it. What still stops the read is the field
+as a whole — a Priority field `field-list` does not return, or a call refused —
+and either half standing at its `--limit`: a truncated read cannot support an
+empty cord answer.
 
 ## Closing an issue
 

@@ -68,9 +68,9 @@ another way in.
 
 ## Where the judgement is yours
 
-Run the verification yourself over the final candidate and read all of it
-(`review-discipline` → *Reviewer obligations*); the builder's claim is not
-evidence.
+Run the verification yourself over the final candidate, wait for it to exit,
+and read all of it (`review-discipline` → *Reviewer obligations*); the
+builder's claim is not evidence.
 
 A gate failure caused by your own as-built-record edit is yours to fix and
 re-run; an implementation failure returns to the builder, because repairing one

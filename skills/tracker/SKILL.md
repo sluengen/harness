@@ -143,14 +143,15 @@ has no way to tell them apart. Read the open queue carrying each ticket's kind
 and priority, and find the cord in it. That result carries its own evidence —
 tickets a reader can see, priorities that read back, and a row count to compare
 against the limit the call was given — and it is the same read a ranking needs
-next, so the cord costs no second call. **Two facts travel with "no cord is
-open": which open tickets the read priced, and whether it finished or stopped at
-a limit.** The first is a set difference over ticket identities, taken against
-the open queue read independently — never a comparison of two totals. A priced
-read can return exactly as many rows as the queue holds and still be missing a
-bug, so equal counts establish nothing, and a ticket the priced read never
-returned is invisible to any check made only against the rows it did. An answer
-carrying neither fact says only that a call returned.
+next, so the cord costs no second call. **The cord is a bug whose priority
+reads back as P1**; an open bug with a blank priority, or no row in the priced
+read at all, is not one. **Two facts travel with "no cord is open": whether the
+read finished or stopped at a limit, and which open bugs it left unpriced.** The
+first decides whether the answer can be trusted. The second decides nothing and
+is reported so the operator can price them; it is a set difference over ticket
+identities, taken against the open queue read independently — never a comparison
+of two totals, since a priced read can return exactly as many rows as the queue
+holds and still be missing a bug.
 
 `work-discovery` owns what the loop does about it.
 

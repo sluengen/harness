@@ -2661,6 +2661,8 @@ For a consumer already hydrated, step 3 retains their `harness.yaml` whatever it
 
 *Decided at the design stage of #661, 2026-09-17.*
 
+*Amended 2026-10-13 (#774): the coverage half is retired, and completeness stands.* The operator decided at #774's capture that the cord is read positively. Only a bug whose priority reads back as P1 is the cord. An open bug with a blank priority, a Linear row priced `0`, or no board row at all reads as "not P1" and stops nothing. The reasoning: P1 is set deliberately at filing (`tracker` → *Dependencies and priority*), so a bug that has earned it carries it, and in practice the unpriced bugs that stopped ticks were minor ones. What survives of coverage is its set difference, which now names the unpriced open bugs in the tick's report instead of stopping the tick (`work-discovery` → *Name what the read could not price*). Completeness and its one re-read are unchanged. *A half you cannot read is itself a cord* still stops on the field as a whole: a refused call, or a Priority field the board read cannot find. The paragraphs below stand as the 2026-09-17 record, and two of their claims no longer hold. An open bug left off the board no longer "stops the line until it is placed": that accepted cost is reversed, and a P1 filed without a board row is now missed by the cord read, which #774 accepted at capture. A read answered by the wrong board scope, which *Context* names, is no longer a stop where the Priority field still resolves: it surfaces only as every open bug named unpriced. The version class turned on the reverse refusal, and is recorded under #774 below.
+
 **Context.** The andon cord's read treated an empty result as proof of a clear line. One run received an empty answer while an urgent open bug existed, and the same query returned that bug later. Two mechanisms make a silent empty easy and both exit 0: a board read with no explicit limit truncates on a board that outgrew the default, and a renamed field, wrong option id or wrong board scope answers "empty" with the same status as a clear queue. The cord's two halves also arrive over two transports on GitHub — labels by issue, priority by board, since Projects v2 has no REST API — so the halves can disagree while both succeed. The shipped rule covered a read that *announces* failure and said nothing about one that succeeds and returns nothing.
 
 **Decision.** The cord read asks for the open queue with its priorities and finds the cord in it, never asking the server for the matches. An empty answer is trusted only where the read shows **coverage** — every open bug *in the queue* carries a priority that reads back — and **completeness** — no call the check made stopped at a limit it was given. A run re-reads before it stops, since both anchors fail in ways one more call clears. An answer that cannot show both is a half that could not be read, which the existing rule already makes a cord, so the disposition is stated once and inherited rather than restated.
@@ -6064,6 +6066,47 @@ The test is whether a call that used to complete now blocks, or the reverse. Not
 The test is whether a call that used to complete now blocks, or the reverse. A `/build` or `/routine` run on a ticket that another run claimed after this run's discovery read it used to claim and build it, and now stops with a report. That adds a refusal reason to `/build`, which the grammar in `specs/architecture-principles.md` → *Surface is a versioned interface* names major. The counter-argument for minor is that the stop fires only where two runs already contend for one ticket, an outcome no consumer relies on completing. The grammar asks whether the refusal changed, not whether a consumer valued the old outcome. The consumer this ticket came from runs two builders over one queue, and the change bears on how it schedules them, so the release reaches it as a decision. `/build` step 7 raised the four homes in `scripts/plugin-version.js`'s `CANDIDATES` from `27.3.0` (`origin/main` and `dev` alike) to `27.4.0`, and the builder raised them by hand to `28.0.0` inside the candidate. This review confirms the class.
 
 **Verification.** The certifying run of `bash scripts/verify.sh` over `bc21d4c2` plus this record is the one the review report for #771 names.
+
+
+### #774: the andon cord is read positively, and an unpriced bug stops nothing, as built
+
+`simple`. Built on branch `work-774-772`, cut from `dev` at `872cc018`, with #772 on the same branch by the run's instruction. The main change and `/build` step 7's minor raise are `0348558d`, and `0cf9707d` closes edges the builder's two use-probes found. Prose and evals only.
+
+**What ships.**
+
+- `skills/work-discovery/SKILL.md` → *Andon*. The *Coverage* anchor is gone. **The cord is read positively** replaces it: only a bug whose priority reads back as the top priority is the cord, and a blank priority or a missing board row reads per ticket as "not P1". The field as a whole stays under *A half you cannot read is itself a cord*. **Trust an empty answer only where the read finished** keeps completeness alone, and the re-read and stop paragraphs now speak of completeness only. **Name what the read could not price** is new: the open bugs in the open queue, less the tickets the cord read returned with a priority, are named by id in the tick's report and stop nothing. The set is still a difference over ticket identities. A ticket is named once however many rules name it, and nothing is named under a stopped line. *What a stopped tick outputs* now names "the read that stopped at its limit" where it named "the anchor the read could not show". *Stale runs* takes its open-queue read from the new paragraph instead of the retired anchor.
+- The same file → *Ranking*, step 2. A ticket with no priority that reads back ranks after every priced ticket, whatever the priced one's level. The tick names every unpriced Todo ticket it does not pick. That placement is excluded from the "judgment rather than a strict sort" sentence, so no blocking set or ID order lifts an unpriced ticket.
+- `skills/tracker/SKILL.md` → *The andon cord*. The two facts that travel with "no cord is open" are now whether the read finished, which decides trust, and which open bugs it left unpriced, which decides nothing.
+- `skills/tracker/references/github.md` → *The cord read*. The join finds the cord and names the gaps. A bug with a blank Priority or no board item is named as unpriced. What still stops the read is a Priority field `field-list` does not return, a refused call, or either half at its `--limit`.
+- `skills/tracker/references/linear.md`. Only `priority: 1` is the cord. A bug priced `0` is named as unpriced, the same as a GitHub bug with a blank Priority, and neither stops the tick. The #684 paragraph that made `0` fail coverage is replaced.
+- `skills/work-discovery/evals/evals.json`. Evals 8 and 9 are rewritten so the expected answer proceeds, picks the higher-priority unblocked Todo ticket, and names the unpriced bugs. Eval 10, `an-unpriced-ticket-ranks-after-every-priced-one`, is added. Evals 2 and 6 are unchanged. Nothing under `evals/` is a test (`pyproject.toml` sets `testpaths = ["tests"]`), and no file under `tests/` changed on this branch.
+
+**`/promote` inherits it.** *The landing train* step 4 reads the cord "as `work-discovery` → *Andon* reads it", so a train no longer stops on an unpriced bug either. No edit there was needed.
+
+**Evidence.** ADR 0019's for prose: direct review of the diff from `872cc018` to `0cf9707d`, and use. This reviewer ran evals 2, 6, 8, 9 and 10 as five fresh-context `claude -p` probes, each given the candidate's `skills/work-discovery/SKILL.md` and the eval prompt, with no tools. All five answered as their expectations say. Eval 2 stopped on the 403. Eval 6 stopped on completeness. Evals 8 and 9 proceeded, picked `#57` and `#47`, and named the unpriced bugs. Eval 10 picked `#81` over the unpriced `#80` despite `#80`'s blocking set. A sweep of every tracked file outside `specs/` and `tests/` for the retired anchor's wording found no surviving home.
+
+**One residual, named rather than fixed.** Eval 7's second expectation still gives the retired reason for trusting an empty answer: "it priced every open ticket in the queue rather than only the rows it happened to return". Under the shipped text, trust rests on completeness alone. An answer that proceeds and picks `#97` meets the eval's outcome, but a strict grader could mark that expectation unmet.
+
+### #772: the landing train unshallows before it merges, and a missing merge base is setup, as built
+
+`simple`. Built on the same branch as #774, as `78f3e95d`. Prose only.
+
+**What ships.** `skills/promote/SKILL.md` → *The landing train*.
+
+- Step 6, after the worktree is cut: where `git rev-parse --is-shallow-repository` prints `true`, the train runs `git fetch --unshallow <remote>` before step 7. The train's worktree shares the clone's object store, so one fetch serves every merge.
+- Step 7: a merge git refuses for want of a merge base (`refusing to merge unrelated histories`) is not a conflict and ejects nothing. The train stops there. Every ticket not yet landed or ejected is left parked as `setup: no merge base`, and the report names the clone's depth as the cause.
+
+The case is the 2026-10-10 calibrate train, carried forward from the ledger entry the ticket absorbed and not re-measured here. That train ejected a parked ticket for a conflict it did not have, and the same merge was clean after `git fetch --unshallow`.
+
+**Evidence.** ADR 0019's for prose: direct review of steps 6 and 7. No train ran on a shallow clone.
+
+**One residual, named rather than fixed.** *Leaving* step 13 lists the reasons a ticket left parked carries: `missed`, `stopped: <reason>`, `red base` and `waiting on <ticket>`. It does not list `setup: no merge base`. Nothing parses that reason except the two-in-a-row rule, which excludes only `red base`, so a setup stop counts toward that rule.
+
+### The cycle's version class: major, `29.0.0`
+
+The test is whether a call that used to complete now blocks, or the reverse. #774 is the reverse of #661, which was raised to `13.0.0` for it. A `/routine` tick or a landing train that stopped on an open bug with no readable priority now proceeds and builds or lands. A consuming repo that left a real P1 unpriced, or off its board, now has its loop run past it. The counter-argument is that the change only removes a stop and asks nothing of a consumer. It reads the direction rather than the reason, and the grammar in `specs/architecture-principles.md` → *Surface is a versioned interface* names a changed refusal reason major in either direction. #772 changes an outcome too: the train used to eject the ticket, and now leaves it parked and stops. `/build` raised the four homes to `28.1.0` from `origin/main`'s `28.0.0`. This review raised them by hand to `29.0.0` before the certifying gate, and the raise covers both tickets.
+
+**Verification.** The certifying run of `bash scripts/verify.sh` over `0cf9707d` plus this record and the raise is the one the review report for #774 and #772 names.
 
 ## Cross-references
 
