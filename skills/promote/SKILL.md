@@ -306,7 +306,20 @@ land inside a window.
    runs: the train ran no review in this session.
 10. **Green:** stage 4, then ask the window again and push only on `open`
     (stage 5). `closed`: push nothing; every ticket in the candidate is left
-    parked as `missed` and rides the next train. A push
+    parked as `missed` and rides the next train. **Beside that window check,
+    re-read every ticket in the candidate as step 5 reads it** — hold, state, and
+    branch tip against its latest park comment — because the gate ran for
+    minutes and boarding is the only other read. Both are reads, so stage 5's
+    interval holds; every push the train makes, its retry and the fallback's
+    included, is preceded by this pair. A ticket that moved drops out with step
+    5's outcome — a moved tip is ejected for `moved`, anything else is left out,
+    untouched, and reported with what moved — and the candidate is rebuilt
+    without it: the worktree moved to the integration tip as the fallback moves
+    it, the remaining tickets merged again as step 7 merges them, then steps 8
+    to 10. The rebuild is this step's one retry, below. Where that retry is
+    already spent, or a rebuilt candidate meets another move, push nothing, and
+    every ticket still in the candidate is left parked as
+    `stopped: held mid-train`. A push
     refused because the integration branch moved, by an operator's "land it now"
     or a late train, fetches and takes the branch in under `reconcile.md`, then
     runs steps 8 to 10 again: the version raise, the gate, and on green stage 4,
@@ -326,13 +339,21 @@ land inside a window.
     - **Red at the tip** is otherwise a red base. Nothing more lands: every
       ticket not yet landed or ejected is left parked as `red base`, and the
       train goes to *Leaving*, which files or extends its P1.
-    - **Green at the tip:** fall back. Land the boarded tickets that step 7 did
-      not eject one at a time, oldest first, each in the train's worktree moved
+    - **Green at the tip:** fall back. First ask whether the failure **names a
+      ticket**: one does where the failing test file, or a path the failure's
+      output names, is in exactly one boarded ticket's diff
+      (`git diff --name-only <remote>/<integration>...<branch>`). With none or
+      several, it names nothing. Land the boarded tickets that step 7 did not
+      eject one at a time, oldest first, with the named ticket last. That way the
+      window cannot close on the others while it is being gated, and it is
+      ejected only on its own solo gate, never on the batch's evidence. Each lands in the train's worktree moved
       to the integration tip as it now stands (fetch, then
       `git checkout -B train-<stamp> <remote>/<integration>` before each; both
       hosts' settings forbid `git reset --hard`): merge that ticket's branch (a merge that will not
       resolve ejects it for `merge`), raise the version, gate, and on green
-      stage 4, the window and the push, where a refused push gets step 10's one
+      stage 4, the window, step 10's re-read and the push. A ticket the re-read
+      finds moved is not pushed; it takes step 5's outcome and the fallback
+      goes on to the next. A refused push gets step 10's one
       retry and a second refusal stops the fallback, every ticket not yet
       landed or ejected left parked as `stopped: push refused twice`. A red is attributed the same way against the tip as it now stands:
       green there ejects the ticket for `red`; red there is a red base, as
@@ -345,7 +366,10 @@ land inside a window.
 12. **Close each landed ticket**, oldest first: post a link to the first
     integration commit that contains its tip, `unpark` it, transition it to Done,
     and close it where the backend separates closing. Close a red-base bug that a
-    landed branch completes once, as stage 6 says.
+    landed branch completes once, as stage 6 says. **Read the hold before the
+    Done write.** A ticket held after its push has still landed: post the link and
+    `unpark` it, then leave its state and its hold for the operator who applied
+    it, and report it as landed while held.
 13. **Write what the train decided**, comment first every time. First read the
     latest `train:` line on the oldest ticket this train carried, before this
     train writes its own: the two-in-a-row rule below needs it.
