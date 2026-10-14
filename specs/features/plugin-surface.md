@@ -6108,6 +6108,29 @@ The test is whether a call that used to complete now blocks, or the reverse. #77
 
 **Verification.** The certifying run of `bash scripts/verify.sh` over `0cf9707d` plus this record and the raise is the one the review report for #774 and #772 names.
 
+### #775: the landing train re-reads holds before every push, and a batch red that names a ticket orders it last, as built
+
+`simple`. Built on branch `775` as `bdf9cae9`, cut from `dev` at `ec025c04`. The change spec is the ticket's Grounding, Approach, Decision and Evidence sections. Prose only, with no code and no test.
+
+**What ships.** `skills/promote/SKILL.md` → *The landing train*.
+
+- Step 10, *Green*. Beside the second window check, the train re-reads every ticket in the candidate as step 5 reads it: hold, state, and branch tip against the latest park comment. Both are reads, so stage 5's no-tracker-write interval still holds. Every push the train makes is preceded by the pair, including step 10's retry and each fallback push. A ticket that moved drops out with step 5's outcome: a moved tip is ejected for `moved`, and anything else is left out, untouched, and reported with what moved. The train then rebuilds the candidate without it. It moves the worktree to the integration tip as the fallback does, merges the remaining tickets again as step 7 merges them, and runs steps 8 to 10. The rebuild spends step 10's one retry, which a refused push shares. Where the retry is already spent, or a rebuilt candidate meets another move, the train pushes nothing and leaves every ticket still in the candidate parked as `stopped: held mid-train`.
+- Step 11, *Green at the tip*. The fallback first asks whether the batch red **names a ticket**. It does where the failing test file, or a path the failure's output names, is in exactly one boarded ticket's diff (`git diff --name-only <remote>/<integration>...<branch>`). With none or several, nothing is named. The fallback still lands one ticket at a time, oldest first, with the named ticket last, so it is ejected only on its own solo gate and the window does not close on the others while it is gated. Each fallback push is preceded by step 10's re-read. A ticket the re-read finds moved is not pushed: it takes step 5's outcome and the fallback goes on to the next.
+- Step 12, *Close each landed ticket*. The train reads the hold before the Done write. A ticket held after its push has still landed: the train posts the link and unparks it, leaves its state and hold for the operator who applied it, and reports it as landed while held.
+
+**Evidence.** ADR 0019's for prose: this reviewer read the diff from `ec025c04` to `bdf9cae9` in full against the ticket's four criteria, all met. No train ran. No test was added or edited. The one guard over the file, `tests/unit/test_build_lifecycle_order.py`, reads only the `promote-lifecycle` block, which the diff does not touch. A twin sweep found no other home of steps 10 to 12. ADR 0024 point 4, `README.md` and `docs/index.html` summarise the fallback as landing one ticket at a time and ejecting the one that goes red, which stays true with the named ticket ordered last.
+
+**Two residuals, named rather than fixed.**
+
+- The section's opening says every ticket the train carries leaves as landed, ejected, or left parked with a `train:` line. A ticket dropped mid-train for a hold or a state change is left out, untouched, and gets no `train:` line, the same as a ticket left out at boarding. It is held, so no run picks it, and the train's report names it.
+- Step 10's push-refusal sentence still reads "One such retry: a second refusal stops the train". After a rebuild has spent the retry, a first refusal stops the train too. The sentence naming the rebuild as "this step's one retry" carries that rule, and the refusal sentence does not restate it.
+
+### The cycle's version class: major, raised at this review to `30.0.0`
+
+The test is whether a call that used to complete now blocks, or the reverse. Before this change, a train whose gate went green pushed every ticket in the candidate, including one held, moved or re-stated after boarding. Now it rebuilds without that ticket, and where the retry is spent it pushes nothing and leaves the batch parked as `stopped: held mid-train`, a new stop reason. A ticket whose tip moved mid-train used to land and is now ejected for `moved`. Step 12 used to write Done on every landed ticket, and now leaves a held one In Review. The counter-argument for minor is that each new stop enforces the spine's hold contract, which the train already broke, so no consumer could rely on the old outcome. #771's entry answered the same argument: the grammar in `specs/architecture-principles.md` → *The installed surface is a versioned interface* asks whether the refusal changed, not whether a consumer valued the old outcome. #772 was raised major for the same shape of change, an ejection that became a stop. The step 11 reordering alone would be minor, because it changes no refusal. `origin/main` stands at `29.0.0`, and `/build` raised the four homes in `scripts/plugin-version.js`'s `CANDIDATES` to `29.1.0`. This review raised them by hand to `30.0.0` inside the candidate, before the certifying gate.
+
+**Verification.** The certifying run of `bash scripts/verify.sh` over `bdf9cae9` plus this record and the raise is the one the review report for #775 names.
+
 ## Cross-references
 
 - `specs/harness-assumptions.md` — one row per hook, script, skill and agent: what it assumes the model cannot do, and the test that would retire it. Read at every model or host release.
