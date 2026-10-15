@@ -252,22 +252,29 @@ land inside a window.
    train, and stop. Exit 1 `closed`: the train departed after its own window
    closed (a train is never `not-yet`). Run `tracker`'s `parked`, carry every
    ticket it returns, and go straight to *Leaving*, every one of them left
-   parked as `missed`. Exit 2 or any other failure refuses: stop and report the `case` it
+   parked as `missed`, and every park branch reported `missed`. Exit 2 or any other failure refuses: stop and report the `case` it
    printed, or its stderr for exits 3 and 64, which print no `case`.
-3. **Run `tracker`'s `parked`.** Empty: report it and stop. An empty train
-   is not a miss.
+3. **Run `tracker`'s `parked`, and list the park branches**
+   (`git ls-remote --heads <remote> 'refs/heads/park/*'`, in name order; the
+   full `refs/heads/` form, because a bare `park/*` also matches
+   `x/park/y`). Both empty: report it and stop. An empty train is not a miss.
 4. **Read the cord** as `work-discovery` → *Andon* reads it, and stop on a half it
    cannot read. While a cord is open the train boards only its fix: the cord
    ticket where it is parked, and any parked ticket whose branch carries a commit
    naming the cord as the open bug it completes, identified as stage 6 identifies
-   one. With none parked, report the stopped line and stop; that is not a miss.
+   one. A park branch boards only where it carries such a commit; every other
+   is left where it is, reported `cord open`. With none parked, report the
+   stopped line and stop; that is not a miss.
 5. **Board, oldest first.** Each ticket passes *Before the first stage*, and
    `git ls-remote` shows its branch's tip is the commit its latest park comment
    names.
    Boarding checks nothing out, claims nothing and unparks nothing. A ticket
    whose tip moved since its park carries bytes no review read: it is ejected
    for `moved`, so its builder takes it back through review. Any other ticket
-   that fails is left out, untouched, and reported with what moved.
+   that fails is left out, untouched, and reported with what moved. Then board
+   the park branches, in name order, after every ticket, recording each tip
+   `git ls-remote` shows. A park branch carries no review, no hold and no park
+   comment, so boarding checks nothing else about it.
 
 ### The batch
 
@@ -293,8 +300,15 @@ land inside a window.
    that ticket is **ejected** for `merge`: the candidate keeps what it held
    before it, and the rest continue. There is no second attempt, because the
    two-conflict bound is the builder's. A merge the train resolved names the
-   resolved files in its commit message, since no reviewer reads them. Where
-   every boarded ticket was ejected, nothing is left to land: go to *Leaving*.
+   resolved files in its commit message, since no reviewer reads them. **Merge
+   the park branches last**, the same way: fetch each one and merge the commit
+   boarding read, by its sha, with a message naming the branch. One whose
+   commit the candidate already contains (`git merge-base --is-ancestor`)
+   merges nothing and counts as landed. One that will not resolve is
+   `git merge --abort` and left where it is, reported `merge` with the
+   conflicting files: there is nobody to eject it to. One whose commit no
+   longer fetches is left as `moved`. Where nothing boarded is left in the
+   candidate, nothing is left to land: go to *Leaving*.
    **A merge git refuses for want of a merge base** (`refusing to merge
    unrelated histories`) is not a conflict, and ejects nothing: the clone is
    missing history, which no builder can repair from the ticket's branch. Stop
@@ -303,7 +317,21 @@ land inside a window.
    so the operator fixes the checkout rather than re-reviewing a branch.
 8. **Raise the version** over the whole candidate, as stage 1 says.
 9. **Gate it**, as stage 2 says, noting when the gate starts and ends. It always
-   runs: the train ran no review in this session.
+   runs: the train ran no review in this session. **Size the run from the
+   longest gate the train knows**: one this train has already run, else the
+   gate times on the latest `train:` line of the oldest boarded ticket (step
+   13 writes them). Run it in the background and wait for its exit, with any
+   timeout the host asks for set to at least twice that duration, or to the
+   host's maximum where the train knows none: a gate killed at a tool default
+   is a re-run, not a result.
+
+   **A gate after the first must fit.** Before the gate of step 10's retry,
+   and before each fallback gate in step 11, ask the window (stage 5) and take
+   the time left, `closes` minus `now`. Where it is shorter than the longest
+   gate this train has run, run no gate and push nothing: every ticket not yet
+   landed or ejected is left parked as `missed`. A gate that cannot finish
+   inside the window lands nothing whatever it reports, and running it costs
+   the host a full gate for no landing.
 10. **Green:** stage 4, then ask the window again and push only on `open`
     (stage 5). `closed`: push nothing; every ticket in the candidate is left
     parked as `missed` and rides the next train. **Beside that window check,
@@ -316,16 +344,20 @@ land inside a window.
     untouched, and reported with what moved — and the candidate is rebuilt
     without it: the worktree moved to the integration tip as the fallback moves
     it, the remaining tickets merged again as step 7 merges them, then steps 8
-    to 10. The rebuild is this step's one retry, below. Where that retry is
-    already spent, or a rebuilt candidate meets another move, push nothing, and
-    every ticket still in the candidate is left parked as
-    `stopped: held mid-train`. A push
+    to 10. Park branches are not re-read: the candidate holds the commit
+    boarding read, and anything pushed to the branch since rides the next
+    train. A push
     refused because the integration branch moved, by an operator's "land it now"
     or a late train, fetches and takes the branch in under `reconcile.md`, then
     runs steps 8 to 10 again: the version raise, the gate, and on green stage 4,
-    the window and the push; a red goes to step 11. One such retry: a second
-    refusal stops the train, and every ticket in the candidate is left parked as
-    `stopped`. A re-merge that will not resolve names no culprit, so the train
+    the window and the push; a red goes to step 11.
+    **This step has one retry, and either of those spends it**: the rebuild
+    after a moved ticket, or the re-gate after a refused push. Once it is spent,
+    the next move or refusal pushes nothing, and every ticket still in the
+    candidate is left parked as `stopped: held mid-train` or
+    `stopped: push refused twice`, whichever ended it. A retry whose gate would
+    not fit the window leaves them parked as `missed` instead (step 9). A
+    re-merge that will not resolve names no culprit, so the train
     stops the same way and the next train's ordered merges name it. A push the
     remote refuses for protection stops it the same way too: the train needs a
     direct push to keep its window.
@@ -333,6 +365,13 @@ land inside a window.
     failing check, at the current integration tip (`worktree-isolation` →
     *A red base*). A failing test the tip does not have came with the candidate,
     so it counts as green at the tip.
+    - **A gate the host killed is not a red.** Where the gate ended with no
+      failing test or check to name, because the host stopped it (out of
+      memory, a timeout, a signal), there is nothing to attribute and no ticket
+      is ejected for it. Push nothing: every ticket not yet landed or ejected is
+      left parked as `stopped: gate killed`, and the report carries the gate's
+      tail so the operator can see what the host did. A fallback gate killed
+      the same way stops the fallback the same way.
     - **While a cord is open**, the batch is the cord's fix, and a red in the
       cord's own failing test or check is that fix not fixing it: eject it for
       `red` rather than extending the cord with it.
@@ -346,16 +385,19 @@ land inside a window.
       several, it names nothing. Land the boarded tickets that step 7 did not
       eject one at a time, oldest first, with the named ticket last. That way the
       window cannot close on the others while it is being gated, and it is
-      ejected only on its own solo gate, never on the batch's evidence. Each lands in the train's worktree moved
+      ejected only on its own solo gate, never on the batch's evidence. Park
+      branches land after every ticket, the named one included; one red on its
+      own solo gate while green at the tip is left where it is, reported `red`. Each lands in the train's worktree moved
       to the integration tip as it now stands (fetch, then
       `git checkout -B train-<stamp> <remote>/<integration>` before each; both
       hosts' settings forbid `git reset --hard`): merge that ticket's branch (a merge that will not
       resolve ejects it for `merge`), raise the version, gate, and on green
       stage 4, the window, step 10's re-read and the push. A ticket the re-read
       finds moved is not pushed; it takes step 5's outcome and the fallback
-      goes on to the next. A refused push gets step 10's one
-      retry and a second refusal stops the fallback, every ticket not yet
-      landed or ejected left parked as `stopped: push refused twice`. A red is attributed the same way against the tip as it now stands:
+      goes on to the next. Each fallback gate must fit the window first (step
+      9). The fallback has one retry of its own, on step 10's terms: a refused
+      push re-gates once, and the next refusal stops the fallback, every ticket
+      not yet landed or ejected left parked as `stopped: push refused twice`. A red is attributed the same way against the tip as it now stands:
       green there ejects the ticket for `red`; red there is a red base, as
       above. A window that closes during the fallback stops it there: what
       landed stays landed, what was ejected stays ejected, and the rest are left
@@ -369,7 +411,10 @@ land inside a window.
     landed branch completes once, as stage 6 says. **Read the hold before the
     Done write.** A ticket held after its push has still landed: post the link and
     `unpark` it, then leave its state and its hold for the operator who applied
-    it, and report it as landed while held.
+    it, and report it as landed while held. **Delete each landed park
+    branch** where `git ls-remote` still shows the tip boarding read
+    (`git push <remote> --delete refs/heads/park/<name>`). One pushed to since
+    keeps its name, and the next train lands the rest.
 13. **Write what the train decided**, comment first every time. First read the
     latest `train:` line on the oldest ticket this train carried, before this
     train writes its own: the two-in-a-row rule below needs it.
@@ -395,7 +440,7 @@ land inside a window.
       waits on an answer, so the label is `operator`, not `input`.
     - **A ticket left parked** gets a comment with a line of its own,
       `train: <departure> landed <n>, <why>`, where `<n>` is how many tickets
-      this train landed and the why is what kept this one back: `missed` (the
+      and park branches this train landed and the why is what kept this one back: `missed` (the
       window closed before its push), `stopped: <reason>`, `red base`,
       `setup: no merge base`, or `waiting on <ticket>`; beneath it `closes` and when the gate started and
       ended, or that it was not reached.
@@ -423,7 +468,8 @@ land inside a window.
     branch or a parked ticket's branch.
 
 Report what the train did: landed (ticket, commit), ejected (ticket, cause),
-held, left out and what moved, left parked and why, the departure, `closes`, the
+held, left out and what moved, left parked and why, park branches landed
+(branch, commit) and left where they are and why, the departure, `closes`, the
 gates' durations, and any cord filed or extended.
 
 **Recorded, not guarded.** The line read first is the latest on the oldest
@@ -532,7 +578,9 @@ resolver is what changes, not the command.
    release back into integration promptly. Skipping it makes every later
    promotion carry a phantom divergence that surfaces as a conflict on
    somebody else's ticket. The back-merge is part of the release, not
-   housekeeping to remember afterwards.
+   housekeeping to remember afterwards. Where `harness.yaml` declares a
+   `cadence:`, the back-merge parks like any change with no ticket (the
+   spine's *Parked*), and a train lands it.
 
    **A version bump is not one of those commits.** A release identifier is
    raised at the *start* of a cycle, on the integration branch, by the first
