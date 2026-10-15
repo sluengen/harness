@@ -39,3 +39,22 @@ The build of decisions 1 to 4 settled three points the decision left open or sta
 - **Decision 1 applies under a `cadence:` only.** Declaring the block is what puts a repo on the train, so attended `/promote` parks by default only there. With no `cadence:` there is no train to land a parked ticket, and every run lands as it did before.
 - **Decision 3's cord fires on two trains in a row that land nothing**, whether the window closed or the train stopped for another reason: an unrunnable gate, a refused push, a re-merge that would not resolve. A train wedged on its gate or its push is the same stopped line as one that keeps missing its window. Each train that lands nothing records why on the tickets it leaves parked, and the next one reads that line.
 - **Decision 4's native-code ejection does not ship.** The plugin cannot tell what native code is, or which host can verify it, without a declaration no consumer makes, and a key built before any observed break guards an unobserved risk (P2). The train's gate is the consumer's own `commands.verify` on the train's host. A native interaction that gate cannot see reaches the integration branch and surfaces as a red base at the next build on a host that can run it, a defect the operating context accepts. Reopen on the first native break a train lands.
+
+## Amendment (2026-10-16, #777)
+
+**Decision 1 binds every writer, not only builders.**
+
+**Why.** On calibrate (2026-10-14), writers outside `/promote` — a `/propose` acceptance, two `/assess` report commits — pushed to the integration branch while a train was gating. Each train's push was refused, and its one retry gate (30 to 41 minutes) could not fit a 60-minute pitch: two trains in a row landed nothing. The decision's premise that a direct landing costs the train only "a rebase and a gate, which it recovers from" holds only while two gates fit one window.
+
+**The rule.** Under a `cadence:`, only the train pushes the integration branch. A change with no ticket — a fix, a command's report, a back-merge, a consumer's own command — parks as a `park/<stamp>-<slug>` branch after its writer's own gate, and the branch is its whole record. The train lists `refs/heads/park/*`, lands those after the parked tickets under the batch's one gate, and deletes what it lands. It ejects nothing, because there is nobody to eject to: what it cannot land stays where it is, named in its report. The operator's in-session "land it now" remains the one exception, for any writer. With no `cadence:`, nothing changes.
+
+**Rejected.**
+- *Push only outside a train's gate interval* — `scripts/landing-window.js` gives every instant to some train's window, so "not gating" is not derivable without the landing lock this decision already rejected.
+- *A ticket per writer, parked like any other* — a tracker write and a WIP slot per report, for cargo nobody reviews.
+- *A park record on the tracker* — couples git cargo to a tracker parse, and is lost under `tracker: none`.
+- *One shared park branch* — concurrent writers collide on it, which moves the collision rather than removing it.
+
+**Recorded, not guarded.**
+- A train carrying only park branches writes no `train:` line, so the two-in-a-row cord cannot see it.
+- A park branch red in combination re-boards every train and forces the fallback until somebody repairs it. Never observed, because each writer gates before parking; reopen on the first train report naming one park branch `red` twice.
+- `park/*` is a trust boundary equal to an integration push. A consumer restricting integration pushes to the train's identity protects `park/*` with its own branch rules.

@@ -39,7 +39,8 @@ queue:
 # cadence:
 #   # Optional (ADR 0024): the landing train's timetable. A train departs at
 #   # every fire, and its window runs to the next one. Declaring the block puts
-#   # the repo on the train, so builders park at PASS and the train lands them;
+#   # the repo on the train, so only the train pushes the integration branch:
+#   # builders park at PASS, every other writer parks a `park/` branch;
 #   # absent, every run lands when it is ready. `scripts/landing-window.js`
 #   # answers whether a train's window is still open. Every value is a scalar,
 #   # and a key beyond these three is ignored.
