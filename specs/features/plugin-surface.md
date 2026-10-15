@@ -6131,6 +6131,51 @@ The test is whether a call that used to complete now blocks, or the reverse. Bef
 
 **Verification.** The certifying run of `bash scripts/verify.sh` over `bdf9cae9` plus this record and the raise is the one the review report for #775 names.
 
+### #778: the landing train sizes its gate and runs a later gate only where it fits, as built
+
+`simple`. Built on branch `work-778-777` as `b99e540e`, cut from `dev` at `254b5fce`, sharing the branch with #777. The change spec is the ticket's claim comment, which records the builder's four design choices. Prose only, with no code and no test.
+
+**What ships.** `skills/promote/SKILL.md` → *The landing train*.
+
+- Step 9, *Gate it*. The train sizes the gate from the longest gate it knows: one it has already run this train, otherwise the gate times on the latest `train:` line of the oldest boarded ticket, which step 13 writes. It runs the gate in the background and waits for its exit, with any host timeout set to at least twice that duration, or to the host's maximum where it knows none.
+- Step 9, *A gate after the first must fit*. Before the gate of step 10's retry and before each fallback gate in step 11, the train asks the window and takes `closes` minus `now`, both of which `scripts/landing-window.js` prints. Where that is shorter than the longest gate this train has run, it runs no gate, pushes nothing, and leaves every ticket not yet landed or ejected parked as `missed`. The first gate is not checked.
+- Step 10. The step's retry is stated once: either the rebuild after a moved ticket or the re-gate after a refused push spends it. Once it is spent, the next move or refusal pushes nothing, and the tickets in the candidate are left parked as `stopped: held mid-train` or `stopped: push refused twice`, whichever ended it. A retry whose gate would not fit leaves them `missed`. This removes the contradiction #775's record named as a residual, between "One such retry: a second refusal stops the train" and the rebuild spending the same retry.
+- Step 11, first bullet. A gate the host killed (out of memory, a timeout, a signal), with no failing test or check to name, is not a red. Nothing is attributed and nothing is ejected. The train pushes nothing and leaves every ticket not yet landed or ejected parked as `stopped: gate killed`, with the gate's tail in the report. A fallback gate killed the same way stops the fallback. The train does not re-run the gate.
+- Step 11, the fallback. It has one retry of its own on step 10's terms: a refused push re-gates once, and the next refusal stops the fallback as `stopped: push refused twice`. Each fallback gate must fit the window first.
+
+**Evidence.** ADR 0019's for prose: this reviewer read the diff from `254b5fce` to `b99e540e` in full against the four criteria, all met. No train ran and no use-probe was made. The fit check compares against a number every retry and fallback already holds, because each follows at least one gate this train ran.
+
+**Two residuals, named rather than fixed.**
+
+- Step 9 justifies the sizing with "a gate killed at a tool default is a re-run, not a result". Step 11 gives a killed gate a stop with no re-run. The step 9 clause is the cost being avoided, but a reader can take it as an instruction to re-run.
+- *Park or land* still says a direct "land it now" landing costs the train "a rebase and a gate, which it recovers from". #777's ADR amendment records that this holds only while two gates fit one window, and the fit check now makes the train stop as `missed` where they do not.
+
+### #777: under a cadence only the train pushes the integration branch, and a change with no ticket parks as a branch, as built
+
+`complex`. Built on branch `work-778-777` as `003d5076`, on top of #778. The design is the architect stage's section appended to the ticket body, which amended AC-1 and AC-4 at design time and marks both amendments. Prose only, with no code and no test.
+
+**What ships.**
+
+- `AGENTS.md` and `templates/spine.md`, identically. *The lifecycle*: where `harness.yaml` declares a `cadence:`, only the train pushes the integration branch. Builders park at PASS, and every other writer (a fix, a command's report, a back-merge, a consuming repo's own command) parks its change on a `park/` branch. Any writer lands directly only where the operator says, in that session, to land that change now. *The contract* → **Parked** gains the ticketless form: the writer runs the gate, pushes `park/<stamp>-<slug>` with `<stamp>` as `YYYYMMDDTHHMMSSZ`, and writes nothing else. The branch is the whole record. The train lands these after the parked tickets, deletes each one it lands, and names in its report each one it cannot land.
+- `skills/promote/SKILL.md` → *The landing train*. Step 2 reports every park branch `missed` on a closed window. Step 3 lists them with `git ls-remote --heads <remote> 'refs/heads/park/*'` in name order. The full `refs/heads/` form is used because a bare `park/*` pattern also matches `x/park/y`, which the builder measured in a scratch repository. Step 4 boards a park branch while a cord is open only where it carries a commit naming the cord, and leaves the rest as `cord open`. Step 5 boards them after every ticket, recording each tip. Step 7 merges them last, by the sha boarding read. A commit the candidate already contains counts as landed. A conflict is aborted and left as `merge`, because there is nobody to eject it to, and a commit that no longer fetches is left as `moved`. Step 10 does not re-read park branches. In step 11's fallback, park branches land after every ticket, and one red on its solo gate while green at the tip is left as `red`. Step 12 deletes each landed park branch where `git ls-remote` still shows the tip boarding read. The `train:` line's count and the train report both include park branches.
+- `skills/promote/SKILL.md` → altitude 2, step 5. Under a `cadence:` the release hop's back-merge parks like any change with no ticket.
+- `skills/assess/SKILL.md` step 3. Once the gate is green the report lands as the spine lands any change: on the integration branch, or, under a `cadence:` without the operator's in-session "land it now", parked for the train. The gate runs before landing or parking.
+- `skills/worktree-isolation/SKILL.md` → *A red base*. A fix-lane repair parks under a `cadence:`, and the train closes the bug when it lands the branch.
+- `skills/routine/SKILL.md`. The standing authorisation adds a `park/` branch: pushing the one it parks, and, on the train, deleting one it has landed. The train report lists park branches landed and left.
+- `templates/harness.yaml`, the `cadence:` comment. `specs/decisions/0024-landing-train.md` gains a dated amendment: decision 1 binds every writer, with the rejected alternatives and three recorded-not-guarded residuals.
+
+**AC-2's list.** The writers outside `/promote` that land on the integration branch are `/assess`, the fix lane and its red-base repair, and the release hop's back-merge. `/propose`, `/drain`, `/capture` and `/hydrate` carry no landing instruction. This reviewer re-ran the grep over `skills/`, `agents/`, `.codex/` and `templates/` and found no other. `tracker`'s `parked` stays ticket-only.
+
+**Evidence.** ADR 0019's for prose: this reviewer read the diff from `b99e540e` to `003d5076` in full against the five criteria, all met. With no `cadence:`, every edited sentence either sits behind a `cadence:` condition or leaves the no-cadence path's behaviour unchanged. No train ran and no use-probe was made.
+
+**One residual, named rather than fixed.** Step 10's rebuild after a moved ticket says "the remaining tickets merged again as step 7 merges them". Step 7 merges the park branches last, and the next sentence says the candidate holds the commit boarding read, but the rebuild sentence names only tickets.
+
+### The cycle's version class: major, raised at this review to `31.0.0`
+
+The test is whether a call that used to complete now blocks, or the reverse. Under a `cadence:`, `/assess`, a fix-lane change and the release hop's back-merge used to finish by pushing the integration branch, and now stop at a `park/` branch. The spine also obliges a consuming repo's own commands to do the same, so a consumer whose command pushes the integration branch now breaks the contract until it decides to change it. #778 adds two changed outcomes on the train: a retry or fallback gate that used to run is now not run and leaves the batch `missed`, and a host-killed gate that used to be attributed as a red, and could eject a green ticket, now stops the train as `stopped: gate killed`. #772 and #775 were raised major for the same shape, an ejection that became a stop. The counter-argument for minor is that only cadence repos are affected and no command, argument or refusal reason was renamed. The grammar in `specs/architecture-principles.md` → *The installed surface is a versioned interface* covers the shape of what a command obliges its reader to do, and it does not exempt a change limited to repos with a given configuration. `origin/main` stands at `30.0.0`, and `/build` raised the four homes in `scripts/plugin-version.js`'s `CANDIDATES` to `30.1.0`. This review raised them by hand to `31.0.0` inside the candidate, before the certifying gate. The raise covers both tickets.
+
+**Verification.** The certifying run of `bash scripts/verify.sh` over `003d5076` plus this record and the raise is the one the review report for #778 and #777 names.
+
 ## Cross-references
 
 - `specs/harness-assumptions.md` — one row per hook, script, skill and agent: what it assumes the model cannot do, and the test that would retire it. Read at every model or host release.
