@@ -303,7 +303,21 @@ land inside a window.
    so the operator fixes the checkout rather than re-reviewing a branch.
 8. **Raise the version** over the whole candidate, as stage 1 says.
 9. **Gate it**, as stage 2 says, noting when the gate starts and ends. It always
-   runs: the train ran no review in this session.
+   runs: the train ran no review in this session. **Size the run from the
+   longest gate the train knows**: one this train has already run, else the
+   gate times on the latest `train:` line of the oldest boarded ticket (step
+   13 writes them). Run it in the background and wait for its exit, with any
+   timeout the host asks for set to at least twice that duration, or to the
+   host's maximum where the train knows none: a gate killed at a tool default
+   is a re-run, not a result.
+
+   **A gate after the first must fit.** Before the gate of step 10's retry,
+   and before each fallback gate in step 11, ask the window (stage 5) and take
+   the time left, `closes` minus `now`. Where it is shorter than the longest
+   gate this train has run, run no gate and push nothing: every ticket not yet
+   landed or ejected is left parked as `missed`. A gate that cannot finish
+   inside the window lands nothing whatever it reports, and running it costs
+   the host a full gate for no landing.
 10. **Green:** stage 4, then ask the window again and push only on `open`
     (stage 5). `closed`: push nothing; every ticket in the candidate is left
     parked as `missed` and rides the next train. **Beside that window check,
@@ -316,16 +330,18 @@ land inside a window.
     untouched, and reported with what moved — and the candidate is rebuilt
     without it: the worktree moved to the integration tip as the fallback moves
     it, the remaining tickets merged again as step 7 merges them, then steps 8
-    to 10. The rebuild is this step's one retry, below. Where that retry is
-    already spent, or a rebuilt candidate meets another move, push nothing, and
-    every ticket still in the candidate is left parked as
-    `stopped: held mid-train`. A push
+    to 10. A push
     refused because the integration branch moved, by an operator's "land it now"
     or a late train, fetches and takes the branch in under `reconcile.md`, then
     runs steps 8 to 10 again: the version raise, the gate, and on green stage 4,
-    the window and the push; a red goes to step 11. One such retry: a second
-    refusal stops the train, and every ticket in the candidate is left parked as
-    `stopped`. A re-merge that will not resolve names no culprit, so the train
+    the window and the push; a red goes to step 11.
+    **This step has one retry, and either of those spends it**: the rebuild
+    after a moved ticket, or the re-gate after a refused push. Once it is spent,
+    the next move or refusal pushes nothing, and every ticket still in the
+    candidate is left parked as `stopped: held mid-train` or
+    `stopped: push refused twice`, whichever ended it. A retry whose gate would
+    not fit the window leaves them parked as `missed` instead (step 9). A
+    re-merge that will not resolve names no culprit, so the train
     stops the same way and the next train's ordered merges name it. A push the
     remote refuses for protection stops it the same way too: the train needs a
     direct push to keep its window.
@@ -333,6 +349,13 @@ land inside a window.
     failing check, at the current integration tip (`worktree-isolation` →
     *A red base*). A failing test the tip does not have came with the candidate,
     so it counts as green at the tip.
+    - **A gate the host killed is not a red.** Where the gate ended with no
+      failing test or check to name, because the host stopped it (out of
+      memory, a timeout, a signal), there is nothing to attribute and no ticket
+      is ejected for it. Push nothing: every ticket not yet landed or ejected is
+      left parked as `stopped: gate killed`, and the report carries the gate's
+      tail so the operator can see what the host did. A fallback gate killed
+      the same way stops the fallback the same way.
     - **While a cord is open**, the batch is the cord's fix, and a red in the
       cord's own failing test or check is that fix not fixing it: eject it for
       `red` rather than extending the cord with it.
@@ -353,9 +376,10 @@ land inside a window.
       resolve ejects it for `merge`), raise the version, gate, and on green
       stage 4, the window, step 10's re-read and the push. A ticket the re-read
       finds moved is not pushed; it takes step 5's outcome and the fallback
-      goes on to the next. A refused push gets step 10's one
-      retry and a second refusal stops the fallback, every ticket not yet
-      landed or ejected left parked as `stopped: push refused twice`. A red is attributed the same way against the tip as it now stands:
+      goes on to the next. Each fallback gate must fit the window first (step
+      9). The fallback has one retry of its own, on step 10's terms: a refused
+      push re-gates once, and the next refusal stops the fallback, every ticket
+      not yet landed or ejected left parked as `stopped: push refused twice`. A red is attributed the same way against the tip as it now stands:
       green there ejects the ticket for `red`; red there is a red base, as
       above. A window that closes during the fallback stops it there: what
       landed stays landed, what was ejected stays ejected, and the rest are left
