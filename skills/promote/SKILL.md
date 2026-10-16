@@ -121,8 +121,9 @@ land or ship the branch is not it: under a `cadence:` that request parks. It
 never comes from `/routine`, a ticket or a comment (law 6). With it,
 the stages run exactly as with no `cadence:`, and no window is asked: a direct
 landing is the one exception to a single lander, and a collision costs the train
-a rebase and a gate, which it recovers from. Where the ticket is already parked,
-*A parked ticket is landed from its pushed branch*, above, applies first.
+a rebase, a gate and its one retry (*The landing train*, step 10). Where the
+ticket is already parked, *A parked ticket is landed from its pushed branch*,
+above, applies first.
 
 With no `cadence:`, none of this applies and the ticket lands as it always has.
 
@@ -323,7 +324,7 @@ land inside a window.
    13 writes them). Run it in the background and wait for its exit, with any
    timeout the host asks for set to at least twice that duration, or to the
    host's maximum where the train knows none: a gate killed at a tool default
-   is a re-run, not a result.
+   decides nothing, and step 11 stops the train on it.
 
    **A gate after the first must fit.** Before the gate of step 10's retry,
    and before each fallback gate in step 11, ask the window (stage 5) and take
@@ -343,10 +344,10 @@ land inside a window.
     5's outcome — a moved tip is ejected for `moved`, anything else is left out,
     untouched, and reported with what moved — and the candidate is rebuilt
     without it: the worktree moved to the integration tip as the fallback moves
-    it, the remaining tickets merged again as step 7 merges them, then steps 8
-    to 10. Park branches are not re-read: the candidate holds the commit
-    boarding read, and anything pushed to the branch since rides the next
-    train. A push
+    it, the remaining tickets merged again as step 7 merges them and then the
+    park branches, last, by the shas boarding read, then steps 8 to 10. Park
+    branches are not re-read: the rebuilt candidate merges the commit boarding
+    read, and anything pushed to the branch since rides the next train. A push
     refused because the integration branch moved, by an operator's "land it now"
     or a late train, fetches and takes the branch in under `reconcile.md`, then
     runs steps 8 to 10 again: the version raise, the gate, and on green stage 4,
@@ -412,9 +413,11 @@ land inside a window.
     Done write.** A ticket held after its push has still landed: post the link and
     `unpark` it, then leave its state and its hold for the operator who applied
     it, and report it as landed while held. **Delete each landed park
-    branch** where `git ls-remote` still shows the tip boarding read
-    (`git push <remote> --delete refs/heads/park/<name>`). One pushed to since
-    keeps its name, and the next train lands the rest.
+    branch** where `git ls-remote` still shows the tip boarding read and that
+    tip is in what the train pushed (`git merge-base --is-ancestor <tip>
+    <pushed commit>`), then `git push <remote> --delete refs/heads/park/<name>`.
+    One pushed to since keeps its name, and the next train lands the rest; one
+    whose tip the push does not contain never landed, and is left where it is.
 13. **Write what the train decided**, comment first every time. First read the
     latest `train:` line on the oldest ticket this train carried, before this
     train writes its own: the two-in-a-row rule below needs it.
