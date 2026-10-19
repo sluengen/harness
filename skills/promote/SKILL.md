@@ -337,7 +337,8 @@ land inside a window.
    it is, reported with the same why, wherever this step leaves tickets
    parked. On `open`, take the time left, `closes` minus `now`, and the
    **comparable gate**: the latest gate the train knows that carried no ticket
-   or park branch missing from this candidate, one landed since included. The
+   or park branch missing from this candidate, counting one the integration
+   branch has taken in since as missing, because its changes left the range. The
    train knows the gates it has run, which are later than any record, and one
    record, read before its first gate: the first gate on the latest `train:`
    line of the oldest ticket this train carried, the line step 13 reads first,
