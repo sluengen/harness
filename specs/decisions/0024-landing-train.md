@@ -58,3 +58,25 @@ The build of decisions 1 to 4 settled three points the decision left open or sta
 - A train carrying only park branches writes no `train:` line, so the two-in-a-row cord cannot see it.
 - A park branch red in combination re-boards every train and forces the fallback until somebody repairs it. Never observed, because each writer gates before parking; reopen on the first train report naming one park branch `red` twice.
 - `park/*` is a trust boundary equal to an integration push. A consumer restricting integration pushes to the train's identity protects `park/*` with its own branch rules.
+
+## Amendment (2026-10-19, #785)
+
+**Every gate the train runs must fit its window, the first included.**
+
+**Why.** #778 checked step 10's retry and step 11's fallback gates against the window and started the first gate unconditionally. A train that departs late, or whose merges run long, then starts a gate its window cannot hold. The push is refused at `closes` whatever the gate reports, and the host has spent a full gate, 30 to 41 minutes against a 60-minute pitch on calibrate, for no landing.
+
+**The rule.** Before each gate the train asks the window. A closed window runs no gate. An open one runs the gate unless the time left is no longer than the comparable gate: the latest gate the train knows that carried no ticket or park branch the candidate lacks. Before its first gate the train's one record is the first gate on the latest `train:` line of the oldest ticket in the candidate, which now names what that gate carried. A gate that does not fit leaves the batch parked as `missed` and writes no gate times. The next train therefore has no record and observes, so a record skips at most one train, and a gate that has outgrown the window is observed before the second empty train pulls the cord. With no comparable gate the gate runs, and an operator running the train may say to gate anyway. The host timeout is twice a comparable gate that went green over the same set, and the host's maximum otherwise. Decisions 2 and 3 stand.
+
+**Rejected.**
+- *The longest gate the train knows, as #778 sized it.* Under a gate that selects its checks from the diff (#784), a recorded duration measures that batch. A backend batch's record would skip a later docs-only one, so an unrelated record starves the train.
+- *Only an identical batch.* Builders park between trains, so a missed batch seldom re-rides unchanged, and the check would almost never act.
+- *A worst case, an average, or an estimate from the diff.* Each is a telemetry store or a prediction, and the cord already escalates a gate that has outgrown the window.
+- *A new why, `missed: gate would not fit`.* Only the cord reads a why, and it counts both alike. The line beneath says no gate ran and why.
+- *A margin above the comparable gate.* It would be an invented number, and the record is already a lower bound.
+
+**Recorded, not guarded.**
+- The containment rule assumes a gate that selects from the diff selects no fewer checks for more changes. Where a consumer's selection is not monotone, one train can skip wrongly; its line carries no times, so the next observes.
+- A red gate held up by a hung check, or a gate the host killed after hanging, can run longer than the green gate would, and can skip one train the same way.
+- Under a gate that runs the same checks for any diff, a rebuild or fallback gate over fewer tickets has no comparable gate and runs where #778 skipped it. Its push still waits on the window. The cost is one gate's host time, on paths no train has been observed to take.
+- A ticket left out of a train keeps its older line, so a later train can compare against a record that a skip has already used.
+- A gate whose time left beats its comparable gate by seconds can still miss its push: stage 4, the re-read and the window check take time the record does not include.

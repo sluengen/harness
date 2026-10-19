@@ -317,22 +317,44 @@ land inside a window.
    `setup: no merge base`, and the report names the clone's depth as the cause,
    so the operator fixes the checkout rather than re-reviewing a branch.
 8. **Raise the version** over the whole candidate, as stage 1 says.
-9. **Gate it**, as stage 2 says, noting when the gate starts and ends. It always
-   runs: the train ran no review in this session. **Size the run from the
-   longest gate the train knows**: one this train has already run, else the
-   gate times on the latest `train:` line of the oldest boarded ticket (step
-   13 writes them). Run it in the background and wait for its exit, with any
-   timeout the host asks for set to at least twice that duration, or to the
-   host's maximum where the train knows none: a gate killed at a tool default
-   decides nothing, and step 11 stops the train on it.
+9. **Gate it**, as stage 2 says, noting when the gate starts and ends. A review's
+   gate never stands in for it: the train ran no review in this session.
 
-   **A gate after the first must fit.** Before the gate of step 10's retry,
-   and before each fallback gate in step 11, ask the window (stage 5) and take
-   the time left, `closes` minus `now`. Where it is shorter than the longest
-   gate this train has run, run no gate and push nothing: every ticket not yet
-   landed or ejected is left parked as `missed`. A gate that cannot finish
-   inside the window lands nothing whatever it reports, and running it costs
-   the host a full gate for no landing.
+   **Every gate must fit the window, the first included.** Immediately before
+   this gate, step 10's retry gate and each fallback gate in step 11, ask the
+   window (stage 5). Any answer but `open` runs no gate and pushes nothing:
+   every ticket not yet landed or ejected is left parked as `missed` on
+   `closed`, and as `stopped: window refused` on a refusal, whose case or
+   stderr the report carries. On `open`, take the time left, `closes` minus
+   `now`, and the **comparable gate**: the latest gate the train knows that
+   carried no ticket or park branch this candidate lacks. The train knows the
+   gates it has run, which are later than any record, and one record, read
+   before its first gate: the first gate on the latest `train:` line of the
+   oldest ticket in the candidate (step 13 writes it), counted only where that
+   line gives the gate's start, its end and what it carried. Where the time
+   left is no longer than the comparable gate, run no gate and push nothing:
+   every ticket not yet landed or ejected is left parked as `missed`. The
+   window is open only before `closes`, so a gate that cannot end before it
+   lands nothing whatever it reports, and running it costs the host a full
+   gate for no landing.
+
+   **With no comparable gate, the gate runs**, and it is the observation the
+   next train compares against. Nothing stands in for one: no estimate, no
+   older line, and no gate over a ticket or park branch this candidate lacks,
+   which may have run checks this one will not. A line with no start and end
+   decides nothing, so the line a skipped gate leaves sends the next train to
+   observe, and no record skips two trains running. A comparable gate stands
+   as a lower bound, because this candidate carries at least its changes over
+   a base at least as new. Where the operator, in the session running the
+   train, says to gate anyway, the gate runs whatever the comparable gate
+   says, and the push still waits on `open`; a ticket or a comment never says
+   it (law 6).
+
+   Run it in the background and wait for its exit, with any timeout the host
+   asks for set to at least twice the comparable gate where that gate went
+   green over exactly this candidate's tickets and park branches, and to the
+   host's maximum otherwise: a gate killed at a tool default decides nothing,
+   and step 11 stops the train on it.
 10. **Green:** stage 4, then ask the window again and push only on `open`
     (stage 5). `closed`: push nothing; every ticket in the candidate is left
     parked as `missed` and rides the next train. **Beside that window check,
@@ -443,10 +465,14 @@ land inside a window.
       waits on an answer, so the label is `operator`, not `input`.
     - **A ticket left parked** gets a comment with a line of its own,
       `train: <departure> landed <n>, <why>`, where `<n>` is how many tickets
-      and park branches this train landed and the why is what kept this one back: `missed` (the
-      window closed before its push), `stopped: <reason>`, `red base`,
-      `setup: no merge base`, or `waiting on <ticket>`; beneath it `closes` and when the gate started and
-      ended, or that it was not reached.
+      and park branches this train landed and the why is what kept this one
+      back: `missed` (the window closed before its push, or would have before
+      its gate could end), `stopped: <reason>`, `red base`,
+      `setup: no merge base`, or `waiting on <ticket>`. Beneath it go
+      `closes` and either when the train's first gate started and ended, with
+      the tickets and park branches it carried, or that no gate ran and,
+      where step 9 decided that, the time left and the comparable gate it
+      would not fit. Step 9 of the next train reads this.
     - **A red base**: search for or file its P1 per `tracker` → *The andon
       cord*, keyed to the failing test or check. It is not held, because a
       builder repairs a red base.
@@ -473,7 +499,8 @@ land inside a window.
 Report what the train did: landed (ticket, commit), ejected (ticket, cause),
 held, left out and what moved, left parked and why, park branches landed
 (branch, commit) and left where they are and why, the departure, `closes`, the
-gates' durations, and any cord filed or extended.
+gates' durations, each gate step 9 did not run with the time left and the
+comparable gate, and any cord filed or extended.
 
 **Recorded, not guarded.** The line read first is the latest on the oldest
 ticket, which is the previous train's unless a train in between carried that
