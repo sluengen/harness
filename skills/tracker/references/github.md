@@ -200,7 +200,9 @@ files under one umbrella issue* lists, for the reasons it gives, with this
 backend's fields: the board's Status set to Todo stands in for `projectId` and
 state, and the label, the assignment and `assurance:trivial` are unchanged. Each
 child links to it as above. An umbrella's id stays off a PR here too: GitHub
-closes an issue a merged PR names (*Closing an issue* below).
+closes an issue a merged PR names (*Closing an issue* below). An umbrella has no
+merge to link when it closes, and its audit comment is the record, so it closes
+with `gh issue close <n> --repo <owner>/<name> --reason completed` and no comment.
 
 ### `transition` — move an issue's Status
 
