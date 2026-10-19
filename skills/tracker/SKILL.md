@@ -25,6 +25,13 @@ performs it.
 `park` · `unpark` · `parked` · `close` · `ledger`. Each reference implements exactly these
 names.
 
+**A parent and its children travel on `open` and `create`, not on an operation
+of their own.** Where the backend models sub-issues, `open` reports the ticket's
+parent and each child with its state, and `create` takes an optional parent. That
+field, read here, is what makes a ticket a container; a title or a body never
+does (law 6). A backend without the relationship reports none, and a filing
+there goes flat.
+
 A postcondition is verified by re-reading the ticket, **never by exit status**.
 Every backend has a call that reports success while leaving the thing you asked
 for undone — an item added to a board with its Status unset, a mutation

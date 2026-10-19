@@ -42,7 +42,7 @@ The umbrella is a container. Nothing builds it, and it carries no change spec: r
 
 **This is not a `hold`.** That operation is three writes including a question for the operator, and nothing is being asked here. What the umbrella borrows is the label-and-assignment shape the standing ledger issue already uses as a never-built-directly marker (`tracker` → *`ledger`*).
 
-**The operator closes it**, whenever the audit is done. Nothing rolls up, checks completeness, or closes it on the last child.
+**It closes on an attended close-out audit that leaves nothing open**: every child Done and no gap against the intent. The operator invoking that audit is the authorisation. Nothing rolls up, checks completeness, or closes it on the last child.
 
 Each child then passes `parentId` on its own `issueCreate`. Placement, dependencies, priority and assurance are unchanged: the first `wip_limit` children into Todo, the rest into Backlog.
 
@@ -112,9 +112,9 @@ Nothing here reads or prints a credential the host holds; path 1's probe is the 
 curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d @<file>
 ```
 
-**Read an issue** (brief, description, labels, state):
+**Read an issue** (brief, description, labels, state, parent and children):
 ```bash
-curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d '{"query":"query { issue(id:\"<issue-id>\") { identifier title description url state { name } labels { nodes { name } } comments { nodes { body createdAt } } } }"}'
+curl -sS -X POST https://api.linear.app/graphql -H 'Content-Type: application/json' -d '{"query":"query { issue(id:\"<issue-id>\") { identifier title description url state { name } labels { nodes { name } } comments { nodes { body createdAt } } parent { identifier } children { nodes { identifier title state { name type } } } } }"}'
 ```
 
 **Pull the Todo queue** for a team (the work to pick up):

@@ -136,6 +136,17 @@ gh api --paginate repos/<owner>/<name>/issues/<n>/comments \
   --jq '.[] | "## \(.user.login) \(.created_at)\n\n\(.body)\n"'
 ```
 
+**So is the hierarchy.** Sub-issues are a REST relationship, reachable wherever
+`gh api` is. The issue payload's `sub_issues_summary.total` says whether there
+are children at all; list them for their states, and ask for the parent, which
+answers 404 on an issue that has none:
+
+```bash
+gh api --paginate repos/<owner>/<name>/issues/<n>/sub_issues \
+  --jq '.[] | "\(.number) \(.state) \(.title)"'
+gh api repos/<owner>/<name>/issues/<n>/parent --jq '.number'
+```
+
 ### `create` — file an issue **onto the board, with Status set**
 
 Four steps, in order. **Skipping the third is the item-add-no-status trap:** an item added to the board lands with **Status unset**, and a Todo-scoped queue read never sees it — the issue exists, looks filed, and is invisible to the loop.
@@ -172,6 +183,23 @@ gh project item-list <number> --owner <owner> --format json --limit <n>
 **Where the step-3 write you ran came back an error, say which case you are in** — the licence is that call's own failure, not a belief about the host (*What is reachable when GraphQL is refused* above). Projects v2 then offers no REST read to substitute, so step 4 cannot confirm placement at all. The filing is incomplete under the rule stated in that section: report the identifier, the URL, and the board operation that failed, quoting what it returned, and stop. The issue existing and its label reading back is evidence about the issue, never about the board.
 
 **Quote titles; pass bodies as `--body-file`.** Issue text is frequently lifted from a report, a review finding, or a design section, and may carry backticks, `$(…)`, or newlines. A heredoc of tracker-derived text interpolated into a shell command is a command-injection boundary — the same rule as never using `shell=True` with untrusted input.
+
+**Under a parent, link the child after step 1.** The link takes the child's
+numeric `id`, not its number, and the read-back is the parent's own list:
+
+```bash
+CHILD_ID=$(gh api repos/<owner>/<name>/issues/<n> --jq '.id')
+gh api -X POST repos/<owner>/<name>/issues/<parent>/sub_issues \
+  -F sub_issue_id="$CHILD_ID"
+gh api --paginate repos/<owner>/<name>/issues/<parent>/sub_issues --jq '.[].number'
+```
+
+**A breakdown's umbrella** carries what `references/linear.md` → *A breakdown
+files under one umbrella issue* lists, for the reasons it gives, with this
+backend's fields: the board's Status set to Todo stands in for `projectId` and
+state, and the label, the assignment and `assurance:trivial` are unchanged. Each
+child links to it as above. An umbrella's id stays off a PR here too: GitHub
+closes an issue a merged PR names (*Closing an issue* below).
 
 ### `transition` — move an issue's Status
 
