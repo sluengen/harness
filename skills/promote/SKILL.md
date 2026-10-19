@@ -157,12 +157,13 @@ With no `cadence:`, none of this applies and the ticket lands as it always has.
    **Skip the run only where both hold** (#731): `git rev-parse HEAD^{tree}`,
    taken after stage 1, equals the `reviewed_tree` in the review report; and that
    review ran in this session and its reviewer's own certifying gate over that tree
-   was green — never on `--engine codex`, whose reviewer cannot run one. A run that wrote the
+   was green and covered its range (`engineering` → *Verification*) — never on `--engine codex`, whose reviewer cannot run one. A run that wrote the
    reviewer's record bytes itself has moved the tree past that value, so it
    gates. The session is law 3's condition, and it is also the host's: a
    gate is not host-portable, and a suite has run green in CI and red on a
    developer's machine. That gate's output is then this stage's evidence, read in
-   full. Either
+   full, with the checks the review ran directly beside it; where the gate
+   runs again, run those again too. Either
    condition unmet, and the gate runs. A gate that could not resolve its range
    is no red: it is the stop `engineering` → *Verification* describes, and on
    the train it ejects nothing — every ticket not yet landed or ejected is left
@@ -559,11 +560,11 @@ resolver is what changes, not the command.
 3. *Gate it.* Run the certifying gate in that worktree (`engineering` →
    *Verification*) — read `commands.verify` fresh from `harness.yaml` every
    run and never hardcode a gate command here, since this path keeps no state
-   to remember one in. Capture the output. Its range is everything `<src>`
-   carries that `<dst>` does not, so a gate whose output names another base
-   has not covered the hop: run the invocation this repository's `AGENTS.md`
-   names for its release hop where it names one, and otherwise stop and
-   report, as for a gate that could not run. **On red: stop and report** the
+   to remember one in. Where this repository's `AGENTS.md` names an
+   invocation for its release hop, run that instead. Capture the output. Its
+   range is everything `<src>` carries that `<dst>` does not, so a gate whose
+   output names another base has not covered the hop: stop and report, as for
+   a gate that could not run. **On red: stop and report** the
    captured output. No retry.
 4. *On green, publish.* The hop selects the mechanism:
    - `<dst>` is an *intermediate* branch (e.g. `staging`): push the merged
