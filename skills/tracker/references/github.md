@@ -137,13 +137,14 @@ gh api --paginate repos/<owner>/<name>/issues/<n>/comments \
 ```
 
 **So is the hierarchy.** Sub-issues are a REST relationship, reachable wherever
-`gh api` is. The issue payload's `sub_issues_summary.total` says whether there
-are children at all; list them for their states, and ask for the parent, which
+`gh api` is, and `gh issue view` returns none of it, so run these on every `open`.
+An empty list is no children. `state_reason` is what tells a completed child from
+a `not_planned` one, which `state` reports alike as `closed`. The parent call
 answers 404 on an issue that has none:
 
 ```bash
 gh api --paginate repos/<owner>/<name>/issues/<n>/sub_issues \
-  --jq '.[] | "\(.number) \(.state) \(.title)"'
+  --jq '.[] | "\(.number) \(.state) \(.state_reason) \(.title)"'
 gh api repos/<owner>/<name>/issues/<n>/parent --jq '.number'
 ```
 

@@ -42,7 +42,7 @@ The umbrella is a container. Nothing builds it, and it carries no change spec: r
 
 **This is not a `hold`.** That operation is three writes including a question for the operator, and nothing is being asked here. What the umbrella borrows is the label-and-assignment shape the standing ledger issue already uses as a never-built-directly marker (`tracker` → *`ledger`*).
 
-**It closes on an attended close-out audit that leaves nothing open**: every child Done and no gap against the intent. The operator invoking that audit is the authorisation. Nothing rolls up, checks completeness, or closes it on the last child.
+**It closes on an attended close-out audit that leaves nothing open**: every child Done or Canceled, and every gap against the intent fixed or recorded. The operator invoking that audit is the authorisation. Nothing rolls up, checks completeness, or closes it on the last child.
 
 Each child then passes `parentId` on its own `issueCreate`. Placement, dependencies, priority and assurance are unchanged: the first `wip_limit` children into Todo, the rest into Backlog.
 
