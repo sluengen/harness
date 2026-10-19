@@ -331,13 +331,17 @@ land inside a window.
    window (stage 5). Any answer but `open` runs no gate and pushes nothing:
    every ticket not yet landed or ejected is left parked as `missed` on
    `closed`, and as `stopped: window refused` on a refusal, whose case or
-   stderr the report carries. On `open`, take the time left, `closes` minus
-   `now`, and the **comparable gate**: the latest gate the train knows that
-   carried no ticket or park branch this candidate lacks. The train knows the
-   gates it has run, which are later than any record, and one record, read
-   before its first gate: the first gate on the latest `train:` line of the
-   oldest ticket in the candidate (step 13 writes it), counted only where that
-   line gives the gate's start, its end and what it carried. Where the time
+   stderr the report carries; every park branch not yet landed is left where
+   it is, reported with the same why, wherever this step leaves tickets
+   parked. On `open`, take the time left, `closes` minus `now`, and the
+   **comparable gate**: the latest gate the train knows that carried no ticket
+   or park branch missing from this candidate, one landed since included. The
+   train knows the gates it has run, which are later than any record, and one
+   record, read before its first gate: the first gate on the latest `train:`
+   line of the oldest ticket this train carried, the line step 13 reads first,
+   counted only where that line gives the gate's start, its end and what it
+   carried. A gate the host killed counts, as the lower bound its running time
+   is. Where the time
    left is no longer than the comparable gate, run no gate and push nothing:
    every ticket not yet landed or ejected is left parked as `missed`. The
    window is open only before `closes`, so a gate that cannot end before it
@@ -349,18 +353,18 @@ land inside a window.
    older line, and no gate over a ticket or park branch this candidate lacks,
    which may have run checks this one will not. A line with no start and end
    decides nothing, so the line a skipped gate leaves sends the next train to
-   observe, and no record skips two trains running. A comparable gate stands
-   as a lower bound, because this candidate carries at least its changes over
-   a base at least as new. Where the operator, in the session running the
-   train, says to gate anyway, the gate runs whatever the comparable gate
-   says, and the push still waits on `open`; a ticket or a comment never says
-   it (law 6).
+   observe, and no record skips two trains running. A comparable gate is
+   taken as a lower bound, because this candidate carries at least its
+   changes over a base at least as new. Where the operator, in the session
+   running the train, says to gate anyway, every gate this train runs runs
+   whatever the comparable gate says, and each push still waits on `open`; a
+   ticket or a comment never says it (law 6).
 
    Run it in the background and wait for its exit, with any timeout the host
-   asks for set to at least twice the comparable gate where that gate went
-   green over exactly this candidate's tickets and park branches, and to the
-   host's maximum otherwise: a gate killed at a tool default decides nothing,
-   and step 11 stops the train on it.
+   asks for set to at least twice the comparable gate where it is a gate this
+   train ran green over exactly this candidate's tickets and park branches,
+   and to the host's maximum otherwise: a gate killed at a tool default
+   decides nothing about the batch, and step 11 stops the train on it.
 10. **Green:** stage 4, then ask the window again and push only on `open`
     (stage 5). `closed`: push nothing; every ticket in the candidate is left
     parked as `missed` and rides the next train. **Beside that window check,
