@@ -150,19 +150,24 @@ With no `cadence:`, none of this applies and the ticket lands as it always has.
    stage 2 runs the gate rather than skipping it. Any other answer, or a
    non-zero exit, stops the landing and is reported; a release ahead of the
    integration branch is not a repair this stage makes.
-2. *Gate.* Run the repo's `harness.yaml` `commands.verify` gate over the merged
-   tree — read the command fresh from `harness.yaml` every run and never
-   hardcode one here. Capture the output and read all of it.
+2. *Gate.* Run the certifying gate over the merged tree, committed — read
+   `commands.verify` fresh from `harness.yaml` every run, never hardcode one
+   here, and invoke it exactly as declared (`engineering` → *Verification*).
+   Capture the output and read all of it, what it selected included.
    **Skip the run only where both hold** (#731): `git rev-parse HEAD^{tree}`,
    taken after stage 1, equals the `reviewed_tree` in the review report; and that
-   review ran in this session and its reviewer's own complete gate over that tree
+   review ran in this session and its reviewer's own certifying gate over that tree
    was green — never on `--engine codex`, whose reviewer cannot run one. A run that wrote the
    reviewer's record bytes itself has moved the tree past that value, so it
    gates. The session is law 3's condition, and it is also the host's: a
    gate is not host-portable, and a suite has run green in CI and red on a
    developer's machine. That gate's output is then this stage's evidence, read in
    full. Either
-   condition unmet, and the gate runs.
+   condition unmet, and the gate runs. A gate that could not resolve its range
+   is no red: it is the stop `engineering` → *Verification* describes, and on
+   the train it ejects nothing — every ticket not yet landed or ejected is left
+   parked as `setup: no merge base`, as *The landing train* step 7 leaves them
+   for a merge git refuses.
 3. *Pass.* Green over the tree in hand is what licenses the push. **A red gate
    here is this builder's to fix, whatever caused it.** That is the resolved
    posture and it is deliberate: stop the line, not stop the tick. The bytes
@@ -551,10 +556,14 @@ resolver is what changes, not the command.
 2. *Merge the source in.* Merge `<src>` into it. **On conflict: stop and
    report** — the conflicting files and a diff summary. No repair attempt,
    bounded or otherwise; this path has no repair authority at all.
-3. *Gate it.* Run the repo's `harness.yaml` `commands.verify` gate in that
-   worktree — read the command fresh from `harness.yaml` every run and
-   never hardcode a gate command here, since this path keeps no state to
-   remember one in. Capture the output. **On red: stop and report** the
+3. *Gate it.* Run the certifying gate in that worktree (`engineering` →
+   *Verification*) — read `commands.verify` fresh from `harness.yaml` every
+   run and never hardcode a gate command here, since this path keeps no state
+   to remember one in. Capture the output. Its range is everything `<src>`
+   carries that `<dst>` does not, so a gate whose output names another base
+   has not covered the hop: run the invocation this repository's `AGENTS.md`
+   names for its release hop where it names one, and otherwise stop and
+   report, as for a gate that could not run. **On red: stop and report** the
    captured output. No retry.
 4. *On green, publish.* The hop selects the mechanism:
    - `<dst>` is an *intermediate* branch (e.g. `staging`): push the merged
