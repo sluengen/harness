@@ -8,9 +8,9 @@ replacement. Resolve the engine at set-up and record which one ran.
 Run the independent Codex reviewer from the worktree in a **read-only sandbox**
 on the same review packet the Claude reviewer would receive, which
 `agents/reviewer.md` → *Your context is the packet* defines, plus what this
-engine adds: the committed candidate's lint output, its complete gate output, and
+engine adds: the committed candidate's lint output, its certifying gate output, and
 `reviewed_tree`. **A read-only sandbox cannot run the gate**, so on this engine the
-builder still runs `commands.verify` over the committed candidate before hand-off,
+builder still runs the certifying gate over the committed candidate before hand-off (`engineering` → *Verification*),
 as every builder did before #731, and the reviewer judges that output — say so in
 the packet, as context, so it does not try a gate its sandbox would fail; `/promote`
 always runs its own landing gate after a review on this engine. Never the

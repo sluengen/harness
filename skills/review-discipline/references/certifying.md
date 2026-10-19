@@ -105,7 +105,7 @@ hand moves them:
 - *The write itself is refused* — a host classifier reading your record commit
   as self-approval, or no usable git at all. Report the verdict with the
   record's complete bytes and its path inline. The driving run writes those
-  bytes verbatim, commits them, and runs the complete gate over the result. It
+  bytes verbatim, commits them, and runs the certifying gate over the result. It
   edits nothing: a red there, or any change the record needs, goes to a fresh
   reviewer, because a driving run that fixes the record has written it.
 

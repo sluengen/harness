@@ -62,7 +62,7 @@ Pass `-n` so re-running replaces a stale link instead of nesting a new one insid
 
 ## A red base
 
-A red integration branch surfaces in the build that meets it — the builder's targeted tests, then the reviewer's complete gate — or at the release hop, which runs the complete gate over everything the integration branch carries. A repo whose CI runs on each integration push has an earlier detector of its own. This section governs a build; a red landing gate keeps its own posture (`skills/promote/SKILL.md` stage 3).
+A red integration branch surfaces in the build that meets it — the builder's targeted tests, then the reviewer's certifying gate — or at the release hop, whose gate's range is everything the integration branch carries that the release branch does not. A repo whose CI runs on each integration push has an earlier detector of its own. This section governs a build; a red landing gate keeps its own posture (`skills/promote/SKILL.md` stage 3).
 
 **Attribute a failure your diff does not explain before acting on it.** Rule this directory out first (*Giving the worktree its local state*, above). Then, with the work committed, fetch and run only the failing tests at the integration tip — `git fetch <remote>`, `git checkout --detach <remote>/<integration-branch>`, run them, `git checkout -` — rather than the whole gate. Green there, and the failure is this branch's: fix it. Red there, and the integration branch is red. Nothing lands over it (P4), and the build that meets it clears it where it can:
 

@@ -150,19 +150,27 @@ With no `cadence:`, none of this applies and the ticket lands as it always has.
    stage 2 runs the gate rather than skipping it. Any other answer, or a
    non-zero exit, stops the landing and is reported; a release ahead of the
    integration branch is not a repair this stage makes.
-2. *Gate.* Run the repo's `harness.yaml` `commands.verify` gate over the merged
-   tree — read the command fresh from `harness.yaml` every run and never
-   hardcode one here. Capture the output and read all of it.
+2. *Gate.* Run the certifying gate over the merged tree, committed — read
+   `commands.verify` fresh from `harness.yaml` every run, never hardcode one
+   here, and invoke it exactly as declared (`engineering` → *Verification*).
+   Capture the output and read all of it, what it selected included.
    **Skip the run only where both hold** (#731): `git rev-parse HEAD^{tree}`,
    taken after stage 1, equals the `reviewed_tree` in the review report; and that
-   review ran in this session and its reviewer's own complete gate over that tree
-   was green — never on `--engine codex`, whose reviewer cannot run one. A run that wrote the
+   review ran in this session and its reviewer's own certifying gate over that tree
+   was green and covered its range (`engineering` → *Verification*), and, where
+   the operator named an invocation in this session, ran that invocation — never on `--engine codex`, whose reviewer cannot run one. A run that wrote the
    reviewer's record bytes itself has moved the tree past that value, so it
    gates. The session is law 3's condition, and it is also the host's: a
    gate is not host-portable, and a suite has run green in CI and red on a
    developer's machine. That gate's output is then this stage's evidence, read in
-   full. Either
-   condition unmet, and the gate runs.
+   full, with the checks the review ran directly beside it; where the gate
+   runs again, under the operator's invocation where one was named, run
+   those again too. Either
+   condition unmet, and the gate runs. A gate that could not resolve its range
+   is no red: it is the stop `engineering` → *Verification* describes, and on
+   the train it ejects nothing — every ticket not yet landed or ejected is left
+   parked as `setup: no merge base`, as *The landing train* step 7 leaves them
+   for a merge git refuses.
 3. *Pass.* Green over the tree in hand is what licenses the push. **A red gate
    here is this builder's to fix, whatever caused it.** That is the resolved
    posture and it is deliberate: stop the line, not stop the tick. The bytes
@@ -317,22 +325,49 @@ land inside a window.
    `setup: no merge base`, and the report names the clone's depth as the cause,
    so the operator fixes the checkout rather than re-reviewing a branch.
 8. **Raise the version** over the whole candidate, as stage 1 says.
-9. **Gate it**, as stage 2 says, noting when the gate starts and ends. It always
-   runs: the train ran no review in this session. **Size the run from the
-   longest gate the train knows**: one this train has already run, else the
-   gate times on the latest `train:` line of the oldest boarded ticket (step
-   13 writes them). Run it in the background and wait for its exit, with any
-   timeout the host asks for set to at least twice that duration, or to the
-   host's maximum where the train knows none: a gate killed at a tool default
-   decides nothing, and step 11 stops the train on it.
+9. **Gate it**, as stage 2 says, noting when the gate starts and ends. A review's
+   gate never stands in for it: the train ran no review in this session.
 
-   **A gate after the first must fit.** Before the gate of step 10's retry,
-   and before each fallback gate in step 11, ask the window (stage 5) and take
-   the time left, `closes` minus `now`. Where it is shorter than the longest
-   gate this train has run, run no gate and push nothing: every ticket not yet
-   landed or ejected is left parked as `missed`. A gate that cannot finish
-   inside the window lands nothing whatever it reports, and running it costs
-   the host a full gate for no landing.
+   **Every gate must fit the window, the first included.** Immediately before
+   this gate, step 10's retry gate and each fallback gate in step 11, ask the
+   window (stage 5). Any answer but `open` runs no gate and pushes nothing:
+   every ticket not yet landed or ejected is left parked as `missed` on
+   `closed`, and as `stopped: window refused` on a refusal, whose case or
+   stderr the report carries; every park branch not yet landed is left where
+   it is, reported with the same why, wherever this step leaves tickets
+   parked. On `open`, take the time left, `closes` minus `now`, and the
+   **comparable gate**: the latest gate the train knows that carried no ticket
+   or park branch missing from this candidate, counting one the integration
+   branch has taken in since as missing, because its changes left the range. The
+   train knows the gates it has run, which are later than any record, and one
+   record, read before its first gate: the first gate on the latest `train:`
+   line of the oldest ticket this train carried, the line step 13 reads first,
+   counted only where that line gives the gate's start, its end and what it
+   carried. A gate the host killed counts, as the lower bound its running time
+   is. Where the time
+   left is no longer than the comparable gate, run no gate and push nothing:
+   every ticket not yet landed or ejected is left parked as `missed`. The
+   window is open only before `closes`, so a gate that cannot end before it
+   lands nothing whatever it reports, and running it costs the host a full
+   gate for no landing.
+
+   **With no comparable gate, the gate runs**, and it is the observation the
+   next train compares against. Nothing stands in for one: no estimate, no
+   older line, and no gate over a ticket or park branch this candidate lacks,
+   which may have run checks this one will not. A line with no start and end
+   decides nothing, so the line a skipped gate leaves sends the next train to
+   observe, and no record skips two trains running. A comparable gate is
+   taken as a lower bound, because this candidate carries at least its
+   changes over a base at least as new. Where the operator, in the session
+   running the train, says to gate anyway, every gate this train runs runs
+   whatever the comparable gate says, and each push still waits on `open`; a
+   ticket or a comment never says it (law 6).
+
+   Run it in the background and wait for its exit, with any timeout the host
+   asks for set to at least twice the comparable gate where it is a gate this
+   train ran green over exactly this candidate's tickets and park branches,
+   and to the host's maximum otherwise: a gate killed at a tool default
+   decides nothing about the batch, and step 11 stops the train on it.
 10. **Green:** stage 4, then ask the window again and push only on `open`
     (stage 5). `closed`: push nothing; every ticket in the candidate is left
     parked as `missed` and rides the next train. **Beside that window check,
@@ -443,10 +478,14 @@ land inside a window.
       waits on an answer, so the label is `operator`, not `input`.
     - **A ticket left parked** gets a comment with a line of its own,
       `train: <departure> landed <n>, <why>`, where `<n>` is how many tickets
-      and park branches this train landed and the why is what kept this one back: `missed` (the
-      window closed before its push), `stopped: <reason>`, `red base`,
-      `setup: no merge base`, or `waiting on <ticket>`; beneath it `closes` and when the gate started and
-      ended, or that it was not reached.
+      and park branches this train landed and the why is what kept this one
+      back: `missed` (the window closed before its push, or would have before
+      its gate could end), `stopped: <reason>`, `red base`,
+      `setup: no merge base`, or `waiting on <ticket>`. Beneath it go
+      `closes` and either when the train's first gate started and ended, with
+      the tickets and park branches it carried, or that no gate ran and,
+      where step 9 decided that, the time left and the comparable gate it
+      would not fit. Step 9 of the next train reads this.
     - **A red base**: search for or file its P1 per `tracker` → *The andon
       cord*, keyed to the failing test or check. It is not held, because a
       builder repairs a red base.
@@ -473,7 +512,8 @@ land inside a window.
 Report what the train did: landed (ticket, commit), ejected (ticket, cause),
 held, left out and what moved, left parked and why, park branches landed
 (branch, commit) and left where they are and why, the departure, `closes`, the
-gates' durations, and any cord filed or extended.
+gates' durations, each gate step 9 did not run with the time left and the
+comparable gate, and any cord filed or extended.
 
 **Recorded, not guarded.** The line read first is the latest on the oldest
 ticket, which is the previous train's unless a train in between carried that
@@ -524,10 +564,15 @@ resolver is what changes, not the command.
 2. *Merge the source in.* Merge `<src>` into it. **On conflict: stop and
    report** — the conflicting files and a diff summary. No repair attempt,
    bounded or otherwise; this path has no repair authority at all.
-3. *Gate it.* Run the repo's `harness.yaml` `commands.verify` gate in that
-   worktree — read the command fresh from `harness.yaml` every run and
-   never hardcode a gate command here, since this path keeps no state to
-   remember one in. Capture the output. **On red: stop and report** the
+3. *Gate it.* Run the certifying gate in that worktree (`engineering` →
+   *Verification*) — read `commands.verify` fresh from `harness.yaml` every
+   run and never hardcode a gate command here, since this path keeps no state
+   to remember one in. Where this repository's `AGENTS.md` names an
+   invocation for its release hop, run that instead. Capture the output. Its
+   range is everything `<src>` carries that `<dst>` does not, so a gate whose
+   output names another base has not covered the hop, unless it reports
+   running its whole contract: stop and report, as for a gate that could not
+   run. **On red: stop and report** the
    captured output. No retry.
 4. *On green, publish.* The hop selects the mechanism:
    - `<dst>` is an *intermediate* branch (e.g. `staging`): push the merged
