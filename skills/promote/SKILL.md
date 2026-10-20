@@ -465,7 +465,7 @@ land inside a window.
     forge's API instead (on GitHub, `gh api -X DELETE
     repos/<owner>/<repo>/git/refs/heads/park/<name>`): a cloud host's git proxy
     has refused the delete push four times of four while passing an ordinary
-    push. Where both fail, report the branch **landed, not deleted**; the next
+    push. Where both fail, report the branch **landed but not deleted**; the next
     train finds it `landed earlier` and tries again. One pushed to since keeps
     its name, and the next train lands the rest; one whose tip the push does
     not contain never landed, and is left where it is.

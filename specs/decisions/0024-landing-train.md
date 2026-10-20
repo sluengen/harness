@@ -84,13 +84,13 @@ The build of decisions 1 to 4 settled three points the decision left open or sta
 
 ## Amendment (2026-10-21, #789)
 
-**A batch red that names a ticket ejects it on the batch's evidence where the fallback cannot reach its own gate; a park branch is deleted through the forge where git cannot, and one already landed is never boarded again.**
+**A batch red that names a ticket ejects it on the batch's evidence where the fallback cannot reach its own gate; a park branch is deleted through the forge where git cannot, and one already landed is never merged or counted again.**
 
 **Why.** Decision 4 ejects only "the first that goes red" in the one-at-a-time fallback, and step 11 put the named ticket last so the window could not close on the others. Since #785 every gate must fit the window, so on calibrate a gate that grew from 29 to 41 minutes against a 60-minute pitch left no train time for the named ticket's solo gate: it was never ejected, two trains in a row met the same red, and the innocent tickets parked with it landed nothing. Separately, in a Claude Code cloud session the git proxy refused step 12's `git push --delete` four times of four while passing an ordinary push; the stale `park/*` branch then re-boarded the next train, which counted it in `landed <n>` and skewed the two-in-a-row cord.
 
 **The rule.**
 - The named ticket still goes last, and its own solo gate ejects it where the fallback reaches one. Where the fallback ends first, for any reason but a red base, it is ejected for `red` on the batch's attribution, and its ejection comment says the gate was the batch's. The next train boards the others without it.
-- Step 12 deletes a landed park branch with `git push --delete`, falls back to the forge's API, and reports **landed, not deleted** where both fail. A later train merges nothing for a park branch the integration branch already contains, does not count it as landed, and deletes it as `landed earlier`.
+- Step 12 deletes a landed park branch with `git push --delete`, falls back to the forge's API, and reports **landed but not deleted** where both fail. A later train merges nothing for a park branch the integration branch already contains, does not count it as landed, and deletes it as `landed earlier`.
 - A ticket a mid-train re-read drops leaves with a `train: … left out: <what moved>` line, so the three-states rule holds for it.
 
 **Rejected.**
