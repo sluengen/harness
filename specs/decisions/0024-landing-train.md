@@ -81,3 +81,22 @@ The build of decisions 1 to 4 settled three points the decision left open or sta
 - A ticket left out of a train keeps its older line, so a later train can compare against a record that a skip has already used.
 - A train carrying only park branches has no `train:` line to read, so its gate always runs, and the #777 residual stands: no cord sees it.
 - A gate whose time left beats its comparable gate by seconds can still miss its push: stage 4, the re-read and the window check take time the record does not include.
+
+## Amendment (2026-10-21, #789)
+
+**A batch red that names a ticket ejects it on the batch's evidence where the fallback cannot reach its own gate; a park branch is deleted through the forge where git cannot, and one already landed is never boarded again.**
+
+**Why.** Decision 4 ejects only "the first that goes red" in the one-at-a-time fallback, and step 11 put the named ticket last so the window could not close on the others. Since #785 every gate must fit the window, so on calibrate a gate that grew from 29 to 41 minutes against a 60-minute pitch left no train time for the named ticket's solo gate: it was never ejected, two trains in a row met the same red, and the innocent tickets parked with it landed nothing. Separately, in a Claude Code cloud session the git proxy refused step 12's `git push --delete` four times of four while passing an ordinary push; the stale `park/*` branch then re-boarded the next train, which counted it in `landed <n>` and skewed the two-in-a-row cord.
+
+**The rule.**
+- The named ticket still goes last, and its own solo gate ejects it where the fallback reaches one. Where the fallback ends first, for any reason but a red base, it is ejected for `red` on the batch's attribution, and its ejection comment says the gate was the batch's. The next train boards the others without it.
+- Step 12 deletes a landed park branch with `git push --delete`, falls back to the forge's API, and reports **landed, not deleted** where both fail. A later train merges nothing for a park branch the integration branch already contains, does not count it as landed, and deletes it as `landed earlier`.
+- A ticket a mid-train re-read drops leaves with a `train: … left out: <what moved>` line, so the three-states rule holds for it.
+
+**Rejected.**
+- *Skip the named ticket on the next train instead.* It carries state from one train to the next through a `train:` line, where an ejection already returns the ticket to the one run that can repair it.
+- *Eject on the batch's evidence always.* The solo gate is still the better evidence where there is time for it; a red that only the combination produces is then caught as `red base` or passes, rather than ejecting a ticket whose own tree is green.
+
+**Recorded, not guarded.**
+- The batch's attribution can name a ticket whose red appears only in combination with another. Its builder then cannot reproduce the red on its own branch, re-parks after review, and a second ejection for `red` holds it — one wasted review cycle, bounded by the existing hold.
+- The forge fallback names GitHub's API by example only. A forge with no reachable API leaves the branch landed and undeleted until a train on a host whose delete push works.

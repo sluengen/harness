@@ -311,9 +311,12 @@ land inside a window.
    two-conflict bound is the builder's. A merge the train resolved names the
    resolved files in its commit message, since no reviewer reads them. **Merge
    the park branches last**, the same way: fetch each one and merge the commit
-   boarding read, by its sha, with a message naming the branch. One whose
-   commit the candidate already contains (`git merge-base --is-ancestor`)
-   merges nothing and counts as landed. One that will not resolve is
+   boarding read, by its sha, with a message naming the branch. **One whose commit the
+   integration branch already contains** (`git merge-base --is-ancestor <sha>
+   <remote>/<integration>`) landed on an earlier train that could not delete it:
+   it merges nothing, is not counted as landed, and step 12 deletes it, reported
+   `landed earlier`. One whose commit the candidate otherwise contains merges
+   nothing and counts as landed. One that will not resolve is
    `git merge --abort` and left where it is, reported `merge` with the
    conflicting files: there is nobody to eject it to. One whose commit no
    longer fetches is left as `moved`. Where nothing boarded is left in the
@@ -335,7 +338,8 @@ land inside a window.
    `closed`, and as `stopped: window refused` on a refusal, whose case or
    stderr the report carries; every park branch not yet landed is left where
    it is, reported with the same why, wherever this step leaves tickets
-   parked. On `open`, take the time left, `closes` minus `now`, and the
+   parked. The one exception is a ticket a batch red named: where this step
+   ends step 11's fallback before that ticket's own gate, step 11 ejects it. On `open`, take the time left, `closes` minus `now`, and the
    **comparable gate**: the latest gate the train knows that carried no ticket
    or park branch missing from this candidate, counting one the integration
    branch has taken in since as missing, because its changes left the range. The
@@ -377,7 +381,8 @@ land inside a window.
     interval holds; every push the train makes, its retry and the fallback's
     included, is preceded by this pair. A ticket that moved drops out with step
     5's outcome — a moved tip is ejected for `moved`, anything else is left out,
-    untouched, and reported with what moved — and the candidate is rebuilt
+    untouched but for its `train:` line, and reported with what moved (step 13,
+    `left out`) — and the candidate is rebuilt
     without it: the worktree moved to the integration tip as the fallback moves
     it, the remaining tickets merged again as step 7 merges them and then the
     park branches, last, by the shas boarding read, then steps 8 to 10. Park
@@ -420,8 +425,12 @@ land inside a window.
       (`git diff --name-only <remote>/<integration>...<branch>`). With none or
       several, it names nothing. Land the boarded tickets that step 7 did not
       eject one at a time, oldest first, with the named ticket last. That way the
-      window cannot close on the others while it is being gated, and it is
-      ejected only on its own solo gate, never on the batch's evidence. Park
+      window cannot close on the others while it is being gated. Its own solo
+      gate ejects it where the fallback reaches one. **Where the fallback ends
+      before that gate runs**, for any reason but a red base — the window
+      closes, a gate would not fit, a stop — the batch's attribution is the
+      evidence: it is ejected for `red` on it, so the next train boards the
+      others without it rather than meeting the same red. Park
       branches land after every ticket, the named one included; one red on its
       own solo gate while green at the tip is left where it is, reported `red`. Each lands in the train's worktree moved
       to the integration tip as it now stands (fetch, then
@@ -429,7 +438,7 @@ land inside a window.
       hosts' settings forbid `git reset --hard`): merge that ticket's branch (a merge that will not
       resolve ejects it for `merge`), raise the version, gate, and on green
       stage 4, the window, step 10's re-read and the push. A ticket the re-read
-      finds moved is not pushed; it takes step 5's outcome and the fallback
+      finds moved is not pushed; it takes step 10's outcome and the fallback
       goes on to the next. Each fallback gate must fit the window first (step
       9). The fallback has one retry of its own, on step 10's terms: a refused
       push re-gates once, and the next refusal stops the fallback, every ticket
@@ -448,11 +457,18 @@ land inside a window.
     Done write.** A ticket held after its push has still landed: post the link and
     `unpark` it, then leave its state and its hold for the operator who applied
     it, and report it as landed while held. **Delete each landed park
-    branch** where `git ls-remote` still shows the tip boarding read and that
-    tip is in what the train pushed (`git merge-base --is-ancestor <tip>
-    <pushed commit>`), then `git push <remote> --delete refs/heads/park/<name>`.
-    One pushed to since keeps its name, and the next train lands the rest; one
-    whose tip the push does not contain never landed, and is left where it is.
+    branch**, and each step 7 found `landed earlier`, where `git ls-remote`
+    still shows the tip boarding read and that tip is in what the train pushed
+    (`git merge-base --is-ancestor <tip> <pushed commit>`), or, for one landed
+    earlier, in the integration branch: `git push <remote> --delete
+    refs/heads/park/<name>`. Where that push fails, delete the ref through the
+    forge's API instead (on GitHub, `gh api -X DELETE
+    repos/<owner>/<repo>/git/refs/heads/park/<name>`): a cloud host's git proxy
+    has refused the delete push four times of four while passing an ordinary
+    push. Where both fail, report the branch **landed, not deleted**; the next
+    train finds it `landed earlier` and tries again. One pushed to since keeps
+    its name, and the next train lands the rest; one whose tip the push does
+    not contain never landed, and is left where it is.
 13. **Write what the train decided**, comment first every time. First read the
     latest `train:` line on the oldest ticket this train carried, before this
     train writes its own: the two-in-a-row rule below needs it.
@@ -462,7 +478,8 @@ land inside a window.
       park named, for `merge` the conflicting files and what they met, for `red`
       the failing tests or check, the gate's tail, and either that they pass at
       the tip or, for a cord's fix, that the cord's failure is still red with
-      it. Then `unpark`, then the transition to Todo, where a builder resumes the
+      it, and, where step 11's fallback ended before its own gate, that the
+      gate was the batch's. Then `unpark`, then the transition to Todo, where a builder resumes the
       ticket from its branch. **A `merge` ejection stands only where what the
       merge met has landed**, on the integration branch already or in this
       train's push, because the builder resumes by taking the integration branch
@@ -481,7 +498,9 @@ land inside a window.
       and park branches this train landed and the why is what kept this one
       back: `missed` (the window closed before its push, or would have before
       its gate could end), `stopped: <reason>`, `red base`,
-      `setup: no merge base`, or `waiting on <ticket>`. Beneath it go
+      `setup: no merge base`, `waiting on <ticket>`, or
+      `left out: <what moved>` (a re-read in step 10 or 11 dropped it from
+      the candidate). Beneath it go
       `closes` and either when the train's first gate started and ended, with
       the tickets and park branches it carried, or that no gate ran and,
       where step 9 decided that, the time left and the comparable gate it
@@ -511,7 +530,8 @@ land inside a window.
 
 Report what the train did: landed (ticket, commit), ejected (ticket, cause),
 held, left out and what moved, left parked and why, park branches landed
-(branch, commit) and left where they are and why, the departure, `closes`, the
+(branch, commit), landed earlier, landed but not deleted, and left where they
+are and why, the departure, `closes`, the
 gates' durations, each gate step 9 did not run with the time left and the
 comparable gate, and any cord filed or extended.
 
