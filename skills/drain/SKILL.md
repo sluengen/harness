@@ -50,7 +50,7 @@ Then make the survivors answerable: group them as `tracker` → *`create`* conso
 | Outcome | Means | What happens |
 |---|---|---|
 | **done** | already satisfied — the tree changed, another ticket carried it, or re-validation found the condition gone | record what satisfied it |
-| **folded** | it becomes work, and it named the user or consumer outcome that earns a slot | create the ticket through `tracker`, the pass's folds filed as one batch, in the **Backlog** state, its project attached, exactly one `assurance:` label; record the id. Never straight into Todo — Backlog is where confirmed work waits, and a close is what pulls it |
+| **folded** | it becomes work, and it named the user or consumer outcome that earns a slot | create the ticket through `tracker`, the pass's folds filed as one batch, in the **Backlog** state, its project attached, exactly one `assurance:` label, and a body that states each absorbed case in its own words rather than citing its ledger comment, which the prune deletes; record the id. Never straight into Todo — Backlog is where confirmed work waits, and a close is what pulls it |
 | **dropped** | it will not be done | record the reason. A drop is a decision written down; an entry that quietly stops being mentioned is the inventory this drain exists to clear |
 
 **Search the queue before you fold.** The spine's *Filing* rule governs every filing, and a fold is the filing most likely to hit a twin, because the pattern-level candidate just abstracted from several entries is exactly the thing somebody already filed. Search first; where the search finds a ticket to extend, extend it and record the entry as folded into that id.

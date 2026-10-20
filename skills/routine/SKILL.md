@@ -31,7 +31,7 @@ Where `harness.yaml` declares a `cadence:` (ADR 0024), builders never land: ever
 `/routine train` is the landing train, the land-only tick ADR 0024 adds. Schedule it on the cadence's grid, at the anchor every pitch in the declared zone, on the host whose gate should land everything; ADR 0024 puts it in the cloud, and the scheduler is the consumer's. It builds nothing, runs no discovery, and skips no claim.
 
 1. **Land.** Run `/promote parked`. It owns the departure, the window, the boarding, the batch, ejection and the cord (`/promote` → *The landing train*). With no `cadence:` declared it reports that the repo runs no train, and the tick ends there.
-2. **Report** what the train did: landed (ticket, commit), ejected (ticket, cause), held, left out and what moved, left parked and why, park branches landed (branch, commit) and left where they are and why, the departure, `closes`, the gates' durations, each gate the train's fit check did not run with the time left and the comparable gate, and any cord filed or extended. An empty train is a clean outcome, not a failure.
+2. **Report** what the train did: landed (ticket, commit), ejected (ticket, cause), held, left out and what moved, left parked and why, park branches landed (branch, commit), landed earlier, landed but not deleted, and left where they are and why, the departure, `closes`, the gates' durations, each gate the train's fit check did not run with the time left and the comparable gate, and any cord filed or extended. An empty train is a clean outcome, not a failure.
 
 ## Standing authorisation
 

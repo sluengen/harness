@@ -40,9 +40,17 @@ Ceremony that proves a stage ran rather than the property it protects.
 - Accumulating piles with no retention rule: reports, snapshots, fixtures, generated artifacts.
 - A rule stated in three places, which has three chances to drift and one owner. Restatement is cost, not emphasis.
 
+## What a check is worth
+
+Coverage says what ran, not what would fail. Read a suite's value from three things, and report each beside its limits:
+
+- **Named failure detection.** For each check in the sample, the failure it detects, by name. A check whose failure nobody can name is the burden-of-proof case above.
+- **Bounded negative controls.** Prove a representative sample, not the suite: state how the sample was chosen and how large it is, make the edit each sampled check should fail on, and record what happened (*Proving a candidate* below). The result is that sample's, and the report says so. No universal mutation score is computed, and no test is rewritten to raise one.
+- **Coverage with its denominator.** A coverage figure names what it counts and what it excludes, and its branch gaps sit beside the line percentage. A percentage over an unstated denominator decides nothing.
+
 ## Ground 3 — waste
 
-Measured, then ranked. Estimates are not findings here.
+Measured, then ranked. Estimates are not findings here. **Read what was already measured first** (`skills/assess/SKILL.md` → step 1): a run attributable to a commit and an invocation, with its age, scope and host stated, is evidence; a fresh run is bought only for a question it cannot answer.
 
 - Wall-clock the gate's stages and the ten slowest tests.
 - Record **mean parallelism**, `(user + sys) / real`, against the declared worker budget. A run near 1x is serial by construction and its lever is structural, not the worker count.
@@ -51,8 +59,13 @@ Measured, then ranked. Estimates are not findings here.
 - Serial stages with no data dependency between them.
 - Setup repeated per file that could be per suite.
 - CI steps fetching or building what no surviving check consumes.
+- **Per-stage repetition**: the same check run more than once for one change across the build, the review, the landing, CI and any promotion. Each repeat that certifies nothing new is cost with no buyer.
+- **CPU and peak memory** per stage beside its wall-clock, because a stage that saturates a host slows every other run sharing it.
+- **Total CI runner-minutes** across every job, not the pipeline's wall-clock: parallel jobs shorten the wait and bill every minute.
 
-Rank every candidate by **cost per run × runs per week**, so the report is ordered by minutes actually recoverable rather than by how wasteful something looks.
+Rank every candidate by **cost per run × runs per week**, so the report is ordered by minutes actually recoverable rather than by how wasteful something looks. Beside each cost, state the sample size, cold or warm, the host and its contention, and what was not measured.
+
+**A trend compares like with like, or it is not a trend.** Two timings are differenced only where they share a scope (the same invocation, arm set or range) and both are real runs. A log that also holds fixture or shim records — a test writing a synthetic gate record into the same file — is filtered to the records a real run produced before anything is summed or compared, and so is a gate whose range carried only prose, such as an assessment's own landing gate: a run whose commit's diff against its base touches only `assessments/`. A delta between two runs whose cold or warm state differs or is unknown says so beside it. Timings over different scopes are reported side by side as not comparable, never as a delta.
 
 ## The baseline — what makes this ongoing
 
