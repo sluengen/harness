@@ -503,8 +503,10 @@ land inside a window.
       the candidate). Beneath it go
       `closes` and either when the train's first gate started and ended, with
       the tickets and park branches it carried, or that no gate ran and,
-      where step 9 decided that, the time left and the comparable gate it
-      would not fit. Step 9 of the next train reads this.
+      where step 9 decided that, the time left and how long the comparable
+      gate it would not fit ran, as a duration alone: its start, end and
+      carried set would read to the next train as a gate this line records,
+      and skip that train too. Step 9 of the next train reads this.
     - **A red base**: search for or file its P1 per `tracker` → *The andon
       cord*, keyed to the failing test or check. It is not held, because a
       builder repairs a red base.
