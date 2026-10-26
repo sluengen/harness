@@ -82,7 +82,7 @@ Nothing in the split is a judgement call, on purpose: a queue anything can add t
 
 **This report has no Proposals section, and a review proposes nothing** (P0). Every review cycle that manufactured a proposal added an entry somebody later had to decide, and the drain's own measurement is what retired the practice. Report the blocking findings and stop. The one improvement channel out of a build is the builder's three-line reflection, and where an entry does get written, [`references/improvement-ledger.md`](references/improvement-ledger.md) says which ledger and what it carries.
 
-The single exception is a **blocking** finding that is genuinely not this ticket's: file it as a bug when it clears the floor above, and append it to the ledger when it does not. Nothing non-blocking leaves this review.
+The single exception is a **blocking** finding that is genuinely not this ticket's: file it as a bug when it clears the floor above, and append it to the ledger when it does not. A residual the as-built record names rather than fixes, where it leaves the ticket's own outcome short, is appended to the ledger as well: no queue reads the record, so a residual written only there is selected by nothing. Nothing else non-blocking leaves this review.
 
 *The recursion cap.* A ticket filed from a review carries the `review-finding` label, marking generation one — the last. When the ticket *under review* carries it, this review fixes or drops what it can and files nothing. A large-and-blocking finding there is still a FAIL, never a new ticket.
 
