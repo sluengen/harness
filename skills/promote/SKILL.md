@@ -465,8 +465,12 @@ land inside a window.
     forge's API instead (on GitHub, `gh api -X DELETE
     repos/<owner>/<repo>/git/refs/heads/park/<name>`): a cloud host's git proxy
     has refused the delete push four times of four while passing an ordinary
-    push. Where both fail, report the branch **landed but not deleted**; the next
-    train finds it `landed earlier` and tries again. One pushed to since keeps
+    push. Where both fail — on a cloud host both usually do, since the proxy or
+    the auto-mode classifier refuses the push and `gh` may be absent — report
+    them as one line, **`<N> landed park branches await operator cleanup`**,
+    never one line per branch, so a report does not grow with every train that
+    meets the same refusal; the next train finds each `landed earlier` and tries
+    again. One pushed to since keeps
     its name, and the next train lands the rest; one whose tip the push does
     not contain never landed, and is left where it is.
 13. **Write what the train decided**, comment first every time. First read the
@@ -532,8 +536,8 @@ land inside a window.
 
 Report what the train did: landed (ticket, commit), ejected (ticket, cause),
 held, left out and what moved, left parked and why, park branches landed
-(branch, commit), landed earlier, landed but not deleted, and left where they
-are and why, the departure, `closes`, the
+(branch, commit), landed earlier, the count of landed branches awaiting
+operator cleanup, and left where they are and why, the departure, `closes`, the
 gates' durations, each gate step 9 did not run with the time left and the
 comparable gate, and any cord filed or extended.
 
