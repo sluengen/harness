@@ -1,7 +1,7 @@
 ---
 feature: plugin-surface
 status: implemented
-last_updated: 2026-10-22
+last_updated: 2026-11-05
 ---
 
 # The plugin surface
@@ -6294,6 +6294,27 @@ The test is whether a call that used to complete now blocks, or the reverse. Und
 The test is whether a call that used to complete now blocks, or the reverse. An unattended `/build` whose probe fix narrows the ticket below its outcome used to go on to review, and could amend the criterion itself; it now returns DEFER and holds the ticket `input`. That adds a refusal reason to `/build`, which is the shape #771 was raised major for. An attended close-out whose children are all Done, with a child's question on the umbrella that the operator puts off, used to close the umbrella and now leaves it open. The counter-argument for minor is that the builder's brief already returned DEFER on criteria that cannot be met honestly, and that review cycle 1 failed #787 on the commit-body narrowing, so the old outcome was not a landing either. The first half covers only a narrowing the ticket forced, and this rule also stops a narrowing the builder chose. The second half reads the outcome after the review. The grammar in `specs/architecture-principles.md` → *The installed surface is a versioned interface* asks whether the command's outcome changed. `origin/main` stands at `33.0.0`, and `/build` step 7 raised the four homes in `scripts/plugin-version.js`'s `CANDIDATES` to `33.1.0`. This review raised them by hand to `34.0.0` inside the candidate, before the certifying gate.
 
 **Verification.** The certifying run of `bash scripts/verify.sh` over `d1f8f822` plus this record and the raise is the one the review report for #790 names.
+
+### #797: `/build` reads a parked sibling before the spec binds, and a parked blocker no longer stops step 1, as built
+
+`simple`. Built on branch `797-ground-parked-siblings`, cut from `dev` at `ecd1433d`: the change and `/build` step 7's minor raise as `4d5bc0aa`. Prose in `skills/build/SKILL.md` and the version homes, with no code and no test.
+
+**What ships.**
+
+- `/build` §1 step 1. A blocker parked for the landing train no longer counts as an unmet dependency, so the run goes on where it used to stop and report. The build added this as criterion 3 by amending the ticket: a parked blocker is still open, so a blocked-by sibling that is parked would otherwise never have reached step 5. `work-discovery` is unchanged and still drops a ticket with an open blocker from an unattended pick, so only a `/build` someone named reaches this clause.
+- `/build` §1 step 5. A related or blocked-by sibling that is parked gets the read a landed blocked-by sibling gets, over the branch and commit its park comment names, because it is reviewed and absent from the tip the worktree stands on. Where the ticket's work needs those bytes, the run may check that commit out before step 6 cuts the branch. It then names the commit in the review packet as where the ticket's diff starts, and the branch lands after the sibling.
+
+**Evidence.** ADR 0019's for prose: direct review, as the ticket names. This reviewer read the diff from `ecd1433d` to `4d5bc0aa` in full. AC-1: step 5's parked clause reads the sibling through "the same read", and that read comes before the spec binds. AC-2: step 5 says the ticket may build on those bytes. AC-3: step 1's dependency stop excepts a parked blocker. The option works with what the tree already does. `worktree-isolation` fetches the whole remote, so the parked commit resolves, and its `git checkout -b` cuts from wherever the worktree stands. `scripts/plugin-version.js` reads the worktree's own homes against the release branch, so a sibling's raise reports `already-ahead`. The train merges oldest park first, and a child parks after a sibling that was already parked when its build began. Nothing else in `skills`, `agents`, `templates` or `.codex` restates the changed clauses. No component is added, so `specs/harness-assumptions.md` gains no row.
+
+**What a branch built on a parked sibling carries.** It carries the sibling's commits, so landing the child lands them, and "lands after the sibling" holds only while the sibling boards the same train or an earlier one. Where the train ejects the sibling for `red` or `merge`, the child meets the same red or the same conflict and is ejected too, at the price of step 11 finding the failing path in two tickets' diffs and naming neither. Where the sibling is ejected for `moved`, or left out because it was held or re-stated after its park, the child boards alone and lands the bytes the sibling's park named. Those bytes passed the sibling's review and pass the child's gate, and a revert removes them, so the operating context accepts this for now. Nothing here guards it. The ticket's outcome, a build that reads the parked bytes before its spec binds, does not depend on it. Step 1 and step 5 also say nothing about a parked sibling that is held. `tracker` → *`park` and `parked`* says the hold wins, and the train will not land that sibling, so a build on it is the same case from the start.
+
+ADR 0024's *Consequences* says a chain of dependent tickets pays a train interval once per link. That still holds for the unattended loop. A named build on a parked branch can now put both links on one train. This review leaves the ADR as it stands, because a record commit carries the record and a raise alone.
+
+### The cycle's version class: major, raised at this review to `35.0.0`
+
+The test is whether a call that used to complete now blocks, or the reverse. `/build <ticket>` on a ticket with a parked blocker used to stop and report, having written nothing. It now claims the ticket and builds it. The counter-argument for minor is that parked exists only under a `cadence:`, that `work-discovery` still drops such a ticket, and that only a named `/build` reaches the clause. #778's entry answered the first half: the grammar in `specs/architecture-principles.md` → *The installed surface is a versioned interface* does not exempt a change limited to repos with a given configuration. The second half narrows who makes the call, and the call stays reachable. That separates this from #787's minor, where "no reachable call moved between completing and refusing". #774 was raised major for the same direction, a stop that became a proceed, and the grammar names a changed refusal reason major either way. A consumer on the train also has a decision to make, because a named build can now put a sibling's unlanded commits on a second branch. `origin/main` stands at `34.0.0`, and `/build` step 7 raised the four homes in `scripts/plugin-version.js`'s `CANDIDATES` to `34.1.0`. This review raised them by hand to `35.0.0` inside the candidate, before the certifying gate.
+
+**Verification.** The certifying run of `bash scripts/verify.sh` over `4d5bc0aa` plus this record and the raise is the one the review report for #797 names.
 
 ## Cross-references
 
