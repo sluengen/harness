@@ -6316,6 +6316,25 @@ The test is whether a call that used to complete now blocks, or the reverse. `/b
 
 **Verification.** The certifying run of `bash scripts/verify.sh` over `4d5bc0aa` plus this record and the raise is the one the review report for #797 names.
 
+### #799: an umbrella close-out settles the proposal it came from, as built
+
+`simple`. Built on branch `799`, cut from `dev` at `3d339c33`: the change and `/build` step 7's minor raise as `e5287873`. Prose in `skills/build/SKILL.md` and the version homes, with no code and no test.
+
+**What ships.**
+
+- `/build` §5, the opening paragraph. It used to say nothing in a close-out produces a diff. Now it says the audit itself produces none, and two edits each go through the fix lane in a worktree of their own: the fixes step 4 admits, and the proposal marking step 6 owes. The audit still claims nothing, cuts no worktree, raises no version and writes no `.harness/run.json`.
+- `/build` §5 step 6, a new paragraph. Where the umbrella's intent links a proposal in this repo, the close-out settles it in the same pass. Where the umbrella closes, the proposal's `status:` becomes `shipped`, in place, with a dated banner naming the umbrella, as `templates/proposal.md` → *Lifecycle* asks. Where the umbrella stays open, the proposal gets a dated status line naming the items still open and the children carrying them, and stays `accepted`. The operator's go-ahead for the close-out covers the edit, which lands as a fix. A proposal in another repo is named in the audit comment with the status it should now carry, and is not edited. Unattended, the close-out still writes nothing, so the proposal is not touched either.
+
+**Evidence.** ADR 0019's for prose: direct review, as the ticket names. This reviewer read the diff from `3d339c33` to `e5287873` in full. AC-1: the trigger for `shipped` is the umbrella closing rather than the ticket's literal "every item is delivered". A closing umbrella has every child Done or Canceled, nothing pending and no gap, so each item is either delivered or *dropped* (step 2's mark for an item the operator canceled with no successor). The ticket's literal reading would leave a proposal with one dropped item `accepted` forever, which is the standing instruction to build that the ticket's outcome rules out. The step reads it the way the outcome needs, and so meets AC-1. AC-2: the open branch adds a dated line and leaves the status `accepted`. Verified by use against the precedent: applied to umbrella #760, the step marks `specs/proposals/landing-train.md` `shipped` in place with a dated banner naming #760, which is what `c773ca33` did by hand as a separate commit. Nothing else in `skills`, `agents`, `templates` or `.codex` restates the changed clauses. `tracker`'s umbrella paragraphs describe closing the umbrella and not the proposal, so they stay true. No component is added, so `specs/harness-assumptions.md` gains no row.
+
+**What the step leaves open.** Step 6's first sentence posts nothing when step 3 reduced to the coverage question. The new paragraph does not repeat that exception, so a close-out run before any child has closed would add a status line saying every item is still open. That costs one fix and tells the reader nothing new. Nothing guards it.
+
+### The cycle's version class: minor, `35.1.0`
+
+The test is whether a call that used to complete now blocks, or the reverse. An attended close-out used to complete, and it still completes, with one more fix-lane edit to a proposal file. An unattended one still writes nothing and reports. No command, argument or refusal reason changes. The counter-argument for major is that the close-out now writes to a file it never touched. But the grammar in `specs/architecture-principles.md` → *The installed surface is a versioned interface* makes a change major by what it renames or what it now refuses or permits, and an added edit inside a call that was already authorised does neither. `origin/main` stands at `35.0.0`, and `/build` step 7 raised the four homes in `scripts/plugin-version.js`'s `CANDIDATES` to `35.1.0`, which this review keeps.
+
+**Verification.** The certifying run of `bash scripts/verify.sh` over `e5287873` plus this record is the one the review report for #799 names.
+
 ## Cross-references
 
 - `specs/harness-assumptions.md` — one row per hook, script, skill and agent: what it assumes the model cannot do, and the test that would retire it. Read at every model or host release.
