@@ -30,6 +30,8 @@ The record states no bare count: a figure names the commit it was measured at,
 or a guard derives it, or the record restates the invariant the number was
 evidence for.
 
+What an entry carries and what it leaves out is `authoring` → *Feature spec*.
+
 ## Sweep for twins
 
 A mechanism in this tree often has a **twin** — a template shipped to consuming

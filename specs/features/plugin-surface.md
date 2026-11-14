@@ -1,7 +1,7 @@
 ---
 feature: plugin-surface
 status: implemented
-last_updated: 2026-11-05
+last_updated: 2026-11-15
 ---
 
 # The plugin surface
@@ -6334,6 +6334,15 @@ The test is whether a call that used to complete now blocks, or the reverse. `/b
 The test is whether a call that used to complete now blocks, or the reverse. An attended close-out used to complete, and it still completes, with one more fix-lane edit to a proposal file. An unattended one still writes nothing and reports. No command, argument or refusal reason changes. The counter-argument for major is that the close-out now writes to a file it never touched. But the grammar in `specs/architecture-principles.md` → *The installed surface is a versioned interface* makes a change major by what it renames or what it now refuses or permits, and an added edit inside a call that was already authorised does neither. `origin/main` stands at `35.0.0`, and `/build` step 7 raised the four homes in `scripts/plugin-version.js`'s `CANDIDATES` to `35.1.0`, which this review keeps.
 
 **Verification.** The certifying run of `bash scripts/verify.sh` over `e5287873` plus this record is the one the review report for #799 names.
+
+### #800: an as-built entry says what it carries and what it leaves out, as built
+
+`simple`. Prose and the version homes, with no code and no test.
+
+- `skills/authoring/SKILL.md` → *Feature spec*, the paragraph opening "An entry carries four things and leaves the rest out". An entry carries the behaviour as it ships, where it lives (a path plus a heading or a `git grep` string), which tests hold it, and any difference from its change spec with the decision that allowed it. It leaves out review history and verdicts, which belong on the ticket, build narration, a restatement of what the tests assert, and capture provenance beyond naming the evidence.
+- `skills/review-discipline/references/certifying.md` → *Record reality — the as-built-record gate* points to that paragraph in one sentence and restates none of it.
+- No guard or lint measures an entry's length or content; P2 refuses a guard over prose. Held by review and use (ADR 0019).
+- Ships at `35.2.0`, minor: no command, argument or refusal reason changes, and the record gate's FAIL condition is unchanged.
 
 ## Cross-references
 
