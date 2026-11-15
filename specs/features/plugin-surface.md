@@ -6344,6 +6344,17 @@ The test is whether a call that used to complete now blocks, or the reverse. An 
 - No guard or lint measures an entry's length or content; P2 refuses a guard over prose. Held by review and use (ADR 0019).
 - Ships at `35.2.0`, minor: no command, argument or refusal reason changes, and the record gate's FAIL condition is unchanged.
 
+### #796: a breakdown names what its items share and what a removal orphans, as built
+
+`simple`. Prose and the version homes, with no code and no test.
+
+- `skills/authoring/SKILL.md` → *Proposal spec*, *Name what each item shares with a sibling*. Each breakdown item names the code it writes that another item also writes, or says it shares none. A shared operand is settled in the breakdown: the spine's co-change question first, so one builder in one sitting makes them one item, and otherwise the one later in the breakdown declares a dependency on the earlier, because writing a sibling's operand reads its code, the blocker `tracker` → *Dependencies and priority* admits. Same-area items with disjoint code stay parallel. Once filed, the spine's *Filing* rule leaves the cut alone.
+- `skills/authoring/SKILL.md` → *Proposal spec*, *A removal names what it orphans*. An item that removes the last caller of a component, helper, file or piece of state names each orphan and gives its deletion to itself or to a named item, under *Give each deletion to exactly one item*. A removed surface's state and helpers count as its orphans.
+- `templates/proposal.md` → *Breakdown*: the item line gains `shares {operand} with item {N} | shares none` and `orphans {what, deleted by which item} | none`.
+- `skills/propose/SKILL.md` → *File them in the breakdown's order*: the declared dependencies include the earlier item of each shared operand the breakdown chained.
+- No guard; P2 refuses one over prose. Held by use (ADR 0019): the use-probe recorded on the ticket.
+- Ships at `35.3.0`, minor: no command, argument or refusal reason changes.
+
 ## Cross-references
 
 - `specs/harness-assumptions.md` — one row per hook, script, skill and agent: what it assumes the model cannot do, and the test that would retire it. Read at every model or host release.
