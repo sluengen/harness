@@ -60,11 +60,15 @@ Adding a column fires none of them and is ordered by dependency like anything el
 
 *A removal names what it orphans.* An item that removes the last caller of a component, helper, file or piece of state leaves that thing with no caller, and nothing in the tree reports it. Name each orphan in the item, and give its deletion to that item or name the item that owns it, under the one-owner rule above. A removed surface's own state and helpers are its orphans, so an item that takes a card off a screen owns the card's state or names the sibling that does. Measured in a consuming repo, two breakdowns removed last callers without naming what they left: a component, a primitive and a helper outlived the items that made them dead, and a card's state and helpers outlived both the item that removed the card and the sibling scoped to its sheet.
 
+*Restate each cross-cutting rule in every item it binds.* A rule the Recommendation sets for the whole change, such as *every tab, filter and selected row lives in the URL*, reaches a builder only through the item that builder is handed, because a child spec is cut from its item and never from the Recommendation. Write the rule out whole in each item whose work it governs, not in part and not by reference to the item that stated it first. Measured in a consuming repo, a URL-state rule from the Recommendation appeared in two of six items, each in part, and the umbrella's close-out filed a rework child for it.
+
 ## Change spec
 
 A single, concrete piece of work, on the tracker issue. Sections per `templates/change.md`: Problem, Approach, Design (data model / contract / scenarios), Acceptance criteria, Out of scope. If the design rests on a cross-cutting decision, settle that in a proposal first.
 
 Write the Design section to the depth the *decision* needs. The ticket's assurance level, not your judgement while writing, decides whether the work earns a separate design pass at build time — so a thin Design section is right on a change whose design was never the hard part, and wrong on one carrying a real decision.
+
+*A change spec cut from a breakdown item carries all of that item.* Each sub-bullet of the item, and each cross-cutting rule it restates, becomes an acceptance criterion or a named exclusion under Out of scope with its reason, and the spec links the item it was cut from. A sub-bullet the spec drops is invisible to the build and to a review that reads only the spec, so the first reader to meet it is the umbrella's close-out. Measured in a consuming repo, four of the five rework children one close-out filed came from a child spec that had dropped a sub-bullet of its item, and every one of those children had passed its review.
 
 A bug noticed in actual use does not start from a blank change spec: `/capture` fills the capture mode of `templates/change.md` at the moment of noticing, and `/build` extends it at build time.
 

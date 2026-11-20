@@ -70,7 +70,7 @@ What must be decided before this becomes work, its options, the recommended answ
 
 The change specs this proposal would spawn once accepted, each declared separable or a sequential step (`authoring` → *Proposal spec*): a separable item becomes a tracker issue of its own, a run of sequential steps becomes one (`authoring` → change spec). Order them by dependency, not by what ships alone. Where the work introduces a shape that is expensive to unpick, that shape is item 1, held for the operator, and the items building on it declare a dependency on it. `authoring` → *Proposal spec* carries the four-dimension test that decides whether a shape earns that position.
 
-Each item also names the code it shares with another item, and what its removals leave with no caller (`authoring` → *Proposal spec*).
+Each item also names the code it shares with another item and what its removals leave with no caller, and restates in full every cross-cutting rule from the Recommendation that binds it (`authoring` → *Proposal spec*).
 
 1. {change} — {one-line scope} · shares {operand} with item {N} | shares none · orphans {what, deleted by which item} | none · `assurance:{level}` · {separable | sequential with N}
 2. {change} — {one-line scope} · shares {operand} with item {N} | shares none · orphans {what, deleted by which item} | none · `assurance:{level}` · {separable | sequential with N}

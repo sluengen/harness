@@ -34,7 +34,7 @@ Stage 1 passes before Stage 2 begins: quality is irrelevant if the artifact does
 
 Does the output meet the requirements?
 
-1. Read the requirements before the artifact — the criteria *and* the design.
+1. Read the requirements before the artifact — the criteria *and* the design. Where the ticket was cut from a proposal's breakdown, read the item it came from too: a sub-bullet or restated rule of that item which the spec neither carries as a criterion nor names as an exclusion is a missing criterion, however well the ticket's own criteria are met.
 2. Mark each criterion met, partial or missing, and confirm it names what it protects and uses ADR 0019's evidence.
 3. Check the design was specified and followed; one shipped with no design invented its contract mid-build.
 4. Check scope, and check intent: a technically compliant solution that misses the point fails.
