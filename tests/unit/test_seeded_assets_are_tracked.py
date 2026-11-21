@@ -36,7 +36,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 #: Directories whose every shipped file is referenced from somewhere else in the
 #: tree, so a missing one is a broken reference rather than a missing convenience.
-SHIPPED = (".claude/rules", "hooks", "skills", "agents", "templates", ".codex/agents")
+SHIPPED = (".claude/rules", "hooks", "skills", "agents", "templates")
 
 
 def _tracked() -> set[Path]:
