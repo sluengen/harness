@@ -238,3 +238,18 @@ Every numbered record, in one place. `AGENTS.md` → *Repo principles* states th
 - *A consumer-side exemption list for ungoverned files* — every allowlist this repo has shipped needed both directions and became the finding. The glob set earns itself from the repo's own naming instead.
 
 **Consequences.** A consumer covering two conventions enumerates both in one flat list, because the globs are repo-wide rather than per-root. **Declaring globs narrows the dedicated tree too**: `tests/conftest.py` and a shared fixture stop being governed the moment a repo declares `test_files`, which is the trade ERP-521 asks for and is not free — a shared fixture is a place a cheat can live. What keeps that residue visible is `/build`'s coverage report, which lists the tracked test-shaped files the declaration does not govern before the lock is set. `/assess`'s assurance-ratio command interpolates a root and now has to pass one pathspec per root. The hook passes `engineering`'s 300-line soft limit, noted in its own header with the reason. And the lock still cannot see a rename through `Bash`, which `specs/harness-assumptions.md` already records with the test that would retire it.
+
+### Decision: A role's instructions live in a skill; an agent file is a runtime profile
+
+*Decided 2026-11-21.*
+
+**Context.** Each role's instructions were written twice, in `agents/<role>.md` for Claude Code and `.codex/agents/<role>.toml` for Codex, and held equal by `tests/unit/test_codex_agent_adapters.py`. A Codex plugin manifest carries skills and no agent files, so `/harness:hydrate` vendored the Codex copies into every consuming repo and refreshed them on each run. Most of each body already pointed at a skill. Undecided, every role change stays a two-file edit with a guard and a hydrate step that exist only for the copy.
+
+**Decision.** A role's instructions live in a skill. An agent file holds the role's runtime settings (model, effort, tools, isolation) and one line naming the skill, and nothing a second host would need a copy of. No skill is created per role: content folds into the skill the role already reads. This narrows *A task is command + role + skill + template* above: the role artefact says who runs and with what settings, and the skill says everything else.
+
+**Alternatives.**
+- *Leave both copies* — no work · the two-file edit, the guard and the vendoring continue.
+- *A skill per role* — one copy · five more skills in every session's listing, and a role skill firing in the main conversation makes the orchestrator the reviewer.
+- *No agent files at all* — fewest files · on Claude Code it gives up the reviewer's tool list, worktree isolation and fixed model, which only an agent file sets.
+
+**Consequences.** A skill never cites an agent file for a rule. Role names, models, tools and isolation are unchanged. The Codex role files go only if Codex can run a role without one; otherwise they stay as pointers and hydrate keeps copying them. A role that skips its skill has no second copy to fall back on, so the Claude Code file also preloads the skill through `skills:` where the host honours it for a plugin's agents. Source: `specs/proposals/roles-live-in-skills.md`.
