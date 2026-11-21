@@ -6437,6 +6437,20 @@ The test is whether a call that used to complete now blocks, or the reverse. No 
 
 The test is whether a call that used to complete now blocks, or the reverse. Every dispatch the plugin's skills make by role name still completes: on Claude Code through the native agent, on Codex through the Roles bullet's built-in agent, or through a leftover adapter where a consumer keeps one. No command is renamed, no argument changes, and hydrate's report vocabulary and its `blocked` cases are unchanged. The counter-argument for major is that a freshly hydrated consumer's Codex session no longer lists `reviewer` and the other role names as agent types, so a `spawn_agent` call naming one as `agent_type` would not resolve there. That call is not part of the surface the grammar governs: no shipped skill makes it, a fresh consumer never had it complete, and an existing consumer keeps its files because hydration deletes nothing. The `12.0.0` raise for the design-system rule differs in kind, since there a hydration write became `blocked`. Step 12's narrowed skip row moves the other way, from skipping the audit to running it, and a skipped audit was never a refusal of the hydration. `origin/main` stands at `37.0.0`, and the cycle's homes already stand at `37.1.0`, which this review keeps.
 
+### #809: work still owed at PASS gets a child ticket before the ticket closes, as built
+
+`simple`. Prose, with no code and no test.
+
+- `skills/build/SKILL.md` → *4. Hand off, or hold*, the *PASS* bullet, the sentence opening "Give work still owed a ticket before this one can close". Before invoking `/promote`, the build files a child of the ticket through `tracker`'s `create` for each acceptance criterion whose evidence can only follow landing, such as a first scheduled run, and for each limitation the reviewer names as owing one. A list in a park comment or a handoff does not count. The ticket allowed a child or keeping the ticket open; only the child is written, because both landing paths close the ticket.
+- `skills/review-discipline/references/certifying.md` → *Record reality — the as-built-record gate*, the paragraph opening "A known limitation that removes a capability". The reviewer names each such limitation in the verdict as owing a child ticket, filed at PASS, rather than recording it only under *Known limitations*. The record gate's FAIL condition is unchanged.
+- No guard; P2 refuses one over prose. Held by direct review (ADR 0019).
+
+**Left as built.** Two homes were not updated, and this review defers both because each is a guidance edit the reviewer may not make and neither loses the owed work. `skills/review-discipline/SKILL.md` → *Bugs are filed; improvements are proposed* still sends a residual that leaves the ticket's own outcome short to the ledger and says "Nothing else non-blocking leaves this review", so a limitation that is both gets a ledger entry and a child. `skills/review/SKILL.md`'s *PASS* bullet hands a branch reviewed on its own straight to `/promote` with no filing step, so on that path the child is filed only if the operator files the one the verdict names.
+
+### The cycle's version class: minor, `37.1.0`
+
+The test is whether a call that used to complete now blocks, or the reverse. No command, argument or refusal reason changes. `/build`'s PASS hand-off gains tracker writes before `/promote`, and the reviewer's verdict gains a named item, but neither refuses anything a run could do before, and the record gate still FAILs on the same condition. The counter-argument for major is that the grammar covers "the shape of what it obliges the reader to do", and an unattended `/routine` tick now owes filings at PASS. #796, #799 and #807's authoring clauses each added an obligation that refused nothing and shipped minor, and this follows them. `origin/main` stands at `37.0.0`, and the cycle's homes already stand at `37.1.0`, which this review keeps.
+
 ## Cross-references
 
 - `specs/harness-assumptions.md` — one row per hook, script, skill and agent: what it assumes the model cannot do, and the test that would retire it. Read at every model or host release.
