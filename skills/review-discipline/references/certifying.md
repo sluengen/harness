@@ -32,6 +32,13 @@ evidence for.
 
 What an entry carries and what it leaves out is `authoring` → *Feature spec*.
 
+**A known limitation that removes a capability the governing proposal or spec
+promised is owed work, not only a record.** Name each in the verdict as owing a
+child ticket, filed at PASS. Written only under *Known limitations*, it reads as
+accepted scope and no ticket carries the fix: measured in a consuming repo, a
+write class the proposal promised answered 409 on every approval, and only a
+close-out audit found it.
+
 ## Sweep for twins
 
 A mechanism in this tree often has a **twin** — a template shipped to consuming
