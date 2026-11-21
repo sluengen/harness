@@ -20,6 +20,8 @@ A design is an artifact, not code. It answers *what* and *why* clearly enough th
 
 Prefer simple, proven patterns over clever ones. Design for the current scope; leave room to extend, but do not build the extension (`engineering`: no speculation).
 
+Read what exists before designing against it: the relevant feature specs, the architecture-principles spec and the decisions recorded there, and the code. A settled decision is not relitigated unless its context has materially changed. Return the whole artifact: a section you leave out is a decision the implementer makes mid-build, where it is made fastest and worst. Load `authoring` → `references/prose.md` immediately before writing the design.
+
 ## Judging a contract someone hands you
 
 Contracts arrive to be judged as well as written — a proposal, a migration plan, an integration another team designed. Judge each against the list above, then against what it assumes about the other side.

@@ -46,6 +46,10 @@ Satisfying a wrong criterion costs more than challenging it. Two checks, in orde
 
 Challenge a wrong criterion **before** implementing: give the evidence, offer a smaller replacement, get the owner's agreement, amend the tracker issue. Never descope silently, and never leave the rationale in a commit body — the ticket is the canonical record, so a Done ticket whose current criteria the diff did not meet is false.
 
+## Stop and say so
+
+Criteria that contradict each other, or that cannot be met honestly with the evidence available, are an andon pull (spine P4) rather than a licence to build the closest thing that passes. A builder another run dispatched returns **DEFER**: the call is the operator's, and taking the pull is the correct outcome, not a failure. A gap in the ticket or the change spec is asked about, never guessed. Dispatched in a worktree of your own, start from the commit your brief names (`worktree-isolation` → *Taking the commit a brief names*), and hand off what was asked, what changed per file, and the evidence behind each criterion, loading `authoring` → `references/prose.md` immediately before writing it.
+
 ## Test-first
 
 No production code without a failing test first. If you wrote implementation before its test, delete it and start over; there is no exemption for "too simple" or "right after".

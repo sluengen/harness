@@ -75,6 +75,15 @@ A reviewer or a dispatched `dev` that meets one repairs nothing, files nothing a
 
 Each concurrent agent gets its own worktree because two agents editing one working tree interleave their edits and corrupt each other's diffs, the single exception being a lone sub-agent sharing the orchestrator's worktree while the orchestrator is idle for the whole run.
 
+## Taking the commit a brief names
+
+A reviewer or a `dev` the host runs in a worktree of its own starts from the commit its packet or brief names, never from that worktree's base. The host cuts the worktree from a base it chooses, measured on the harness repo as the remote's default branch (#732). That base need not be an ancestor of the named commit, and where the default branch carries merge commits the integration branch lacks it never is, so no fast-forward from there reaches it; and the host refuses the agent's writes into the dispatching run's worktree.
+
+- **Take it detached.** `git checkout --detach <commit>`, after `git fetch origin` where `git cat-file -t <commit>` finds no such commit. The worktree is clean on arrival, so this moves only `HEAD`, and git refuses it where it would overwrite a change. Confirm `git rev-parse HEAD` is the commit before you read anything else.
+- **Never `git reset --hard` or `git switch -c <branch> <commit>` onto it.** The host refuses both as destroying local work, and a refused take spends the stage with nothing done. Where the checkout itself is refused, stop and report it, naming the commit and the refusal, rather than reaching for another way in.
+- **Commit there, and report what the dispatching run takes.** A reviewer commits its record on the detached `HEAD` and reports that commit's sha. A `dev` names a branch of its own at `HEAD` (`git switch -c <branch>`, no start point, so nothing moves), commits there, and reports the branch and its commit. The dispatching run takes either by fast-forward.
+- **A brief that names no commit is a gap to ask about.** An agent running in the dispatching run's worktree already takes that worktree's `HEAD` as the commit, stays on its branch and commits there.
+
 ## Cleanup
 
 Cleanup is part of shipping a merged task; skip it and short-lived task artifacts accumulate on the host. It runs only on a task that ships, which is why *Creating the worktree* reclaims the ones that did not. Stop every temporary resource the task started before removing the files it runs from, then remove the worktree, prune git's administrative records, and delete the merged branch.

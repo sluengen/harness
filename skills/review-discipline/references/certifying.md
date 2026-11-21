@@ -99,7 +99,7 @@ hand moves them:
 
 - *Your git cannot reach the builder's worktree* — a host that runs you in an
   isolated worktree of your own. Take the candidate commit the packet names
-  as `agents/reviewer.md` → *Your context is the packet* says, commit the
+  as `worktree-isolation` → *Taking the commit a brief names* says, commit the
   record on top of it, run the gate there, and report that commit beside the
   `reviewed_tree`. The
   driving run fast-forwards the ticket branch to that commit and refuses
