@@ -1,36 +1,31 @@
 ---
 paths:
   - "agents/**"
-  - ".codex/agents/**"
-description: What binds while authoring a role definition and its Codex adapter.
+description: What binds while authoring a role definition.
 ---
 
 # Authoring a role
 
-A role ships twice: `agents/<role>.md` is what Claude Code dispatches, and
-`.codex/agents/<role>.toml` is Codex's native adapter for the same role.
-`tests/unit/test_codex_agent_adapters.py` holds the two bodies byte-equal, so
-**every edit lands in both copies or the gate goes red.** The `.toml`'s leading
-`#` block is a comment Codex never reads; the only reader-visible body is
-`developer_instructions`.
+**A role's instructions live in a skill; an agent file is a runtime profile.**
+The file holds the role's settings — `name`, `description`, `tools`,
+`isolation`, `model`, `effort`, and on Claude Code `skills:` — and a one-line
+body naming the skill section the role follows. Nothing a second host would need
+a copy of goes in it. A rule a role needs is written into that skill, never into
+the body. `specs/architecture-principles.md` → *Decision: A role's instructions
+live in a skill; an agent file is a runtime profile* records why.
 
-## A `skills/` path in a role body resolves from the plugin root
+**The body names its skill by name, never by a `skills/` path.** A name
+resolves on both hosts. A path does not: the body is read in a consuming repo's
+workspace, by Claude Code as the agent's prompt and by Codex at the head of a
+built-in agent's brief (the spine's *Roles* bullet), and that workspace has no
+`skills/` tree. A reference file is named relative to its skill, as in "`references/audit.md`
+in the `hydrate` skill".
 
-Paths the plugin owns — `skills/`, `agents/`, `templates/`, `hooks/`, `.codex/`
-— resolve from the **installed plugin's root**, never from the consumer
-workspace. `tests/unit/test_native_codex_plugin.py` already holds the nine
-workflow skills to that rule and states it in its own docstring; role bodies
-are the same artefact class and carry the same rule, stated in the body rather
-than guarded, because ADR 0017 D5 admits no guard over what prose means.
-
-**The sentence cannot name a directory count.** A workflow skill can say *"two
-directories above this SKILL.md"* because it ships in one place. A role body
-cannot: it is byte-identical across `agents/` (one level under the plugin root)
-and `.codex/agents/` (two), and `/harness:hydrate` step 9 vendors the `.toml`
-into a *consuming* repo's `.codex/agents/`, where the plugin root is somewhere
-else entirely and there is no `skills/` tree at all. Write the root by name, not
-by position.
-
-**A role that names no such path gets no sentence.** Adding the line to a body
-that references nothing under `skills/` would be a second copy guarding nothing
-(P0; the duplicated-operand refusal #640 ruled on).
+**`skills:` lists the skill the body names, namespaced `harness:<skill>`.** The
+host injects that skill's `SKILL.md` into the role at start, so a role that never
+opens the skill still holds it. A name that does not resolve is skipped with a
+debug-log warning and nothing else, so a new entry is checked by dispatching the
+role and asking for a line of the skill it was not told to read. A skill
+carrying `disable-model-invocation: true` cannot be preloaded, so a role whose
+skill is one of those carries no `skills:` and its dispatcher hands it the path:
+`harness-audit` follows a reference in `hydrate`, and hydrate step 12 says so.

@@ -1,6 +1,6 @@
 """#626 — the design system ships as skill-attached assets, or a consumer gets none of it.
 
-`/harness:hydrate` step 11 copies a skill's shipped assets to the destination
+`/harness:hydrate` step 10 copies a skill's shipped assets to the destination
 that skill's own guidance names. `design-system` is the first skill to use that
 step, and what it carries is the whole of what a consumer receives: the eight
 tiers, the token source, and the builder that resolves it into a page. A tier
@@ -103,7 +103,7 @@ def test_the_token_source_and_its_builder_travel_with_the_skill() -> None:
 def test_the_skill_has_a_skill_file() -> None:
     """A directory under `skills/` with no `SKILL.md` is not a skill.
 
-    Hydration step 11 copies assets to the destination *the skill's own guidance*
+    Hydration step 10 copies assets to the destination *the skill's own guidance*
     names, so the guidance is load-bearing rather than decorative.
     """
     assert (REPO_ROOT / SKILL_DIR / "SKILL.md").is_file(), (

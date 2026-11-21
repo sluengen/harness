@@ -14,6 +14,7 @@ Best-practice guidance gathered September 2026 to inform a ground-up redesign of
 | [06-spec-driven-development.md](06-spec-driven-development.md) | Designing spec artefacts and their lifecycle, or promoting spec knowledge into skills | ~17 KB |
 | [07-requirements-capture.md](07-requirements-capture.md) | Designing intake — elicitation, clarification loops, requirement notation, assumption logging | ~15 KB |
 | [08-tickets-as-specs.md](08-tickets-as-specs.md) | Designing the ticket schema, labels, queue semantics, and sizing rules | ~14 KB |
+| [09-skills-only-roles.md](09-skills-only-roles.md) | Moving role content out of agent files into skills, or making roles portable across harnesses (Nov 2026) | ~12 KB |
 | [99-sources.md](99-sources.md) | Verifying a citation, or checking what could not be verified | ~15 KB |
 
 ## Evidence tags

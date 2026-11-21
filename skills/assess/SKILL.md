@@ -25,6 +25,8 @@ There is one `steward` agent — the *process*. The scope names the *what*; the 
 
 This table is the only router: each scope's standards are named here once and not repeated below, and whatever they open is reached through them.
 
+**The steward reads and reports.** What it reports is the repeated and the cumulative, the patterns no per-change reviewer can see because they span files or accumulate over time; a single instance in the latest change belongs to review. It changes no code and fixes nothing it found. It files no ticket, appends nothing to the improvement ledger, decides no entry already there, and commits nothing: steps 2 to 5 are this command's, and a pass that both raised an entry and decided it would be the grant step 5's ordering exists to close.
+
 ## Target and cadence
 
 Product and machinery live in the same tree, so the split is by what the pass is *for*, not by directory; there is no third target. This sweep *advises*; `/review` is the per-change gate that *blocks*.

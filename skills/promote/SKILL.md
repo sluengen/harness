@@ -633,11 +633,14 @@ resolver is what changes, not the command.
    halves: what the release takes out of a consumer's tree, and what it puts
    in. Most of a release is guidance, which lives in the plugin and never
    enters a consumer's tree, so the second half is the one that gets left out.
-   One set does enter it — `/harness:hydrate` rewrites the plugin's Codex role
-   adapters (`.codex/agents/*.toml`) on every run, so a release that gains a
-   role lands a new file in every consumer that hydrates, and a repo pinning
-   that set meets the addition as a red gate instead of as a line in the
-   notes. Additions therefore get a row naming the path, what puts it there,
+   What does enter it is what `/harness:hydrate` creates where absent, a
+   seeded path-scoped rule (its step 5) or a skill-attached asset (its step
+   10), so a release that gains one lands a new file in every consumer that
+   hydrates with that layer on, and a repo pinning that set meets the addition
+   as a red gate instead of as a line in the notes. A file hydration stops
+   writing stays in the consumer's tree until its operator removes it, so the
+   notes name it under what the release takes out, with that removal as the
+   consumer's step. Additions therefore get a row naming the path, what puts it there,
    and what a consumer who pins the set has to do. A release that adds nothing
    says so.
 

@@ -32,6 +32,13 @@ evidence for.
 
 What an entry carries and what it leaves out is `authoring` → *Feature spec*.
 
+**A known limitation that removes a capability the governing proposal or spec
+promised is owed work, not only a record.** Name each in the verdict as owing a
+child ticket, filed at PASS. Written only under *Known limitations*, it reads as
+accepted scope and no ticket carries the fix: measured in a consuming repo, a
+write class the proposal promised answered 409 on every approval, and only a
+close-out audit found it.
+
 ## Sweep for twins
 
 A mechanism in this tree often has a **twin** — a template shipped to consuming
@@ -99,7 +106,7 @@ hand moves them:
 
 - *Your git cannot reach the builder's worktree* — a host that runs you in an
   isolated worktree of your own. Take the candidate commit the packet names
-  as `agents/reviewer.md` → *Your context is the packet* says, commit the
+  as `worktree-isolation` → *Taking the commit a brief names* says, commit the
   record on top of it, run the gate there, and report that commit beside the
   `reviewed_tree`. The
   driving run fast-forwards the ticket branch to that commit and refuses
