@@ -1,11 +1,14 @@
 ---
 proposal: roles-live-in-skills
-status: accepted         # draft | under-decision | accepted | shipped | rejected | split | superseded
+status: shipped          # draft | under-decision | accepted | shipped | rejected | split | superseded
 date: 2026-11-21
+shipped: 2026-11-21
 related: [research/09-skills-only-roles.md, specs/features/plugin-surface.md, specs/decisions/0021-copy-or-bridge-by-failure-mode.md]
 ---
 
 # Roles live in skills; an agent file is only a runtime profile
+
+> **Shipped 2026-11-21.** Both change specs this proposal spawned have landed on the integration branch: #812 and #813, audited against the decision on the umbrella #811. The as-built records in `specs/features/plugin-surface.md` are the account of what each delivered; this file is kept as the reasoning. Three things landed differently from the text below. #813's Codex test passed, so the Codex role files, their correspondence test and hydrate's copy step are gone, and Codex starts a role from the spine's *Roles* bullet, which replaced the per-skill dispatch wording item 2 named. The `harness-audit` role carries no `skills:` preload, because the host will not preload a skill that sets `disable-model-invocation`; hydrate hands it the audit reference's path instead. Codex roles are passed no model or effort.
 
 ## In brief
 
@@ -135,4 +138,4 @@ Read against `e1924d9d` on `claude/skills-only-roles-harness-ebf567`.
 
 ---
 
-**Lifecycle.** Accepted 2026-11-21 by the operator, as written. Spawned umbrella #811 with children #812 (breakdown item 1) and #813 (item 2, blocked by #812). It becomes **shipped** once those have landed.
+**Lifecycle.** Accepted 2026-11-21 by the operator, as written. Spawned umbrella #811 with children #812 (breakdown item 1) and #813 (item 2, blocked by #812). Both landed 2026-11-21, and the close-out audit on #811 found no gap.
