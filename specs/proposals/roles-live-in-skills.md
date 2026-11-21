@@ -2,7 +2,7 @@
 proposal: roles-live-in-skills
 status: accepted         # draft | under-decision | accepted | shipped | rejected | split | superseded
 date: 2026-11-21
-related: [specs/features/plugin-surface.md, specs/decisions/0021-copy-or-bridge-by-failure-mode.md]
+related: [research/09-skills-only-roles.md, specs/features/plugin-surface.md, specs/decisions/0021-copy-or-bridge-by-failure-mode.md]
 ---
 
 # Roles live in skills; an agent file is only a runtime profile
@@ -131,7 +131,7 @@ Read against `e1924d9d` on `claude/skills-only-roles-harness-ebf567`.
 - **Other references.** `.claude/rules/agents.md` (scoped to `agents/**` and `.codex/agents/**`, states the mirror rule and the path convention); `README.md`, the line "Codex role adapters in `.codex/agents/`"; `tests/unit/test_seeded_assets_are_tracked.py`; `CLAUDE.md`, the *Sub-agents* delta; `specs/harness-assumptions.md` → *Agents*, whose rows name roles and stay true; `specs/architecture-principles.md`, the paragraph beginning "A unit of repeatable work decomposes into four durable artifacts".
 - **Manifests.** `.claude-plugin/plugin.json` declares no component paths and takes `agents/` by convention. `.codex-plugin/plugin.json` declares `"skills": "./skills/"` and nothing else. Both at `37.0.0`.
 - **Codex CLI.** Present on this host at `~/.local/bin/codex`, so item 2's test can run here.
-- **Source research.** The note *09 — Skills-only roles* in `research/` holds the cross-host survey this proposal draws on. At drafting it was an untracked file in the main checkout and on no branch; its evidence that bears on the decision is restated above.
+- **Source research.** `research/09-skills-only-roles.md` holds the cross-host survey this proposal draws on. Its evidence that bears on the decision is restated above.
 
 ---
 
