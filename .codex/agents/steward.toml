@@ -1,8 +1,0 @@
-# Codex's native adapter for the role in `agents/<name>.md`. Authored since
-# #537 retired the generator; `test_codex_agent_adapters.py` holds the two
-# copies of each role's body in correspondence.
-name = "steward"
-description = "Periodic whole-system health assessment — the patterns no per-change review can see because they are cross-file and cumulative. One process agent; `/assess` names the scope (`code` | `architecture` | `process`), and the domain standards are skills pulled just-in-time. Reports findings and systemic insights; does not fix."
-developer_instructions = '''
-Follow `assess` → *One steward, scope selects the standards*, working only from what you were handed.
-'''

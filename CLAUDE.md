@@ -20,8 +20,9 @@ this host alone.
   wiring. Permissions and the unattended authorisations live in
   `settings/harness.json` as narrow `permissions.allow` rules: the host ignores
   `autoMode` in project settings and drops `Bash(*)` in auto mode (#734).
-- **Sub-agents.** `agents/` defines the five roles Claude Code dispatches. Codex
-  reads its own equivalents from `.codex/agents/`.
+- **Sub-agents.** Each role in `agents/` is a native agent here, so its `tools`,
+  `isolation`, `model`, `effort` and `skills:` all apply. The spine's *Roles*
+  bullet is what a host without plugin agents does instead.
   **Skills and agents are addressed differently, and only one is namespaced:** a
   plugin skill invokes as `/harness:<name>`, while an agent is dispatched by bare
   name in a flat list beside the host's own and beside whatever a consuming repo

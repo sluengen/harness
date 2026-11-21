@@ -13,7 +13,7 @@ design system, this skill is the system itself.
 ## The assets, and where they go
 
 **Destination: `paths.design_system`, as `harness.yaml` declares it.**
-`/harness:hydrate` step 11 copies **the files the table below names** there, file
+`/harness:hydrate` step 10 copies **the files the table below names** there, file
 by file, each one only where its own destination path is absent — except the rows
 that table marks `on request`, which a repo asks for rather than receives.
 **The absence half of that** is the workflow's root rule rather than an exception
@@ -36,7 +36,7 @@ Codex twin of the path-scoped rule, seeded by `/harness:hydrate` step 5 from
 `templates/rules/design-system.md`, and it lives here because
 `paths.design_system` resolves here — this repo's own twin, seeded into this
 repo's own design directory, which happens to be the tree the skill ships. No row
-below names it, so step 11 copies it under no circumstances: not where step 5
+below names it, so step 10 copies it under no circumstances: not where step 5
 wrote the consumer's, and not where step 5 wrote none. The copy sitting here
 carries this repo's preamble; landed in a consumer it would be that repo's
 binding Codex instruction file, written about this one.

@@ -156,7 +156,6 @@ files that must be repo-owned:
 - the spine, `AGENTS.md`, and a `CLAUDE.md` that imports it
 - path-scoped rules, and the sub-directory instruction files that carry them to
   Codex
-- Codex role adapters in `.codex/agents/`
 - the specs scaffold and the infrastructure record
 - the plugin's marketplace entry in `.claude/settings.json`, with auto-update on
 - the gate's ignore patterns in `.gitignore`
@@ -166,7 +165,7 @@ own; where there is none, hydration says what it must do and leaves the writing
 to you.
 
 Run it again after a plugin update — one command, no flag. It refreshes the
-plugin-marked spine block and Codex adapters, leaves every repo-owned file alone,
+plugin-marked spine block, leaves every repo-owned file alone,
 and reports each path as written, rewritten, retained or blocked. Hydration only
 touches the working tree: no commits, no pushes, no tracker writes.
 

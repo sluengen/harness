@@ -1,8 +1,7 @@
 ---
 paths:
   - "agents/**"
-  - ".codex/agents/**"
-description: What binds while authoring a role definition and its Codex adapter.
+description: What binds while authoring a role definition.
 ---
 
 # Authoring a role
@@ -16,9 +15,10 @@ the body. `specs/architecture-principles.md` → *Decision: A role's instruction
 live in a skill; an agent file is a runtime profile* records why.
 
 **The body names its skill by name, never by a `skills/` path.** A name
-resolves on both hosts. A path does not: `/harness:hydrate` step 9 vendors the
-`.toml` into a consuming repo's `.codex/agents/`, where there is no `skills/`
-tree. A reference file is named relative to its skill, as in "`references/audit.md`
+resolves on both hosts. A path does not: the body is read in a consuming repo's
+workspace, by Claude Code as the agent's prompt and by Codex at the head of a
+built-in agent's brief (the spine's *Roles* bullet), and that workspace has no
+`skills/` tree. A reference file is named relative to its skill, as in "`references/audit.md`
 in the `hydrate` skill".
 
 **`skills:` lists the skill the body names, namespaced `harness:<skill>`.** The
@@ -28,13 +28,4 @@ debug-log warning and nothing else, so a new entry is checked by dispatching the
 role and asking for a line of the skill it was not told to read. A skill
 carrying `disable-model-invocation: true` cannot be preloaded, so a role whose
 skill is one of those carries no `skills:` and its dispatcher hands it the path:
-`harness-audit` follows a reference in `hydrate`, and hydrate step 13 says so.
-
-## Two copies of the body, until Codex can run without them
-
-`agents/<role>.md` is what Claude Code dispatches and `.codex/agents/<role>.toml`
-is Codex's adapter for the same role. `tests/unit/test_codex_agent_adapters.py`
-holds the two bodies and descriptions equal, so an edit to either lands in both
-or the gate goes red. The `.toml`'s leading `#` block is a comment Codex never
-reads; the only reader-visible body is `developer_instructions`. Codex has no
-`skills:` field, so that line is the one part of the frontmatter with no twin.
+`harness-audit` follows a reference in `hydrate`, and hydrate step 12 says so.
