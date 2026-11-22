@@ -6451,6 +6451,22 @@ The test is whether a call that used to complete now blocks, or the reverse. Eve
 
 The test is whether a call that used to complete now blocks, or the reverse. No command, argument or refusal reason changes. `/build`'s PASS hand-off gains tracker writes before `/promote`, and the reviewer's verdict gains a named item, but neither refuses anything a run could do before, and the record gate still FAILs on the same condition. The counter-argument for major is that the grammar covers "the shape of what it obliges the reader to do", and an unattended `/routine` tick now owes filings at PASS. #796, #799 and #807's authoring clauses each added an obligation that refused nothing and shipped minor, and this follows them. `origin/main` stands at `37.0.0`, and the cycle's homes already stand at `37.1.0`, which this review keeps.
 
+### #815: a ranking tie goes to the umbrella nearest done, as built
+
+`simple`. Prose and evals only, with no code and no test.
+
+- `skills/work-discovery/SKILL.md` → *Ranking — the next most logical ticket*, step 4, the sentence opening "Break a tie that remains by what the pick finishes". Between candidates still level on priority (step 2) and blocking set (step 3), the run takes the one whose parent has the fewest open children left. It reads the parent and the children through `tracker` → `open`, and only for tied candidates. A canceled child counts as neither done nor left, and the umbrella's size does not enter the count. A ticket with no parent takes no part, and two children of one parent tie by construction, so ID order decides in both cases. Where step 4 decides the pick, the tick's report names the parent and the count. ID order is now step 5, and the judgment sentence covers steps 2 to 5.
+- *The limit* pulls Backlog and chooses which project to open "by the same steps below", so both inherit step 4 with no edit of their own.
+- `skills/work-discovery/evals/evals.json`: eval 11, `a-tie-goes-to-the-umbrella-nearest-done`, and its control, eval 12, `a-longer-blocking-set-outranks-the-close-out`. Nothing under `evals/` is a test, and no file under `tests/` changed on this branch.
+
+Held by direct review and use (ADR 0019). Evals 11 and 12 were each run as a fresh-context probe against the candidate's skill text, and eval 11 was also run against the text at `3c620457`. The candidate picked `#94` on step 4 for eval 11 and `#90` on step 3 for eval 12. The text at `3c620457` picked `#90` for eval 11 on ID order, so the eval separates the two texts.
+
+**Differences from the change spec.** None.
+
+### The cycle's version class: minor, `37.2.0`
+
+The test is whether a call that used to complete now blocks, or the reverse. No command, argument or refusal reason changes. A tie that used to fall to ID order can now pick a different actionable ticket, and the report gains a line when step 4 decides. Both outcomes complete, and nothing that used to be picked is now refused. The counter-argument for major is that a tick that picked ticket A on a given queue now picks ticket B, so a consumer's previously deterministic outcome moves. The grammar in `specs/architecture-principles.md` → *The installed surface is a versioned interface* makes a refusal reason the interface, not the choice among candidates the tick would build either way. #774's major rested on a stop that became a proceed, and its class paragraph does not cite the step 2 reordering it shipped beside. `origin/main` stands at `37.1.0`, and `/build` step 7 raised the four homes in `scripts/plugin-version.js`'s `CANDIDATES` to `37.2.0`, which this review keeps.
+
 ## Cross-references
 
 - `specs/harness-assumptions.md` — one row per hook, script, skill and agent: what it assumes the model cannot do, and the test that would retire it. Read at every model or host release.

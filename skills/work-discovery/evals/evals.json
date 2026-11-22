@@ -151,6 +151,31 @@
         "It names #80 in its report as an unpriced ticket it passed over, so the operator can price it",
         "It does not stop the line over #80's missing priority"
       ]
+    },
+    {
+      "id": 11,
+      "name": "a-tie-goes-to-the-umbrella-nearest-done",
+      "prompt": "Unattended tick against this repository (do not read anything under skills/ or agents/ there). I ran the andon check. Every call returned 200, the board read finished below its limit, and no open bug reads back at the top priority. There is a free slot and nothing in Backlog. Here are the Todo tickets, all unblocked, none assigned, none held, each carrying a complete change spec and nothing landed on its surface since filing:\n\n  #90  enhancement  P2  Todo  unassigned  blocking: #95  parent: #70 (open children per the tracker: #90, #91, #92, #93)  \"design-system: extract the token loader\"\n  #94  enhancement  P2  Todo  unassigned  blocking: #96  parent: #60 (open children per the tracker: #94; four closed as completed)  \"tracker: document the park read\"\n\nWhich ticket do I start? Save your answer as pick.md in the output directory.",
+      "expected_output": "A written artefact demonstrating work-discovery judgment on the close-out tie-break.",
+      "files": [],
+      "expectations": [
+        "It picks #94, because #90 and #94 tie on priority and on blocking set, and #94's parent has one open child left against four for #90's",
+        "It names the close-out as the reason, citing the parent and the open-children count",
+        "It does not pick #90 for its lower ID: ID order applies only after the close-out step",
+        "It reads the parent and the children from the tracker's parent/child field, not from either ticket's title"
+      ]
+    },
+    {
+      "id": 12,
+      "name": "a-longer-blocking-set-outranks-the-close-out",
+      "prompt": "Unattended tick against this repository (do not read anything under skills/ or agents/ there). I ran the andon check. Every call returned 200, the board read finished below its limit, and no open bug reads back at the top priority. There is a free slot and nothing in Backlog. Here are the Todo tickets, all unblocked, none assigned, none held, each carrying a complete change spec and nothing landed on its surface since filing:\n\n  #90  enhancement  P2  Todo  unassigned  blocking: #95,#97  parent: #70 (open children per the tracker: #90, #91, #92, #93)  \"design-system: extract the token loader\"\n  #94  enhancement  P2  Todo  unassigned  blocking: #96  parent: #60 (open children per the tracker: #94; four closed as completed)  \"tracker: document the park read\"\n\nWhich ticket do I start? Save your answer as pick.md in the output directory.",
+      "expected_output": "A written artefact demonstrating that the blocking-set tie-break precedes the close-out one.",
+      "files": [],
+      "expectations": [
+        "It picks #90, because at equal priority its blocking set is longer, and the blocking set decides before the close-out step is reached",
+        "It does not let #94's nearly finished umbrella displace #90: the close-out step applies only between candidates still level on priority and blocking set",
+        "It does not cite ID order as the reason"
+      ]
     }
   ]
 }
