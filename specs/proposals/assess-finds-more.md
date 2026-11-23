@@ -116,6 +116,32 @@ Filed 2026-11-23 under umbrella #817: item 1 is #818, item 2 is #819, item 3 is 
 3. **Make the tree the subject** — state that a code pass reads the tree, add the rotating deep read chosen from what earlier reports left unread, require the read-in-depth and not-assessed lists in the code report shape, carry the area read into the log line, and move a merged single instance into the pass's scope. Depends on item 2, which writes the same three files. · shares those three files with item 2 · orphans none · `assurance:simple` · separable
 4. **Count again and close** — rerun item 1's branch and set after items 2 and 3 land, record both counts side by side here, and reopen whichever *Not doing* line its trigger names. Depends on items 1, 2 and 3. · shares this proposal file with item 1 · orphans none · `assurance:simple` · separable
 
+## Counts
+
+### Before (item 1, #818, 2026-11-24)
+
+**Set.** Nine problems were planted on `spike/assess-finds-more`, cut from `dev` at `2ccac313`, tip `ddc6421a`, never merged. Each is one commit with an ordinary message and a backdated date, in a file untouched for at least a month. The list, with class, file and commit, is on #818.
+
+**Run.** One `code` steward, dispatched with the role's one-line body and told nothing about the plants. It read the skill text of the branch's own tree, which is byte-identical to installed plugin 37.2.0. It filed nothing, appended nothing to the ledger and landed no report. Its report is attached to #818.
+
+| Class | Planted | Found | Routing of each found problem |
+|---|---|---|---|
+| Broken today | 3 (P1 test lock, P2 promotion, P3 reconcile prose) | 3 | all findings: CODE-1, CODE-3, CODE-6 |
+| Future risk | 4 (P4 credential, P5 parser copy, P6 performance, P7 maintainability) | 4 | P4, P5 and P6 as findings (CODE-2, CODE-5, CODE-4), each because the gate proved a harm today. P7 below the floor: "no caller hits the bug today" |
+| One-off slip | 2 (P8 usage flag, P9 cross-reference) | 2 | both below the floor |
+| **Total** | **9** | **9** | 6 findings, 3 below the floor, 0 dropped, 0 insight |
+
+**Read these numbers narrowly.**
+
+- **The plants were handed to it as a diff.** The subject was a branch nine commits ahead of `dev`, and the steward read `origin/dev..HEAD` commit by commit. Its *Why this pass* says the nine commits "have no review record". So this count measures a pass whose window is exactly the planted set. It does not measure one that has to find old code in the tree. Cause 2 (the pass reads the window) is therefore untested by this run. #821 must rerun under the same condition to compare like with like, and should say so.
+- **The gate did half the work.** It is red on the spike: 23 failed, 690 passed. Five plants (P1, P2, P4, P5, P6) break existing tests. The steward ran the gate over the branch and over `dev`, and attributed every failure. The four that pass the gate (P3, P7, P8, P9) were found by reading the diff.
+- **Cause 1 shows even here.** None of the four future risks was routed as a future risk:
+  - P4, P5 and P6 were routed as findings only because a test turned each into a harm today. P6's performance cost appears as a side remark inside a correctness finding.
+  - P7, the one future risk no test caught, went below the floor on exactly the September rule. The report gives no trigger, no consequence kind and no cost.
+
+  This is the behaviour item 2 targets.
+- **It also found real problems outside the set.** It found one real finding on the shared tree (CODE-7: `specs/features/plugin-surface.md` at 834 KB, too large for the architect it is handed to), four real below-floor items, and three insights. None was filed, because this run files nothing. They are listed on #818 for the operator.
+
 ## Risks
 
 - **Judgment returns to a rule built to have none.** The September rule says "nothing in the split is a judgement call, on purpose". The three-part test bounds the judgment, and nothing is filed until the operator approves, but a steward can still write a plausible trigger for a risk that will never arrive. The counts will show how many risks a pass lists; a long list every pass means the door is too wide.
