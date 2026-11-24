@@ -4,7 +4,7 @@ The shape of a `/assess` report. The steward writes one dated file per pass; `sk
 
 **Filename.** `assessments/<YYYY-MM-DD>-<scope>.md` — e.g. `assessments/2026-06-15-code.md`. The dated `assessments/` directory is the convention; do **not** write `steward-<domain>-<date>.md` at the repo root.
 
-**Retention.** `assessments/` keeps only the **latest report per scope** plus **any report with an open finding**; every other report is *superseded* and folds into a rolling `assessments/LOG.md`, one line each — `- <YYYY-MM-DD> · <scope> · <one-clause verdict> · findings: <resolved / ticketed>`. **A `process` entry appends a fourth field**, `· baseline: <assurance:product ratio> / <gate wall-clock> / <unjustified checks> / <tickets per finding>`, because that scope's value is the *series* and the directory keeps only the one prior report — without the numbers in the fold, every pass could compare against its predecessor and nothing earlier. The field carried three values until the fourth baseline row was added; a three-value line folded before then is not rewritten, and reads as a pass that had no fourth row to record. **A pass that refuted a lever appends a fifth**, `· refuted: <lever> (<the measurement that killed it>)`, one per dead lever, so the *Refuted hypotheses* section survives the fold that deletes the report explaining it. A finding is *open* until its ticket is closed (or it is otherwise resolved); a report is superseded when it is not the latest for its scope **and** none of its findings are still open. **A retired scope is the one exception to *latest for its scope*:** a report whose scope the current `/assess` can no longer produce is superseded once none of its findings are open — nothing can ever supersede it by being newer, so the open-finding test alone decides, and until it passes the report is still kept. **Never fold away a report that still has an open finding.** This holds the directory to roughly one file per scope plus the live-finding tail — a running index, not a growing pile of point-in-time reports whose findings are already fixed (noise) or tracked in the tracker. `/assess` applies this after committing each report (`skills/assess/SKILL.md`).
+**Retention.** `assessments/` keeps only the **latest report per scope** plus **any report with an open finding or an undecided risk**; every other report is *superseded* and folds into a rolling `assessments/LOG.md`, one line each — `- <YYYY-MM-DD> · <scope> · <one-clause verdict> · findings: <resolved / ticketed>`. **A `process` entry appends a fourth field**, `· baseline: <assurance:product ratio> / <gate wall-clock> / <unjustified checks> / <tickets per finding>`, because that scope's value is the *series* and the directory keeps only the one prior report — without the numbers in the fold, every pass could compare against its predecessor and nothing earlier. The field carried three values until the fourth baseline row was added; a three-value line folded before then is not rewritten, and reads as a pass that had no fourth row to record. **A pass that refuted a lever appends a fifth**, `· refuted: <lever> (<the measurement that killed it>)`, one per dead lever, so the *Refuted hypotheses* section survives the fold that deletes the report explaining it. **A report that listed risks appends** `· risks: <ID> <one-clause title> <outcome>`, one per risk, where the outcome is `→ <ticket>`, `declined (<reason>)` or `done`, so a declined risk stays declined after the report that listed it is deleted (`skills/assess/references/finding-bar.md` → *Future risk — the second door*). A finding is *open* until its ticket is closed (or it is otherwise resolved); a report is superseded when it is not the latest for its scope **and** none of its findings are still open **and** none of its risks is undecided. A risk is *undecided* until a ledger disposition row names its report and ID (`skills/assess/SKILL.md`, step 4). **A retired scope is the one exception to *latest for its scope*:** a report whose scope the current `/assess` can no longer produce is superseded once none of its findings are open and none of its risks undecided — nothing can ever supersede it by being newer, so those tests alone decide, and until it passes the report is still kept. **Never fold away a report that still has an open finding or an undecided risk.** This holds the directory to roughly one file per scope plus the live-finding tail — a running index, not a growing pile of point-in-time reports whose findings are already fixed (noise) or tracked in the tracker. `/assess` applies this after committing each report (`skills/assess/SKILL.md`).
 
 ---
 
@@ -12,7 +12,7 @@ The shape of a `/assess` report. The steward writes one dated file per pass; `sk
 
 **Steward:** steward (`{scope}` scope) · **Base:** `{branch}` @ `{sha}` · **Gate:** {not run — read-only assessment / the verify result if anything changed}.
 
-**Filed:** {findings emitted} findings emitted · {tickets filed} tickets filed — written by `/assess` step 2 after filing, counts only.
+**Filed:** {findings emitted} findings emitted · {tickets filed} tickets filed — written by `/assess` step 2 after filing, counts only; a listed risk is in neither count.
 
 ## Why this pass
 
@@ -34,6 +34,18 @@ Each finding is a level-3 heading carrying its ID, a one-line title, and (when d
 **How:** a concrete fix, not "this is wrong".
 
 (Repeat per finding. **Zero findings is a legitimate, stated outcome** — say so plainly and do not invent findings to fill the report.)
+
+## Risks to approve
+
+Risks that harm nobody today and pass the three-part test (`skills/assess/references/finding-bar.md` → *Future risk — the second door*). **The pass files nothing for them.** `/assess` appends each one to the improvement ledger, and the operator approves or declines it with the ledger in front of them. An approved risk is then filed as an ordinary ticket. Drop the section when it is empty.
+
+### {SCOPE}-RISK-{n} — {one-line title}
+
+**Trigger:** the concrete condition under which it goes wrong.
+**Consequence:** {protected area / dearer with every change (name the test) / performance / maintainability trap}: what it damages, with the measurement, the named pattern, or the change that springs it, as the kind requires.
+**Cost now:** what fixing it takes today, against what it costs after the trigger.
+**Where:** `file:line`.
+**How:** the fix.
 
 ## Below the floor
 
@@ -57,6 +69,7 @@ An `/assess architecture` pass writes the *same* dated file (`assessments/<YYYY-
 - **System map / current shape** — the boundaries and major components as they actually stand, so a reader can place everything that follows.
 - **What is working** — the positive bets to preserve and the trade-offs worth keeping. **These are not findings and are not filed as tickets** — recording them is the point of a holistic review.
 - **Architectural risks** — the actionable concerns, each with the four parts (`skills/assess/references/finding-bar.md`), IDs prefixed `ARCH-`. These *are* filed.
+- **Risks to approve** — architectural risks that harm nobody today and pass the three-part test, IDs `ARCH-RISK-`. As in the default shape, they are **not filed** by the pass.
 - **Watchlist / triggers** — files or boundaries to add to the repo's `architecture_watchlist` (`skills/architecture/SKILL.md`) so the next change there trips a conditional refactor.
 - **Recommended actions** — the concrete changes the risks imply, ordered by leverage.
 - **Findings / tickets to file** — the subset above that becomes tracker issues: the actionable risks and recommendations only.
@@ -81,6 +94,7 @@ An `/assess process` pass writes the same dated file (`assessments/<YYYY-MM-DD>-
   | Tickets filed per finding emitted | | | |
 
 - **Findings** — the contradictions only, four parts each, IDs prefixed `PROC-`. These *are* filed.
+- **Risks to approve** — as in the default shape, IDs `PROC-RISK-`, **not filed** by the pass.
 - **Deletion candidates** — a table: what, where, the mutation performed and what it showed, and what would be lost. **Ledger entries, not tickets.**
 - **Efficiency candidates** — a table ranked by **minutes recoverable per week** (cost per run × runs per week). **Ledger entries, not tickets.**
 - **Refuted hypotheses** — levers that were tested and failed, each with the measurement that killed it. These are neither findings nor candidates; they exist so the next pass does not buy the same measurement twice (P5).
@@ -91,4 +105,4 @@ An `/assess process` pass writes the same dated file (`assessments/<YYYY-MM-DD>-
 
 ---
 
-After the report is written, the `/assess` command files the findings through `tracker` → `create`, consolidated, appends each insight and each below-floor entry to the improvement ledger, and commits the dated report (`skills/assess/SKILL.md`). For the `architecture` scope it files **only** the actionable risks and recommendations — never the narrative sections. For the `process` scope it files **only** the findings; every deletion and efficiency candidate is a ledger entry decided at the drain.
+After the report is written, the `/assess` command files the findings through `tracker` → `create`, consolidated, appends each insight, each below-floor entry and each risk to approve to the improvement ledger, and commits the dated report (`skills/assess/SKILL.md`). For the `architecture` scope it files **only** the actionable risks and recommendations — never the narrative sections. For the `process` scope it files **only** the findings; every deletion and efficiency candidate is a ledger entry decided at the drain.

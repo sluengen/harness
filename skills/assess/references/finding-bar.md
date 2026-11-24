@@ -2,7 +2,7 @@
 
 **Load this at the start of every `/assess` pass, whatever the scope.**
 
-Shared knowledge for the `steward` whenever it periodically audits a codebase. Defines the finding bar, how a finding is placed on the blocking×size 2×2, and the insight-vs-finding test. This is the methodology for every scope; the per-scope domain standards are named by the scope table in `skills/assess/SKILL.md`.
+Shared knowledge for the `steward` whenever it periodically audits a codebase. Defines the finding bar, the second door a future risk comes through, how a finding is placed on the blocking×size 2×2, and the insight-vs-finding test. This is the methodology for every scope; the per-scope domain standards are named by the scope table in `skills/assess/SKILL.md`.
 
 ## Posture — signal, not noise
 
@@ -10,8 +10,8 @@ Your report becomes work items. Every finding is a unit of someone's future time
 
 - **Specific or silent.** Every finding names a file, line, or concrete pattern. "Could be improved" is not a finding.
 - **Evidence leads.** State what you found before proposing a fix.
-- **No hypotheticals.** If it might not be a problem under normal conditions, do not file it.
-- **Material or ledger.** Every finding names the user outcome or consumer behaviour its contradiction breaks. One that cannot is an improvement: write it under the report's *Below the floor*, apart from the findings, and `/assess` appends it to the improvement ledger instead of filing it. The floor is `review-discipline` → *Bugs are filed; improvements are proposed*, applied here where a finding becomes an issue; its reasoning lives there. The consequence is the point of the rule: a stale comment, a wording mismatch, or a defect no user reaches becomes no ticket, however specific its evidence.
+- **A hypothetical states its trigger, its consequence and its cost, or it is dropped.** A risk that harms nobody today is never a finding. It is listed for the operator when it passes *Future risk — the second door* below, and otherwise it is not written at all.
+- **Material or ledger.** Every finding names the user outcome or consumer behaviour its contradiction breaks. One that cannot is not filed. A risk that passes the second door below goes under the report's *Risks to approve*. Anything else is an improvement: write it under the report's *Below the floor*, apart from the findings, and `/assess` appends it to the improvement ledger instead of filing it. The floor is `review-discipline` → *Bugs are filed; improvements are proposed*, applied here where a finding becomes an issue; its reasoning lives there. The second door leaves that floor whole: a listed risk is an improvement too, and the pass files it no more than any other. The consequence is the point of the rule: a stale comment, a wording mismatch, or a defect no user reaches becomes no ticket of the pass's own, however specific its evidence. Only the operator's approval turns a listed risk into one.
 
 If you write "could benefit from", "might be worth considering", or "it would be nice to" — delete the finding.
 
@@ -23,6 +23,22 @@ If you write "could benefit from", "might be worth considering", or "it would be
 4. **How** — a concrete fix, not "this is wrong".
 
 Missing any of these means it is not a finding yet.
+
+## Future risk — the second door
+
+A risk that harms nobody today is not a finding, and most such risks are not worth a line. One earns the operator's attention when the report states all three of these:
+
+1. **The trigger.** The concrete condition under which it goes wrong: a second tenant, a table past a stated size, a token that expires, a dependency's next major version. "As usage grows" is not a trigger; a number or a named event is.
+2. **The consequence, of one of four kinds.**
+   - **Protected area.** It would lose user data, leak a credential, or move money wrongly: the protected areas the spine's *Lanes* names, at the stage the repo's *This repo* line declares.
+   - **Dearer with every change.** Its fix costs more with each change built on it. Name which of the four tests in `authoring` → *Proposal spec* fires for the fix (migration, blast, access or comprehension), and why.
+   - **Performance.** Something a user waits on is slow, or will become slow as data grows. Show it with a measurement, or with a named pattern such as a query per row or a list with no upper bound.
+   - **Maintainability trap.** A trap the next agent is likely to fall into. Name the trap and the ordinary change that would spring it. A trap no named change springs is a preference.
+3. **The cost of fixing it now.** The change it takes today, set against what it would cost after the trigger.
+
+A risk missing any of the three is dropped. One that states all three goes under the report's *Risks to approve*, with the ID `{SCOPE}-RISK-{n}`, its three parts, its *where* and its *how*. The pass files nothing for it: `/assess` hands it to the operator, who approves or declines it (`skills/assess/SKILL.md`, step 2).
+
+**A risk is listed once.** Before listing one, read the *Risks to approve* of every report still in `assessments/` and the `risks:` fields of `assessments/LOG.md`. A risk already there is not listed again, whether it is waiting, approved or declined. If a declined risk's trigger has since occurred, it harms someone today, so it comes back as a finding through the ordinary bar, not as a risk.
 
 ## Placing a finding — the 2×2
 
@@ -54,10 +70,10 @@ The `process` scope (`/assess process`) departs in the opposite direction: it is
 
 ## What you are not looking for
 
-Style preferences, formatting nits, complexity that is justified by the problem, intentional deviations that are improvements, or "future work" that is not causing a problem now.
+Style preferences, formatting nits, complexity that is justified by the problem, intentional deviations that are improvements, or "future work" that cannot name its trigger, a consequence of the four kinds, and its cost now. A risk that can name all three comes through the second door above.
 
 When unjustified complexity *is* a finding, the `code` scope names it with the `review-discipline` over-engineering taxonomy — that skill is its one canonical home; cite the tag and what replaces the cut, rather than restating the tags here.
 
 ## Output
 
-Write a dated report in the `templates/assessment.md` format. The `assess` command files the **findings** and nothing else — an insight and a below-floor entry are improvements, so each is appended to the improvement ledger instead of being filed (above). For each finding use an ID prefixed by the steward's domain (`CODE-`, `ARCH-`, `PROC-`); insights append `-INSIGHT`. Zero findings is a legitimate, stated outcome — do not invent findings to fill the report.
+Write a dated report in the `templates/assessment.md` format. The `assess` command files the **findings** and nothing else — an insight and a below-floor entry are improvements, so each is appended to the improvement ledger instead of being filed (above). A listed risk is appended there too, to wait for the operator's answer. For each finding use an ID prefixed by the steward's domain (`CODE-`, `ARCH-`, `PROC-`); insights append `-INSIGHT`, and risks append `-RISK`. Zero findings is a legitimate, stated outcome — do not invent findings, or risks, to fill the report.
