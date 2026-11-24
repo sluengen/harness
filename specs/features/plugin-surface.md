@@ -6484,6 +6484,31 @@ The test is whether a call that used to complete now blocks, or the reverse. No 
 
 The test is whether a call that used to complete now blocks, or the reverse. No command, argument or refusal reason changes, and an unattended `/assess` still completes without waiting on anyone. The report gains a section and the `LOG.md` line an optional field, additions like #713's and #663's at the minor floor. The counter-argument for major is that a class of ledger entry `/drain` used to drop by default now waits for an answer across drains, retention keeps a report it used to fold, and a consumer's board gains tickets from a new source. Each applies only to an input this change creates. No ledger entry or report written before it opens `Risk to approve` or lists a risk, so every one is decided, kept and folded as before. An approved risk reaches the board through the drain's existing fold. `origin/main` stands at `37.2.0`, and `/build` step 7 raised the four homes in `scripts/plugin-version.js`'s `CANDIDATES` to `37.3.0`, which this review keeps.
 
+### #820: the tree is the subject of a `code` pass, as built
+
+`simple`. Prose, with no code and no test.
+
+- `skills/assess/SKILL.md`, the paragraph opening "The steward reads and reports". A single instance in a change that has not merged is review's; once merged, it is the pass's.
+- `skills/assess/SKILL.md`, the paragraph opening "The subject of a `code` pass is the tree". Each `code` pass keeps its sweep of recent change and adds one area read in depth. The steward chooses it from the *Read in depth* sections of the `code` reports still in `assessments/` and the `area:` fields of `code` lines in `assessments/LOG.md`. It takes an area none of them names, or else the one whose last deep read is oldest. Where none is recorded yet, it takes any area and says so. An area is the steward's own cut of the repo, and no list is declared. The paragraph says the `architecture` and `process` scopes are unchanged. Step 1 adds that a `code` report lists what it read in depth and what it did not assess.
+- `templates/assessment.md`: the default shape gains *Read in depth* and *Not assessed*, each marked required in a `code` report. The architecture and process shapes are untouched and keep their own *Not assessed*. Retention defines a `code` entry's appended `· area: <the area read in depth>`, and a line folded before the field existed carries none. `assessments/LOG.md`'s header names the same field.
+- No guard; P2 refuses one over prose. Held by direct review (ADR 0019).
+
+**Differences from the change spec.** None. The ticket's out-of-scope trigger, a first count that finds everything planted in old code, is not met. #818's count found all nine plants, but `specs/proposals/assess-finds-more.md` → *Counts* records that they were handed to the steward as the window, so cause 2 is untested rather than refuted, and the full scope was built.
+
+### #822: a change to a prototyped screen is asked about at grounding, as built
+
+`simple`. Prose, with no code and no test.
+
+- `skills/build/SKILL.md` → §1 step 5, the sentence opening "Where the ticket's outcome would make a screen". The trigger is a ticket whose outcome would make a screen the linked proposal's *Visuals* labels *Spike capture* differ from that capture for a reason other than the three `review-discipline` → *Stage 2* allows: accessibility, design-system adherence or a technical constraint. A ticket that builds the screen as captured, or departs only for one of those reasons, asks nothing. Attended, the run asks the operator. On approval it writes the approval, quoted, into the change spec with the amendment the proposal's *Visuals* will carry, before step 6 cuts the branch, and the amendment lands on the branch. Unattended, it holds the ticket with `input` and returns it to Todo as step 3 does, removing the worktree first.
+- `skills/build/SKILL.md` → §2, *When the ticket's proposal showed the screen as a prototype*, closing sentence. A change approved at grounding is not asked about again, and the clause still covers a difference the grounding question did not foresee.
+- No guard; P2 refuses one over prose. Held by direct review (ADR 0019).
+
+**Differences from the change spec.** None. AC-1 was amended on the ticket after review cycle 1, narrowing the trigger from every change to a *Spike capture* screen to a departure for a reason outside the standing three. Read literally, the filed wording would have held every unattended build of a prototyped screen at grounding.
+
+### The cycle's version class: minor, `37.4.0`
+
+The test is whether a call that used to complete now blocks, or the reverse. No command, argument or refusal reason changes. A `code` pass reads more and its report gains two sections and its `LOG.md` line an optional field, additions like #819's at the minor floor. The counter-argument for major is that an unattended `/build` now holds at grounding where it used to proceed to review. In that case the build used to end on a DEFER, which holds the ticket for the same operator approval, so the run held before and holds now, only earlier and for the same reason. `origin/main` stands at `37.3.0`, and `/build` step 7 raised the four homes in `scripts/plugin-version.js`'s `CANDIDATES` to `37.4.0`, which this review keeps.
+
 ## Cross-references
 
 - `specs/harness-assumptions.md` — one row per hook, script, skill and agent: what it assumes the model cannot do, and the test that would retire it. Read at every model or host release.
