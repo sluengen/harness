@@ -1,11 +1,14 @@
 ---
 proposal: assess-finds-more
-status: accepted         # draft | under-decision | accepted | shipped | rejected | split | superseded
+status: shipped          # draft | under-decision | accepted | shipped | rejected | split | superseded
 date: 2026-11-23
+shipped: 2026-11-26
 related: [specs/proposals/lifecycle-reset.md, specs/proposals/do-less-at-ingestion.md]
 ---
 
 # Assessments that report future risk and say what they did not read
+
+> **Shipped 2026-11-26.** All four items have landed: #818 took the first count, #819 added the future-risk door, #820 made the tree the subject, and #821 took the second count. All are children of umbrella #817. The as-built records in `specs/features/plugin-surface.md` describe what #819 and #820 delivered. *Counts* below gives both counts. The planted set did not exercise the door: the second run listed no risk to approve. None of the reopen triggers under *Not doing* is met.
 
 ## In brief
 
@@ -122,7 +125,7 @@ Filed 2026-11-23 under umbrella #817: item 1 is #818, item 2 is #819, item 3 is 
 
 **Set.** Nine problems were planted on `spike/assess-finds-more`, cut from `dev` at `2ccac313`, tip `ddc6421a`, never merged. Each is one commit with an ordinary message and a backdated date, in a file untouched for at least a month. The list, with class, file and commit, is on #818.
 
-**Run.** One `code` steward, dispatched with the role's one-line body and told nothing about the plants. It read the skill text of the branch's own tree, which is byte-identical to installed plugin 37.2.0. It filed nothing, appended nothing to the ledger and landed no report. Its report is attached to #818.
+**Run.** One `code` steward, dispatched with the role's one-line body and told nothing about the plants. It read the skill text of the branch's own tree. The assess skill, the steward profile and the report template were byte-identical to installed plugin 37.2.0. The two planted guidance files, `reconcile.md` and `size-guard.md`, differed by construction. It filed nothing, appended nothing to the ledger and landed no report. Its report is attached to #818.
 
 | Class | Planted | Found | Routing of each found problem |
 |---|---|---|---|
@@ -141,6 +144,39 @@ Filed 2026-11-23 under umbrella #817: item 1 is #818, item 2 is #819, item 3 is 
 
   This is the behaviour item 2 targets.
 - **It also found real problems outside the set.** It found one real finding on the shared tree (CODE-7: `specs/features/plugin-surface.md` at 834 KB, too large for the architect it is handed to), four real below-floor items, and three insights. None was filed, because this run files nothing. They are listed on #818 for the operator.
+
+### After (item 4, #821, 2026-11-26)
+
+**Set.** The same nine plants were replayed in order onto `dev` at `24b77df3`, after #819 and #820 had landed. The branch is `spike/assess-finds-more-rerun`, tip `e021eb86`, never merged. Each commit keeps its original backdated date. `git patch-id --stable` gives the same nine ids for this branch as for the first one. The branch was again nine commits ahead of `dev`, so the window condition matched #818's.
+
+**Run.** One `code` steward was dispatched with the role's one-line body and told nothing about the plants. It read the branch's own skill text: the assess skill, the finding bar, the report template and the steward profile, all byte-identical to installed plugin 37.4.0. It filed nothing, appended nothing to the ledger and landed no report. Its report is attached to #821. It chose `hooks/` as its area to read in depth, because no earlier report records an area. Four plants sit there: P1, P4, P5 and P6.
+
+| Class | Planted | Found, before (`ddc6421a`) | Found, after (`e021eb86`) | Routing after |
+|---|---|---|---|---|
+| Broken today | 3 (P1, P2, P3) | 3 | 3 | all findings: CODE-1, CODE-3, CODE-6 |
+| Future risk | 4 (P4, P5, P6, P7) | 4 | 4 | P4, P5 and P6 as findings (CODE-2, CODE-5, CODE-4); P7 below the floor |
+| One-off slip | 2 (P8, P9) | 2 | 2 | both below the floor |
+| **Total** | **9** | **9** (6 findings, 3 below the floor) | **9** (6 findings, 3 below the floor) | 0 risks listed to approve |
+
+**The difference.**
+
+- **Found and routed: no change.** Every plant was found both times and went to the same place. The gate caught the same five plants: 23 failed and 690 passed both times.
+- **The future-risk door was not used.** The second pass listed **no** risk to approve.
+  - P4, P5 and P6 became findings again because a failing test made each one a harm today. P6's performance cost is not mentioned at all this time. CODE-4 reports only what the plant broke.
+  - P7 was the one plant that could show a change, as #818's review warned. It went below the floor again, this time as "a speculative cache resting on a false premise". The report names the trap (a second caller in one process gets no notice when the file is unreadable), but it gives no trigger, no consequence kind and no cost. It was not offered as a risk.
+  - So on this set the door changed nothing. One plant is too small a base to say whether the door is too narrow or the steward does not reach for it.
+- **The tree as subject: some effect, outside the set.** Both passes read the nine commits as a diff, so the planted set still cannot test cause 2. But the second pass had to choose an area and list what it did not read, and it did both. Its read of `hooks/` found a defect in merged code that the first pass did not report: CODE-7, the test lock does not apply when an edited path runs through a symlink. It also gave a nine-bullet *Not assessed* list, including the 848 `dev` commits it did not sweep. This is the behaviour item 3 asked for, seen once.
+
+**Not doing, against the triggers.** None is met.
+
+- **Option C.** Its trigger is a whole class missed in an area read in depth. Every class was found, and all four plants under `hooks/` were found.
+- **Option D.** Its trigger is the deep read still missing most of what was planted. It missed none of the four plants in its area.
+- **Option E.** Its trigger is about how the ledger is drained, which a count does not measure.
+- **The other lines** reopen only when the operator asks.
+
+The door not being used is not a trigger under any line. Read it with *Risks* → *Judgment returns to a rule built to have none*: a door that lists nothing every pass is the opposite of that risk, and it is worth a second look after a real pass, not another planted count.
+
+**Found outside the set, and not filed here.** These were reported to the operator on #821. CODE-7 is a merged defect in the test lock (`hooks/test-lock-guard.js` `relativeTo`). `scripts/plugin-version.js` is 523 lines, over the 500-line hard limit, with no `size:` marker. The report also gives three systemic insights.
 
 ## Risks
 
