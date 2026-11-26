@@ -806,3 +806,65 @@ def test_a_governed_test_deleted_through_apply_patch_is_refused(tmp_path: Path) 
         },
     }
     assert _denied(_run(payload, repo))
+
+
+# --- path spelling: a symlink on the way in is the same file (#825) -------------
+# ``tmp_path`` is already resolved, so every row above reaches the repository by
+# its real path and none of them could see this. ``git rev-parse --show-toplevel``
+# prints the resolved path; the edited path arrives as the host spelled it, and
+# on macOS ``/tmp`` and ``/var`` are links to ``/private/...``. Before #825 the two
+# spellings were compared as strings, ``path.relative`` climbed out with ``..``,
+# and a locked test reached through a link was treated as outside the repo.
+
+
+def _linked(tmp_path: Path, name: str) -> tuple[Path, Path]:
+    """A repository under ``real/``, and the same repository reached through ``link/``."""
+    real = tmp_path / "real"
+    real.mkdir(exist_ok=True)
+    repo = _repo(real, name)
+    link = tmp_path / "link"
+    if not link.exists():
+        link.symlink_to(real, target_is_directory=True)
+    return repo, link / name
+
+
+def test_a_locked_test_reached_through_a_symlinked_directory_is_refused(tmp_path: Path) -> None:
+    """AC-1 — the kill. The same edit by the resolved path is refused (AC-2's pair)."""
+    repo, via = _linked(tmp_path, "kill-symlink")
+    _arm(repo)
+    assert _denied(_run(_edit(repo, "tests/test_existing.py"), repo))
+    assert _denied(_run(_edit(via, "tests/test_existing.py"), via))
+
+
+def test_a_relative_path_under_a_symlinked_cwd_is_refused(tmp_path: Path) -> None:
+    """The other spelling a host can send: a relative path, resolved against a linked cwd."""
+    repo, via = _linked(tmp_path, "kill-symlink-relative")
+    _arm(repo)
+    payload = {
+        "tool_name": "Edit",
+        "cwd": str(via),
+        "tool_input": {"file_path": "tests/test_existing.py"},
+    }
+    assert _denied(_run(payload, via))
+
+
+def test_a_new_test_directory_reached_through_a_symlink_is_still_locked(tmp_path: Path) -> None:
+    """The walk-up to an existing ancestor, and the link, in one path."""
+    repo, via = _linked(tmp_path, "kill-symlink-newdir")
+    _arm(repo)
+    assert _denied(_run(_edit(via, "tests/new_dir/test_x.py", tool="Write"), via))
+
+
+def test_an_implementation_file_reached_through_a_symlink_is_allowed(tmp_path: Path) -> None:
+    """AC-4 — the control. Resolving the path must not govern what is not a test."""
+    repo, via = _linked(tmp_path, "allow-symlink-source")
+    _arm(repo)
+    assert not _denied(_run(_edit(via, "scripts/thing.py"), via))
+
+
+def test_the_fix_lane_through_a_symlink_still_asks_the_base_tree(tmp_path: Path) -> None:
+    """AC-3 — a new test is admitted and a base-tree test refused, through the link."""
+    repo, via = _linked(tmp_path, "fix-symlink")
+    _arm(repo, lane="fix")
+    assert not _denied(_run(_edit(via, "tests/test_brand_new.py", tool="Write"), via))
+    assert _denied(_run(_edit(via, "tests/test_existing.py"), via))

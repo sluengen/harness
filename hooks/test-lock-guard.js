@@ -265,9 +265,25 @@ function governedSet(config, top) {
   return { roots, globs };
 }
 
+/** ``p`` with every symlink in its existing part resolved (#825).
+ *
+ * `git rev-parse --show-toplevel` prints a resolved path, and the edited path
+ * arrives as the host spelled it — on macOS `/tmp` and `/var` are links into
+ * `/private`. Compared as strings, the two spellings of one file differ, and
+ * the governed test reads as outside the repo. The tail below the nearest
+ * existing ancestor may not exist yet (a `Write` creates it), so it is kept
+ * as written and joined back on. A `realpathSync` error propagates to the
+ * hook's fail-open handler, which says so on stderr.
+ */
+function realResolve(p) {
+  const abs = path.resolve(p);
+  const base = existingAncestor(abs);
+  return path.join(fs.realpathSync(base), path.relative(base, abs));
+}
+
 /** The repo-relative posix path of ``file``, or null when it is outside ``top``. */
 function relativeTo(top, dir, file) {
-  const abs = path.resolve(dir, file);
+  const abs = realResolve(path.resolve(dir, file));
   const rel = path.relative(top, abs).split(path.sep).join("/");
   if (!rel || rel === ".." || rel.startsWith("../") || path.isAbsolute(rel)) return null;
   return rel;
