@@ -1,4 +1,10 @@
 #!/usr/bin/env node
+// size: kept whole on purpose (#828). Over the ceiling on documentation, not on
+// logic: about 330 of its lines are code. It does one job, a version raise across
+// the homes it identifies, and every function serves that one raise. It ships
+// from the plugin root and is run by path in a consumer's worktree, so a split
+// would add a module it must resolve at load, which is a new way to fail. The
+// balance is the rationale each rule records for the defect it stops.
 /**
  * The plugin's one version, raised once per release cycle, by the build that
  * starts the cycle.
