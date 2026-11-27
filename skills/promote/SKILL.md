@@ -154,6 +154,12 @@ With no `cadence:`, none of this applies and the ticket lands as it always has.
    `commands.verify` fresh from `harness.yaml` every run, never hardcode one
    here, and invoke it exactly as declared (`engineering` → *Verification*).
    Capture the output and read all of it, what it selected included.
+   **Install before every gate this stage runs**: `commands.install`, where
+   `harness.yaml` declares one, in the candidate's worktree, after the last
+   merge or move and before the gate. The worktree was installed once, when it
+   was cut, and a merge or a `checkout -B` since can change what the candidate
+   depends on; a gate over the stale install spends its whole run, and on the
+   train its window, for a refusal (#829).
    **Skip the run only where both hold** (#731): `git rev-parse HEAD^{tree}`,
    taken after stage 1, equals the `reviewed_tree` in the review report; and that
    review ran in this session and its reviewer's own certifying gate over that tree
@@ -436,7 +442,7 @@ land inside a window.
       to the integration tip as it now stands (fetch, then
       `git checkout -B train-<stamp> <remote>/<integration>` before each; both
       hosts' settings forbid `git reset --hard`): merge that ticket's branch (a merge that will not
-      resolve ejects it for `merge`), raise the version, gate, and on green
+      resolve ejects it for `merge`), raise the version, gate as stage 2 says, and on green
       stage 4, the window, step 10's re-read and the push. A ticket the re-read
       finds moved is not pushed; it takes step 10's outcome and the fallback
       goes on to the next. Each fallback gate must fit the window first (step
