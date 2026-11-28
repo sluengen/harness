@@ -6525,6 +6525,22 @@ The test is whether a call that used to complete now blocks, or the reverse. No 
 
 The test is whether a call that used to complete now blocks, or the reverse. No command or argument changes, and the refusal's condition and text are unchanged. The counter-argument for major is that some calls do move. A locked-test edit through a symlinked directory used to complete and is now refused. An edit through a link from a test root to a non-test directory used to be refused and now completes. Against that, the grammar in `specs/architecture-principles.md` → *The installed surface is a versioned interface* makes the refusal reason the interface. Here that reason is an edit to a governed test file while the lock is armed, and every call that moved is a second spelling of a file whose answer by its real path is the same before and after. #726 and #761 were held at the minor floor on that shape, a mechanism made to do what its contract already said. #828 adds a top-of-file `size:` comment to `scripts/plugin-version.js` and changes no behaviour. `origin/main` stands at `37.5.0`, and `/build` step 7 raised the four homes in `scripts/plugin-version.js`'s `CANDIDATES` to `37.6.0`, which this review keeps.
 
+### #829: every landing gate runs over a fresh install, as built
+
+`simple`. Skill text only, with no code and no test.
+
+- `skills/promote/SKILL.md` → *The stages*, stage 2 (*Gate*), the sentence opening "Install before every gate this stage runs". Before each gate the stage runs, the landing runs `commands.install` in the candidate's worktree, where `harness.yaml` declares one, after the last merge or move. `worktree-isolation` installs once, when the worktree is cut, and a merge or a `git checkout -B` since can change what the candidate depends on. Where stage 2 skips its gate because the tree equals this session's `reviewed_tree`, the install is skipped with it.
+- *The landing train* inherits the install with no copy of its own. Step 9's batch gate runs "as stage 2 says". Step 10's rebuild after a moved ticket and its re-gate after a refused push run "steps 8 to 10" again, which include step 9. Step 11's fallback solo gate, run after each `git checkout -B` to the integration tip and the ticket's merge, now reads "gate as stage 2 says", and the fallback's own refused-push retry runs on step 10's terms.
+- A single landing (`/promote <TICKET>`) gains the same install, because stage 2 serves it too. Stage 1's merge of the integration branch can bring in another ticket's dependency change in the same way a train merge can.
+
+Held by direct review and use (ADR 0019): the ticket's criteria name no test, and law 2's subject is code.
+
+**Differences from the change spec.** None.
+
+### The cycle's version class: minor, `37.7.0`
+
+The test is whether a call that used to complete now blocks, or the reverse. No command, argument or refusal reason changes. One step is added before a gate the landing already ran, over the install command the repo already declares and `worktree-isolation` already runs. The counter-argument for major is that a train carrying a dependency change, whose gate used to refuse over a stale install, can now land. That refusal came from the consuming repo's own gate meeting the wrong environment, and the harness gave no reason for it, so the interface the grammar in `specs/architecture-principles.md` → *The installed surface is a versioned interface* protects does not move. `origin/main` stands at `37.6.0`, and `/build` step 7 raised the four homes in `scripts/plugin-version.js`'s `CANDIDATES` to `37.7.0`, which this review keeps.
+
 ## Cross-references
 
 - `specs/harness-assumptions.md` — one row per hook, script, skill and agent: what it assumes the model cannot do, and the test that would retire it. Read at every model or host release.
